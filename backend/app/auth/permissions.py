@@ -53,29 +53,63 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-# ---- Dlaždice rozcestníku a kdo je smí vidět ----
-# "role": None znamená, že dlaždici vidí kdokoliv přihlášený.
-# "extra_pravo": klíč v poli extra_prava uživatele, který dává přístup i mimo roli.
-TILES = [
-    {"klic": "projekty", "nazev": "Přehled projektů", "role": None, "extra_pravo": None},
-    {"klic": "finance", "nazev": "Přehled financí", "role": Role.vedeni, "extra_pravo": "financie"},
-    {"klic": "zmeny", "nazev": "Přehled změn", "role": None, "extra_pravo": None},
+# ---- Katalog dlaždic a práv ----
+# Dlaždice = položky rozcestníku. Uvidí je VŽDY všichni; jestli je uživatel
+# smí OTEVŘÍT, řídí právo se stejným klíčem (viz muze_otevrit).
+DLAZDICE = [
+    {"klic": "projekty", "nazev": "Přehled projektů"},
+    {"klic": "finance", "nazev": "Přehled financí"},
+    {"klic": "zmeny", "nazev": "Přehled změn"},
+    {"klic": "admin", "nazev": "Admin nastavení"},
 ]
 
+# Katalog přidělitelných práv (skupinám i jednotlivcům). Otevírací práva mají
+# stejný klíč jako dlaždice; "editace" je akční právo (editace matice).
+PRAVA = [
+    {"klic": "projekty", "nazev": "Otevřít Přehled projektů"},
+    {"klic": "finance", "nazev": "Otevřít Přehled financí"},
+    {"klic": "zmeny", "nazev": "Otevřít Přehled změn"},
+    {"klic": "admin", "nazev": "Otevřít Admin nastavení"},
+    {"klic": "editace", "nazev": "Editace matice (Přehled projektů)"},
+]
 
-def muze_videt_dlazdici(user: User, dlazdice: dict) -> bool:
-    if dlazdice["role"] is None:
-        return True
-    if user.role == dlazdice["role"]:
-        return True
-    if dlazdice["extra_pravo"] and dlazdice["extra_pravo"] in (user.extra_prava or []):
-        return True
-    return False
+VSECHNA_PRAVA = {p["klic"] for p in PRAVA}
 
 
-def viditelne_dlazdice(user: User) -> list[DlazdiceOut]:
+def prava_uzivatele(user: User) -> set[str]:
+    """Efektivní práva uživatele: admin má vše, jinak skupina + výjimky."""
+    if user.role == Role.admin:
+        return set(VSECHNA_PRAVA)
+    prava = set(user.extra_prava or [])
+    if user.skupina is not None:
+        prava |= set(user.skupina.prava or [])
+    return prava
+
+
+def muze_otevrit(user: User, klic: str) -> bool:
+    """Smí uživatel otevřít danou dlaždici?"""
+    return klic in prava_uzivatele(user)
+
+
+def muze_editovat(user: User) -> bool:
+    """Smí uživatel editovat matici (Přehled projektů)?"""
+    return "editace" in prava_uzivatele(user)
+
+
+def dlazdice_pro(user: User) -> list[DlazdiceOut]:
+    """Všechny dlaždice + příznak, zda je uživatel smí otevřít."""
+    prava = prava_uzivatele(user)
     return [
-        DlazdiceOut(klic=d["klic"], nazev=d["nazev"])
-        for d in TILES
-        if muze_videt_dlazdici(user, d)
+        DlazdiceOut(klic=d["klic"], nazev=d["nazev"], muze_otevrit=d["klic"] in prava)
+        for d in DLAZDICE
     ]
+
+
+def vyzaduj_admina(user: User = Depends(get_current_user)) -> User:
+    """Povolí jen ty, kdo smí otevřít Admin nastavení."""
+    if not muze_otevrit(user, "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Na Admin nastavení nemáš oprávnění.",
+        )
+    return user

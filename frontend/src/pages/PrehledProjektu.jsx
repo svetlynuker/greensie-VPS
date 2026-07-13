@@ -8,6 +8,8 @@ import ZobrazeniDropdown from "../components/ZobrazeniDropdown";
 import {
   nactiMe,
   nactiMatici,
+  nactiNastaveni,
+  ulozNastaveni,
   logout,
   ulozBunku,
   pridejProjekt,
@@ -100,26 +102,16 @@ function Oko({ onClick, title }) {
   );
 }
 
-function nactiSkrytePrefs(uzivatelId) {
-  try {
-    const raw = localStorage.getItem(`greensie_skryte_${uzivatelId}`);
-    if (!raw) return { faze: new Set(), ukoly: new Set() };
-    const p = JSON.parse(raw);
-    return { faze: new Set(p.faze || []), ukoly: new Set(p.ukoly || []) };
-  } catch {
-    return { faze: new Set(), ukoly: new Set() };
-  }
+// Nastavení pohledu se ukládá do DB (přenáší se mezi zařízeními).
+// Zde se z uloženého JSON objektu poskládá vnitřní stav (Set / pole).
+function parseSkryte(p) {
+  p = p || {};
+  return { faze: new Set(p.faze || []), ukoly: new Set(p.ukoly || []) };
 }
 
-function nactiPoradiPrefs(uzivatelId) {
-  try {
-    const raw = localStorage.getItem(`greensie_poradi_${uzivatelId}`);
-    if (!raw) return { projekty: [], faze: [], ukoly: {} };
-    const p = JSON.parse(raw);
-    return { projekty: p.projekty || [], faze: p.faze || [], ukoly: p.ukoly || {} };
-  } catch {
-    return { projekty: [], faze: [], ukoly: {} };
-  }
+function parsePoradi(p) {
+  p = p || {};
+  return { projekty: p.projekty || [], faze: p.faze || [], ukoly: p.ukoly || {} };
 }
 
 // seřadí položky podle uloženého pořadí klíčů; položky mimo pořadí zůstanou vzadu (stabilně)
@@ -169,24 +161,15 @@ export default function PrehledProjektu() {
   const [poradiUkolu, setPoradiUkolu] = useState({});
   const dragInfo = useRef(null);
   const [dropCil, setDropCil] = useState(null);
-  const uzivatelIdRef = useRef(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    if (uzivatelIdRef.current == null) return;
-    localStorage.setItem(
-      `greensie_skryte_${uzivatelIdRef.current}`,
-      JSON.stringify({ faze: [...skryteFaze], ukoly: [...skryteUkoly] })
-    );
-  }, [skryteFaze, skryteUkoly]);
-
-  useEffect(() => {
-    if (uzivatelIdRef.current == null) return;
-    localStorage.setItem(
-      `greensie_poradi_${uzivatelIdRef.current}`,
-      JSON.stringify({ projekty: poradiProjektu, faze: poradiFazi, ukoly: poradiUkolu })
-    );
-  }, [poradiProjektu, poradiFazi, poradiUkolu]);
+  // Uložení nastavení pohledu do DB (voláno vždy po konkrétní akci uživatele).
+  function ulozSkryte(faze, ukoly) {
+    ulozNastaveni("pohled1_skryte", { faze: [...faze], ukoly: [...ukoly] }).catch(() => {});
+  }
+  function ulozPoradi(projekty, faze, ukoly) {
+    ulozNastaveni("pohled1_poradi", { projekty, faze, ukoly }).catch(() => {});
+  }
 
   function naplnBarvyText(barvy) {
     setBarvyText({
@@ -205,14 +188,13 @@ export default function PrehledProjektu() {
   }
 
   useEffect(() => {
-    Promise.all([nactiMe(), nactiMatici()])
-      .then(([me, d]) => {
+    Promise.all([nactiMe(), nactiMatici(), nactiNastaveni()])
+      .then(([me, d, nast]) => {
         setUzivatel(me.uzivatel);
-        uzivatelIdRef.current = me.uzivatel.id;
-        const prefs = nactiSkrytePrefs(me.uzivatel.id);
-        setSkryteFaze(prefs.faze);
-        setSkryteUkoly(prefs.ukoly);
-        const poradi = nactiPoradiPrefs(me.uzivatel.id);
+        const skryte = parseSkryte(nast.pohled1_skryte);
+        setSkryteFaze(skryte.faze);
+        setSkryteUkoly(skryte.ukoly);
+        const poradi = parsePoradi(nast.pohled1_poradi);
         setPoradiProjektu(poradi.projekty);
         setPoradiFazi(poradi.faze);
         setPoradiUkolu(poradi.ukoly);
@@ -271,24 +253,25 @@ export default function PrehledProjektu() {
     return bunky[bunkaKlic(projektId, sloupecId)] || null;
   }
   function toggleSkrytFazi(todo) {
-    setSkryteFaze((prev) => {
-      const n = new Set(prev);
-      if (n.has(todo)) n.delete(todo);
-      else n.add(todo);
-      return n;
-    });
+    const n = new Set(skryteFaze);
+    if (n.has(todo)) n.delete(todo);
+    else n.add(todo);
+    setSkryteFaze(n);
+    ulozSkryte(n, skryteUkoly);
   }
   function toggleSkrytUkol(sloupecId) {
-    setSkryteUkoly((prev) => {
-      const n = new Set(prev);
-      if (n.has(sloupecId)) n.delete(sloupecId);
-      else n.add(sloupecId);
-      return n;
-    });
+    const n = new Set(skryteUkoly);
+    if (n.has(sloupecId)) n.delete(sloupecId);
+    else n.add(sloupecId);
+    setSkryteUkoly(n);
+    ulozSkryte(skryteFaze, n);
   }
   function zobrazitVse() {
-    setSkryteFaze(new Set());
-    setSkryteUkoly(new Set());
+    const prazdneFaze = new Set();
+    const prazdneUkoly = new Set();
+    setSkryteFaze(prazdneFaze);
+    setSkryteUkoly(prazdneUkoly);
+    ulozSkryte(prazdneFaze, prazdneUkoly);
   }
 
   function dropProjekt(cilId) {
@@ -296,14 +279,18 @@ export default function PrehledProjektu() {
     dragInfo.current = null;
     setDropCil(null);
     if (!info || info.typ !== "projekt" || info.id === cilId) return;
-    setPoradiProjektu(presunPole(seradaneProjekty.map((p) => p.id), info.id, cilId));
+    const nove = presunPole(seradaneProjekty.map((p) => p.id), info.id, cilId);
+    setPoradiProjektu(nove);
+    ulozPoradi(nove, poradiFazi, poradiUkolu);
   }
   function dropFaze(cilTodo) {
     const info = dragInfo.current;
     dragInfo.current = null;
     setDropCil(null);
     if (!info || info.typ !== "faze" || info.todo === cilTodo) return;
-    setPoradiFazi(presunPole(seradaneFaze.map((f) => f.todo), info.todo, cilTodo));
+    const nove = presunPole(seradaneFaze.map((f) => f.todo), info.todo, cilTodo);
+    setPoradiFazi(nove);
+    ulozPoradi(poradiProjektu, nove, poradiUkolu);
   }
   function dropUkol(fazeTodo, cilId) {
     const info = dragInfo.current;
@@ -313,7 +300,9 @@ export default function PrehledProjektu() {
     const faseObj = seradaneFaze.find((f) => f.todo === fazeTodo);
     if (!faseObj) return;
     const nove = presunPole(faseObj.ukoly.map((u) => u.sloupec_id), info.id, cilId);
-    setPoradiUkolu((prev) => ({ ...prev, [fazeTodo]: nove }));
+    const noveUkolu = { ...poradiUkolu, [fazeTodo]: nove };
+    setPoradiUkolu(noveUkolu);
+    ulozPoradi(poradiProjektu, poradiFazi, noveUkolu);
   }
 
   function fazeStat(projektId, f) {

@@ -3,9 +3,10 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import LoginRequest, MeOut, Token, User, UserOut
 from app.auth.permissions import (
+    dlazdice_pro,
     get_current_user,
+    muze_editovat,
     over_heslo,
-    viditelne_dlazdice,
     vytvor_access_token,
 )
 from app.database import get_db
@@ -29,5 +30,6 @@ def login(udaje: LoginRequest, db: Session = Depends(get_db)):
 def me(user: User = Depends(get_current_user)):
     return MeOut(
         uzivatel=UserOut(id=user.id, jmeno=user.jmeno, email=user.email, role=user.role),
-        dlazdice=viditelne_dlazdice(user),
+        dlazdice=dlazdice_pro(user),
+        muze_editovat=muze_editovat(user),
     )

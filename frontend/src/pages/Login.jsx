@@ -1,7 +1,20 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { login } from "../api";
+import { login, nactiNastaveni } from "../api";
+import { setTheme } from "../theme";
+import { setVelikost } from "../velikost";
 import ThemeToggle from "../components/ThemeToggle";
+
+// Po přihlášení stáhne uložený vzhled z DB a použije ho (přenos mezi zařízeními).
+async function synchronizujVzhled() {
+  try {
+    const n = await nactiNastaveni();
+    if (n.tema) setTheme(n.tema);
+    if (n.velikost) setVelikost(n.velikost);
+  } catch {
+    // vzhled není kritický – když se nenačte, jede se s lokálním nastavením
+  }
+}
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -14,6 +27,7 @@ export default function Login() {
     setChyba(null);
     try {
       await login(email, heslo);
+      await synchronizujVzhled();
       navigate("/rozcestnik");
     } catch (err) {
       setChyba(err.message);

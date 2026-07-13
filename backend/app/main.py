@@ -1,19 +1,40 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.auth import models  # noqa: F401 - registrace modelů před create_all
 from app.auth.routes import router as auth_router
 from app.matice import models as matice_models  # noqa: F401 - registrace modelů
 from app.matice.routes import router as matice_router
+from app.nastaveni import models as nastaveni_models  # noqa: F401 - registrace modelů
+from app.nastaveni.routes import router as nastaveni_router
+from app.admin.routes import router as admin_router
 from app.database import Base, engine
 
 Base.metadata.create_all(bind=engine)
+
+
+def _lehka_migrace():
+    """Doplní sloupce, které create_all neumí přidat do už existujících tabulek."""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "ALTER TABLE uzivatele ADD COLUMN IF NOT EXISTS skupina_id INTEGER "
+                "REFERENCES skupiny(id) ON DELETE SET NULL"
+            )
+        )
+
+
+_lehka_migrace()
 
 app = FastAPI(title="Greensie")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",  # lokální vývoj
+        "https://167-235-254-188.sslip.io",  # produkce
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -21,6 +42,8 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(matice_router)
+app.include_router(nastaveni_router)
+app.include_router(admin_router)
 
 
 @app.get("/health")

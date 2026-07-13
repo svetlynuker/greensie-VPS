@@ -4,14 +4,17 @@ import Layout from "../components/Layout";
 import Tile from "../components/Tile";
 import { nactiMe, logout } from "../api";
 
-// Dlaždice s hotovou sekcí vedou na svou stránku; ostatní zatím ukážou placeholder.
+// Dlaždice s hotovou sekcí vedou na svou stránku.
 const TRASY = {
   projekty: "/projekty",
+  admin: "/admin",
 };
+
+// Nedostupné (zamčené) a zatím rozpracované dlaždice vedou sem.
+const VYVOJ_VIDEO = "https://youtu.be/oPLObjVAvIU";
 
 export default function Rozcestnik() {
   const [data, setData] = useState(null);
-  const [otevrenaDlazdice, setOtevrenaDlazdice] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -40,38 +43,19 @@ export default function Rozcestnik() {
           <Tile
             key={d.klic}
             nazev={d.nazev}
-            onClick={() =>
-              TRASY[d.klic] ? navigate(TRASY[d.klic]) : setOtevrenaDlazdice(d.nazev)
-            }
+            zamceno={!d.muze_otevrit}
+            onClick={() => {
+              // hotová sekce, na kterou má uživatel právo → otevřít ji
+              if (d.muze_otevrit && TRASY[d.klic]) {
+                navigate(TRASY[d.klic]);
+                return;
+              }
+              // nedostupné (zamčené) nebo zatím ve vývoji → proklik na video
+              window.open(VYVOJ_VIDEO, "_blank", "noopener,noreferrer");
+            }}
           />
         ))}
       </div>
-
-      {otevrenaDlazdice && (
-        <div
-          onClick={() => setOtevrenaDlazdice(null)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(31,41,51,.4)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <div
-            className="fm-card"
-            onClick={(e) => e.stopPropagation()}
-            style={{ padding: 28, minWidth: 260, textAlign: "center" }}
-          >
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>{otevrenaDlazdice}</div>
-            <div style={{ color: "var(--fm-muted)", marginBottom: 16 }}>Připravujeme</div>
-            <button className="fm-btn" onClick={() => setOtevrenaDlazdice(null)}>
-              Zavřít
-            </button>
-          </div>
-        </div>
-      )}
     </Layout>
   );
 }

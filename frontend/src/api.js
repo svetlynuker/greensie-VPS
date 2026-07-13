@@ -1,4 +1,6 @@
-const API_BASE = "http://localhost:8000";
+// Prázdný basePath = relativní volání (/api/...). V produkci to Caddy
+// nasměruje na backend, ve vývoji si nastav proxy nebo plnou adresu.
+const API_BASE = "/api";
 const TOKEN_KEY = "greensie_token";
 
 export function getToken() {
@@ -90,4 +92,53 @@ export function nastavZobrazeniProjektu(id, skryty) {
     method: "PUT",
     body: JSON.stringify({ skryty }),
   });
+}
+
+// ---- Uživatelská nastavení (pohledy + vzhled, uložená v DB) ----
+export function nactiNastaveni() {
+  return zavolej("/nastaveni");
+}
+
+export function ulozNastaveni(klic, hodnota) {
+  return zavolej(`/nastaveni/${klic}`, {
+    method: "PUT",
+    body: JSON.stringify({ hodnota }),
+  });
+}
+
+// ---- Admin nastavení (správa uživatelů, skupin a práv) ----
+export function adminCiselniky() {
+  return zavolej("/admin/ciselniky");
+}
+
+export function adminUzivatele() {
+  return zavolej("/admin/uzivatele");
+}
+
+export function adminPridejUzivatele(data) {
+  return zavolej("/admin/uzivatele", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function adminUpravUzivatele(id, data) {
+  return zavolej(`/admin/uzivatele/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function adminSmazUzivatele(id) {
+  return zavolej(`/admin/uzivatele/${id}`, { method: "DELETE" });
+}
+
+export function adminSkupiny() {
+  return zavolej("/admin/skupiny");
+}
+
+export function adminPridejSkupinu(data) {
+  return zavolej("/admin/skupiny", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function adminUpravSkupinu(id, data) {
+  return zavolej(`/admin/skupiny/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function adminSmazSkupinu(id) {
+  return zavolej(`/admin/skupiny/${id}`, { method: "DELETE" });
 }

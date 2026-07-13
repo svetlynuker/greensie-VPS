@@ -1,0 +1,21 @@
+# Greensie – konfigurace webového serveru Caddy
+# Caddy si na této adrese sám vytáhne a obnovuje HTTPS certifikát (Let's Encrypt).
+
+167-235-254-188.sslip.io {
+	# Komprese odpovědí
+	encode zstd gzip
+
+	# Vše, co začíná /api/, jde na backend (FastAPI na portu 8000).
+	# handle_path odřízne "/api" z cesty, takže /api/auth/login -> /auth/login.
+	handle_path /api/* {
+		reverse_proxy localhost:8000
+	}
+
+	# Zbytek = statický frontend (React build).
+	# try_files zajistí, že odkazy uvnitř appky (React Router) fungují po obnovení stránky.
+	handle {
+		root * /var/www/greensie
+		try_files {path} /index.html
+		file_server
+	}
+}
