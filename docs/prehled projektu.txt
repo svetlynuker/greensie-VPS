@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Matice projektů – Freelo</title>
+<style>
+  /* ---- Namespace: vše prefixem fm- , žádné generické názvy tříd ---- */
+  :root{
+    --fm-brand:#2f9e44; --fm-brand-dk:#237032; --fm-brand-soft:#e6f4ea;
+    --fm-bg:#f4f6f5; --fm-card:#ffffff; --fm-head:#eef2f0;
+    --fm-text:#1f2933; --fm-muted:#6b7280; --fm-line:#dfe6e2;
+    --fm-done-bg:#e9f7ee; --fm-done:#2f9e44;
+    --fm-todo-bg:#fff7ed; --fm-todo:#e8850c;
+    --fm-sticky:#f8faf9;
+    --fm-w-handle:32px; --fm-w-proj:230px; --fm-w-term:104px; --fm-w-done:96px; --fm-w-task:172px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    background:var(--fm-bg); color:var(--fm-text); font-size:13px; line-height:1.35;
+  }
+  .fm-app{padding:14px 16px 60px}
+  .fm-topbar{
+    display:flex; flex-wrap:wrap; align-items:center; gap:8px;
+    padding:10px 12px; background:var(--fm-card); border:1px solid var(--fm-line);
+    border-radius:12px; position:sticky; top:8px; z-index:60; margin-bottom:12px;
+    box-shadow:0 1px 2px rgba(31,41,51,.05);
+  }
+  .fm-title{font-size:15px; font-weight:700; letter-spacing:-.01em; margin-right:6px; display:flex; align-items:center; gap:8px}
+  .fm-dot{width:10px;height:10px;border-radius:50%;background:var(--fm-brand)}
+  .fm-spacer{flex:1 1 auto}
+  .fm-btn{
+    border:1px solid var(--fm-line); background:var(--fm-card); color:var(--fm-text);
+    padding:6px 11px; border-radius:8px; font-size:12.5px; font-weight:600; cursor:pointer;
+    display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
+  }
+  .fm-btn:hover{border-color:var(--fm-brand); color:var(--fm-brand-dk)}
+  .fm-btn:focus-visible{outline:2px solid var(--fm-brand); outline-offset:1px}
+  .fm-btn.fm-primary{background:var(--fm-brand); border-color:var(--fm-brand); color:#fff}
+  .fm-btn.fm-primary:hover{background:var(--fm-brand-dk); color:#fff}
+  .fm-btn.fm-ghost{background:transparent}
+  .fm-group{display:inline-flex; gap:4px; align-items:center; padding-left:8px; margin-left:2px; border-left:1px solid var(--fm-line)}
+  .fm-group-label{color:var(--fm-muted); font-size:11.5px; font-weight:600}
+  .fm-status{color:var(--fm-muted); font-size:11.5px; margin-left:2px}
+  .fm-status b{color:var(--fm-text)}
+
+  /* ---- Tabulka ---- */
+  .fm-scroll{
+    background:var(--fm-card); border:1px solid var(--fm-line); border-radius:12px;
+    overflow:auto; max-height:calc(100vh - 120px);
+    box-shadow:0 1px 2px rgba(31,41,51,.05);
+  }
+  table.fm-matrix{border-collapse:separate; border-spacing:0; width:max-content; min-width:100%}
+  table.fm-matrix th, table.fm-matrix td{
+    border-right:1px solid var(--fm-line); border-bottom:1px solid var(--fm-line);
+    padding:6px 8px; vertical-align:top; text-align:left;
+  }
+  table.fm-matrix thead th{
+    position:sticky; top:0; z-index:20; background:var(--fm-head);
+    font-size:11.5px; font-weight:700; color:var(--fm-text);
+  }
+  /* sticky levé sloupce */
+  .fm-col-handle{position:sticky; left:0; z-index:15; width:var(--fm-w-handle); min-width:var(--fm-w-handle); background:var(--fm-sticky); text-align:center; color:var(--fm-muted)}
+  .fm-col-proj  {position:sticky; left:var(--fm-l-proj, var(--fm-w-handle)); z-index:15; width:var(--fm-w-proj); min-width:var(--fm-w-proj); background:var(--fm-sticky)}
+  .fm-col-term  {position:sticky; left:var(--fm-l-term, calc(var(--fm-w-handle) + var(--fm-w-proj))); z-index:15; width:var(--fm-w-term); min-width:var(--fm-w-term); background:var(--fm-sticky)}
+  .fm-col-done  {position:sticky; left:var(--fm-l-done, calc(var(--fm-w-handle) + var(--fm-w-proj) + var(--fm-w-term))); z-index:15; width:var(--fm-w-done); min-width:var(--fm-w-done); background:var(--fm-sticky); border-right:2px solid var(--fm-line)}
+  thead .fm-col-handle, thead .fm-col-proj, thead .fm-col-term, thead .fm-col-done{z-index:30; background:var(--fm-head)}
+
+  .fm-th-task{width:var(--fm-w-task); min-width:var(--fm-w-task); cursor:grab}
+  .fm-th-task.fm-dragging{opacity:.4}
+  .fm-th-task.fm-drop-target{box-shadow:inset 3px 0 0 var(--fm-brand)}
+  .fm-th-todo{color:var(--fm-brand-dk); font-weight:700; display:block}
+  .fm-th-name{color:var(--fm-text); font-weight:600; display:block; margin-top:1px}
+  .fm-th-manual-tag{display:inline-block; font-size:9.5px; color:var(--fm-brand-dk); background:var(--fm-brand-soft); border-radius:4px; padding:0 4px; margin-top:3px}
+  .fm-th-del{float:right; cursor:pointer; color:var(--fm-muted); font-weight:700; margin-left:4px}
+  .fm-th-del:hover{color:#c92a2a}
+
+  tbody tr:hover td{background:#f6faf8}
+  tbody tr:hover .fm-col-handle, tbody tr:hover .fm-col-proj,
+  tbody tr:hover .fm-col-term, tbody tr:hover .fm-col-done{background:#eef4f1}
+  tr.fm-row-dragging td{opacity:.4}
+  tr.fm-row-drop-target td{box-shadow:inset 0 3px 0 var(--fm-brand)}
+
+  .fm-handle{cursor:grab; user-select:none; font-size:14px; line-height:1}
+  .fm-proj-name{font-weight:600}
+  .fm-proj-name a{color:inherit; text-decoration:none}
+  .fm-proj-name a:hover{color:var(--fm-brand-dk); text-decoration:underline}
+  .fm-manual-tag{display:inline-block; font-size:9.5px; color:var(--fm-brand-dk); background:var(--fm-brand-soft); border-radius:4px; padding:0 4px; margin-left:5px; vertical-align:middle}
+  .fm-term{white-space:nowrap}
+  .fm-term.fm-editable{cursor:pointer; border-bottom:1px dashed var(--fm-line)}
+  .fm-term.fm-none{color:var(--fm-muted)}
+  .fm-done-badge{font-weight:700}
+  .fm-done-badge.fm-all{color:var(--fm-done)}
+  .fm-done-bar{height:4px; border-radius:3px; background:var(--fm-line); margin-top:4px; overflow:hidden}
+  .fm-done-bar > span{display:block; height:100%; background:var(--fm-brand)}
+  .fm-row-del{cursor:pointer; color:var(--fm-muted); font-size:11px; display:block; margin-top:3px}
+  .fm-row-del:hover{color:#c92a2a}
+
+  /* buňka úkolu */
+  td.fm-cell{cursor:pointer; min-height:40px}
+  td.fm-cell.fm-empty{background:#fbfcfc}
+  td.fm-cell.fm-s-done{background:var(--fm-done-bg)}
+  td.fm-cell.fm-s-todo{background:var(--fm-todo-bg)}
+  td.fm-cell.fm-overlay{outline:1px solid var(--fm-brand); outline-offset:-1px}
+  .fm-cell-status{display:inline-flex; align-items:center; gap:5px; font-weight:600; font-size:11.5px}
+  .fm-cell-status .fm-pin{width:8px;height:8px;border-radius:50%;flex:none}
+  .fm-s-done .fm-pin{background:var(--fm-done)}
+  .fm-s-todo .fm-pin{background:var(--fm-todo)}
+  .fm-cell-term{color:var(--fm-muted); font-size:11px; margin-top:2px}
+  .fm-cell-term.fm-none{font-style:italic}
+  .fm-cell-owner{font-size:11px; margin-top:1px}
+  .fm-cell-link{font-size:10.5px}
+  .fm-cell-link a{color:var(--fm-brand-dk)}
+  .fm-cell-empty-hint{color:#c7d0cb; font-size:16px; line-height:1}
+
+  /* ---- Dialog ---- */
+  .fm-overlay-bg{position:fixed; inset:0; background:rgba(31,41,51,.4); display:none; align-items:center; justify-content:center; z-index:200; padding:16px}
+  .fm-overlay-bg.fm-open{display:flex}
+  .fm-modal{background:var(--fm-card); border-radius:14px; width:min(420px,100%); padding:18px 18px 16px; box-shadow:0 20px 50px rgba(0,0,0,.25)}
+  .fm-modal h3{margin:0 0 12px; font-size:15px}
+  .fm-field{margin-bottom:11px}
+  .fm-field label{display:block; font-size:11.5px; font-weight:600; color:var(--fm-muted); margin-bottom:3px}
+  .fm-field input, .fm-field select{
+    width:100%; padding:7px 9px; border:1px solid var(--fm-line); border-radius:8px; font-size:13px; font-family:inherit; background:#fff;
+  }
+  .fm-field input:focus, .fm-field select:focus{outline:2px solid var(--fm-brand); outline-offset:-1px; border-color:var(--fm-brand)}
+  .fm-modal-actions{display:flex; justify-content:space-between; gap:8px; margin-top:14px}
+  .fm-modal-actions .fm-right{display:flex; gap:8px; margin-left:auto}
+
+  .fm-empty-state{padding:40px 20px; text-align:center; color:var(--fm-muted)}
+  .fm-empty-state b{display:block; color:var(--fm-text); font-size:15px; margin-bottom:6px}
+  .fm-error{background:#fff0f0; border:1px solid #ffc9c9; color:#a61e1e; padding:10px 12px; border-radius:8px; margin-bottom:12px; font-size:12.5px; display:none}
+  .fm-error.fm-open{display:block}
+
+  /* ---- Termínové úrovně (deadline) ---- */
+  .fm-lvl-green  {--lvl:#2f9e44; --lvlbg:#e9f7ee; --lvltx:#237032;}
+  .fm-lvl-yellow {--lvl:#e6b800; --lvlbg:#fff9db; --lvltx:#8a6410;}
+  .fm-lvl-orange {--lvl:#e8850c; --lvlbg:#fff2e2; --lvltx:#b5540a;}
+  .fm-lvl-red    {--lvl:#e03131; --lvlbg:#ffe9e7; --lvltx:#c0261f;}
+  .fm-lvl-none   {--lvl:#e8850c; --lvlbg:#fff2e2; --lvltx:#b5540a;} /* bez termínu = oranžová */
+  /* název projektu obarvený dle termínu projektu */
+  td.fm-col-proj.fm-lvl{background:var(--lvlbg); border-left:5px solid var(--lvl)}
+  tbody tr:hover td.fm-col-proj.fm-lvl{background:var(--lvlbg); filter:brightness(.985)}
+  /* proužek u projektu = barva nejhoršího nehotového úkolu (nezávisle na pozadí dle termínu projektu) */
+  td.fm-col-proj.fm-strip-green{border-left-color:#2f9e44}
+  td.fm-col-proj.fm-strip-yellow{border-left-color:#e6b800}
+  td.fm-col-proj.fm-strip-orange{border-left-color:#e8850c}
+  td.fm-col-proj.fm-strip-red{border-left-color:#e03131}
+  /* nehotová buňka obarvená dle termínu úkolu */
+  td.fm-cell.fm-todo-lvl{background:var(--lvlbg); border-left:3px solid var(--lvl)}
+  td.fm-cell.fm-todo-lvl .fm-pin{background:var(--lvl)}
+  td.fm-cell.fm-todo-lvl .fm-cell-status{color:var(--lvltx)}
+  tbody tr:hover td.fm-todo-lvl{background:var(--lvlbg); filter:brightness(.985)}
+  /* legenda */
+  .fm-legend{display:inline-flex; flex-wrap:wrap; gap:10px; align-items:center; font-size:11px; color:var(--fm-muted)}
+  .fm-legend span{display:inline-flex; align-items:center; gap:4px}
+  .fm-lc{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+  /* ---- Fázové skupiny (dvouúrovňová hlavička) ---- */
+  .fm-grp{position:sticky; top:0; z-index:20; background:var(--fm-head); height:30px; box-sizing:border-box;
+    cursor:pointer; user-select:none; white-space:nowrap; font-size:11.5px; font-weight:700; color:var(--fm-brand-dk);
+    border-left:2px solid var(--fm-line)}
+  .fm-grp:hover{background:#e4ebe7}
+  .fm-grp.fm-grp-plain{cursor:default; color:var(--fm-muted); font-weight:600}
+  .fm-grp.fm-grp-dragging{opacity:.4}
+  .fm-grp.fm-grp-drop-target{box-shadow:inset 3px 0 0 var(--fm-brand)}
+  .fm-grp-toggle{display:inline-block; width:12px; color:var(--fm-brand); margin-right:2px}
+  table.fm-matrix thead tr.fm-tasks th{top:30px}
+  .fm-th-task.fm-grp-start, td.fm-cell.fm-grp-start, .fm-th-sum{border-left:2px solid var(--fm-line)}
+  .fm-th-sum{width:132px; min-width:132px; color:var(--fm-muted); font-weight:600; font-size:11px}
+  /* sbalená souhrnná buňka */
+  td.fm-sum{cursor:pointer; width:132px; min-width:132px; border-left:2px solid var(--fm-line)}
+  td.fm-sum.fm-lvl{background:var(--lvlbg); border-left-color:var(--lvl)}
+  tbody tr:hover td.fm-sum.fm-lvl{background:var(--lvlbg); filter:brightness(.985)}
+  .fm-sum-term{font-weight:700; font-size:12px}
+  .fm-sum-count{font-size:11px; color:var(--fm-muted); margin-top:2px}
+  td.fm-sum .fm-done-bar{margin-top:4px}
+
+  /* ---- Poznámky (na dlaždicích) ---- */
+  td.fm-cell, td.fm-sum, td.fm-col-proj{position:relative}
+  .fm-note-btn{position:absolute; top:1px; right:2px; font-size:11px; line-height:1; cursor:pointer;
+    color:var(--fm-muted); opacity:0; transition:opacity .1s; padding:1px 2px; border-radius:3px}
+  td.fm-cell:hover .fm-note-btn, td.fm-sum:hover .fm-note-btn, td.fm-col-proj:hover .fm-note-btn{opacity:.45}
+  .fm-note-btn:hover{opacity:1 !important; background:rgba(0,0,0,.06)}
+  .fm-note-btn.fm-has-note{opacity:1; color:var(--fm-brand-dk)}
+  td.fm-noted{box-shadow:inset 0 0 0 1px rgba(47,158,68,.35)}
+  /* proužek poznámky fáze na první buňce rozbalené fáze */
+  td.fm-cell.fm-phase-slot{padding-top:17px}
+  td.fm-cell.fm-phase-slot .fm-note-btn{top:16px}
+  .fm-phase-note{position:absolute; top:0; left:0; right:0; height:15px; line-height:15px; padding:0 6px;
+    font-size:8.5px; cursor:pointer; color:var(--fm-muted); background:#eef2f0;
+    border-bottom:1px solid var(--fm-line); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; opacity:.6}
+  .fm-phase-note:hover{opacity:1}
+  .fm-phase-note.fm-has-note{opacity:1; background:var(--fm-brand-soft); color:var(--fm-brand-dk); font-weight:700}
+  #fm-tip{position:fixed; display:none; z-index:300; max-width:320px; background:#1f2933; color:#fff;
+    padding:8px 10px; border-radius:8px; font-size:12px; line-height:1.4; white-space:pre-wrap;
+    box-shadow:0 6px 20px rgba(0,0,0,.28); pointer-events:none}
+  .fm-modal textarea{width:100%; padding:8px 9px; border:1px solid var(--fm-line); border-radius:8px;
+    font-size:13px; font-family:inherit; resize:vertical; box-sizing:border-box}
+  .fm-modal textarea:focus{outline:2px solid var(--fm-brand); outline-offset:-1px; border-color:var(--fm-brand)}
+
+  /* ---- Skrývání: ikonky + dropdown ---- */
+  .fm-hide-icon{cursor:pointer; color:var(--fm-muted); font-weight:700; margin-left:4px}
+  .fm-hide-icon:hover{color:var(--fm-brand-dk)}
+  .fm-grp .fm-hide-icon{float:right}
+  .fm-dd{position:relative; display:inline-block}
+  .fm-dd-panel{position:absolute; top:calc(100% + 4px); right:0; display:none; z-index:120;
+    background:var(--fm-card); border:1px solid var(--fm-line); border-radius:10px; padding:8px;
+    min-width:240px; max-height:60vh; overflow:auto; box-shadow:0 12px 30px rgba(0,0,0,.18)}
+  .fm-dd.fm-open .fm-dd-panel{display:block}
+  .fm-dd-phase{margin-top:6px; font-size:12.5px}
+  .fm-dd-phase:first-child{margin-top:0}
+  .fm-dd-phase label, .fm-dd-task label{display:flex; align-items:center; gap:6px; cursor:pointer; padding:2px 3px; border-radius:5px}
+  .fm-dd-phase label:hover, .fm-dd-task label:hover{background:#f2f6f4}
+  .fm-dd-phase .fm-dd-plain{cursor:default; color:var(--fm-muted)}
+  .fm-dd-task{margin-left:18px; font-size:12px; color:var(--fm-text)}
+  .fm-dd-task input:disabled + span, .fm-dd-task label:has(input:disabled){color:var(--fm-muted)}
+
+  @media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="fm-app">
+  <div class="fm-topbar">
+    <span class="fm-title"><span class="fm-dot"></span>Matice projektů</span>
+    <button class="fm-btn fm-primary" id="fm-load">↻ Načíst z Freelo</button>
+    <button class="fm-btn" id="fm-add-project">+ Projekt</button>
+    <button class="fm-btn" id="fm-add-column">+ Sloupec</button>
+    <span class="fm-group">
+      <span class="fm-group-label">Fáze:</span>
+      <button class="fm-btn fm-ghost" id="fm-collapse-all">Sbalit vše</button>
+      <button class="fm-btn fm-ghost" id="fm-expand-all">Rozbalit vše</button>
+    </span>
+    <span class="fm-group">
+      <span class="fm-group-label">Zobrazení:</span>
+      <button class="fm-btn fm-ghost" id="fm-show-all">Zobrazit vše</button>
+      <button class="fm-btn fm-ghost" id="fm-hide-all">Skrýt vše</button>
+      <span class="fm-dd">
+        <button class="fm-btn fm-ghost" id="fm-dd-btn">Sloupce ▾</button>
+        <div class="fm-dd-panel" id="fm-dd-panel"></div>
+      </span>
+    </span>
+    <span class="fm-group">
+      <span class="fm-group-label">Seřadit řádky:</span>
+      <button class="fm-btn fm-ghost" data-sort="name">Podle názvu</button>
+      <button class="fm-btn fm-ghost" data-sort="term">Podle termínu</button>
+      <button class="fm-btn fm-ghost" data-sort="done">Podle hotových fází</button>
+    </span>
+    <span class="fm-spacer"></span>
+    <span class="fm-legend">
+      <span><i class="fm-lc" style="background:#2f9e44"></i>v termínu</span>
+      <span><i class="fm-lc" style="background:#e6b800"></i>blíží se</span>
+      <span><i class="fm-lc" style="background:#e8850c"></i>po termínu</span>
+      <span><i class="fm-lc" style="background:#e03131"></i>hodně po</span>
+    </span>
+    <span class="fm-status" id="fm-status"></span>
+    <button class="fm-btn fm-ghost" id="fm-export">Export CSV</button>
+    <button class="fm-btn fm-ghost" id="fm-reset" title="Smaže ruční úpravy a pořadí">Vymazat úpravy</button>
+  </div>
+
+  <div class="fm-error" id="fm-error"></div>
+
+  <div class="fm-scroll">
+    <table class="fm-matrix">
+      <thead><tr id="fm-grp-row"></tr><tr id="fm-head-row" class="fm-tasks"></tr></thead>
+      <tbody id="fm-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Dialog: projekt -->
+<div class="fm-overlay-bg" id="fm-dlg-project">
+  <div class="fm-modal">
+    <h3>Přidat projekt</h3>
+    <div class="fm-field"><label>Název projektu</label><input id="fm-pp-name" placeholder="např. OP-26-099 – Nový klient"></div>
+    <div class="fm-field"><label>Termín projektu (nepovinné)</label><input id="fm-pp-term" type="date"></div>
+    <div class="fm-modal-actions"><span class="fm-right">
+      <button class="fm-btn" data-close>Zrušit</button>
+      <button class="fm-btn fm-primary" id="fm-pp-save">Přidat</button>
+    </span></div>
+  </div>
+</div>
+
+<!-- Dialog: sloupec -->
+<div class="fm-overlay-bg" id="fm-dlg-column">
+  <div class="fm-modal">
+    <h3>Přidat sloupec (úkol)</h3>
+    <div class="fm-field"><label>Název to-do listu / fáze</label><input id="fm-cc-todo" placeholder="např. SOP"></div>
+    <div class="fm-field"><label>Název úkolu</label><input id="fm-cc-task" placeholder="např. podpis SOP"></div>
+    <div class="fm-modal-actions"><span class="fm-right">
+      <button class="fm-btn" data-close>Zrušit</button>
+      <button class="fm-btn fm-primary" id="fm-cc-save">Přidat</button>
+    </span></div>
+  </div>
+</div>
+
+<!-- Dialog: buňka -->
+<div class="fm-overlay-bg" id="fm-dlg-cell">
+  <div class="fm-modal">
+    <h3 id="fm-ce-title">Upravit úkol</h3>
+    <div class="fm-field"><label>Stav</label>
+      <select id="fm-ce-status">
+        <option value="">— (prázdné / neexistuje)</option>
+        <option value="todo">Nehotovo</option>
+        <option value="done">Hotovo</option>
+      </select>
+    </div>
+    <div class="fm-field"><label>Termín</label><input id="fm-ce-term" type="date"></div>
+    <div class="fm-field"><label>Odpovědná osoba</label><input id="fm-ce-owner" placeholder="jméno"></div>
+    <div class="fm-field"><label>Odkaz na úkol (nepovinné)</label><input id="fm-ce-url" placeholder="https://app.freelo.io/task/..."></div>
+    <div class="fm-modal-actions">
+      <button class="fm-btn fm-ghost" id="fm-ce-clear" title="Vrátí buňku na hodnotu z Freela">Vrátit z Freela</button>
+      <span class="fm-right">
+        <button class="fm-btn" data-close>Zrušit</button>
+        <button class="fm-btn fm-primary" id="fm-ce-save">Uložit</button>
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- Dialog: termín projektu -->
+<div class="fm-overlay-bg" id="fm-dlg-term">
+  <div class="fm-modal">
+    <h3>Termín projektu</h3>
+    <div class="fm-field"><label>Termín (prázdné = odvodit z úkolů)</label><input id="fm-pt-term" type="date"></div>
+    <div class="fm-modal-actions"><span class="fm-right">
+      <button class="fm-btn" data-close>Zrušit</button>
+      <button class="fm-btn fm-primary" id="fm-pt-save">Uložit</button>
+    </span></div>
+  </div>
+</div>
+
+<!-- Dialog: poznámka -->
+<div class="fm-overlay-bg" id="fm-dlg-note">
+  <div class="fm-modal">
+    <h3 id="fm-ne-title">Poznámka</h3>
+    <div class="fm-field"><label>Text poznámky</label><textarea id="fm-ne-text" rows="8" placeholder="Napiš poznámku…"></textarea></div>
+    <div class="fm-modal-actions">
+      <button class="fm-btn fm-ghost" id="fm-ne-clear" title="Smaže poznámku">Smazat poznámku</button>
+      <span class="fm-right">
+        <button class="fm-btn" data-close>Zrušit</button>
+        <button class="fm-btn fm-primary" id="fm-ne-save">Uložit</button>
+      </span>
+    </div>
+  </div>
+</div>
+
+<div id="fm-tip"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ============================ Konfigurace ============================ */
+var SEP     = /\s*›\s*/;
+var SEP_ALT = /\s*[»>]\s*/;
+
+/* ============================ Stav ============================ */
+var api = { projects:new Map(), columns:new Map(), cells:{} };
+var overlay = ensureShape({});
+var render = { projects:[], columns:[], groups:[] };
+var collapsed = {};
+var savingCount = 0;
+
+/* ============================ Most na server ============================ */
+function gcall(fn){
+  var args=[].slice.call(arguments,1);
+  return new Promise(function(res,rej){
+    var r=google.script.run.withSuccessHandler(res).withFailureHandler(rej);
+    r[fn].apply(r,args);
+  });
+}
+function errMsg(e){ return (e && e.message) ? e.message : (""+e); }
+function setSaving(delta){
+  savingCount=Math.max(0,savingCount+delta);
+  var el=document.getElementById("fm-saving"); if(el) el.style.display=savingCount>0?"inline":"none";
+}
+function ensureShape(o){
+  o=o||{};
+  o.projectOrder=o.projectOrder||[]; o.columnOrder=o.columnOrder||[];
+  o.manualProjects=o.manualProjects||[]; o.manualColumns=o.manualColumns||[];
+  o.manualCells=o.manualCells||{}; o.projectDeadlines=o.projectDeadlines||{};
+  o.deletedProjects=o.deletedProjects||[]; o.deletedColumns=o.deletedColumns||[];
+  o.notes=o.notes||{}; o.hiddenPhases=o.hiddenPhases||[];
+  return o;
+}
+function rm(a,v){ var i=a.indexOf(v); if(i>=0) a.splice(i,1); }
+
+function applyOp(o, op, d){
+  ensureShape(o);
+  if(op==="addProject"){
+    var i=-1; for(var k=0;k<o.manualProjects.length;k++) if(o.manualProjects[k].name===d.name) i=k;
+    if(i>=0) o.manualProjects[i]={name:d.name,deadline:d.deadline}; else o.manualProjects.push({name:d.name,deadline:d.deadline});
+    rm(o.deletedProjects,d.name);
+  } else if(op==="addColumn"){
+    var ex=false; for(var j=0;j<o.manualColumns.length;j++) if(o.manualColumns[j].label===d.label) ex=true;
+    if(!ex) o.manualColumns.push({label:d.label,todo:d.todo,task:d.task});
+    rm(o.deletedColumns,d.label);
+  } else if(op==="setCell"){ o.manualCells[d.key]=d.value; }
+  else if(op==="clearCell"){ delete o.manualCells[d.key]; }
+  else if(op==="setProjectDeadline"){ if(d.value) o.projectDeadlines[d.name]=d.value; else delete o.projectDeadlines[d.name]; }
+  else if(op==="deleteProject"){ if(o.deletedProjects.indexOf(d.name)<0) o.deletedProjects.push(d.name); }
+  else if(op==="deleteColumn"){ if(o.deletedColumns.indexOf(d.label)<0) o.deletedColumns.push(d.label); }
+  else if(op==="showColumn"){ rm(o.deletedColumns,d.label); }
+  else if(op==="hidePhase"){ if(o.hiddenPhases.indexOf(d.todo)<0) o.hiddenPhases.push(d.todo); }
+  else if(op==="showPhase"){ rm(o.hiddenPhases,d.todo); }
+  else if(op==="showAllCols"){ o.deletedColumns=[]; o.hiddenPhases=[]; }
+  else if(op==="hideAllCols"){ o.hiddenPhases=(d.phases||[]).slice(); o.deletedColumns=(d.labels||[]).slice(); }
+  else if(op==="setNote"){ if(d.text) o.notes[d.key]=d.text; else delete o.notes[d.key]; }
+  else if(op==="setOrder"){ if(d.projectOrder) o.projectOrder=d.projectOrder; if(d.columnOrder) o.columnOrder=d.columnOrder; }
+  else if(op==="reset"){ o.projectOrder=[];o.columnOrder=[];o.manualProjects=[];o.manualColumns=[];o.manualCells={};o.projectDeadlines={};o.deletedProjects=[];o.deletedColumns=[];o.notes={};o.hiddenPhases=[]; }
+  return o;
+}
+function pushPatch(op, data){
+  applyOp(overlay, op, data); draw();
+  setSaving(1);
+  return gcall("applyPatch", JSON.stringify({op:op,data:data}))
+    .then(function(srv){ overlay=ensureShape(srv); draw(); })
+    .catch(function(e){ showError("Uložení se nepovedlo: "+errMsg(e)+" – zkus stránku obnovit."); })
+    .then(function(){ setSaving(-1); });
+}
+
+/* ============================ Parsování dat z Freela ============================ */
+function isDone(s){ return String(s||"").trim().toLowerCase().indexOf("hotov")===0; }
+function normalizePayload(payload){
+  var arr = payload;
+  if(arr && !Array.isArray(arr) && typeof arr==="object"){
+    var keys=["data","values","rows","result","tasks","items","records"];
+    for(var i=0;i<keys.length;i++){ if(Array.isArray(arr[keys[i]])){ arr=arr[keys[i]]; break; } }
+  }
+  if(!Array.isArray(arr) || arr.length===0) return [];
+  if(!Array.isArray(arr[0]) && typeof arr[0]==="object"){
+    return arr.map(function(o){ return {
+      projektFull:o.Projekt||o.projekt||"", ukol:o["Úkol"]||o.Ukol||o.ukol||"",
+      odpovedny:o["Odpovědný"]||o.Odpovedny||o.odpovedny||"", stav:o.Stav||o.stav||"",
+      termin:o["Termín"]||o.Termin||o.termin||"", odkaz:o.Odkaz||o.odkaz||"",
+      projektOdkaz:o.ProjektOdkaz||o.projektOdkaz||""
+    };});
+  }
+  var rows=arr;
+  if(Array.isArray(arr[0]) && String(arr[0][0]).trim().toLowerCase()==="projekt") rows=arr.slice(1);
+  return rows.map(function(r){ return {
+    projektFull:r[0]||"", ukol:r[2]||"", odpovedny:r[3]||"", stav:r[4]||"",
+    termin:r[5]||"", odkaz:r[6]||"", projektOdkaz:r[7]||""
+  };});
+}
+function splitProjekt(full){
+  var s=String(full);
+  var parts = SEP.test(s) ? s.split(SEP) : s.split(SEP_ALT);
+  return {proj:(parts.shift()||"").trim(), todo:parts.join(" › ").trim()};
+}
+function buildApi(rows){
+  var projects=new Map(), columns=new Map(), cells={}, seen={};
+  rows.forEach(function(r){
+    if(r.odkaz){ if(seen[r.odkaz]) return; seen[r.odkaz]=1; }
+    var sp=splitProjekt(r.projektFull);
+    if(!sp.proj) return;
+    var label = sp.todo ? (sp.todo+" - "+r.ukol) : String(r.ukol);
+    if(!projects.has(sp.proj)) projects.set(sp.proj,{name:sp.proj,url:r.projektOdkaz||"",todos:new Map(),deadlines:[]});
+    var p=projects.get(sp.proj);
+    if(!p.url && r.projektOdkaz) p.url=r.projektOdkaz;
+    if(sp.todo){
+      if(!p.todos.has(sp.todo)) p.todos.set(sp.todo,{total:0,done:0});
+      var t=p.todos.get(sp.todo); t.total++; if(isDone(r.stav)) t.done++;
+    }
+    if(r.termin) p.deadlines.push(r.termin);
+    if(!columns.has(label)) columns.set(label,{label:label,todo:sp.todo,task:r.ukol});
+    cells[sp.proj+"||"+label] = {status:isDone(r.stav)?"done":"todo", deadline:r.termin||"", owner:r.odpovedny||"", url:r.odkaz||""};
+  });
+  return {projects:projects,columns:columns,cells:cells};
+}
+
+/* ============================ Sloučení + řazení + skupiny ============================ */
+function computeRender(){
+  var delP={}; overlay.deletedProjects.forEach(function(n){delP[n]=1;});
+  var delC={}; overlay.deletedColumns.forEach(function(l){delC[l]=1;});
+  var hidP={}; overlay.hiddenPhases.forEach(function(t){hidP[t]=1;});
+
+  var projNames=[];
+  api.projects.forEach(function(_,n){ if(!delP[n]) projNames.push(n); });
+  overlay.manualProjects.forEach(function(mp){ if(!delP[mp.name] && projNames.indexOf(mp.name)<0) projNames.push(mp.name); });
+  projNames = orderBy(projNames, overlay.projectOrder);
+
+  var colLabels=[];
+  api.columns.forEach(function(c,l){ if(delC[l]) return; if(c.todo && hidP[c.todo]) return; colLabels.push(l); });
+  overlay.manualColumns.forEach(function(mc){ if(delC[mc.label]) return; if(mc.todo && hidP[mc.todo]) return; if(colLabels.indexOf(mc.label)<0) colLabels.push(mc.label); });
+  colLabels = orderBy(colLabels, overlay.columnOrder);
+
+  render.projects = projNames.map(function(n){
+    var ap=api.projects.get(n);
+    return {name:n, manual:!ap, url:ap?ap.url:"", donePhases:0, totalPhases:0, stripLevel:"green", deadline:projectDeadline(n,ap)};
+  });
+
+  render.columns = colLabels.map(function(l){
+    var c = api.columns.get(l) || findManualCol(l) || {label:l,todo:"",task:l};
+    return {label:l, todo:c.todo, task:c.task, manual:!api.columns.has(l)};
+  });
+
+  var gmap={}, gorder=[];
+  render.columns.forEach(function(col){
+    var key=col.todo||"";
+    if(!gmap[key]){ gmap[key]={todo:key, columns:[]}; gorder.push(key); }
+    gmap[key].columns.push(col);
+  });
+  render.groups = gorder.map(function(k){ return {todo:k, collapsed:(k!=="" && !!collapsed[k]), columns:gmap[k].columns}; });
+
+  // Hotové fáze i pro ruční fáze/úkoly + nejhorší úroveň úkolu (proužek u projektu).
+  // Počítá se z reálných buněk (respektuje ruční přepisy) napříč viditelnými sloupci.
+  var sev={green:1, yellow:2, orange:3, none:3, red:4};
+  render.projects.forEach(function(p){
+    var total=0, done=0, worst=0;
+    render.groups.forEach(function(g){
+      var t=0, d=0;
+      g.columns.forEach(function(col){
+        var cf=cellFor(p.name, col.label);
+        if(cf.data && cf.data.status){
+          t++;
+          if(cf.data.status==="done") d++;
+          else { var lvl=cf.data.deadline?deadlineLevel(cf.data.deadline):"none"; var r=sev[lvl]||3; if(r>worst) worst=r; }
+        }
+      });
+      if(t>0){ total++; if(d===t) done++; }
+    });
+    p.totalPhases=total; p.donePhases=done;
+    p.stripLevel = worst>=4?"red":(worst===3?"orange":(worst===2?"yellow":"green"));
+  });
+}
+function findManualCol(l){ for(var i=0;i<overlay.manualColumns.length;i++) if(overlay.manualColumns[i].label===l) return overlay.manualColumns[i]; return null; }
+function orderBy(items, order){
+  if(!order || !order.length) return items.slice();
+  var pos={}; order.forEach(function(k,i){pos[k]=i;});
+  var known=items.filter(function(k){return pos[k]!=null;}).sort(function(a,b){return pos[a]-pos[b];});
+  var unknown=items.filter(function(k){return pos[k]==null;});
+  return known.concat(unknown);
+}
+function projectDeadline(name, ap){
+  if(overlay.projectDeadlines[name]) return {value:overlay.projectDeadlines[name], manual:true};
+  var ds = ap ? ap.deadlines.slice() : [];
+  var mp = overlay.manualProjects.filter(function(m){return m.name===name;})[0];
+  if(mp && mp.deadline) ds.push(mp.deadline);
+  if(!ds.length) return {value:"", manual:false};
+  ds.sort(); return {value:ds[ds.length-1], manual:false};
+}
+function cellFor(proj,label){
+  var k=proj+"||"+label;
+  if(overlay.manualCells[k]) return {data:overlay.manualCells[k], overlay:true};
+  if(api.cells[k]) return {data:api.cells[k], overlay:false};
+  return {data:null, overlay:false};
+}
+function groupSummary(projName, group){
+  var total=0, done=0, deadlines=[], any=false;
+  group.columns.forEach(function(col){
+    var cf=cellFor(projName, col.label);
+    if(cf.data && cf.data.status){ any=true; total++; if(cf.data.status==="done") done++; else if(cf.data.deadline) deadlines.push(cf.data.deadline); }
+  });
+  if(!any) return null;
+  var allDone = total>0 && done===total;
+  var term="", level="green";
+  if(!allDone){ deadlines.sort(); term = deadlines.length? deadlines[deadlines.length-1] : ""; level = term? deadlineLevel(term) : "none"; }
+  return {total:total, done:done, allDone:allDone, term:term, level:level};
+}
+
+/* ============================ Poznámky: klíče, bublina, dekorace ============================ */
+function noteKeyCell(proj,label){ return proj+"||"+label; }
+function noteKeyPhase(proj,todo){ return proj+"||§"+todo; }
+function noteKeyProject(name){ return name+"||¶"; }
+function attachTip(el, text){ if(!text) return; el.dataset.note=text; el.addEventListener("mouseenter",tipEnter); el.addEventListener("mouseleave",hideTip); }
+function decorateNote(td, key){
+  var note = overlay.notes[key] || "";
+  var btn=document.createElement("span");
+  btn.className="fm-note-btn"+(note?" fm-has-note":"");
+  btn.textContent="✎"; btn.dataset.notekey=key;
+  btn.title = note ? "Poznámka (klik = upravit)" : "Přidat poznámku";
+  td.appendChild(btn);
+  if(note){ td.classList.add("fm-noted"); attachTip(td, note); }
+}
+/* Proužek poznámky fáze na první buňce rozbalené fáze (stejná poznámka jako u sbaleného sloupce) */
+function decoratePhaseNote(td, key, todo){
+  var note = overlay.notes[key] || "";
+  td.classList.add("fm-phase-slot");
+  var b=document.createElement("span");
+  b.className="fm-phase-note"+(note?" fm-has-note":"");
+  b.dataset.notekey=key;
+  b.textContent = note ? ("✎ pozn. fáze: "+note) : "+ poznámka k fázi";
+  b.title = (note?"Poznámka k fázi „"+todo+"“ (klik = upravit)":"Přidat poznámku k fázi „"+todo+"“");
+  attachTip(b, note);
+  td.appendChild(b);
+}
+function tipEnter(e){ showTip(e.currentTarget); }
+function showTip(el){
+  var t=el.dataset.note; if(!t) return;
+  var tip=document.getElementById("fm-tip");
+  tip.textContent=t; tip.style.display="block";
+  var r=el.getBoundingClientRect();
+  var tw=tip.offsetWidth, th=tip.offsetHeight;
+  var left=Math.max(8, Math.min(r.left, window.innerWidth-tw-8));
+  var top=r.bottom+6; if(top+th>window.innerHeight-8) top=Math.max(8, r.top-th-6);
+  tip.style.left=left+"px"; tip.style.top=top+"px";
+}
+function hideTip(){ var t=document.getElementById("fm-tip"); if(t) t.style.display="none"; }
+
+/* ============================ Vykreslení ============================ */
+function draw(){
+  hideTip();
+  computeRender();
+  var grpRow=document.getElementById("fm-grp-row");
+  var taskRow=document.getElementById("fm-head-row");
+  var body=document.getElementById("fm-body");
+  grpRow.innerHTML=""; taskRow.innerHTML=""; body.innerHTML="";
+
+  grpRow.appendChild(thRs("fm-col-handle","",2));
+  grpRow.appendChild(thRs("fm-col-proj","Projekt",2));
+  grpRow.appendChild(thRs("fm-col-term","Termín",2));
+  grpRow.appendChild(thRs("fm-col-done","Hotové fáze",2));
+  render.groups.forEach(function(g){
+    var plain=(g.todo==="");
+    var gth=document.createElement("th");
+    gth.className="fm-grp"+(plain?" fm-grp-plain":"");
+    gth.colSpan = g.collapsed?1:g.columns.length;
+    if(plain){ gth.textContent="—"; }
+    else{
+      gth.dataset.todo=g.todo; gth.setAttribute("draggable","true"); gth.title="Klik: sbalit/rozbalit · táhni: přesunout fázi";
+      gth.innerHTML='<span class="fm-hide-icon" data-hidephase="'+esc(g.todo)+'" title="Skrýt fázi (vrátíš přes Sloupce ▾)">×</span>'+
+                    '<span class="fm-grp-toggle">'+(g.collapsed?"▸":"▾")+'</span>'+esc(g.todo);
+    }
+    grpRow.appendChild(gth);
+
+    if(g.collapsed){
+      var sth=document.createElement("th"); sth.className="fm-th-sum"; sth.textContent="termín · hotovo"; taskRow.appendChild(sth);
+    } else {
+      g.columns.forEach(function(c,ci){
+        var el=document.createElement("th");
+        el.className="fm-th-task"+(ci===0?" fm-grp-start":""); el.setAttribute("draggable","true"); el.dataset.label=c.label;
+        var hide='<span class="fm-th-del fm-hide-icon" title="Skrýt sloupec (vrátíš přes Sloupce ▾)" data-delcol="'+esc(c.label)+'">×</span>';
+        el.innerHTML=hide+'<span class="fm-th-name">'+esc(c.task)+'</span>'+(c.manual?'<span class="fm-th-manual-tag">ruční</span>':'');
+        taskRow.appendChild(el);
+      });
+    }
+  });
+
+  if(!render.projects.length){
+    var tr0=document.createElement("tr");
+    var td0=document.createElement("td"); td0.colSpan=4+countCols();
+    td0.innerHTML='<div class="fm-empty-state"><b>Zatím žádná data</b>Klikni na <em>Načíst z Freelo</em> nebo přidej projekt ručně.</div>';
+    tr0.appendChild(td0); body.appendChild(tr0); setStatus(); return;
+  }
+
+  render.projects.forEach(function(p){
+    var tr=document.createElement("tr"); tr.dataset.proj=p.name;
+
+    var h=document.createElement("td"); h.className="fm-col-handle";
+    h.innerHTML='<span class="fm-handle" draggable="true" title="Táhni pro změnu pořadí">⋮⋮</span>';
+    tr.appendChild(h);
+
+    var pj=document.createElement("td");
+    pj.className="fm-col-proj fm-lvl fm-lvl-"+(p.deadline.value?deadlineLevel(p.deadline.value):"none")+" fm-strip-"+p.stripLevel;
+    var nameHtml = p.url ? '<a href="'+esc(p.url)+'" target="_blank" rel="noopener">'+esc(p.name)+'</a>' : esc(p.name);
+    pj.innerHTML='<span class="fm-proj-name">'+nameHtml+'</span>'+(p.manual?'<span class="fm-manual-tag">ruční</span>':'')+
+                 '<span class="fm-row-del" data-delproj="'+esc(p.name)+'">× odebrat řádek</span>';
+    decorateNote(pj, noteKeyProject(p.name));
+    tr.appendChild(pj);
+
+    var tm=document.createElement("td"); tm.className="fm-col-term";
+    var termTxt = p.deadline.value ? fmtDate(p.deadline.value) : "bez termínu";
+    tm.innerHTML='<span class="fm-term fm-editable'+(p.deadline.value?'':' fm-none')+'" data-editterm="'+esc(p.name)+'" title="Klikni pro úpravu">'+esc(termTxt)+(p.deadline.manual?' ✎':'')+'</span>';
+    tr.appendChild(tm);
+
+    var dn=document.createElement("td"); dn.className="fm-col-done";
+    var all = p.totalPhases>0 && p.donePhases===p.totalPhases;
+    var pct = p.totalPhases>0 ? Math.round(100*p.donePhases/p.totalPhases) : 0;
+    dn.innerHTML='<span class="fm-done-badge'+(all?' fm-all':'')+'">'+p.donePhases+' / '+p.totalPhases+'</span>'+
+                 '<span class="fm-done-bar"><span style="width:'+pct+'%"></span></span>';
+    tr.appendChild(dn);
+
+    render.groups.forEach(function(g){
+      if(g.collapsed){
+        var s=groupSummary(p.name,g);
+        var td=document.createElement("td"); td.className="fm-sum fm-grp-start"; td.dataset.todo=g.todo;
+        if(!s){ td.className+=" fm-empty"; td.innerHTML='<span class="fm-cell-empty-hint">·</span>'; }
+        else{
+          td.className+=" fm-lvl fm-lvl-"+(s.allDone?"green":s.level);
+          var t = s.allDone ? "✓ hotovo" : (s.term? fmtDate(s.term) : "bez termínu");
+          var pc = s.total? Math.round(100*s.done/s.total):0;
+          td.innerHTML='<div class="fm-sum-term">'+esc(t)+'</div><div class="fm-sum-count">'+s.done+' / '+s.total+' úkolů</div><span class="fm-done-bar"><span style="width:'+pc+'%"></span></span>';
+        }
+        decorateNote(td, noteKeyPhase(p.name, g.todo));
+        tr.appendChild(td);
+      } else {
+        g.columns.forEach(function(c,ci){
+          var cf=cellFor(p.name,c.label);
+          var td=document.createElement("td");
+          td.className="fm-cell"+(ci===0?" fm-grp-start":""); td.dataset.proj=p.name; td.dataset.label=c.label;
+          if(!cf.data || !cf.data.status){ td.className+=" fm-empty"; td.innerHTML='<span class="fm-cell-empty-hint">·</span>'; }
+          else{
+            var termHtml = cf.data.deadline ? '<div class="fm-cell-term">'+esc(fmtDate(cf.data.deadline))+'</div>' : '<div class="fm-cell-term fm-none">bez termínu</div>';
+            var ownHtml = cf.data.owner ? '<div class="fm-cell-owner">'+esc(cf.data.owner)+'</div>' : '';
+            var linkHtml = cf.data.url ? '<div class="fm-cell-link"><a href="'+esc(cf.data.url)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">otevřít ↗</a></div>' : '';
+            if(cf.data.status==="done"){
+              td.className+=" fm-s-done"+(cf.overlay?" fm-overlay":"");
+              td.innerHTML='<span class="fm-cell-status"><span class="fm-pin"></span>Hotovo</span>'+termHtml+ownHtml+linkHtml;
+            }else{
+              td.className+=" fm-todo-lvl fm-lvl-"+(cf.data.deadline?deadlineLevel(cf.data.deadline):"none")+(cf.overlay?" fm-overlay":"");
+              td.innerHTML='<span class="fm-cell-status"><span class="fm-pin"></span>Nehotovo</span>'+termHtml+ownHtml+linkHtml;
+            }
+          }
+          decorateNote(td, noteKeyCell(p.name, c.label));
+          if(ci===0 && g.todo!=="") decoratePhaseNote(td, noteKeyPhase(p.name, g.todo), g.todo);
+          tr.appendChild(td);
+        });
+      }
+    });
+    body.appendChild(tr);
+  });
+
+  wireRowDrag(); wireColDrag(); wireGroupDrag();
+  syncStickyOffsets();
+  setStatus();
+}
+/* Dopočítá left offsety ukotvených sloupců z reálných šířek (pevné hodnoty v CSS nesedí kvůli dlouhým názvům). */
+function syncStickyOffsets(){
+  var gr=document.getElementById("fm-grp-row"), tbl=document.querySelector("table.fm-matrix");
+  if(!gr || !tbl) return;
+  var hCell=gr.querySelector("th.fm-col-handle"), pCell=gr.querySelector("th.fm-col-proj"), tCell=gr.querySelector("th.fm-col-term");
+  if(!hCell || !pCell || !tCell) return;
+  var hw=hCell.offsetWidth, pw=pCell.offsetWidth, tw=tCell.offsetWidth;
+  tbl.style.setProperty("--fm-l-proj", hw+"px");
+  tbl.style.setProperty("--fm-l-term", (hw+pw)+"px");
+  tbl.style.setProperty("--fm-l-done", (hw+pw+tw)+"px");
+}
+function th(cls,txt){ var e=document.createElement("th"); e.className=cls; e.textContent=txt; return e; }
+function thRs(cls,txt,rs){ var e=document.createElement("th"); e.className=cls; e.textContent=txt; if(rs) e.rowSpan=rs; return e; }
+function countCols(){ var n=0; render.groups.forEach(function(g){ n += g.collapsed?1:g.columns.length; }); return n; }
+function setStatus(){
+  var np=render.projects.length, nc=render.columns.length;
+  var nf=render.groups.filter(function(g){return g.todo!=="";}).length;
+  var manP=render.projects.filter(function(p){return p.manual;}).length;
+  var manC=render.columns.filter(function(c){return c.manual;}).length;
+  var hid = overlay.hiddenPhases.length + overlay.deletedColumns.length;
+  document.getElementById("fm-status").innerHTML='<b>'+np+'</b> projektů · <b>'+nf+'</b> fází · <b>'+nc+'</b> úkolů'+
+    ((manP||manC)?' · '+(manP+manC)+' ručních':'')+(hid?' · '+hid+' skrytých':'');
+}
+
+/* ============================ Formátování + termíny ============================ */
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(m){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m];}); }
+function fmtDate(s){ var m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(s)); return m?(m[3]+"."+m[2]+"."+m[1]):String(s); }
+function parseDate(s){ var m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(s)); return m?new Date(+m[1],+m[2]-1,+m[3]):null; }
+function deadlineLevel(dateStr){
+  var d=parseDate(dateStr); if(!d) return "none";
+  var today=new Date(); today.setHours(0,0,0,0);
+  var diff=Math.round((d-today)/86400000);
+  if(diff>3) return "green"; if(diff>=0) return "yellow"; if(diff>=-3) return "orange"; return "red";
+}
+
+/* ============================ Drag & drop řádků ============================ */
+var dragRow=null;
+function wireRowDrag(){
+  document.querySelectorAll(".fm-handle").forEach(function(h){
+    h.addEventListener("dragstart",function(e){ dragRow=h.closest("tr"); dragRow.classList.add("fm-row-dragging"); e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain",dragRow.dataset.proj); });
+    h.addEventListener("dragend",function(){ if(dragRow) dragRow.classList.remove("fm-row-dragging"); clearRowTargets(); dragRow=null; });
+  });
+  document.querySelectorAll("#fm-body tr").forEach(function(tr){
+    tr.addEventListener("dragover",function(e){ if(!dragRow) return; e.preventDefault(); clearRowTargets(); tr.classList.add("fm-row-drop-target"); });
+    tr.addEventListener("drop",function(e){ if(!dragRow) return; e.preventDefault(); reorderRows(dragRow.dataset.proj, tr.dataset.proj); });
+  });
+}
+function clearRowTargets(){ document.querySelectorAll(".fm-row-drop-target").forEach(function(el){el.classList.remove("fm-row-drop-target");}); }
+function reorderRows(fromName, toName){
+  if(fromName===toName) return;
+  var arr=render.projects.map(function(p){return p.name;});
+  var from=arr.indexOf(fromName), to=arr.indexOf(toName);
+  arr.splice(to,0,arr.splice(from,1)[0]);
+  pushPatch("setOrder",{projectOrder:arr});
+}
+
+/* ============================ Drag & drop úkolů ============================ */
+var dragCol=null;
+function wireColDrag(){
+  document.querySelectorAll(".fm-th-task").forEach(function(th){
+    th.addEventListener("dragstart",function(e){ e.stopPropagation(); dragCol=th.dataset.label; th.classList.add("fm-dragging"); e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain",dragCol); });
+    th.addEventListener("dragend",function(){ th.classList.remove("fm-dragging"); clearColTargets(); dragCol=null; });
+    th.addEventListener("dragover",function(e){ if(dragCol==null) return; e.preventDefault(); e.stopPropagation(); clearColTargets(); th.classList.add("fm-drop-target"); });
+    th.addEventListener("drop",function(e){ if(dragCol==null) return; e.preventDefault(); e.stopPropagation(); reorderCols(dragCol, th.dataset.label); });
+  });
+}
+function clearColTargets(){ document.querySelectorAll(".fm-drop-target").forEach(function(el){el.classList.remove("fm-drop-target");}); }
+function reorderCols(fromLabel, toLabel){
+  if(fromLabel===toLabel) return;
+  var arr=render.columns.map(function(c){return c.label;});
+  var from=arr.indexOf(fromLabel), to=arr.indexOf(toLabel);
+  arr.splice(to,0,arr.splice(from,1)[0]);
+  pushPatch("setOrder",{columnOrder:arr});
+}
+
+/* ============================ Drag & drop fází ============================ */
+var dragGrp=null;
+function wireGroupDrag(){
+  document.querySelectorAll(".fm-grp").forEach(function(th){
+    if(th.classList.contains("fm-grp-plain")) return;
+    th.addEventListener("dragstart",function(e){ dragGrp=th.dataset.todo; th.classList.add("fm-grp-dragging"); e.dataTransfer.effectAllowed="move"; e.dataTransfer.setData("text/plain",dragGrp); });
+    th.addEventListener("dragend",function(){ th.classList.remove("fm-grp-dragging"); clearGrpTargets(); dragGrp=null; });
+    th.addEventListener("dragover",function(e){ if(dragGrp==null) return; e.preventDefault(); clearGrpTargets(); th.classList.add("fm-grp-drop-target"); });
+    th.addEventListener("drop",function(e){ if(dragGrp==null) return; e.preventDefault(); reorderGroups(dragGrp, th.dataset.todo); });
+  });
+}
+function clearGrpTargets(){ document.querySelectorAll(".fm-grp-drop-target").forEach(function(el){el.classList.remove("fm-grp-drop-target");}); }
+function reorderGroups(fromTodo, toTodo){
+  if(fromTodo===toTodo) return;
+  var fromG=null, toG=null;
+  render.groups.forEach(function(g){ if(g.todo===fromTodo) fromG=g; if(g.todo===toTodo) toG=g; });
+  if(!fromG || !toG) return;
+  var fromLabels=fromG.columns.map(function(c){return c.label;});
+  var flat=[]; render.groups.forEach(function(g){ g.columns.forEach(function(c){ flat.push(c.label); }); });
+  flat=flat.filter(function(l){ return fromLabels.indexOf(l)<0; });
+  var idx=flat.indexOf(toG.columns[0].label); if(idx<0) idx=flat.length;
+  flat.splice.apply(flat, [idx,0].concat(fromLabels));
+  pushPatch("setOrder",{columnOrder:flat});
+}
+
+/* ============================ Sbalování fází ============================ */
+function allTodos(){
+  var s={}; api.columns.forEach(function(c){ if(c.todo) s[c.todo]=1; });
+  overlay.manualColumns.forEach(function(c){ if(c.todo) s[c.todo]=1; });
+  return Object.keys(s);
+}
+function noPhaseLabels(){
+  var out=[]; api.columns.forEach(function(c,l){ if(!c.todo) out.push(l); });
+  overlay.manualColumns.forEach(function(c){ if(!c.todo && out.indexOf(c.label)<0) out.push(c.label); });
+  return out;
+}
+function collapseToggle(todo){ if(!todo) return; collapsed[todo]=!collapsed[todo]; draw(); }
+function collapseAll(){ allTodos().forEach(function(t){ collapsed[t]=true; }); draw(); }
+function expandAll(){ collapsed={}; draw(); }
+
+/* ============================ Skrývání: dropdown checklist ============================ */
+function buildChecklist(){
+  var panel=document.getElementById("fm-dd-panel"); panel.innerHTML="";
+  var allLabels=[];
+  api.columns.forEach(function(_,l){ allLabels.push(l); });
+  overlay.manualColumns.forEach(function(mc){ if(allLabels.indexOf(mc.label)<0) allLabels.push(mc.label); });
+  allLabels=orderBy(allLabels, overlay.columnOrder);
+  var pmap={}, phases=[];
+  allLabels.forEach(function(l){
+    var c=api.columns.get(l)||findManualCol(l)||{label:l,todo:"",task:l};
+    var key=c.todo||"";
+    if(!pmap[key]){ pmap[key]={cols:[]}; phases.push(key); }
+    pmap[key].cols.push(c);
+  });
+  if(!phases.length){ panel.innerHTML='<div class="fm-dd-phase"><span class="fm-dd-plain">Žádné sloupce.</span></div>'; return; }
+  var hidP={}; overlay.hiddenPhases.forEach(function(t){hidP[t]=1;});
+  var hidC={}; overlay.deletedColumns.forEach(function(l){hidC[l]=1;});
+  phases.forEach(function(key){
+    var g=pmap[key];
+    var row=document.createElement("div"); row.className="fm-dd-phase";
+    var pVis = key==="" ? true : !hidP[key];
+    if(key!==""){
+      row.innerHTML='<label><input type="checkbox" data-phase="'+esc(key)+'"'+(pVis?" checked":"")+'> <b>'+esc(key)+'</b></label>';
+    } else {
+      row.innerHTML='<span class="fm-dd-plain"><b>(bez fáze)</b></span>';
+    }
+    panel.appendChild(row);
+    g.cols.forEach(function(c){
+      var vis = pVis && !hidC[c.label];
+      var t=document.createElement("div"); t.className="fm-dd-task";
+      t.innerHTML='<label><input type="checkbox" data-col="'+esc(c.label)+'"'+(vis?" checked":"")+(key!==""&&!pVis?" disabled":"")+'> <span>'+esc(c.task)+'</span></label>';
+      panel.appendChild(t);
+    });
+  });
+}
+
+/* ============================ Rychlé řazení řádků ============================ */
+function sortRows(key){
+  var arr=render.projects.slice();
+  if(key==="name") arr.sort(function(a,b){return a.name.localeCompare(b.name,"cs");});
+  if(key==="term") arr.sort(function(a,b){ return (a.deadline.value||"9999-99-99").localeCompare(b.deadline.value||"9999-99-99"); });
+  if(key==="done") arr.sort(function(a,b){
+    var ap=a.totalPhases?a.donePhases/a.totalPhases:-1, bp=b.totalPhases?b.donePhases/b.totalPhases:-1; return bp-ap;
+  });
+  pushPatch("setOrder",{projectOrder:arr.map(function(p){return p.name;})});
+}
+
+/* ============================ Dialogy ============================ */
+function openDlg(id){ document.getElementById(id).classList.add("fm-open"); }
+function closeDlg(id){ document.getElementById(id).classList.remove("fm-open"); }
+document.querySelectorAll("[data-close]").forEach(function(b){ b.addEventListener("click",function(){ b.closest(".fm-overlay-bg").classList.remove("fm-open"); }); });
+document.querySelectorAll(".fm-overlay-bg").forEach(function(bg){ bg.addEventListener("click",function(e){ if(e.target===bg) bg.classList.remove("fm-open"); }); });
+
+document.getElementById("fm-add-project").addEventListener("click",function(){ document.getElementById("fm-pp-name").value=""; document.getElementById("fm-pp-term").value=""; openDlg("fm-dlg-project"); });
+document.getElementById("fm-pp-save").addEventListener("click",function(){
+  var name=document.getElementById("fm-pp-name").value.trim();
+  if(!name){ alert("Zadej název projektu."); return; }
+  closeDlg("fm-dlg-project");
+  pushPatch("addProject",{name:name,deadline:document.getElementById("fm-pp-term").value});
+});
+
+document.getElementById("fm-add-column").addEventListener("click",function(){ document.getElementById("fm-cc-todo").value=""; document.getElementById("fm-cc-task").value=""; openDlg("fm-dlg-column"); });
+document.getElementById("fm-cc-save").addEventListener("click",function(){
+  var todo=document.getElementById("fm-cc-todo").value.trim();
+  var task=document.getElementById("fm-cc-task").value.trim();
+  if(!task){ alert("Zadej alespoň název úkolu."); return; }
+  var label = todo ? (todo+" - "+task) : task;
+  closeDlg("fm-dlg-column");
+  pushPatch("addColumn",{label:label,todo:todo,task:task});
+});
+
+var ceKey=null;
+document.getElementById("fm-body").addEventListener("click",function(e){
+  var nb=e.target.closest(".fm-note-btn");
+  if(nb){ e.stopPropagation(); openNoteFor(nb.dataset.notekey); return; }
+  var pn=e.target.closest(".fm-phase-note");
+  if(pn){ e.stopPropagation(); openNoteFor(pn.dataset.notekey); return; }
+  var delp=e.target.getAttribute("data-delproj");
+  if(delp){ if(confirm('Odebrat řádek "'+delp+'" ze zobrazení?')) pushPatch("deleteProject",{name:delp}); return; }
+  var et=e.target.getAttribute("data-editterm");
+  if(et){ openTerm(et); return; }
+  var sum=e.target.closest("td.fm-sum");
+  if(sum){ collapseToggle(sum.dataset.todo); return; }
+  var cell=e.target.closest("td.fm-cell");
+  if(cell){ openCell(cell.dataset.proj, cell.dataset.label); }
+});
+document.getElementById("fm-head-row").addEventListener("click",function(e){
+  var dc=e.target.getAttribute("data-delcol");
+  if(dc){ pushPatch("deleteColumn",{label:dc}); }
+});
+document.getElementById("fm-grp-row").addEventListener("click",function(e){
+  var hp=e.target.closest("[data-hidephase]");
+  if(hp){ e.stopPropagation(); pushPatch("hidePhase",{todo:hp.getAttribute("data-hidephase")}); return; }
+  var g=e.target.closest(".fm-grp"); if(!g || g.classList.contains("fm-grp-plain")) return;
+  collapseToggle(g.dataset.todo);
+});
+function openCell(proj,label){
+  ceKey=proj+"||"+label;
+  var cf=cellFor(proj,label); var d=cf.data||{status:"",deadline:"",owner:"",url:""};
+  document.getElementById("fm-ce-title").textContent=label;
+  document.getElementById("fm-ce-status").value=d.status||"";
+  document.getElementById("fm-ce-term").value=(d.deadline||"").slice(0,10);
+  document.getElementById("fm-ce-owner").value=d.owner||"";
+  document.getElementById("fm-ce-url").value=d.url||"";
+  openDlg("fm-dlg-cell");
+}
+document.getElementById("fm-ce-save").addEventListener("click",function(){
+  var val={ status:document.getElementById("fm-ce-status").value,
+            deadline:document.getElementById("fm-ce-term").value,
+            owner:document.getElementById("fm-ce-owner").value.trim(),
+            url:document.getElementById("fm-ce-url").value.trim() };
+  closeDlg("fm-dlg-cell");
+  pushPatch("setCell",{key:ceKey,value:val});
+});
+document.getElementById("fm-ce-clear").addEventListener("click",function(){
+  closeDlg("fm-dlg-cell"); pushPatch("clearCell",{key:ceKey});
+});
+
+var ptName=null;
+function openTerm(name){ ptName=name; var d=overlay.projectDeadlines[name]||""; document.getElementById("fm-pt-term").value=d.slice(0,10); openDlg("fm-dlg-term"); }
+document.getElementById("fm-pt-save").addEventListener("click",function(){
+  closeDlg("fm-dlg-term");
+  pushPatch("setProjectDeadline",{name:ptName,value:document.getElementById("fm-pt-term").value});
+});
+
+// poznámky
+var noteKey=null;
+function openNoteFor(key){
+  noteKey=key; var title;
+  var s=key.indexOf("||§"), pr=key.indexOf("||¶");
+  if(pr>=0) title="projekt "+key.slice(0,pr);
+  else if(s>=0) title="fáze – "+key.slice(0,s)+" · "+key.slice(s+3);
+  else { var j=key.indexOf("||"); title=key.slice(0,j)+" · "+key.slice(j+2); }
+  document.getElementById("fm-ne-title").textContent="Poznámka – "+title;
+  document.getElementById("fm-ne-text").value=overlay.notes[key]||"";
+  openDlg("fm-dlg-note");
+  setTimeout(function(){ document.getElementById("fm-ne-text").focus(); },30);
+}
+document.getElementById("fm-ne-save").addEventListener("click",function(){
+  closeDlg("fm-dlg-note");
+  pushPatch("setNote",{key:noteKey, text:document.getElementById("fm-ne-text").value});
+});
+document.getElementById("fm-ne-clear").addEventListener("click",function(){
+  closeDlg("fm-dlg-note");
+  pushPatch("setNote",{key:noteKey, text:""});
+});
+
+/* ============================ Toolbar ============================ */
+document.querySelectorAll("[data-sort]").forEach(function(b){ b.addEventListener("click",function(){ sortRows(b.getAttribute("data-sort")); }); });
+document.getElementById("fm-collapse-all").addEventListener("click",collapseAll);
+document.getElementById("fm-expand-all").addEventListener("click",expandAll);
+document.getElementById("fm-show-all").addEventListener("click",function(){ pushPatch("showAllCols",{}).then(buildChecklist); });
+document.getElementById("fm-hide-all").addEventListener("click",function(){ pushPatch("hideAllCols",{phases:allTodos(), labels:noPhaseLabels()}).then(buildChecklist); });
+document.getElementById("fm-dd-btn").addEventListener("click",function(e){
+  e.stopPropagation();
+  var dd=this.closest(".fm-dd"); var open=dd.classList.toggle("fm-open");
+  if(open) buildChecklist();
+});
+document.getElementById("fm-dd-panel").addEventListener("click",function(e){ e.stopPropagation(); });
+document.getElementById("fm-dd-panel").addEventListener("change",function(e){
+  var ph=e.target.getAttribute("data-phase");
+  if(ph!=null){ pushPatch(e.target.checked?"showPhase":"hidePhase",{todo:ph}).then(buildChecklist); return; }
+  var col=e.target.getAttribute("data-col");
+  if(col!=null){ pushPatch(e.target.checked?"showColumn":"deleteColumn",{label:col}).then(buildChecklist); return; }
+});
+document.addEventListener("click",function(e){
+  var dd=document.querySelector(".fm-dd.fm-open");
+  if(dd && !dd.contains(e.target)) dd.classList.remove("fm-open");
+});
+document.getElementById("fm-load").addEventListener("click",loadFromApi);
+document.getElementById("fm-reset").addEventListener("click",function(){
+  if(confirm("Smazat všechny ruční úpravy, poznámky, skrytí a pořadí PRO VŠECHNY? Data z Freela zůstanou.")) pushPatch("reset",{});
+});
+document.getElementById("fm-export").addEventListener("click",exportCsv);
+
+/* ============================ Načtení dat + polling ============================ */
+function showError(msg){ var e=document.getElementById("fm-error"); if(msg){ e.textContent=msg; e.classList.add("fm-open"); } else e.classList.remove("fm-open"); }
+function loadFromApi(){
+  showError("");
+  var btn=document.getElementById("fm-load"); btn.disabled=true; btn.textContent="Načítám…"; setSaving(1);
+  gcall("getFreelo")
+    .then(function(raw){ var rows=normalizePayload(raw); if(!rows.length) throw new Error("Freelo nevrátilo žádné řádky."); api=buildApi(rows); return gcall("loadState"); })
+    .then(function(o){ overlay=ensureShape(o); draw(); })
+    .catch(function(err){ showError("Nepodařilo se načíst z Freela: "+errMsg(err)); })
+    .then(function(){ btn.disabled=false; btn.textContent="↻ Načíst z Freelo"; setSaving(-1); });
+}
+function anyDialogOpen(){ return !!document.querySelector(".fm-overlay-bg.fm-open"); }
+function startPolling(){
+  setInterval(function(){
+    if(savingCount>0 || anyDialogOpen() || document.querySelector(".fm-dd.fm-open")) return;
+    gcall("loadState").then(function(o){ overlay=ensureShape(o); draw(); }).catch(function(){});
+  }, 20000);
+}
+
+/* ============================ Export CSV ============================ */
+function exportCsv(){
+  var cols=render.columns; var lines=[];
+  var head=["Projekt","Termín","Hotové fáze","Poznámka projektu"].concat(cols.map(function(c){return c.label;}));
+  lines.push(head.map(csvCell).join(";"));
+  render.projects.forEach(function(p){
+    var pnote=overlay.notes[noteKeyProject(p.name)]||"";
+    var row=[p.name, p.deadline.value?fmtDate(p.deadline.value):"bez termínu", p.donePhases+" / "+p.totalPhases, pnote];
+    cols.forEach(function(c){
+      var cf=cellFor(p.name,c.label);
+      if(!cf.data||!cf.data.status){
+        var en=overlay.notes[noteKeyCell(p.name,c.label)];
+        row.push(en?"pozn: "+en:"");
+      }
+      else{
+        var st=cf.data.status==="done"?"Hotovo":"Nehotovo";
+        var tm=cf.data.deadline?fmtDate(cf.data.deadline):"bez termínu";
+        var nt=overlay.notes[noteKeyCell(p.name,c.label)];
+        row.push(st+" | "+tm+(cf.data.owner?" | "+cf.data.owner:"")+(nt?" | pozn: "+nt:""));
+      }
+    });
+    lines.push(row.map(csvCell).join(";"));
+  });
+  // appendix: poznámky fází (nejsou samostatné sloupce)
+  var phaseNoteLines=[];
+  Object.keys(overlay.notes).forEach(function(k){
+    var i=k.indexOf("||§");
+    if(i>=0){ phaseNoteLines.push([k.slice(0,i), k.slice(i+3), overlay.notes[k]].map(csvCell).join(";")); }
+  });
+  if(phaseNoteLines.length){
+    lines.push(""); lines.push("Poznámky k fázím:");
+    lines.push(["Projekt","Fáze","Poznámka"].map(csvCell).join(";"));
+    lines=lines.concat(phaseNoteLines);
+  }
+  var csv="\uFEFF"+lines.join("\r\n");
+  var blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+  var a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download="matice_projektu.csv"; a.click(); URL.revokeObjectURL(a.href);
+}
+function csvCell(s){ s=String(s==null?"":s); return /[";\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }
+
+/* ============================ Start ============================ */
+(function initSaving(){ var s=document.createElement("span"); s.id="fm-saving"; s.className="fm-status"; s.style.display="none"; s.textContent="💾 ukládám…"; document.querySelector(".fm-topbar").appendChild(s); })();
+draw();
+window.addEventListener("resize", syncStickyOffsets);
+function fmBoot(){ loadFromApi(); startPolling(); }
+if(document.readyState==="complete") fmBoot();
+else window.addEventListener("load", fmBoot);
+})();
+</script>
+</body>
+</html>

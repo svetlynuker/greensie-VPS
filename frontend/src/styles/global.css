@@ -1,0 +1,73 @@
+:root {
+  --fm-brand: #2f9e44;
+  --fm-brand-dk: #237032;
+  --fm-brand-soft: #e6f4ea;
+  --fm-bg: #f4f6f5;
+  --fm-card: #ffffff;
+  --fm-head: #eef2f0;
+  --fm-text: #1f2933;
+  --fm-muted: #6b7280;
+  --fm-line: #dfe6e2;
+
+  /* rozvržení rozcestníku - libovolně měnitelné bez zásahu do JS */
+  --fm-tile-min-width: 220px;
+  --fm-tile-gap: 16px;
+  --fm-tile-radius: 16px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--fm-bg);
+  color: var(--fm-text);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+a {
+  color: inherit;
+}
+
+.fm-btn {
+  border: 1px solid var(--fm-line);
+  background: var(--fm-card);
+  color: var(--fm-text);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fm-btn:hover {
+  border-color: var(--fm-brand);
+  color: var(--fm-brand-dk);
+}
+
+.fm-btn.fm-primary {
+  background: var(--fm-brand);
+  border-color: var(--fm-brand);
+  color: #fff;
+}
+
+.fm-btn.fm-primary:hover {
+  background: var(--fm-brand-dk);
+}
+
+.fm-card {
+  background: var(--fm-card);
+  border: 1px solid var(--fm-line);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(31, 41, 51, 0.05);
+}
