@@ -19,7 +19,13 @@ export default function Rozcestnik() {
 
   useEffect(() => {
     nactiMe()
-      .then(setData)
+      .then((me) => {
+        if (me.musi_zmenit_heslo) {
+          navigate("/zmena-hesla");
+          return;
+        }
+        setData(me);
+      })
       .catch(() => {
         logout();
         navigate("/");

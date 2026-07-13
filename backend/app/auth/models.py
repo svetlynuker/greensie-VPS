@@ -1,17 +1,9 @@
-import enum
-
 from pydantic import BaseModel
-from sqlalchemy import Column, Enum, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import relationship
 
 from app.database import Base
-
-
-class Role(str, enum.Enum):
-    admin = "admin"
-    zamestnanec = "zamestnanec"
-    vedeni = "vedeni"
 
 
 class Skupina(Base):
@@ -37,7 +29,10 @@ class User(Base):
     jmeno = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     heslo_hash = Column(String, nullable=False)
-    role = Column(Enum(Role, name="role"), nullable=False)
+    # supersprávce = plný přístup ke všemu (nelze se vyřadit z Admin nastavení)
+    je_admin = Column(Boolean, nullable=False, default=False, server_default="false")
+    # po vytvoření / resetu hesla si uživatel musí při přihlášení zvolit nové
+    musi_zmenit_heslo = Column(Boolean, nullable=False, default=False, server_default="false")
     # skupina, do které uživatel patří (dědí její práva). Nepovinné.
     skupina_id = Column(
         Integer, ForeignKey("skupiny.id", ondelete="SET NULL"), nullable=True, index=True
@@ -69,10 +64,15 @@ class UserOut(BaseModel):
     id: int
     jmeno: str
     email: str
-    role: Role
+    je_admin: bool = False
 
 
 class MeOut(BaseModel):
     uzivatel: UserOut
     dlazdice: list[DlazdiceOut]
     muze_editovat: bool  # smí editovat matici (Přehled projektů)
+    musi_zmenit_heslo: bool = False
+
+
+class ZmenaHeslaVstup(BaseModel):
+    nove_heslo: str

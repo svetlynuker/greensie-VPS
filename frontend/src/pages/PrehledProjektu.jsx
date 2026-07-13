@@ -190,6 +190,10 @@ export default function PrehledProjektu() {
   useEffect(() => {
     Promise.all([nactiMe(), nactiMatici(), nactiNastaveni()])
       .then(([me, d, nast]) => {
+        if (me.musi_zmenit_heslo) {
+          navigate("/zmena-hesla");
+          return;
+        }
         setUzivatel(me.uzivatel);
         const skryte = parseSkryte(nast.pohled1_skryte);
         setSkryteFaze(skryte.faze);

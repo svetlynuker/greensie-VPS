@@ -39,6 +39,10 @@ export async function nactiMe() {
   return res.json();
 }
 
+export function zmenHeslo(nove_heslo) {
+  return zavolej("/auth/heslo", { method: "PUT", body: JSON.stringify({ nove_heslo }) });
+}
+
 // ---- Matice (Přehled projektů) ----
 async function zavolej(cesta, moznosti = {}) {
   const token = getToken();
@@ -125,6 +129,14 @@ export function adminUpravUzivatele(id, data) {
 
 export function adminSmazUzivatele(id) {
   return zavolej(`/admin/uzivatele/${id}`, { method: "DELETE" });
+}
+
+// nove_heslo = null → server vygeneruje náhodné; jinak nastaví zadané
+export function adminResetHesla(id, nove_heslo) {
+  return zavolej(`/admin/uzivatele/${id}/reset-hesla`, {
+    method: "POST",
+    body: JSON.stringify({ nove_heslo: nove_heslo || null }),
+  });
 }
 
 export function adminSkupiny() {

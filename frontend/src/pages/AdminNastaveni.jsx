@@ -9,14 +9,12 @@ import {
   adminPridejUzivatele,
   adminUpravUzivatele,
   adminSmazUzivatele,
+  adminResetHesla,
   adminSkupiny,
   adminPridejSkupinu,
   adminUpravSkupinu,
   adminSmazSkupinu,
 } from "../api";
-
-const ROLE_LABEL = { admin: "Admin", vedeni: "Vedení", zamestnanec: "Zaměstnanec" };
-const roleLabel = (r) => ROLE_LABEL[r] || r;
 
 const poleStyl = {
   width: "100%",
@@ -93,8 +91,7 @@ function UzivatelEditor({ uzivatel, ciselniky, skupiny, onSave, onClose }) {
   const novy = !uzivatel;
   const [jmeno, setJmeno] = useState(uzivatel?.jmeno || "");
   const [email, setEmail] = useState(uzivatel?.email || "");
-  const [heslo, setHeslo] = useState("");
-  const [role, setRole] = useState(uzivatel?.role || "zamestnanec");
+  const [jeAdmin, setJeAdmin] = useState(uzivatel?.je_admin || false);
   const [skupinaId, setSkupinaId] = useState(uzivatel?.skupina_id ?? "");
   const [extraPrava, setExtraPrava] = useState(uzivatel?.extra_prava || []);
   const [uklada, setUklada] = useState(false);
@@ -104,16 +101,13 @@ function UzivatelEditor({ uzivatel, ciselniky, skupiny, onSave, onClose }) {
     setUklada(true);
     setChyba(null);
     try {
-      const data = {
+      await onSave({
         jmeno,
         email,
-        role,
+        je_admin: jeAdmin,
         skupina_id: skupinaId === "" ? null : Number(skupinaId),
         extra_prava: extraPrava,
-      };
-      if (novy) data.heslo = heslo;
-      else if (heslo) data.heslo = heslo;
-      await onSave(data);
+      });
     } catch (e) {
       setChyba(e.message);
       setUklada(false);
@@ -130,24 +124,23 @@ function UzivatelEditor({ uzivatel, ciselniky, skupiny, onSave, onClose }) {
         <label style={labelStyl}>E-mail</label>
         <input style={poleStyl} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jan@greensie.cz" />
       </div>
+      {novy && (
+        <div style={{ fontSize: 12, color: "var(--fm-muted)" }}>
+          Heslo se vygeneruje automaticky a pošle uživateli. Při prvním přihlášení si zvolí vlastní.
+        </div>
+      )}
       <div>
-        <label style={labelStyl}>{novy ? "Heslo" : "Nové heslo (prázdné = neměnit)"}</label>
-        <input style={poleStyl} type="password" value={heslo} onChange={(e) => setHeslo(e.target.value)} placeholder={novy ? "heslo" : "•••••"} />
-      </div>
-      <div>
-        <label style={labelStyl}>Role</label>
-        <select style={poleStyl} value={role} onChange={(e) => setRole(e.target.value)}>
-          {ciselniky.role.map((r) => (
-            <option key={r} value={r}>{roleLabel(r)}</option>
-          ))}
-        </select>
-        {role === "admin" && (
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer" }}>
+          <input type="checkbox" checked={jeAdmin} onChange={(e) => setJeAdmin(e.target.checked)} />
+          <strong>Supersprávce</strong> – plný přístup ke všemu
+        </label>
+        {jeAdmin && (
           <div style={{ fontSize: 12, color: "var(--fm-muted)", marginTop: 4 }}>
-            Admin má vždy plný přístup ke všemu (skupina a práva se ignorují).
+            Supersprávce vidí a otevře vše; skupina a práva navíc se ignorují.
           </div>
         )}
       </div>
-      <div>
+      <div style={{ opacity: jeAdmin ? 0.5 : 1, pointerEvents: jeAdmin ? "none" : "auto" }}>
         <label style={labelStyl}>Skupina</label>
         <select style={poleStyl} value={skupinaId} onChange={(e) => setSkupinaId(e.target.value)}>
           <option value="">— žádná —</option>
@@ -155,9 +148,7 @@ function UzivatelEditor({ uzivatel, ciselniky, skupiny, onSave, onClose }) {
             <option key={s.id} value={s.id}>{s.nazev}</option>
           ))}
         </select>
-      </div>
-      <div>
-        <label style={labelStyl}>Práva navíc (mimo skupinu)</label>
+        <label style={{ ...labelStyl, marginTop: 12 }}>Práva navíc (mimo skupinu)</label>
         <PravaVyber katalog={ciselniky.prava} vybrana={extraPrava} onZmena={setExtraPrava} />
       </div>
       {chyba && <div style={{ color: "#c92a2a", fontSize: 13 }}>{chyba}</div>}
@@ -166,6 +157,94 @@ function UzivatelEditor({ uzivatel, ciselniky, skupiny, onSave, onClose }) {
         <button className="fm-btn fm-primary" onClick={uloz} disabled={uklada}>
           {uklada ? "Ukládám…" : "Uložit"}
         </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------- dialog resetu hesla ---------- */
+function ResetDialog({ uzivatel, onReset, onClose }) {
+  const [rezim, setRezim] = useState("generovat"); // "generovat" | "vlastni"
+  const [heslo, setHeslo] = useState("");
+  const [uklada, setUklada] = useState(false);
+  const [chyba, setChyba] = useState(null);
+
+  async function uloz() {
+    setUklada(true);
+    setChyba(null);
+    try {
+      await onReset(uzivatel.id, rezim === "vlastni" ? heslo : null);
+    } catch (e) {
+      setChyba(e.message);
+      setUklada(false);
+    }
+  }
+
+  return (
+    <Modal nadpis={`Reset hesla – ${uzivatel.jmeno}`} onClose={onClose}>
+      <div style={{ fontSize: 13, color: "var(--fm-muted)" }}>
+        Po resetu si uživatel při dalším přihlášení nastaví vlastní heslo.
+      </div>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer" }}>
+        <input type="radio" checked={rezim === "generovat"} onChange={() => setRezim("generovat")} />
+        Vygenerovat nové heslo
+      </label>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer" }}>
+        <input type="radio" checked={rezim === "vlastni"} onChange={() => setRezim("vlastni")} />
+        Zadat vlastní heslo
+      </label>
+      {rezim === "vlastni" && (
+        <input
+          style={poleStyl}
+          type="text"
+          value={heslo}
+          onChange={(e) => setHeslo(e.target.value)}
+          placeholder="alespoň 6 znaků"
+        />
+      )}
+      {chyba && <div style={{ color: "#c92a2a", fontSize: 13 }}>{chyba}</div>}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+        <button className="fm-btn" onClick={onClose} disabled={uklada}>Zrušit</button>
+        <button className="fm-btn fm-primary" onClick={uloz} disabled={uklada}>
+          {uklada ? "Resetuji…" : "Resetovat heslo"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------- výsledek s heslem (po vytvoření / resetu) ---------- */
+function HesloVysledekModal({ vysledek, onClose }) {
+  const { uzivatel, heslo, email_odeslan, email_poznamka } = vysledek;
+  const odkaz = window.location.origin;
+  const [zkopirovano, setZkopirovano] = useState(false);
+
+  function kopiruj() {
+    const text = `Přihlášení: ${odkaz}\nE-mail: ${uzivatel.email}\nHeslo: ${heslo}`;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        setZkopirovano(true);
+        setTimeout(() => setZkopirovano(false), 1500);
+      });
+    }
+  }
+
+  return (
+    <Modal nadpis="Přihlašovací údaje" onClose={onClose}>
+      <div style={{ fontSize: 13, color: "var(--fm-muted)" }}>
+        Jednorázové heslo pro <strong>{uzivatel.jmeno}</strong>. Zobrazí se jen teď – zkopíruj si ho.
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, background: "var(--fm-head)", borderRadius: 8, padding: 12 }}>
+        <div style={{ fontSize: 13 }}><span style={{ color: "var(--fm-muted)" }}>Odkaz: </span>{odkaz}</div>
+        <div style={{ fontSize: 13 }}><span style={{ color: "var(--fm-muted)" }}>E-mail: </span>{uzivatel.email}</div>
+        <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "monospace" }}>{heslo}</div>
+      </div>
+      <div style={{ fontSize: 13, color: email_odeslan ? "var(--fm-brand-dk)" : "var(--fm-muted)" }}>
+        {email_odeslan ? "✓ Odesláno e-mailem uživateli." : email_poznamka || "E-mail nebyl odeslán."}
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+        <button className="fm-btn" onClick={kopiruj}>{zkopirovano ? "Zkopírováno ✓" : "Kopírovat údaje"}</button>
+        <button className="fm-btn fm-primary" onClick={onClose}>Hotovo</button>
       </div>
     </Modal>
   );
@@ -238,6 +317,8 @@ export default function AdminNastaveni() {
   const [chyba, setChyba] = useState(null);
   const [editUzivatel, setEditUzivatel] = useState(null); // {} = nový, obj = úprava
   const [editSkupina, setEditSkupina] = useState(null);
+  const [resetUzivatel, setResetUzivatel] = useState(null);
+  const [hesloVysledek, setHesloVysledek] = useState(null);
   const navigate = useNavigate();
 
   const nazvyPrav = (klice) => {
@@ -256,6 +337,10 @@ export default function AdminNastaveni() {
   useEffect(() => {
     nactiMe()
       .then((me) => {
+        if (me.musi_zmenit_heslo) {
+          navigate("/zmena-hesla");
+          return;
+        }
         setUzivatel(me.uzivatel);
         return nactiVse();
       })
@@ -271,10 +356,22 @@ export default function AdminNastaveni() {
   }, [navigate]);
 
   async function ulozUzivatele(data) {
-    if (editUzivatel && editUzivatel.id) await adminUpravUzivatele(editUzivatel.id, data);
-    else await adminPridejUzivatele(data);
-    setEditUzivatel(null);
+    if (editUzivatel && editUzivatel.id) {
+      await adminUpravUzivatele(editUzivatel.id, data);
+      setEditUzivatel(null);
+      await nactiVse();
+    } else {
+      const vysledek = await adminPridejUzivatele(data);
+      setEditUzivatel(null);
+      await nactiVse();
+      setHesloVysledek(vysledek); // zobrazí jednorázové heslo + odkaz
+    }
+  }
+  async function provedReset(id, noveHeslo) {
+    const vysledek = await adminResetHesla(id, noveHeslo);
+    setResetUzivatel(null);
     await nactiVse();
+    setHesloVysledek(vysledek);
   }
   async function smazUzivatele(u) {
     if (!window.confirm(`Opravdu smazat uživatele ${u.jmeno}?`)) return;
@@ -333,7 +430,7 @@ export default function AdminNastaveni() {
                 <tr style={{ textAlign: "left", color: "var(--fm-muted)" }}>
                   <th style={{ padding: "8px 10px" }}>Jméno</th>
                   <th style={{ padding: "8px 10px" }}>E-mail</th>
-                  <th style={{ padding: "8px 10px" }}>Role</th>
+                  <th style={{ padding: "8px 10px" }}>Přístup</th>
                   <th style={{ padding: "8px 10px" }}>Skupina</th>
                   <th style={{ padding: "8px 10px" }}>Práva navíc</th>
                   <th style={{ padding: "8px 10px", textAlign: "right" }}>Akce</th>
@@ -344,7 +441,12 @@ export default function AdminNastaveni() {
                   <tr key={u.id} style={{ borderTop: "1px solid var(--fm-line)" }}>
                     <td style={{ padding: "8px 10px", fontWeight: 600 }}>{u.jmeno}</td>
                     <td style={{ padding: "8px 10px", color: "var(--fm-muted)" }}>{u.email}</td>
-                    <td style={{ padding: "8px 10px" }}>{roleLabel(u.role)}</td>
+                    <td style={{ padding: "8px 10px" }}>
+                      {u.je_admin ? <Chip>Supersprávce</Chip> : <span style={{ color: "var(--fm-muted)" }}>Uživatel</span>}
+                      {u.musi_zmenit_heslo && (
+                        <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 2 }}>🔑 čeká na změnu hesla</div>
+                      )}
+                    </td>
                     <td style={{ padding: "8px 10px" }}>{u.skupina_id ? nazevSkupiny(u.skupina_id) : <span style={{ color: "var(--fm-muted)" }}>—</span>}</td>
                     <td style={{ padding: "8px 10px" }}>
                       <span style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
@@ -353,6 +455,7 @@ export default function AdminNastaveni() {
                     </td>
                     <td style={{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
                       <button className="fm-btn" style={{ padding: "5px 10px" }} onClick={() => setEditUzivatel(u)}>Upravit</button>{" "}
+                      <button className="fm-btn" style={{ padding: "5px 10px" }} onClick={() => setResetUzivatel(u)}>Reset hesla</button>{" "}
                       <button className="fm-btn" style={{ padding: "5px 10px" }} onClick={() => smazUzivatele(u)}>Smazat</button>
                     </td>
                   </tr>
@@ -420,6 +523,16 @@ export default function AdminNastaveni() {
           onSave={ulozSkupinu}
           onClose={() => setEditSkupina(null)}
         />
+      )}
+      {resetUzivatel && (
+        <ResetDialog
+          uzivatel={resetUzivatel}
+          onReset={provedReset}
+          onClose={() => setResetUzivatel(null)}
+        />
+      )}
+      {hesloVysledek && (
+        <HesloVysledekModal vysledek={hesloVysledek} onClose={() => setHesloVysledek(null)} />
       )}
     </Layout>
   );

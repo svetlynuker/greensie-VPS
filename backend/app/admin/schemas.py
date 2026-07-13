@@ -2,8 +2,6 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from app.auth.models import Role
-
 
 class PravoOut(BaseModel):
     klic: str
@@ -12,7 +10,6 @@ class PravoOut(BaseModel):
 
 class CiselnikyOut(BaseModel):
     prava: list[PravoOut]
-    role: list[str]
 
 
 class SkupinaOut(BaseModel):
@@ -31,7 +28,8 @@ class UzivatelOut(BaseModel):
     id: int
     jmeno: str
     email: str
-    role: Role
+    je_admin: bool = False
+    musi_zmenit_heslo: bool = False
     skupina_id: Optional[int] = None
     extra_prava: list[str] = []
 
@@ -39,8 +37,7 @@ class UzivatelOut(BaseModel):
 class UzivatelVstup(BaseModel):
     jmeno: str
     email: str
-    heslo: str
-    role: Role = Role.zamestnanec
+    je_admin: bool = False
     skupina_id: Optional[int] = None
     extra_prava: list[str] = []
 
@@ -48,8 +45,20 @@ class UzivatelVstup(BaseModel):
 class UzivatelUprava(BaseModel):
     jmeno: str
     email: str
-    role: Role
+    je_admin: bool = False
     skupina_id: Optional[int] = None
     extra_prava: list[str] = []
-    # nové heslo – nepovinné; prázdné = neměnit
-    heslo: Optional[str] = None
+
+
+class ResetHeslaVstup(BaseModel):
+    # když je vyplněné, nastaví se přímo; jinak se vygeneruje náhodné
+    nove_heslo: Optional[str] = None
+
+
+class HesloVysledek(BaseModel):
+    """Odpověď po vytvoření uživatele / resetu hesla."""
+
+    uzivatel: UzivatelOut
+    heslo: str  # jednorázové heslo k zobrazení adminovi
+    email_odeslan: bool = False
+    email_poznamka: Optional[str] = None

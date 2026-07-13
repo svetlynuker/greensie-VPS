@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 from app.auth import models  # noqa: F401 - registrace modelů před create_all
 from app.auth.routes import router as auth_router
@@ -16,6 +16,7 @@ Base.metadata.create_all(bind=engine)
 
 def _lehka_migrace():
     """Doplní sloupce, které create_all neumí přidat do už existujících tabulek."""
+    sloupce_pred = {c["name"] for c in inspect(engine).get_columns("uzivatele")}
     with engine.begin() as conn:
         conn.execute(
             text(
@@ -23,6 +24,23 @@ def _lehka_migrace():
                 "REFERENCES skupiny(id) ON DELETE SET NULL"
             )
         )
+        conn.execute(
+            text(
+                "ALTER TABLE uzivatele ADD COLUMN IF NOT EXISTS je_admin BOOLEAN "
+                "NOT NULL DEFAULT false"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE uzivatele ADD COLUMN IF NOT EXISTS musi_zmenit_heslo BOOLEAN "
+                "NOT NULL DEFAULT false"
+            )
+        )
+        # přechod z původní role: kdo měl role='admin', stává se supersprávcem,
+        # a sloupec role přestává být povinný (nově se už nepoužívá).
+        if "role" in sloupce_pred:
+            conn.execute(text("UPDATE uzivatele SET je_admin = true WHERE role = 'admin'"))
+            conn.execute(text("ALTER TABLE uzivatele ALTER COLUMN role DROP NOT NULL"))
 
 
 _lehka_migrace()

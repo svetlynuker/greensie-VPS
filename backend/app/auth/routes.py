@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth.models import LoginRequest, MeOut, Token, User, UserOut
+from app.auth.models import LoginRequest, MeOut, Token, User, UserOut, ZmenaHeslaVstup
 from app.auth.permissions import (
     dlazdice_pro,
     get_current_user,
+    hash_heslo,
     muze_editovat,
     over_heslo,
     vytvor_access_token,
@@ -29,7 +30,24 @@ def login(udaje: LoginRequest, db: Session = Depends(get_db)):
 @router.get("/me", response_model=MeOut)
 def me(user: User = Depends(get_current_user)):
     return MeOut(
-        uzivatel=UserOut(id=user.id, jmeno=user.jmeno, email=user.email, role=user.role),
+        uzivatel=UserOut(id=user.id, jmeno=user.jmeno, email=user.email, je_admin=user.je_admin),
         dlazdice=dlazdice_pro(user),
         muze_editovat=muze_editovat(user),
+        musi_zmenit_heslo=user.musi_zmenit_heslo,
     )
+
+
+@router.put("/heslo")
+def zmen_heslo(
+    vstup: ZmenaHeslaVstup,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Změna vlastního hesla (mj. povinná po prvním přihlášení)."""
+    nove = (vstup.nove_heslo or "").strip()
+    if len(nove) < 6:
+        raise HTTPException(status_code=422, detail="Heslo musí mít alespoň 6 znaků.")
+    user.heslo_hash = hash_heslo(nove)
+    user.musi_zmenit_heslo = False
+    db.commit()
+    return {"stav": "ok"}

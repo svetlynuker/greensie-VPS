@@ -3,6 +3,7 @@ import Login from "./pages/Login";
 import Rozcestnik from "./pages/Rozcestnik";
 import PrehledProjektu from "./pages/PrehledProjektu";
 import AdminNastaveni from "./pages/AdminNastaveni";
+import ZmenaHesla from "./pages/ZmenaHesla";
 import { getToken } from "./api";
 
 function VyzadujePrihlaseni({ children }) {
@@ -14,6 +15,14 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Login />} />
+        <Route
+          path="/zmena-hesla"
+          element={
+            <VyzadujePrihlaseni>
+              <ZmenaHesla />
+            </VyzadujePrihlaseni>
+          }
+        />
         <Route
           path="/rozcestnik"
           element={

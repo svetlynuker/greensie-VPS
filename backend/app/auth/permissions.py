@@ -1,4 +1,5 @@
 import os
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, status
@@ -7,7 +8,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
-from app.auth.models import DlazdiceOut, Role, User
+from app.auth.models import DlazdiceOut, User
 from app.database import get_db
 
 SECRET_KEY = os.environ["SECRET_KEY"]
@@ -20,6 +21,15 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 def hash_heslo(heslo: str) -> str:
     return pwd_context.hash(heslo)
+
+
+# Znaky bez záměnných dvojic (0/O, 1/l/I) kvůli čitelnosti jednorázového hesla.
+_HESLO_ZNAKY = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def vygeneruj_heslo(delka: int = 10) -> str:
+    """Vytvoří náhodné jednorázové heslo (pro nové uživatele / reset)."""
+    return "".join(secrets.choice(_HESLO_ZNAKY) for _ in range(delka))
 
 
 def over_heslo(heslo: str, heslo_hash: str) -> bool:
@@ -77,8 +87,8 @@ VSECHNA_PRAVA = {p["klic"] for p in PRAVA}
 
 
 def prava_uzivatele(user: User) -> set[str]:
-    """Efektivní práva uživatele: admin má vše, jinak skupina + výjimky."""
-    if user.role == Role.admin:
+    """Efektivní práva uživatele: supersprávce má vše, jinak skupina + výjimky."""
+    if user.je_admin:
         return set(VSECHNA_PRAVA)
     prava = set(user.extra_prava or [])
     if user.skupina is not None:

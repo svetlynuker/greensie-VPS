@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { login, nactiNastaveni } from "../api";
+import { login, nactiMe, nactiNastaveni } from "../api";
 import { setTheme } from "../theme";
 import { setVelikost } from "../velikost";
 import ThemeToggle from "../components/ThemeToggle";
@@ -28,7 +28,8 @@ export default function Login() {
     try {
       await login(email, heslo);
       await synchronizujVzhled();
-      navigate("/rozcestnik");
+      const me = await nactiMe();
+      navigate(me.musi_zmenit_heslo ? "/zmena-hesla" : "/rozcestnik");
     } catch (err) {
       setChyba(err.message);
     }
