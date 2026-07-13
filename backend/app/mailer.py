@@ -2,11 +2,13 @@
 
 Konfigurace přes .env (žádné údaje v kódu):
   SMTP_HOST        (výchozí smtp.seznam.cz)
-  SMTP_PORT        (výchozí 465, SSL)
+  SMTP_PORT        (výchozí 587, STARTTLS; port 465 = implicitní SSL)
   SMTP_USER        (výchozí automat@greensie.cz)
   SMTP_HESLO       (heslo schránky – BEZ něj se e-maily neposílají)
   SMTP_ODESILATEL  (výchozí = SMTP_USER)
   APP_URL          (adresa appky pro přihlašovací odkaz)
+
+Pozn.: Hetzner blokuje odchozí port 465 (i 25), proto je výchozí 587 (STARTTLS).
 """
 
 import os
@@ -25,7 +27,7 @@ def _cfg() -> dict:
     user = os.environ.get("SMTP_USER", "automat@greensie.cz")
     return {
         "host": os.environ.get("SMTP_HOST", "smtp.seznam.cz"),
-        "port": int(os.environ.get("SMTP_PORT", "465")),
+        "port": int(os.environ.get("SMTP_PORT", "587")),
         "user": user,
         "heslo": os.environ.get("SMTP_HESLO", ""),
         "odesilatel": os.environ.get("SMTP_ODESILATEL", user),
@@ -48,9 +50,19 @@ def posli_email(komu: str, predmet: str, telo: str) -> None:
     msg.set_content(telo)
 
     ctx = ssl.create_default_context()
-    with smtplib.SMTP_SSL(c["host"], c["port"], context=ctx, timeout=20) as s:
-        s.login(c["user"], c["heslo"])
-        s.send_message(msg)
+    if c["port"] == 465:
+        # implicitní SSL (port bývá u Hetzneru blokovaný)
+        with smtplib.SMTP_SSL(c["host"], c["port"], context=ctx, timeout=20) as s:
+            s.login(c["user"], c["heslo"])
+            s.send_message(msg)
+    else:
+        # submission port (587) + STARTTLS
+        with smtplib.SMTP(c["host"], c["port"], timeout=20) as s:
+            s.ehlo()
+            s.starttls(context=ctx)
+            s.ehlo()
+            s.login(c["user"], c["heslo"])
+            s.send_message(msg)
 
 
 def email_pristupu(jmeno: str, heslo: str) -> tuple[str, str]:
