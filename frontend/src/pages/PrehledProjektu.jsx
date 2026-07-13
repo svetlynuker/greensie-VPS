@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import BunkaDialog from "../components/BunkaDialog";
 import FreeloDialog from "../components/FreeloDialog";
 import PridatDialog from "../components/PridatDialog";
+import ZobrazeniDropdown from "../components/ZobrazeniDropdown";
 import {
   nactiMe,
   nactiMatici,
@@ -80,6 +81,71 @@ function bunkaKlic(projektId, sloupecId) {
   return `${projektId}||${sloupecId}`;
 }
 
+// malá ikonka oka pro skrytí úkolu/fáze
+function Oko({ onClick, title }) {
+  return (
+    <span
+      className="fm-eye"
+      title={title}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
+        <circle cx="12" cy="12" r="3" />
+      </svg>
+    </span>
+  );
+}
+
+function nactiSkrytePrefs(uzivatelId) {
+  try {
+    const raw = localStorage.getItem(`greensie_skryte_${uzivatelId}`);
+    if (!raw) return { faze: new Set(), ukoly: new Set() };
+    const p = JSON.parse(raw);
+    return { faze: new Set(p.faze || []), ukoly: new Set(p.ukoly || []) };
+  } catch {
+    return { faze: new Set(), ukoly: new Set() };
+  }
+}
+
+function nactiPoradiPrefs(uzivatelId) {
+  try {
+    const raw = localStorage.getItem(`greensie_poradi_${uzivatelId}`);
+    if (!raw) return { projekty: [], faze: [], ukoly: {} };
+    const p = JSON.parse(raw);
+    return { projekty: p.projekty || [], faze: p.faze || [], ukoly: p.ukoly || {} };
+  } catch {
+    return { projekty: [], faze: [], ukoly: {} };
+  }
+}
+
+// seřadí položky podle uloženého pořadí klíčů; položky mimo pořadí zůstanou vzadu (stabilně)
+function seradPodle(items, poradi, klicFn) {
+  if (!poradi || poradi.length === 0) return items;
+  const index = new Map(poradi.map((k, i) => [k, i]));
+  return [...items].sort((a, b) => {
+    const ia = index.has(klicFn(a)) ? index.get(klicFn(a)) : Infinity;
+    const ib = index.has(klicFn(b)) ? index.get(klicFn(b)) : Infinity;
+    return ia - ib;
+  });
+}
+
+// přesune fromId před toId a vrátí nové kompletní pořadí id
+function presunPole(ids, fromId, toId) {
+  if (fromId === toId) return ids;
+  const arr = [...ids];
+  const fi = arr.indexOf(fromId);
+  if (fi < 0) return ids;
+  arr.splice(fi, 1);
+  const ti = arr.indexOf(toId);
+  if (ti < 0) return ids;
+  arr.splice(ti, 0, fromId);
+  return arr;
+}
+
 export default function PrehledProjektu() {
   const [uzivatel, setUzivatel] = useState(null);
   const [matice, setMatice] = useState(null);
@@ -94,7 +160,33 @@ export default function PrehledProjektu() {
   const [pridatSloupec, setPridatSloupec] = useState(false);
   const [barvyText, setBarvyText] = useState(null);
   const [barvyStav, setBarvyStav] = useState(null);
+  // per-uživatelské skrytí úkolů/fází (uloženo v prohlížeči dle ID uživatele)
+  const [skryteFaze, setSkryteFaze] = useState(() => new Set());
+  const [skryteUkoly, setSkryteUkoly] = useState(() => new Set());
+  // per-uživatelské pořadí (drag & drop), uloženo v prohlížeči dle ID
+  const [poradiProjektu, setPoradiProjektu] = useState([]);
+  const [poradiFazi, setPoradiFazi] = useState([]);
+  const [poradiUkolu, setPoradiUkolu] = useState({});
+  const dragInfo = useRef(null);
+  const [dropCil, setDropCil] = useState(null);
+  const uzivatelIdRef = useRef(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (uzivatelIdRef.current == null) return;
+    localStorage.setItem(
+      `greensie_skryte_${uzivatelIdRef.current}`,
+      JSON.stringify({ faze: [...skryteFaze], ukoly: [...skryteUkoly] })
+    );
+  }, [skryteFaze, skryteUkoly]);
+
+  useEffect(() => {
+    if (uzivatelIdRef.current == null) return;
+    localStorage.setItem(
+      `greensie_poradi_${uzivatelIdRef.current}`,
+      JSON.stringify({ projekty: poradiProjektu, faze: poradiFazi, ukoly: poradiUkolu })
+    );
+  }, [poradiProjektu, poradiFazi, poradiUkolu]);
 
   function naplnBarvyText(barvy) {
     setBarvyText({
@@ -116,6 +208,14 @@ export default function PrehledProjektu() {
     Promise.all([nactiMe(), nactiMatici()])
       .then(([me, d]) => {
         setUzivatel(me.uzivatel);
+        uzivatelIdRef.current = me.uzivatel.id;
+        const prefs = nactiSkrytePrefs(me.uzivatel.id);
+        setSkryteFaze(prefs.faze);
+        setSkryteUkoly(prefs.ukoly);
+        const poradi = nactiPoradiPrefs(me.uzivatel.id);
+        setPoradiProjektu(poradi.projekty);
+        setPoradiFazi(poradi.faze);
+        setPoradiUkolu(poradi.ukoly);
         setMatice(d);
         naplnBarvyText(d.barvy);
       })
@@ -141,8 +241,23 @@ export default function PrehledProjektu() {
 
   const { faze, projekty, bunky, barvy, muze_editovat } = matice;
   const pocetUkolu = faze.reduce((n, f) => n + f.ukoly.length, 0);
-  const viditelneProjekty = projekty.filter((p) => !p.skryty);
-  const skryteProjekty = projekty.filter((p) => p.skryty);
+  // 1) aplikuj uživatelské pořadí (drag & drop)
+  const seradaneProjekty = seradPodle(projekty, poradiProjektu, (p) => p.id);
+  const seradaneFaze = seradPodle(faze, poradiFazi, (f) => f.todo).map((f) => ({
+    ...f,
+    ukoly: seradPodle(f.ukoly, poradiUkolu[f.todo], (u) => u.sloupec_id),
+  }));
+  // 2) pak uživatelské skrytí
+  const viditelneProjekty = seradaneProjekty.filter((p) => !p.skryty);
+  const skryteProjekty = seradaneProjekty.filter((p) => p.skryty);
+  const viditelneFaze = seradaneFaze
+    .filter((f) => !skryteFaze.has(f.todo))
+    .map((f) => ({ ...f, ukoly: f.ukoly.filter((u) => !skryteUkoly.has(u.sloupec_id)) }))
+    .filter((f) => f.ukoly.length > 0);
+  const pocetSloupcuMatice = viditelneFaze.reduce(
+    (n, f) => n + (collapsed[f.todo] ? 1 : f.ukoly.length),
+    0
+  );
 
   function toggleFaze(todo) {
     setCollapsed((c) => ({ ...c, [todo]: !c[todo] }));
@@ -154,6 +269,51 @@ export default function PrehledProjektu() {
   }
   function bunkaFor(projektId, sloupecId) {
     return bunky[bunkaKlic(projektId, sloupecId)] || null;
+  }
+  function toggleSkrytFazi(todo) {
+    setSkryteFaze((prev) => {
+      const n = new Set(prev);
+      if (n.has(todo)) n.delete(todo);
+      else n.add(todo);
+      return n;
+    });
+  }
+  function toggleSkrytUkol(sloupecId) {
+    setSkryteUkoly((prev) => {
+      const n = new Set(prev);
+      if (n.has(sloupecId)) n.delete(sloupecId);
+      else n.add(sloupecId);
+      return n;
+    });
+  }
+  function zobrazitVse() {
+    setSkryteFaze(new Set());
+    setSkryteUkoly(new Set());
+  }
+
+  function dropProjekt(cilId) {
+    const info = dragInfo.current;
+    dragInfo.current = null;
+    setDropCil(null);
+    if (!info || info.typ !== "projekt" || info.id === cilId) return;
+    setPoradiProjektu(presunPole(seradaneProjekty.map((p) => p.id), info.id, cilId));
+  }
+  function dropFaze(cilTodo) {
+    const info = dragInfo.current;
+    dragInfo.current = null;
+    setDropCil(null);
+    if (!info || info.typ !== "faze" || info.todo === cilTodo) return;
+    setPoradiFazi(presunPole(seradaneFaze.map((f) => f.todo), info.todo, cilTodo));
+  }
+  function dropUkol(fazeTodo, cilId) {
+    const info = dragInfo.current;
+    dragInfo.current = null;
+    setDropCil(null);
+    if (!info || info.typ !== "ukol" || info.faze !== fazeTodo || info.id === cilId) return;
+    const faseObj = seradaneFaze.find((f) => f.todo === fazeTodo);
+    if (!faseObj) return;
+    const nove = presunPole(faseObj.ukoly.map((u) => u.sloupec_id), info.id, cilId);
+    setPoradiUkolu((prev) => ({ ...prev, [fazeTodo]: nove }));
   }
 
   function fazeStat(projektId, f) {
@@ -287,6 +447,17 @@ export default function PrehledProjektu() {
                 <button className="fm-btn fm-ghost" onClick={() => setCollapsed({})}>
                   Rozbalit vše
                 </button>
+                <ZobrazeniDropdown
+                  faze={seradaneFaze}
+                  skryteFaze={skryteFaze}
+                  skryteUkoly={skryteUkoly}
+                  onToggleFaze={toggleSkrytFazi}
+                  onToggleUkol={toggleSkrytUkol}
+                  onZobrazitVse={zobrazitVse}
+                />
+                <button className="fm-btn fm-ghost" onClick={zobrazitVse}>
+                  Zobrazit vše
+                </button>
               </span>
               <span className="fm-spacer" />
               <span className="fm-status">
@@ -347,26 +518,71 @@ export default function PrehledProjektu() {
                 <th className="fm-col-proj" rowSpan={2}>Projekt</th>
                 <th className="fm-col-term" rowSpan={2}>Termín</th>
                 <th className="fm-col-done" rowSpan={2}>Hotové fáze</th>
-                {faze.map((f) => (
+                {viditelneFaze.map((f) => (
                   <th
                     key={f.todo}
-                    className="fm-grp"
+                    className={
+                      "fm-grp" +
+                      (dropCil?.typ === "faze" && dropCil.key === f.todo ? " fm-drop-col" : "")
+                    }
                     colSpan={collapsed[f.todo] ? 1 : f.ukoly.length}
                     onClick={() => toggleFaze(f.todo)}
-                    title="Klik: sbalit / rozbalit fázi"
+                    title="Klik: sbalit / rozbalit · táhni: přesunout fázi"
+                    draggable
+                    onDragStart={() => {
+                      dragInfo.current = { typ: "faze", todo: f.todo };
+                    }}
+                    onDragEnd={() => {
+                      dragInfo.current = null;
+                      setDropCil(null);
+                    }}
+                    onDragOver={(e) => {
+                      if (dragInfo.current?.typ === "faze") e.preventDefault();
+                    }}
+                    onDragEnter={() => {
+                      if (dragInfo.current?.typ === "faze") setDropCil({ typ: "faze", key: f.todo });
+                    }}
+                    onDrop={() => dropFaze(f.todo)}
                   >
+                    <Oko title="Skrýt fázi (Zobrazení → zpět)" onClick={() => toggleSkrytFazi(f.todo)} />
                     <span className="fm-grp-toggle">{collapsed[f.todo] ? "▸" : "▾"}</span>
                     {f.todo || "—"}
                   </th>
                 ))}
               </tr>
               <tr className="fm-tasks">
-                {faze.map((f) =>
+                {viditelneFaze.map((f) =>
                   collapsed[f.todo] ? (
                     <th key={f.todo} className="fm-th-sum">termín · hotovo</th>
                   ) : (
                     f.ukoly.map((u, ci) => (
-                      <th key={u.sloupec_id} className={"fm-th-task" + (ci === 0 ? " fm-grp-start" : "")}>
+                      <th
+                        key={u.sloupec_id}
+                        className={
+                          "fm-th-task" +
+                          (ci === 0 ? " fm-grp-start" : "") +
+                          (dropCil?.typ === "ukol" && dropCil.key === u.sloupec_id ? " fm-drop-col" : "")
+                        }
+                        title="Táhni pro přesunutí úkolu (v rámci fáze)"
+                        draggable
+                        onDragStart={() => {
+                          dragInfo.current = { typ: "ukol", id: u.sloupec_id, faze: f.todo };
+                        }}
+                        onDragEnd={() => {
+                          dragInfo.current = null;
+                          setDropCil(null);
+                        }}
+                        onDragOver={(e) => {
+                          if (dragInfo.current?.typ === "ukol" && dragInfo.current.faze === f.todo)
+                            e.preventDefault();
+                        }}
+                        onDragEnter={() => {
+                          if (dragInfo.current?.typ === "ukol" && dragInfo.current.faze === f.todo)
+                            setDropCil({ typ: "ukol", key: u.sloupec_id });
+                        }}
+                        onDrop={() => dropUkol(f.todo, u.sloupec_id)}
+                      >
+                        <Oko title="Skrýt úkol (Zobrazení → zpět)" onClick={() => toggleSkrytUkol(u.sloupec_id)} />
                         <span className="fm-th-name">{u.nazev}</span>
                       </th>
                     ))
@@ -381,9 +597,32 @@ export default function PrehledProjektu() {
                 const pct = stat.totalPhases > 0 ? Math.round((100 * stat.donePhases) / stat.totalPhases) : 0;
                 const vseHotovo = stat.totalPhases > 0 && stat.donePhases === stat.totalPhases;
                 return (
-                  <tr key={p.id}>
+                  <tr
+                    key={p.id}
+                    className={dropCil?.typ === "projekt" && dropCil.key === p.id ? "fm-drop-row" : ""}
+                    onDragOver={(e) => {
+                      if (dragInfo.current?.typ === "projekt") e.preventDefault();
+                    }}
+                    onDragEnter={() => {
+                      if (dragInfo.current?.typ === "projekt") setDropCil({ typ: "projekt", key: p.id });
+                    }}
+                    onDrop={() => dropProjekt(p.id)}
+                  >
                     <td className="fm-col-handle">
-                      <span className="fm-handle" title="Řazení – připravujeme">⋮⋮</span>
+                      <span
+                        className="fm-handle"
+                        title="Táhni pro změnu pořadí projektů"
+                        draggable
+                        onDragStart={() => {
+                          dragInfo.current = { typ: "projekt", id: p.id };
+                        }}
+                        onDragEnd={() => {
+                          dragInfo.current = null;
+                          setDropCil(null);
+                        }}
+                      >
+                        ⋮⋮
+                      </span>
                     </td>
                     <td className={`fm-col-proj fm-lvl fm-lvl-${pLevel}`}>
                       <span className="fm-proj-name">
@@ -421,7 +660,7 @@ export default function PrehledProjektu() {
                       </span>
                     </td>
 
-                    {faze.map((f) => {
+                    {viditelneFaze.map((f) => {
                       if (collapsed[f.todo]) {
                         const s = fazeStat(p.id, f);
                         if (!s.exists) {
@@ -480,6 +719,7 @@ export default function PrehledProjektu() {
                             <td
                               key={u.sloupec_id}
                               className={"fm-cell fm-s-done" + grpStart + klik}
+                              title={c.poznamka || undefined}
                               onClick={() => otevriBunku(p, u)}
                             >
                               <span className="fm-cell-status">
@@ -495,6 +735,7 @@ export default function PrehledProjektu() {
                           <td
                             key={u.sloupec_id}
                             className={`fm-cell fm-todo-lvl fm-lvl-${lvl}${grpStart}${klik}`}
+                            title={c.poznamka || undefined}
                             onClick={() => otevriBunku(p, u)}
                           >
                             <span className="fm-cell-status">
@@ -511,7 +752,7 @@ export default function PrehledProjektu() {
               })}
               {viditelneProjekty.length === 0 && (
                 <tr>
-                  <td colSpan={4 + pocetUkolu} style={{ padding: 40, textAlign: "center", color: "var(--fm-muted)" }}>
+                  <td colSpan={4 + pocetSloupcuMatice} style={{ padding: 40, textAlign: "center", color: "var(--fm-muted)" }}>
                     {projekty.length === 0
                       ? muze_editovat
                         ? "Zatím žádná data. Klikni na „Načíst z Freelo“ nebo přidej projekt ručně."

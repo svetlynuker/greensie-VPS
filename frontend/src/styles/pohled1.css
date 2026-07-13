@@ -237,6 +237,25 @@ tbody tr:hover .fm-col-done {
   user-select: none;
   font-size: 14px;
   line-height: 1;
+  cursor: grab;
+}
+
+.fm-handle:active {
+  cursor: grabbing;
+}
+
+/* drag & drop feedback */
+.fm-grp[draggable="true"],
+.fm-th-task[draggable="true"] {
+  cursor: grab;
+}
+
+.fm-drop-col {
+  box-shadow: inset 3px 0 0 var(--fm-brand);
+}
+
+tr.fm-drop-row td {
+  box-shadow: inset 0 3px 0 var(--fm-brand);
 }
 
 .fm-proj-name {
@@ -378,16 +397,19 @@ td.fm-cell.fm-s-done {
   margin-top: 1px;
 }
 
-/* poznámka na buňce – prvních pár slov, celá v tooltipu (title) */
+/* poznámka na buňce – náhled na pár slov, nerozšiřuje sloupec;
+   celá poznámka v tooltipu (title) a v detailu po prokliku */
 .fm-cell-note {
   font-size: 11px;
   margin-top: 2px;
   color: var(--fm-text);
   font-style: italic;
-  white-space: nowrap;
+  width: calc(var(--fm-w-task) - 16px);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .fm-cell.fm-klik {
@@ -546,6 +568,94 @@ tbody tr:hover td.fm-todo-lvl {
   width: 12px;
   color: var(--fm-brand);
   margin-right: 2px;
+}
+
+/* ikonka oka pro skrytí úkolu / fáze */
+.fm-eye {
+  cursor: pointer;
+  color: var(--fm-muted);
+  opacity: 0.5;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.fm-eye:hover {
+  opacity: 1;
+  color: var(--fm-brand-dk);
+}
+
+.fm-grp .fm-eye,
+.fm-th-task .fm-eye {
+  float: right;
+  margin-left: 6px;
+}
+
+/* roletka „Zobrazení" – checklist úkolů a fází */
+.fm-dd {
+  position: relative;
+  display: inline-block;
+}
+
+.fm-dd-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+}
+
+.fm-dd-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 120;
+  background: var(--fm-card);
+  border: 1px solid var(--fm-line);
+  border-radius: 10px;
+  padding: 8px;
+  min-width: 280px;
+  max-height: 60vh;
+  overflow: auto;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+}
+
+.fm-dd-phase {
+  margin-top: 8px;
+}
+
+.fm-dd-phase:first-child {
+  margin-top: 0;
+}
+
+.fm-dd-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 5px;
+  font-size: 12.5px;
+}
+
+.fm-dd-row:hover {
+  background: var(--fm-row-hover);
+}
+
+.fm-dd-row.fm-dd-phase-row {
+  font-weight: 700;
+  color: var(--fm-brand-dk);
+}
+
+.fm-dd-task {
+  margin-left: 20px;
+  font-size: 12px;
+}
+
+.fm-dd-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--fm-line);
 }
 
 table.fm-matrix thead tr.fm-tasks th {

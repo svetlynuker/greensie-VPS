@@ -1,5 +1,6 @@
 import { logout } from "../api";
 import ThemeToggle from "./ThemeToggle";
+import VelikostTextu from "./VelikostTextu";
 
 export default function Layout({ uzivatel, children }) {
   return (
@@ -25,6 +26,7 @@ export default function Layout({ uzivatel, children }) {
         />
         <strong style={{ fontSize: 15 }}>Greensie</strong>
         <div style={{ flex: 1 }} />
+        <VelikostTextu />
         <ThemeToggle />
         {uzivatel && (
           <>
