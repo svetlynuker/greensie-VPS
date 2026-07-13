@@ -4,6 +4,11 @@ import Layout from "../components/Layout";
 import Tile from "../components/Tile";
 import { nactiMe, logout } from "../api";
 
+// Dlaždice s hotovou sekcí vedou na svou stránku; ostatní zatím ukážou placeholder.
+const TRASY = {
+  projekty: "/projekty",
+};
+
 export default function Rozcestnik() {
   const [data, setData] = useState(null);
   const [otevrenaDlazdice, setOtevrenaDlazdice] = useState(null);
@@ -32,7 +37,13 @@ export default function Rozcestnik() {
         }}
       >
         {data.dlazdice.map((d) => (
-          <Tile key={d.klic} nazev={d.nazev} onClick={() => setOtevrenaDlazdice(d.nazev)} />
+          <Tile
+            key={d.klic}
+            nazev={d.nazev}
+            onClick={() =>
+              TRASY[d.klic] ? navigate(TRASY[d.klic]) : setOtevrenaDlazdice(d.nazev)
+            }
+          />
         ))}
       </div>
 

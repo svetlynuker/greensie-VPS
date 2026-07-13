@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Login from "./pages/Login";
 import Rozcestnik from "./pages/Rozcestnik";
+import PrehledProjektu from "./pages/PrehledProjektu";
 import { getToken } from "./api";
 
 function VyzadujePrihlaseni({ children }) {
@@ -17,6 +18,14 @@ export default function App() {
           element={
             <VyzadujePrihlaseni>
               <Rozcestnik />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/projekty"
+          element={
+            <VyzadujePrihlaseni>
+              <PrehledProjektu />
             </VyzadujePrihlaseni>
           }
         />

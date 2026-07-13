@@ -1,0 +1,614 @@
+/* Pohled 1 – Přehled projektů. Vizuál převzatý z prototypu (docs/prehled projektu.txt),
+   s úpravami dle SPEC.md kap. 3.2. Namespace fm-, barvy z global.css (--fm-*). */
+
+:root {
+  --fm-done-bg: #e9f7ee;
+  --fm-done: #2f9e44;
+  --fm-todo-bg: #fff7ed;
+  --fm-todo: #e8850c;
+  --fm-sticky: #f8faf9;
+  --fm-row-hover: #f6faf8;
+  --fm-sticky-hover: #eef4f1;
+  --fm-empty-bg: #fbfcfc;
+  --fm-empty-hint: #c7d0cb;
+  --fm-grp-hover: #e4ebe7;
+  --fm-w-handle: 32px;
+  --fm-w-proj: 240px;
+  --fm-w-term: 132px;
+  --fm-w-done: 120px;
+  --fm-w-task: 176px;
+}
+
+:root[data-theme="dark"] {
+  --fm-done-bg: #173224;
+  --fm-done: #40c057;
+  --fm-sticky: #171d22;
+  --fm-row-hover: #1f272d;
+  --fm-sticky-hover: #232c32;
+  --fm-empty-bg: #171d22;
+  --fm-empty-hint: #3a444a;
+  --fm-grp-hover: #2a343a;
+}
+
+.fm-app {
+  padding: 4px 4px 60px;
+}
+
+/* ---- Topbar (schovatelná) ---- */
+.fm-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--fm-card);
+  border: 1px solid var(--fm-line);
+  border-radius: 12px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(31, 41, 51, 0.05);
+}
+
+.fm-group {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding-left: 8px;
+  margin-left: 2px;
+  border-left: 1px solid var(--fm-line);
+}
+
+.fm-group-label {
+  color: var(--fm-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.fm-spacer {
+  flex: 1 1 auto;
+}
+
+.fm-status {
+  color: var(--fm-muted);
+  font-size: 12px;
+}
+
+.fm-status b {
+  color: var(--fm-text);
+}
+
+.fm-btn.fm-ghost {
+  background: transparent;
+}
+
+.fm-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.fm-btn:disabled:hover {
+  border-color: var(--fm-line);
+  color: var(--fm-text);
+}
+
+/* ---- Legenda barev: dle SPEC 3.2 vždy viditelná a větší ---- */
+.fm-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--fm-text);
+  background: var(--fm-card);
+  border: 1px solid var(--fm-line);
+  border-radius: 12px;
+  padding: 10px 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(31, 41, 51, 0.05);
+}
+
+.fm-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.fm-legend-title {
+  color: var(--fm-muted);
+  font-weight: 700;
+  margin-right: 2px;
+}
+
+.fm-lc {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+/* ---- Tabulka ---- */
+.fm-scroll {
+  background: var(--fm-card);
+  border: 1px solid var(--fm-line);
+  border-radius: 12px;
+  overflow: auto;
+  max-height: calc(100vh - 220px);
+  box-shadow: 0 1px 2px rgba(31, 41, 51, 0.05);
+}
+
+table.fm-matrix {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: max-content;
+  min-width: 100%;
+}
+
+table.fm-matrix th,
+table.fm-matrix td {
+  border-right: 1px solid var(--fm-line);
+  border-bottom: 1px solid var(--fm-line);
+  padding: 6px 8px;
+  vertical-align: top;
+  text-align: left;
+}
+
+table.fm-matrix thead th {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--fm-head);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--fm-text);
+}
+
+/* sticky levé sloupce */
+.fm-col-handle {
+  position: sticky;
+  left: 0;
+  z-index: 15;
+  width: var(--fm-w-handle);
+  min-width: var(--fm-w-handle);
+  background: var(--fm-sticky);
+  text-align: center;
+  color: var(--fm-muted);
+}
+
+.fm-col-proj {
+  position: sticky;
+  left: var(--fm-l-proj, var(--fm-w-handle));
+  z-index: 15;
+  width: var(--fm-w-proj);
+  min-width: var(--fm-w-proj);
+  background: var(--fm-sticky);
+}
+
+.fm-col-term {
+  position: sticky;
+  left: var(--fm-l-term, calc(var(--fm-w-handle) + var(--fm-w-proj)));
+  z-index: 15;
+  width: var(--fm-w-term);
+  min-width: var(--fm-w-term);
+  background: var(--fm-sticky);
+}
+
+.fm-col-done {
+  position: sticky;
+  left: var(--fm-l-done, calc(var(--fm-w-handle) + var(--fm-w-proj) + var(--fm-w-term)));
+  z-index: 15;
+  width: var(--fm-w-done);
+  min-width: var(--fm-w-done);
+  background: var(--fm-sticky);
+  border-right: 2px solid var(--fm-line);
+}
+
+thead .fm-col-handle,
+thead .fm-col-proj,
+thead .fm-col-term,
+thead .fm-col-done {
+  z-index: 30;
+  background: var(--fm-head);
+}
+
+.fm-th-task {
+  width: var(--fm-w-task);
+  min-width: var(--fm-w-task);
+}
+
+.fm-th-name {
+  color: var(--fm-text);
+  font-weight: 600;
+  display: block;
+}
+
+tbody tr:hover td {
+  background: var(--fm-row-hover);
+}
+
+tbody tr:hover .fm-col-handle,
+tbody tr:hover .fm-col-proj,
+tbody tr:hover .fm-col-term,
+tbody tr:hover .fm-col-done {
+  background: var(--fm-sticky-hover);
+}
+
+.fm-handle {
+  color: var(--fm-muted);
+  user-select: none;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.fm-proj-name {
+  font-weight: 600;
+}
+
+.fm-row-hide {
+  display: inline-block;
+  margin-top: 3px;
+  cursor: pointer;
+  color: var(--fm-muted);
+  font-size: 11px;
+}
+
+.fm-row-hide:hover {
+  color: #c92a2a;
+}
+
+.fm-skryte-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 8px 14px;
+  margin-bottom: 12px;
+  font-size: 12.5px;
+  color: var(--fm-muted);
+}
+
+.fm-skryte-panel .fm-obnovit {
+  cursor: pointer;
+  color: var(--fm-brand-dk);
+  font-weight: 600;
+}
+
+.fm-skryte-panel .fm-obnovit:hover {
+  text-decoration: underline;
+}
+
+.fm-proj-name a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.fm-proj-name a:hover {
+  color: var(--fm-brand-dk);
+  text-decoration: underline;
+}
+
+.fm-term {
+  white-space: nowrap;
+}
+
+.fm-term.fm-none {
+  color: var(--fm-muted);
+  font-style: italic;
+}
+
+.fm-term-label {
+  color: var(--fm-muted);
+  font-weight: 600;
+}
+
+.fm-done-badge {
+  font-weight: 700;
+}
+
+.fm-done-badge.fm-all {
+  color: var(--fm-done);
+}
+
+.fm-done-bar {
+  height: 4px;
+  border-radius: 3px;
+  background: var(--fm-line);
+  margin-top: 4px;
+  overflow: hidden;
+}
+
+.fm-done-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--fm-brand);
+}
+
+/* buňka úkolu */
+td.fm-cell {
+  min-height: 40px;
+}
+
+td.fm-cell.fm-empty {
+  background: var(--fm-empty-bg);
+}
+
+td.fm-cell.fm-s-done {
+  background: var(--fm-done-bg);
+}
+
+.fm-cell-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.fm-cell-status .fm-pin {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.fm-cell-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.fm-s-done .fm-pin {
+  background: var(--fm-done);
+}
+
+.fm-s-done .fm-cell-status {
+  color: var(--fm-done);
+}
+
+.fm-cell-term {
+  color: var(--fm-muted);
+  font-size: 11px;
+  margin-top: 3px;
+}
+
+.fm-cell-term.fm-none {
+  font-style: italic;
+}
+
+.fm-cell-owner {
+  font-size: 11px;
+  margin-top: 1px;
+}
+
+/* poznámka na buňce – prvních pár slov, celá v tooltipu (title) */
+.fm-cell-note {
+  font-size: 11px;
+  margin-top: 2px;
+  color: var(--fm-text);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.fm-cell.fm-klik {
+  cursor: pointer;
+}
+
+.fm-cell.fm-klik:hover {
+  outline: 1px solid var(--fm-brand);
+  outline-offset: -1px;
+}
+
+/* vstupní pole prahů u legendy */
+.fm-legend-col {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.fm-legend-input {
+  width: 78px;
+  padding: 3px 6px;
+  border: 1px solid var(--fm-line);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.fm-legend-range {
+  font-size: 11px;
+  color: var(--fm-muted);
+}
+
+.fm-cell-link {
+  font-size: 10.5px;
+  margin-top: 1px;
+}
+
+.fm-cell-link a {
+  color: var(--fm-brand-dk);
+}
+
+.fm-cell-empty-hint {
+  color: var(--fm-empty-hint);
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* ---- Termínové úrovně (deadlineLevel z prototypu) ---- */
+.fm-lvl-green {
+  --lvl: #2f9e44;
+  --lvlbg: #e9f7ee;
+  --lvltx: #237032;
+}
+.fm-lvl-yellow {
+  --lvl: #e6b800;
+  --lvlbg: #fff9db;
+  --lvltx: #8a6410;
+}
+.fm-lvl-orange {
+  --lvl: #e8850c;
+  --lvlbg: #fff2e2;
+  --lvltx: #b5540a;
+}
+.fm-lvl-red {
+  --lvl: #e03131;
+  --lvlbg: #ffe9e7;
+  --lvltx: #c0261f;
+}
+.fm-lvl-none {
+  --lvl: #e8850c;
+  --lvlbg: #fff2e2;
+  --lvltx: #b5540a;
+}
+
+/* tmavé varianty úrovní – tmavší podklad s barevným nádechem, světlý text */
+:root[data-theme="dark"] .fm-lvl-green {
+  --lvl: #40c057;
+  --lvlbg: #14301f;
+  --lvltx: #8ce99a;
+}
+:root[data-theme="dark"] .fm-lvl-yellow {
+  --lvl: #e6b800;
+  --lvlbg: #33290a;
+  --lvltx: #ffe066;
+}
+:root[data-theme="dark"] .fm-lvl-orange {
+  --lvl: #e8850c;
+  --lvlbg: #3a2510;
+  --lvltx: #ffc078;
+}
+:root[data-theme="dark"] .fm-lvl-red {
+  --lvl: #e03131;
+  --lvlbg: #3a1614;
+  --lvltx: #ff8787;
+}
+:root[data-theme="dark"] .fm-lvl-none {
+  --lvl: #e8850c;
+  --lvlbg: #3a2510;
+  --lvltx: #ffc078;
+}
+
+/* název projektu obarvený dle termínu projektu (SPEC 3.2: bez proužku nejhoršího úkolu) */
+td.fm-col-proj.fm-lvl {
+  background: var(--lvlbg);
+  border-left: 5px solid var(--lvl);
+}
+
+tbody tr:hover td.fm-col-proj.fm-lvl {
+  background: var(--lvlbg);
+  filter: brightness(0.985);
+}
+
+/* nehotová buňka obarvená dle termínu úkolu */
+td.fm-cell.fm-todo-lvl {
+  background: var(--lvlbg);
+  border-left: 3px solid var(--lvl);
+}
+
+td.fm-cell.fm-todo-lvl .fm-pin {
+  background: var(--lvl);
+}
+
+td.fm-cell.fm-todo-lvl .fm-cell-status {
+  color: var(--lvltx);
+}
+
+tbody tr:hover td.fm-todo-lvl {
+  background: var(--lvlbg);
+  filter: brightness(0.985);
+}
+
+/* ---- Fázové skupiny (dvouúrovňová hlavička) ---- */
+.fm-grp {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--fm-head);
+  height: 30px;
+  box-sizing: border-box;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--fm-brand-dk);
+  border-left: 2px solid var(--fm-line);
+}
+
+.fm-grp:hover {
+  background: var(--fm-grp-hover);
+}
+
+.fm-grp-toggle {
+  display: inline-block;
+  width: 12px;
+  color: var(--fm-brand);
+  margin-right: 2px;
+}
+
+table.fm-matrix thead tr.fm-tasks th {
+  top: 30px;
+}
+
+.fm-th-task.fm-grp-start,
+td.fm-cell.fm-grp-start,
+.fm-th-sum {
+  border-left: 2px solid var(--fm-line);
+}
+
+.fm-th-sum {
+  width: 150px;
+  min-width: 150px;
+  color: var(--fm-muted);
+  font-weight: 600;
+  font-size: 11px;
+}
+
+/* sbalená souhrnná buňka */
+td.fm-sum {
+  cursor: pointer;
+  width: 150px;
+  min-width: 150px;
+  border-left: 2px solid var(--fm-line);
+}
+
+td.fm-sum.fm-lvl {
+  background: var(--lvlbg);
+  border-left-color: var(--lvl);
+}
+
+tbody tr:hover td.fm-sum.fm-lvl {
+  background: var(--lvlbg);
+  filter: brightness(0.985);
+}
+
+.fm-sum-term {
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.fm-sum-count {
+  font-size: 11px;
+  color: var(--fm-muted);
+  margin-top: 2px;
+}
+
+td.fm-sum .fm-done-bar {
+  margin-top: 4px;
+}
+
+.fm-backlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fm-muted);
+  font-size: 13px;
+  text-decoration: none;
+  margin-bottom: 12px;
+}
+
+.fm-backlink:hover {
+  color: var(--fm-brand-dk);
+}

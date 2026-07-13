@@ -1,4 +1,5 @@
 import { logout } from "../api";
+import ThemeToggle from "./ThemeToggle";
 
 export default function Layout({ uzivatel, children }) {
   return (
@@ -24,6 +25,7 @@ export default function Layout({ uzivatel, children }) {
         />
         <strong style={{ fontSize: 15 }}>Greensie</strong>
         <div style={{ flex: 1 }} />
+        <ThemeToggle />
         {uzivatel && (
           <>
             <span style={{ color: "var(--fm-muted)", fontSize: 13 }}>

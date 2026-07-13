@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth import models  # noqa: F401 - registrace modelů před create_all
 from app.auth.routes import router as auth_router
+from app.matice import models as matice_models  # noqa: F401 - registrace modelů
+from app.matice.routes import router as matice_router
 from app.database import Base, engine
 
 Base.metadata.create_all(bind=engine)
@@ -18,6 +20,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(matice_router)
 
 
 @app.get("/health")

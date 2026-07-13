@@ -1,4 +1,6 @@
 :root {
+  color-scheme: light;
+
   --fm-brand: #2f9e44;
   --fm-brand-dk: #237032;
   --fm-brand-soft: #e6f4ea;
@@ -13,6 +15,21 @@
   --fm-tile-min-width: 220px;
   --fm-tile-gap: 16px;
   --fm-tile-radius: 16px;
+}
+
+/* ---- Tmavý režim: přepíná jen barvy, rozvržení zůstává ---- */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --fm-brand: #40c057;
+  --fm-brand-dk: #69db7c;
+  --fm-brand-soft: #17321f;
+  --fm-bg: #12161a;
+  --fm-card: #1b2126;
+  --fm-head: #232b31;
+  --fm-text: #e6ebe8;
+  --fm-muted: #9aa5a0;
+  --fm-line: #333d43;
 }
 
 * {
@@ -70,4 +87,17 @@ a {
   border: 1px solid var(--fm-line);
   border-radius: 12px;
   box-shadow: 0 1px 2px rgba(31, 41, 51, 0.05);
+}
+
+/* formulářová pole respektují téma (jinak by v tmavém režimu zůstala bílá) */
+input,
+select,
+textarea {
+  background: var(--fm-card);
+  color: var(--fm-text);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--fm-muted);
 }
