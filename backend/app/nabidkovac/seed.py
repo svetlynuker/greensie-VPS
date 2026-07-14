@@ -86,6 +86,9 @@ _SEED_CEZ = [
             "t2_kapacita_kc_kw_mesic": 22.743,
             "t2_spicka_kc_kw_mesic": 227.429,
             "sazba_prekroceni_kc_kw_mesic": 761.0,
+            # Prahy účinnosti pro Koeficient AKU (kap. 4.8), VN.
+            "u1_ucinnost": 0.60,
+            "u2_ucinnost": 0.75,
         },
         "platne_od": _PLATNE_OD_2027,
         "platne_do": None,
@@ -102,6 +105,9 @@ _SEED_CEZ = [
             "t2_kapacita_kc_kw_mesic": 11.586,
             "t2_spicka_kc_kw_mesic": 115.862,
             "sazba_prekroceni_kc_kw_mesic": 387.0,
+            # Prahy účinnosti pro Koeficient AKU (kap. 4.8), VVN (U2 = 0,70).
+            "u1_ucinnost": 0.60,
+            "u2_ucinnost": 0.70,
         },
         "platne_od": _PLATNE_OD_2027,
         "platne_do": None,
@@ -111,12 +117,23 @@ _SEED_CEZ = [
 ]
 
 
+# Klíče, které se do už existujících řádků smí doplnit (ne přepsat) – nově
+# přidané prahy Koeficientu AKU (kap. 4.8). Ceny (T1/T2) nikdy nepřepisujeme,
+# ať se neztratí případná ruční úprava přes admin.
+_BACKFILL_KLICE = ("u1_ucinnost", "u2_ucinnost")
+
+
 def seed_sazby(db: Session) -> int:
-    """Idempotentně vloží výchozí sazby ČEZ 2026. Vrací počet nově vložených řádků."""
+    """Idempotentně vloží výchozí sazby ČEZ a doplní chybějící prahy AKU.
+
+    Vrací počet nově vložených řádků. U existujících `nova_2027` řádků jen
+    dorovná chybějící klíče z `_BACKFILL_KLICE` (nepřepisuje už vyplněné hodnoty).
+    """
     vlozeno = 0
+    zmeneno = False
     for r in _SEED_CEZ:
-        existuje = (
-            db.query(SazbaDistributoru.id)
+        existujici = (
+            db.query(SazbaDistributoru)
             .filter(
                 SazbaDistributoru.distributor == r["distributor"],
                 SazbaDistributoru.napetova_hladina == r["napetova_hladina"],
@@ -125,10 +142,21 @@ def seed_sazby(db: Session) -> int:
             )
             .first()
         )
-        if existuje is not None:
+        if existujici is not None:
+            # Backfill chybějících prahů AKU do už existujícího řádku.
+            if isinstance(existujici.parametry, dict) and isinstance(r.get("parametry"), dict):
+                p = dict(existujici.parametry)
+                doplneno = False
+                for k in _BACKFILL_KLICE:
+                    if p.get(k) is None and r["parametry"].get(k) is not None:
+                        p[k] = r["parametry"][k]
+                        doplneno = True
+                if doplneno:
+                    existujici.parametry = p  # reassign kvůli detekci změny JSONB
+                    zmeneno = True
             continue
         db.add(SazbaDistributoru(**r))
         vlozeno += 1
-    if vlozeno:
+    if vlozeno or zmeneno:
         db.commit()
     return vlozeno

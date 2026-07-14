@@ -59,6 +59,8 @@ const POLE_PARAMETRU = {
     { klic: "t2_kapacita_kc_kw_mesic", label: "Tarif T2 – kapacita (Kč/kW/měsíc)" },
     { klic: "t2_spicka_kc_kw_mesic", label: "Tarif T2 – špička (Kč/kW/měsíc)" },
     { klic: "sazba_prekroceni_kc_kw_mesic", label: "Penalizace překročení RP (Kč/kW/měsíc)" },
+    { klic: "u1_ucinnost", label: "Koeficient AKU – práh U1 (např. 0,60)" },
+    { klic: "u2_ucinnost", label: "Koeficient AKU – práh U2 (0,75 VN / 0,70 VVN)" },
   ],
 };
 

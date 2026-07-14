@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import GrafOdberu from "./GrafOdberu";
 import {
   sazbySeznam,
   peakShavingProfilSouhrn,
@@ -257,11 +258,19 @@ export default function PeakShavingPanel({ nabidka }) {
                           <tr><td>Roční náklad s peak shavingem</td><td>{kc(dop.ekonomika_2027.novy_rocni_naklad)}</td></tr>
                           <tr><td><b>Roční úspora</b></td><td><b>{kc(dop.ekonomika_2027.rocni_uspora)}</b></td></tr>
                           <tr><td>Měsíců na tarifu T1 / T2</td><td>{dop.ekonomika_2027.pocet_mesicu_t1} / {dop.ekonomika_2027.pocet_mesicu_t2}</td></tr>
+                          {dop.ekonomika_2027.prumerny_koeficient_aku != null && (
+                            <tr><td>Průměrná sleva AKU</td><td>{Math.round(dop.ekonomika_2027.prumerny_koeficient_aku * 100)} %</td></tr>
+                          )}
                         </tbody>
                       </table>
                       <div style={{ fontSize: 11, color: "#b8860b", marginTop: 6 }}>
                         Modelový odhad, ne finální cena ERÚ (závazné rozhodnutí ~11/2026).
                       </div>
+                      {dop.ekonomika_2027.predpoklad_aku_neoverovany && (
+                        <div style={{ fontSize: 11, color: "#c92a2a", marginTop: 4 }}>
+                          ⚠ Zahrnuje nepotvrzený předpoklad slevy pro baterie (Koeficient AKU) – k ověření s manuálem ERÚ.
+                        </div>
+                      )}
                     </>
                   ) : (
                     <div style={{ fontSize: 13, color: "var(--fm-muted)" }}>Čeká se na oficiální sazby ERÚ.</div>
@@ -275,6 +284,32 @@ export default function PeakShavingPanel({ nabidka }) {
                   <b>Tarif T2</b> (levný paušál, drahá špička) vyjde levněji při utlumeném provozu nebo velké rezervě.{" "}
                   Zákazník si tarif nevybírá, distributor ho určuje automaticky každý měsíc podle skutečné spotřeby.
                 </p>
+              )}
+
+              {vysledek.graf && (
+                <>
+                  <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Odběr ze sítě – měsíční maxima</h4>
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Rok 2026 (držení ročního stropu)</div>
+                    <GrafOdberu
+                      mesice={vysledek.graf.mesice}
+                      bezBaterie={vysledek.graf.bez_baterie_kw}
+                      sBaterii={vysledek.graf.s_baterii_2026_kw}
+                      rpSoucasna={vysledek.graf.rp_soucasna_kw}
+                      rpNova={vysledek.graf.rp_nova_kw}
+                    />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Rok 2027 (srážení po měsících)</div>
+                    <GrafOdberu
+                      mesice={vysledek.graf.mesice}
+                      bezBaterie={vysledek.graf.bez_baterie_kw}
+                      sBaterii={vysledek.graf.s_baterii_2027_kw}
+                      rpSoucasna={vysledek.graf.rp_soucasna_kw}
+                      rpNova={vysledek.graf.rp_nova_kw}
+                    />
+                  </div>
+                </>
               )}
 
               {vysledek.varianty?.length > 1 && (
