@@ -222,23 +222,60 @@ export default function PeakShavingPanel({ nabidka }) {
                 </div>
               </div>
 
-              <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Ekonomika 2026</h4>
-              <table className="nb-table" style={{ marginBottom: 14 }}>
-                <tbody>
-                  <tr><td>Současný náklad – rezervace</td><td>{kc(dop.ekonomika_2026?.soucasny_naklad_rezervace)}</td></tr>
-                  <tr><td>Současný náklad – pokuty za překročení</td><td>{kc(dop.ekonomika_2026?.soucasny_naklad_prekroceni)}</td></tr>
-                  <tr><td><b>Současný náklad celkem</b></td><td><b>{kc(dop.ekonomika_2026?.soucasny_naklad_celkem)}</b></td></tr>
-                  <tr><td>Nový náklad (rezervace na {kw(dop.nova_rezervovana_kapacita_kw)})</td><td>{kc(dop.ekonomika_2026?.novy_naklad_rezervace)}</td></tr>
-                  <tr><td><b>Roční úspora</b></td><td><b>{kc(dop.ekonomika_2026?.rocni_uspora)}</b></td></tr>
-                </tbody>
-              </table>
+              <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Ekonomika – porovnání let</h4>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12, marginBottom: 12 }}>
+                {/* Rok 2026 */}
+                <div className="fm-card" style={{ padding: 14 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 8 }}>Rok 2026</div>
+                  <table className="nb-table">
+                    <tbody>
+                      <tr><td>Současný roční náklad</td><td>{kc(dop.ekonomika_2026?.soucasny_naklad_celkem)}</td></tr>
+                      <tr><td>Nový roční náklad</td><td>{kc(dop.ekonomika_2026?.novy_naklad_rezervace)}</td></tr>
+                      <tr><td><b>Roční úspora</b></td><td><b>{kc(dop.ekonomika_2026?.rocni_uspora)}</b></td></tr>
+                    </tbody>
+                  </table>
+                  <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 6 }}>
+                    Rezervovaná kapacita + pokuty za překročení.
+                  </div>
+                </div>
 
-              <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Ekonomika 2027 (nová struktura ERÚ)</h4>
-              <div style={{ fontSize: 13, marginBottom: 14 }}>
-                {dop.ekonomika_2027?.status === "spocitano"
-                  ? <>Odhad ročního nákladu 2027: <b>{kc(dop.ekonomika_2027.rocni_naklad)}</b></>
-                  : <span style={{ color: "var(--fm-muted)" }}>Čeká se na oficiální sazby ERÚ.</span>}
+                {/* Rok 2027 */}
+                <div className="fm-card" style={{ padding: 14 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    Rok 2027
+                    {dop.ekonomika_2027?.je_modelovy_odhad && (
+                      <span className="nb-badge" style={{ color: "#b8860b" }} title="Nezávazný odhad, ne finální cena ERÚ">
+                        ⚠ modelový odhad
+                      </span>
+                    )}
+                  </div>
+                  {dop.ekonomika_2027?.status === "spocitano" ? (
+                    <>
+                      <table className="nb-table">
+                        <tbody>
+                          <tr><td>Současný roční náklad</td><td>{kc(dop.ekonomika_2027.soucasny_rocni_naklad)}</td></tr>
+                          <tr><td>Nový roční náklad</td><td>{kc(dop.ekonomika_2027.novy_rocni_naklad)}</td></tr>
+                          <tr><td><b>Roční úspora</b></td><td><b>{kc(dop.ekonomika_2027.rocni_uspora)}</b></td></tr>
+                          <tr><td>Měsíců na tarifu T1 / T2</td><td>{dop.ekonomika_2027.pocet_mesicu_t1} / {dop.ekonomika_2027.pocet_mesicu_t2}</td></tr>
+                        </tbody>
+                      </table>
+                      <div style={{ fontSize: 11, color: "#b8860b", marginTop: 6 }}>
+                        Modelový odhad, ne finální cena ERÚ (závazné rozhodnutí ~11/2026).
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 13, color: "var(--fm-muted)" }}>Čeká se na oficiální sazby ERÚ.</div>
+                  )}
+                </div>
               </div>
+
+              {dop.ekonomika_2027?.status === "spocitano" && (
+                <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 14px", lineHeight: 1.5 }}>
+                  <b>Tarif T1</b> (dražší paušál, levná špička) obvykle vyjde levněji při provozu naplno blízko rezervovanému příkonu.{" "}
+                  <b>Tarif T2</b> (levný paušál, drahá špička) vyjde levněji při utlumeném provozu nebo velké rezervě.{" "}
+                  Zákazník si tarif nevybírá, distributor ho určuje automaticky každý měsíc podle skutečné spotřeby.
+                </p>
+              )}
 
               {vysledek.varianty?.length > 1 && (
                 <>

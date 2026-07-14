@@ -564,6 +564,7 @@ def _sazba_out(s: SazbaDistributoru) -> SazbaOut:
         parametry=s.parametry,  # může být None (nova_2027 čeká na sazby ERÚ)
         platne_od=_iso(s.platne_od),
         platne_do=_iso(s.platne_do),
+        je_modelovy_odhad=bool(s.je_modelovy_odhad),
         poznamka=s.poznamka or "",
     )
 
@@ -627,6 +628,7 @@ def pridej_sazbu(
         parametry=vstup.parametry,
         platne_od=platne_od,
         platne_do=platne_do,
+        je_modelovy_odhad=vstup.je_modelovy_odhad,
         poznamka=(vstup.poznamka or "").strip(),
         vytvoril_user_id=user.id,
     )
@@ -663,6 +665,7 @@ def uprav_sazbu(
     s.parametry = vstup.parametry
     s.platne_od = _parse_datum(vstup.platne_od, "platne_od")
     s.platne_do = _parse_datum(vstup.platne_do, "platne_do") if vstup.platne_do else None
+    s.je_modelovy_odhad = vstup.je_modelovy_odhad
     s.poznamka = (vstup.poznamka or "").strip()
     try:
         db.commit()
@@ -823,7 +826,9 @@ def _varianta_json(v: peak_shaving.Varianta) -> dict:
         "ekonomika_2026": {
             k: (round(x, 2) if isinstance(x, float) else x) for k, x in v.ekonomika_2026.items()
         },
-        "ekonomika_2027": v.ekonomika_2027,
+        "ekonomika_2027": {
+            k: (round(x, 2) if isinstance(x, float) else x) for k, x in v.ekonomika_2027.items()
+        },
     }
 
 
@@ -893,8 +898,16 @@ def spocti_peak_shaving(
             ),
         )
 
-    sazba_2027 = _najdi_sazbu(db, vstup.distributor, vstup.napetova_hladina, "nova_2027", 2027)
-    parametry_2027 = sazba_2027.parametry if sazba_2027 is not None else None
+    # Rok 2027 (nová struktura ERÚ) jen pro VN/VVN – NN appka pro peak shaving
+    # nenabízí (kap. 1), takže na NN se nova_2027 nikdy neaplikuje.
+    sazba_2027 = None
+    parametry_2027 = None
+    je_modelovy_2027 = False
+    if vstup.napetova_hladina in ("vn", "vvn"):
+        sazba_2027 = _najdi_sazbu(db, vstup.distributor, vstup.napetova_hladina, "nova_2027", 2027)
+        if sazba_2027 is not None:
+            parametry_2027 = sazba_2027.parametry
+            je_modelovy_2027 = bool(sazba_2027.je_modelovy_odhad)
 
     # 3) katalog baterií (typ=baterie, dostupné, s výkonem i kapacitou – kap. 3.2)
     tech = (
@@ -942,6 +955,7 @@ def spocti_peak_shaving(
         max_navratnost_roky=max_navratnost,
         interval_h=interval_h,
         parametry_2027=parametry_2027,
+        je_modelovy_2027=je_modelovy_2027,
     )
 
     popis_json = {
@@ -957,6 +971,7 @@ def spocti_peak_shaving(
             "stara_2026_id": sazba_2026.id,
             "nova_2027_id": (sazba_2027.id if sazba_2027 is not None else None),
             "sazby_2027_k_dispozici": bool(parametry_2027),
+            "sazby_2027_modelovy_odhad": je_modelovy_2027,
         },
         "max_navratnost_roky": max_navratnost,
         "doporucena": (_varianta_json(vysledek.doporucena) if vysledek.doporucena else None),

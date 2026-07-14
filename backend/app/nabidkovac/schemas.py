@@ -149,12 +149,13 @@ class SazbaOut(BaseModel):
     parametry: Optional[dict] = None
     platne_od: Optional[str] = None
     platne_do: Optional[str] = None
+    je_modelovy_odhad: bool = False
     poznamka: str = ""
 
 
 class SazbaVstup(BaseModel):
     """Založení/úprava sazby přes admin (kap. 6–7). `parametry=None` u nova_2027,
-    dokud ERÚ nezveřejní čísla."""
+    dokud ERÚ nezveřejní čísla. `je_modelovy_odhad` = nezávazný odhad (2027)."""
 
     distributor: Distributor
     napetova_hladina: NapetovaHladina
@@ -162,6 +163,7 @@ class SazbaVstup(BaseModel):
     parametry: Optional[dict] = None
     platne_od: str  # ISO datum (YYYY-MM-DD)
     platne_do: Optional[str] = None
+    je_modelovy_odhad: bool = False
     poznamka: str = ""
 
 
