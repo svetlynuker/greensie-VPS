@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import User
 from app.database import get_db
-from app.nabidkovac import peak_shaving, soubory
+from app.nabidkovac import peak_shaving, profil_import, soubory
 from app.nabidkovac.models import (
     DISTRIBUTORI,
     NAPETOVE_HLADINY,
@@ -691,6 +691,82 @@ def smaz_sazbu(
     db.delete(s)
     db.commit()
     return {"smazano": sazba_id}
+
+
+# ================= Profil spotřeby (načtení z nahraného souboru) =================
+def _profil_souhrn(db: Session, nabidka_id: int) -> dict:
+    """Souhrn načteného 15min profilu nabídky (počet, rozsah, max) pro UI."""
+    radky = (
+        db.query(SpotrebaProfil.cas, SpotrebaProfil.hodnota_kw)
+        .filter(SpotrebaProfil.nabidka_id == nabidka_id, SpotrebaProfil.hodnota_kw.isnot(None))
+        .all()
+    )
+    if not radky:
+        return {"pocet": 0}
+    casy = [r[0] for r in radky]
+    hodnoty = [float(r[1]) for r in radky]
+    return {
+        "pocet": len(radky),
+        "od": _iso(min(casy)),
+        "do": _iso(max(casy)),
+        "max_kw": round(max(hodnoty), 2),
+    }
+
+
+@router.get("/nabidky/{nabidka_id}/peak-shaving/profil-souhrn")
+def profil_souhrn(
+    nabidka_id: int,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    if db.get(Nabidka, nabidka_id) is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    return _profil_souhrn(db, nabidka_id)
+
+
+@router.post("/dokumenty/{dokument_id}/zpracuj-profil")
+def zpracuj_profil(
+    dokument_id: int,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Naparsuje nahraný soubor s 15min profilem (XLS/XLSX/CSV) do `spotreba_profil`.
+
+    Idempotentní: nejdřív smaže dřívější profil z tohoto dokumentu, pak vloží nový.
+    """
+    d = db.get(NabidkaDokument, dokument_id)
+    if d is None:
+        raise HTTPException(status_code=404, detail="Dokument neexistuje")
+    if d.typ not in ("spotreba_csv", "jiny"):
+        raise HTTPException(
+            status_code=422, detail="Tenhle dokument není profil spotřeby (nahraj CSV/XLS se spotřebou)."
+        )
+    cesta = soubory.UPLOAD_DIR / d.soubor_cesta
+    pripona = Path(d.soubor_cesta).suffix.lower()
+    try:
+        body = profil_import.nacti_profil(str(cesta), pripona)
+    except FileNotFoundError:
+        raise HTTPException(status_code=422, detail="Soubor se nepodařilo najít na disku.")
+    except ValueError as e:
+        d.stav_zpracovani = "chyba_extrakce"
+        db.commit()
+        raise HTTPException(status_code=422, detail=f"Zpracování profilu selhalo: {e}")
+
+    # idempotence – zahoď předchozí profil z tohoto dokumentu a vlož nový (bulk kvůli objemu)
+    db.query(SpotrebaProfil).filter(
+        SpotrebaProfil.nabidka_id == d.nabidka_id,
+        SpotrebaProfil.zdroj_dokument_id == d.id,
+    ).delete(synchronize_session=False)
+    db.bulk_insert_mappings(
+        SpotrebaProfil,
+        [
+            {"nabidka_id": d.nabidka_id, "cas": cas, "hodnota_kw": kw, "zdroj_dokument_id": d.id}
+            for cas, kw in body
+        ],
+    )
+    d.stav_zpracovani = "extrahovano"
+    db.commit()
+    return {"dokument_id": d.id, **_profil_souhrn(db, d.nabidka_id)}
 
 
 # ================= Peak shaving – výpočet (METODIKA kap. 4–5) =================
