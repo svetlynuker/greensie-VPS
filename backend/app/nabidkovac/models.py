@@ -15,12 +15,14 @@ modulové n-tice, ať je backend může validovat.
 from sqlalchemy import (
     Boolean,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -50,6 +52,20 @@ TYPY_DOKUMENTU = ("faktura_pdf", "spotreba_csv", "jiny")
 # připravené pro navazující prompty.
 STAVY_ZPRACOVANI = ("nahrano", "extrahovano", "chyba_extrakce", "rucne_doplneno")
 VYCHOZI_STAV_ZPRACOVANI = "nahrano"
+
+# ---- Peak shaving: sazby distributorů (METODIKA-peak-shaving.md, kap. 3.1) ----
+
+# Distributoři, se kterými appka počítá. Naostro jede zatím jen "cez"
+# (kap. 6 bod 5), "egd"/"pre" se doplní přes admin, až budou čísla ověřená.
+DISTRIBUTORI = ("cez", "egd", "pre")
+
+# Peak shaving řešíme jen pro VN a VVN, NN appka nenabízí (kap. 1 / kap. 6 bod 4).
+NAPETOVE_HLADINY = ("vn", "vvn")
+
+# Dvě různé tarifní struktury – od 1. 1. 2027 mění ERÚ způsob zpoplatnění
+# kapacity na VN/VVN (kap. 4.6). Ne jiná čísla do stejného vzorce, ale jiná
+# STRUKTURA výpočtu → proto typ struktury + flexibilní JSONB parametry.
+STRUKTURY_TARIFU = ("stara_2026", "nova_2027")
 
 
 class Technologie(Base):
@@ -263,6 +279,64 @@ class ExtrahovanaDataFaktury(Base):
     upraveno_at = Column(DateTime(timezone=True), nullable=True)
 
     surova_extrakce_json = Column(JSONB, nullable=True)  # celý raw výstup LLM
+
+
+class SazbaDistributoru(Base):
+    """Sazby distributorů pro peak shaving (METODIKA-peak-shaving.md, kap. 3.1).
+
+    Nese DVĚ různé tarifní struktury (2026 vs. 2027, kap. 4.6). Proto ne pevné
+    sloupce pro ceny, ale `struktura_tarifu` + flexibilní JSONB `parametry`
+    (stejný princip jako VypoctovaNastaveni.parametry) – až ERÚ zveřejní sazby
+    2027, doplní se jen řádek, žádná přestavba schématu.
+
+    Obsah `parametry` podle struktury (vše bez DPH):
+      stara_2026 → {cena_rezervovana_kapacita_kc_kw_rok, cena_prekroceni_kc_kw}
+      nova_2027  → {sazba_a_kapacita_kc_kw_rok, sazba_a_zmereny_max_kc_kw_mesic,
+                    sazba_b_kapacita_kc_kw_rok, sazba_b_zmereny_max_kc_kw_mesic}
+
+    `parametry` je nullable: u `nova_2027` zůstává NULL, dokud ERÚ nezveřejní
+    cenové rozhodnutí (kap. 4.6) – appka pak u roku 2027 ukáže „čeká se na
+    oficiální sazby ERÚ“ místo čísel.
+
+    `platne_od`/`platne_do` drží historii (sazby se mění každý rok) kvůli
+    zpětné dohledatelnosti, se kterou sazbou byla nabídka počítána.
+    """
+
+    __tablename__ = "sazby_distributoru"
+    __table_args__ = (
+        # Jeden platný řádek na kombinaci distributor × hladina × struktura
+        # × začátek platnosti (historii odlišuje právě platne_od).
+        UniqueConstraint(
+            "distributor",
+            "napetova_hladina",
+            "struktura_tarifu",
+            "platne_od",
+            name="uq_sazba_distributor_hladina_struktura_od",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    distributor = Column(String, nullable=False, index=True)  # jedna z DISTRIBUTORI
+    napetova_hladina = Column(String, nullable=False)  # jedna z NAPETOVE_HLADINY
+    struktura_tarifu = Column(String, nullable=False)  # jedna ze STRUKTURY_TARIFU
+
+    # NULL = struktura připravená, ale ceny ještě nejsou (typicky nova_2027).
+    parametry = Column(JSONB, nullable=True)
+
+    platne_od = Column(Date, nullable=False)
+    platne_do = Column(Date, nullable=True)  # NULL = platí zatím bez konce
+
+    # Volitelná poznámka ke zdroji/ověření (kap. 3.1 rozlišuje „potvrzeno“ vs.
+    # „doporučuji ověřit“) – pomůže kolegovi, co sazby doplňuje přes admin.
+    poznamka = Column(Text, nullable=False, default="", server_default="")
+
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    aktualizovano_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    vytvoril_user_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True
+    )
 
 
 class NavrhovaneReseni(Base):

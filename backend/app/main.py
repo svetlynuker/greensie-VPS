@@ -49,6 +49,25 @@ def _lehka_migrace():
 
 _lehka_migrace()
 
+
+def _seed_sazby():
+    """Naplní `sazby_distributoru` výchozími daty ČEZ 2026 (METODIKA kap. 3.1).
+
+    Idempotentní – vloží jen chybějící řádky, ruční úpravy přes admin nepřepíše.
+    EG.D, PRE a sazby 2027 se doplní přes admin (kap. 6–7).
+    """
+    from app.database import SessionLocal
+    from app.nabidkovac.seed import seed_sazby
+
+    db = SessionLocal()
+    try:
+        seed_sazby(db)
+    finally:
+        db.close()
+
+
+_seed_sazby()
+
 app = FastAPI(title="Greensie")
 
 app.add_middleware(
