@@ -71,6 +71,7 @@ class MeOut(BaseModel):
     uzivatel: UserOut
     dlazdice: list[DlazdiceOut]
     muze_editovat: bool  # smí editovat matici (Přehled projektů)
+    prava: list[str] = []  # efektivní práva uživatele (klíče z permissions.PRAVA)
     musi_zmenit_heslo: bool = False
 
 

@@ -3,6 +3,10 @@ import Login from "./pages/Login";
 import Rozcestnik from "./pages/Rozcestnik";
 import PrehledProjektu from "./pages/PrehledProjektu";
 import PrehledFinanci from "./pages/PrehledFinanci";
+import Nabidkovac from "./pages/Nabidkovac";
+import NabidkovacSekce from "./pages/NabidkovacSekce";
+import NabidkaDetail from "./pages/NabidkaDetail";
+import NabidkovacKatalog from "./pages/NabidkovacKatalog";
 import AdminNastaveni from "./pages/AdminNastaveni";
 import ZmenaHesla from "./pages/ZmenaHesla";
 import { getToken } from "./api";
@@ -45,6 +49,38 @@ export default function App() {
           element={
             <VyzadujePrihlaseni>
               <PrehledFinanci />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/nabidkovac"
+          element={
+            <VyzadujePrihlaseni>
+              <Nabidkovac />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/nabidkovac/katalog"
+          element={
+            <VyzadujePrihlaseni>
+              <NabidkovacKatalog />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/nabidkovac/nabidka/:id"
+          element={
+            <VyzadujePrihlaseni>
+              <NabidkaDetail />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/nabidkovac/:typ"
+          element={
+            <VyzadujePrihlaseni>
+              <NabidkovacSekce />
             </VyzadujePrihlaseni>
           }
         />

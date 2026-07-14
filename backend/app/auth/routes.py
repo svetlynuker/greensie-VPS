@@ -8,6 +8,7 @@ from app.auth.permissions import (
     hash_heslo,
     muze_editovat,
     over_heslo,
+    prava_uzivatele,
     vytvor_access_token,
 )
 from app.database import get_db
@@ -33,6 +34,7 @@ def me(user: User = Depends(get_current_user)):
         uzivatel=UserOut(id=user.id, jmeno=user.jmeno, email=user.email, je_admin=user.je_admin),
         dlazdice=dlazdice_pro(user),
         muze_editovat=muze_editovat(user),
+        prava=sorted(prava_uzivatele(user)),
         musi_zmenit_heslo=user.musi_zmenit_heslo,
     )
 

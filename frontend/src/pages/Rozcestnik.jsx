@@ -8,6 +8,7 @@ import { nactiMe, logout } from "../api";
 const TRASY = {
   projekty: "/projekty",
   finance: "/finance",
+  nabidkovac: "/nabidkovac",
   admin: "/admin",
 };
 
@@ -18,7 +19,7 @@ const VIDEO_DLE_KLICE = {};
 
 // Dlaždice, které se uživateli bez práva ÚPLNĚ SKRYJÍ (dle SPEC kap. 2 a 4),
 // místo aby se jen zamkly. Zatím jen finance (Přehled financí – jen Rosťa/vedení).
-const SKRYT_BEZ_PRAVA = new Set(["finance"]);
+const SKRYT_BEZ_PRAVA = new Set(["finance", "nabidkovac"]);
 
 export default function Rozcestnik() {
   const [data, setData] = useState(null);

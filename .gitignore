@@ -3,3 +3,5 @@ venv/
 node_modules/
 __pycache__/
 *.pyc
+# nahrané dokumenty k nabídkám (Nabídkovač) – nepatří do gitu
+nabidka_soubory/

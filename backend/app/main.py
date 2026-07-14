@@ -8,6 +8,8 @@ from app.finance import models as finance_models  # noqa: F401 - registrace mode
 from app.finance.routes import router as finance_router
 from app.matice import models as matice_models  # noqa: F401 - registrace modelů
 from app.matice.routes import router as matice_router
+from app.nabidkovac import models as nabidkovac_models  # noqa: F401 - registrace modelů
+from app.nabidkovac.routes import router as nabidkovac_router
 from app.nastaveni import models as nastaveni_models  # noqa: F401 - registrace modelů
 from app.nastaveni.routes import router as nastaveni_router
 from app.admin.routes import router as admin_router
@@ -63,6 +65,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(matice_router)
 app.include_router(finance_router)
+app.include_router(nabidkovac_router)
 app.include_router(nastaveni_router)
 app.include_router(admin_router)
 

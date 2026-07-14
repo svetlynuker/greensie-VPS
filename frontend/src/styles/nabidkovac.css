@@ -1,0 +1,199 @@
+/* Styl dlaždice Nabídkovač – navazuje na fm- proměnné (viz global.css). */
+
+.nb-app {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.nb-backlink {
+  display: inline-block;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--fm-muted);
+  text-decoration: none;
+}
+.nb-backlink:hover {
+  color: var(--fm-brand-dk);
+}
+
+.nb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.nb-head .nb-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--fm-brand);
+}
+.nb-head h1 {
+  font-size: 18px;
+  margin: 0;
+}
+.nb-popis {
+  color: var(--fm-muted);
+  font-size: 13px;
+  margin: 0 0 18px;
+  max-width: 720px;
+}
+
+/* Podsekce jako dlaždice (o úroveň níž) */
+.nb-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--fm-tile-min-width), 1fr));
+  gap: var(--fm-tile-gap);
+}
+.nb-tile {
+  text-align: left;
+  padding: 22px 20px;
+  border-radius: var(--fm-tile-radius);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.nb-tile:hover {
+  border-color: var(--fm-brand);
+}
+.nb-tile .nb-tile-nazev {
+  font-size: 16px;
+  font-weight: 700;
+}
+.nb-tile .nb-tile-popis {
+  font-size: 12px;
+  color: var(--fm-muted);
+}
+
+/* Upozornění, že výpočet zatím neběží */
+.nb-warn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff4e6;
+  border: 1px solid #ffd8a8;
+  color: #a15c07;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 14px 0;
+}
+:root[data-theme="dark"] .nb-warn {
+  background: #3a2a12;
+  border-color: #6b4a1a;
+  color: #ffd8a8;
+}
+
+/* Tabulky (seznam nabídek, katalog) */
+.nb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.nb-table th,
+.nb-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--fm-line);
+}
+.nb-table th {
+  background: var(--fm-head);
+  font-size: 12px;
+  color: var(--fm-muted);
+  position: sticky;
+  top: 0;
+}
+.nb-table tbody tr {
+  cursor: pointer;
+}
+.nb-table tbody tr:hover {
+  background: var(--fm-brand-soft);
+}
+.nb-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--fm-line);
+  border-radius: 12px;
+  background: var(--fm-card);
+}
+
+.nb-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--fm-head);
+  color: var(--fm-text);
+  white-space: nowrap;
+}
+
+.nb-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+  flex-wrap: wrap;
+}
+.nb-spacer {
+  flex: 1;
+}
+
+.nb-empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--fm-muted);
+}
+
+.nb-pole {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--fm-line);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+}
+.nb-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fm-muted);
+  margin-bottom: 4px;
+}
+.nb-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+/* Drag & drop zóna pro nahrání dokumentu */
+.nb-drop {
+  border: 2px dashed var(--fm-line);
+  border-radius: 12px;
+  padding: 22px;
+  text-align: center;
+  color: var(--fm-muted);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.nb-drop.nb-drop-over {
+  border-color: var(--fm-brand);
+  background: var(--fm-brand-soft);
+}
+.nb-doc-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--fm-line);
+  font-size: 13px;
+}
+.nb-doc-wait {
+  color: #a15c07;
+  font-size: 12px;
+  font-weight: 600;
+}
+:root[data-theme="dark"] .nb-doc-wait {
+  color: #ffd8a8;
+}

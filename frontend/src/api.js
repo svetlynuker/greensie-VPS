@@ -119,6 +119,83 @@ export function synchronizujPohodu() {
   return zavolej("/finance/pohoda/synchronizovat", { method: "POST" });
 }
 
+// ---- Nabídkovač ----
+export function nabidkySeznam(typ) {
+  const q = typ ? `?typ=${encodeURIComponent(typ)}` : "";
+  return zavolej(`/nabidkovac/nabidky${q}`);
+}
+
+export function nabidkaZaloz(data) {
+  return zavolej("/nabidkovac/nabidky", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function nabidkaDetail(id) {
+  return zavolej(`/nabidkovac/nabidky/${id}`);
+}
+
+export function nabidkaUprav(id, data) {
+  return zavolej(`/nabidkovac/nabidky/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function nabidkaSmaz(id) {
+  return zavolej(`/nabidkovac/nabidky/${id}`, { method: "DELETE" });
+}
+
+// Upload souboru = multipart, proto NEposíláme Content-Type ani JSON.
+export async function nabidkaNahrajDokument(nabidkaId, typ, file) {
+  const token = getToken();
+  const form = new FormData();
+  form.append("typ", typ);
+  form.append("soubor", file);
+  const res = await fetch(`${API_BASE}/nabidkovac/nabidky/${nabidkaId}/dokumenty`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!res.ok) {
+    let detail = `Chyba ${res.status}`;
+    try {
+      const chyba = await res.json();
+      if (chyba.detail) detail = chyba.detail;
+    } catch {
+      // ponech výchozí hlášku
+    }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export function nabidkaSmazDokument(id) {
+  return zavolej(`/nabidkovac/dokumenty/${id}`, { method: "DELETE" });
+}
+
+export function technologieSeznam() {
+  return zavolej("/nabidkovac/technologie");
+}
+
+export function technologiePridej(data) {
+  return zavolej("/nabidkovac/technologie", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function technologieUprav(id, data) {
+  return zavolej(`/nabidkovac/technologie/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function technologieSmaz(id) {
+  return zavolej(`/nabidkovac/technologie/${id}`, { method: "DELETE" });
+}
+
+export function vypoctovaNastaveniSeznam() {
+  return zavolej("/nabidkovac/vypoctova-nastaveni");
+}
+
+export function vypoctovaNastaveniUloz(data) {
+  return zavolej("/nabidkovac/vypoctova-nastaveni", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
 // ---- Uživatelská nastavení (pohledy + vzhled, uložená v DB) ----
 export function nactiNastaveni() {
   return zavolej("/nastaveni");
