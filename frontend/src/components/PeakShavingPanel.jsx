@@ -213,13 +213,27 @@ export default function PeakShavingPanel({ nabidka }) {
               </h4>
               <div className="fm-card" style={{ padding: 14, marginBottom: 14, background: "var(--fm-bg, #fafafa)" }}>
                 <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
-                  {dop.nazev} × {dop.pocet_kusu} — návratnost {roky(dop.navratnost_roky)}
+                  {dop.nazev} × {dop.pocet_kusu}
                 </div>
                 <div style={{ fontSize: 13, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 6 }}>
                   <div>Baterie: {kw(dop.celkovy_vykon_kw)} / {dop.celkova_kapacita_kwh?.toLocaleString("cs-CZ")} kWh</div>
                   <div>Cena baterie: {kc(dop.cena_celkem_kc)}</div>
                   <div>Nová rez. kapacita: {kw(dop.nova_rezervovana_kapacita_kw)}</div>
                   <div>Roční úspora (2026): <b>{kc(dop.rocni_uspora_2026_kc)}</b></div>
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Návratnost investice dle modelu</div>
+                  <table className="nb-table">
+                    <tbody>
+                      <tr><td>Model 2026 (dnešní tarif)</td><td><b>{roky(dop.navratnost_2026 ?? dop.navratnost_roky)}</b></td></tr>
+                      <tr><td>Model 2027 – optimistický (se slevou AKU)</td><td>{roky(dop.navratnost_2027_optim)}</td></tr>
+                      <tr><td>Model 2027 – konzervativní (bez AKU)</td><td>{roky(dop.navratnost_2027_konzerv)}</td></tr>
+                    </tbody>
+                  </table>
+                  <div style={{ fontSize: 11, color: "#b8860b", marginTop: 4 }}>
+                    Výběr varianty se řídí modelem 2026. Hodnoty 2027 jsou modelový odhad; optimistická varianta zahrnuje nepotvrzenou slevu AKU.
+                  </div>
                 </div>
               </div>
 
@@ -318,7 +332,7 @@ export default function PeakShavingPanel({ nabidka }) {
                   <div className="nb-scroll">
                     <table className="nb-table">
                       <thead>
-                        <tr><th>Baterie</th><th>Výkon / kapacita</th><th>Nová rez.</th><th>Úspora/rok</th><th>Cena</th><th>Návratnost</th></tr>
+                        <tr><th>Baterie</th><th>Výkon / kapacita</th><th>Nová rez.</th><th>Úspora/rok</th><th>Cena</th><th>Návratnost 2026</th></tr>
                       </thead>
                       <tbody>
                         {vysledek.varianty.map((v, i) => (

@@ -822,6 +822,14 @@ def _varianta_json(v: peak_shaving.Varianta) -> dict:
         "nova_rezervovana_kapacita_kw": round(v.nova_rezervovana_kapacita_kw, 2),
         "rocni_uspora_2026_kc": round(v.rocni_uspora_2026, 2),
         "navratnost_roky": (round(v.navratnost_roky, 2) if v.navratnost_roky is not None else None),
+        # Návratnost podle modelů (2026 / 2027 optimistický s AKU / konzervativní bez AKU).
+        "navratnost_2026": (round(v.navratnost_2026, 2) if v.navratnost_2026 is not None else None),
+        "navratnost_2027_optim": (
+            round(v.navratnost_2027_optim, 2) if v.navratnost_2027_optim is not None else None
+        ),
+        "navratnost_2027_konzerv": (
+            round(v.navratnost_2027_konzerv, 2) if v.navratnost_2027_konzerv is not None else None
+        ),
         "doporuceno": v.doporuceno,
         "ekonomika_2026": {
             k: (round(x, 2) if isinstance(x, float) else x) for k, x in v.ekonomika_2026.items()
