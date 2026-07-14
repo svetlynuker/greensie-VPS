@@ -196,6 +196,30 @@ export function vypoctovaNastaveniUloz(data) {
   });
 }
 
+// ---- Sazby distributorů (peak shaving) ----
+export function sazbySeznam() {
+  return zavolej("/nabidkovac/sazby");
+}
+
+export function sazbaPridej(data) {
+  return zavolej("/nabidkovac/sazby", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function sazbaUprav(id, data) {
+  return zavolej(`/nabidkovac/sazby/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function sazbaSmaz(id) {
+  return zavolej(`/nabidkovac/sazby/${id}`, { method: "DELETE" });
+}
+
+export function peakShavingVypocet(nabidkaId, data) {
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/peak-shaving/vypocet`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
 // ---- Uživatelská nastavení (pohledy + vzhled, uložená v DB) ----
 export function nactiNastaveni() {
   return zavolej("/nastaveni");
