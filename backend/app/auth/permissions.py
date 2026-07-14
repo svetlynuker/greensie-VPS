@@ -70,15 +70,24 @@ DLAZDICE = [
     {"klic": "projekty", "nazev": "Přehled projektů"},
     {"klic": "finance", "nazev": "Přehled financí"},
     {"klic": "zmeny", "nazev": "Přehled změn"},
+    {"klic": "nabidkovac", "nazev": "Nabídkovač"},
     {"klic": "admin", "nazev": "Admin nastavení"},
 ]
 
 # Katalog přidělitelných práv (skupinám i jednotlivcům). Otevírací práva mají
-# stejný klíč jako dlaždice; "editace" je akční právo (editace matice).
+# stejný klíč jako dlaždice; ostatní jsou akční práva.
+#
+# Role OZ (obchodní zástupce) se do stávajícího modelu zavádí BEZ nového
+# konceptu role: "OZ" je běžná skupina (Admin nastavení) s právem
+# "nabidkovac". Úprava katalogu technologií a výpočtových nastavení je pod
+# samostatným právem "nabidkovac_katalog" (jen vedení/admin). Stejný princip
+# jako u "finance" – nic v existujících pohledech se nemění.
 PRAVA = [
     {"klic": "projekty", "nazev": "Otevřít Přehled projektů"},
     {"klic": "finance", "nazev": "Otevřít Přehled financí"},
     {"klic": "zmeny", "nazev": "Otevřít Přehled změn"},
+    {"klic": "nabidkovac", "nazev": "Nabídkovač – vytvářet/upravovat nabídky (OZ)"},
+    {"klic": "nabidkovac_katalog", "nazev": "Nabídkovač – editace katalogu a výpočtů (vedení)"},
     {"klic": "admin", "nazev": "Otevřít Admin nastavení"},
     {"klic": "editace", "nazev": "Editace matice (Přehled projektů)"},
 ]
