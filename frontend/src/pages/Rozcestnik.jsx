@@ -7,15 +7,18 @@ import { nactiMe, logout } from "../api";
 // Dlaždice s hotovou sekcí vedou na svou stránku.
 const TRASY = {
   projekty: "/projekty",
+  finance: "/finance",
   admin: "/admin",
 };
 
 // Nedostupné (zamčené) a zatím rozpracované dlaždice vedou sem.
 const VYVOJ_VIDEO = "https://youtu.be/oPLObjVAvIU";
 // Výjimky: konkrétní dlaždice s vlastním odkazem.
-const VIDEO_DLE_KLICE = {
-  finance: "https://youtu.be/Q_L5CjNLh_o",
-};
+const VIDEO_DLE_KLICE = {};
+
+// Dlaždice, které se uživateli bez práva ÚPLNĚ SKRYJÍ (dle SPEC kap. 2 a 4),
+// místo aby se jen zamkly. Zatím jen finance (Přehled financí – jen Rosťa/vedení).
+const SKRYT_BEZ_PRAVA = new Set(["finance"]);
 
 export default function Rozcestnik() {
   const [data, setData] = useState(null);
@@ -49,7 +52,9 @@ export default function Rozcestnik() {
           gap: "var(--fm-tile-gap)",
         }}
       >
-        {data.dlazdice.map((d) => (
+        {data.dlazdice
+          .filter((d) => d.muze_otevrit || !SKRYT_BEZ_PRAVA.has(d.klic))
+          .map((d) => (
           <Tile
             key={d.klic}
             nazev={d.nazev}

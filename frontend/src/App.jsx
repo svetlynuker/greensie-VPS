@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Login from "./pages/Login";
 import Rozcestnik from "./pages/Rozcestnik";
 import PrehledProjektu from "./pages/PrehledProjektu";
+import PrehledFinanci from "./pages/PrehledFinanci";
 import AdminNastaveni from "./pages/AdminNastaveni";
 import ZmenaHesla from "./pages/ZmenaHesla";
 import { getToken } from "./api";
@@ -36,6 +37,14 @@ export default function App() {
           element={
             <VyzadujePrihlaseni>
               <PrehledProjektu />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/finance"
+          element={
+            <VyzadujePrihlaseni>
+              <PrehledFinanci />
             </VyzadujePrihlaseni>
           }
         />

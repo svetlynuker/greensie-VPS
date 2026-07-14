@@ -140,6 +140,7 @@ function presunPole(ids, fromId, toId) {
 
 export default function PrehledProjektu() {
   const [uzivatel, setUzivatel] = useState(null);
+  const [muzeFinance, setMuzeFinance] = useState(false);
   const [matice, setMatice] = useState(null);
   const [chyba, setChyba] = useState(null);
   const [collapsed, setCollapsed] = useState({});
@@ -195,6 +196,8 @@ export default function PrehledProjektu() {
           return;
         }
         setUzivatel(me.uzivatel);
+        // proklik na finance ukazujeme jen tomu, kdo smí Přehled financí otevřít
+        setMuzeFinance(!!me.dlazdice?.find((d) => d.klic === "finance")?.muze_otevrit);
         const skryte = parseSkryte(nast.pohled1_skryte);
         setSkryteFaze(skryte.faze);
         setSkryteUkoly(skryte.ukoly);
@@ -625,6 +628,15 @@ export default function PrehledProjektu() {
                           p.nazev
                         )}
                       </span>
+                      {muzeFinance && (
+                        <Link
+                          to={`/finance?projekt=${p.id}`}
+                          className="fm-fin-link"
+                          title="Zobrazit faktury tohoto projektu (Přehled financí)"
+                        >
+                          💰 Finance
+                        </Link>
+                      )}
                       {muze_editovat && (
                         <span
                           className="fm-row-hide"
