@@ -51,6 +51,13 @@ def _lehka_migrace():
         conn.execute(
             text("ALTER TABLE technologie ADD COLUMN IF NOT EXISTS extra JSONB NOT NULL DEFAULT '{}'")
         )
+        # Příznak modelového (nezávazného) odhadu sazby – pro strukturu nova_2027.
+        conn.execute(
+            text(
+                "ALTER TABLE sazby_distributoru ADD COLUMN IF NOT EXISTS "
+                "je_modelovy_odhad BOOLEAN NOT NULL DEFAULT false"
+            )
+        )
 
 
 _lehka_migrace()

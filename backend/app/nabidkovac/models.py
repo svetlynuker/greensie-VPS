@@ -359,6 +359,10 @@ class SazbaDistributoru(Base):
     platne_od = Column(Date, nullable=False)
     platne_do = Column(Date, nullable=True)  # NULL = platí zatím bez konce
 
+    # Modelový/nezávazný odhad? U nova_2027 ano – ERÚ vydá závazné cenové
+    # rozhodnutí až v listopadu 2026 (PROMPT 2027). UI to u čísel označí.
+    je_modelovy_odhad = Column(Boolean, nullable=False, default=False, server_default="false")
+
     # Volitelná poznámka ke zdroji/ověření (kap. 3.1 rozlišuje „potvrzeno“ vs.
     # „doporučuji ověřit“) – pomůže kolegovi, co sazby doplňuje přes admin.
     poznamka = Column(Text, nullable=False, default="", server_default="")

@@ -1,9 +1,11 @@
 """Naplnění tabulky `sazby_distributoru` výchozími daty (METODIKA kap. 3.1, 6–7).
 
-Naostro jedeme zatím JEN s ČEZ Distribuce, rok 2026, struktura `stara_2026`
-(kap. 6 bod 5). EG.D, PRE a rok 2027 (`nova_2027`) se do tabulky NEvkládají –
-zůstávají prázdné a doplní se přes admin rozhraní, až budou čísla ověřená,
-resp. až je ERÚ zveřejní (kap. 7).
+Naostro jedeme zatím JEN s ČEZ Distribuce:
+- `stara_2026` (VN + VVN) – ostrá čísla pro rok 2026 (kap. 6 bod 5),
+- `nova_2027` (VN + VVN) – MODELOVÝ odhad pro rok 2027 (`je_modelovy_odhad`),
+  závazné ceny ERÚ vyjdou až ~11/2026 (PROMPT 2027).
+EG.D a PRE se do tabulky NEvkládají – doplní se přes admin, až budou čísla
+ověřená.
 
 Seed je idempotentní: běží při startu appky a vloží řádek jen tehdy, když
 stejná kombinace (distributor, hladina, struktura, platne_od) ještě není –
@@ -27,6 +29,9 @@ from app.nabidkovac.models import SazbaDistributoru
 _PLATNE_OD_2026 = date(2026, 1, 1)
 _PLATNE_DO_2026 = date(2026, 12, 31)
 
+# Nová tarifní struktura ERÚ platí od 1. 1. 2027 (PROMPT 2027).
+_PLATNE_OD_2027 = date(2027, 1, 1)
+
 # Pokuta za překročení – jednotná regulovaná sazba ERÚ (kap. 3.1), Kč/kW/měsíc.
 _POKUTA_VN = 1108.0
 _POKUTA_VVN = 521.0
@@ -34,7 +39,7 @@ _POKUTA_VVN = 521.0
 # ČEZ rezervovaná kapacita VN: 237,31 Kč/kW/měsíc (potvrzeno) → ročně × 12.
 _REZERVACE_CEZ_VN_ROK = round(237.31 * 12, 2)  # = 2847.72
 
-_SEED_CEZ_2026 = [
+_SEED_CEZ = [
     {
         "distributor": "cez",
         "napetova_hladina": "vn",
@@ -68,13 +73,48 @@ _SEED_CEZ_2026 = [
             "Rezervovaná kapacita ČEZ VVN NEDOHLEDÁNO – doplní admin."
         ),
     },
+    # --- nová struktura 2027 (dvousložkový tarif ERÚ) – MODELOVÝ ODHAD -------
+    # Čísla nejsou finální, závazné cenové rozhodnutí ERÚ vyjde v listopadu 2026
+    # (PROMPT 2027). Vše bez DPH, Kč/kW/měsíc. Penalizace = 4× T1 kapacita.
+    {
+        "distributor": "cez",
+        "napetova_hladina": "vn",
+        "struktura_tarifu": "nova_2027",
+        "parametry": {
+            "t1_kapacita_kc_kw_mesic": 190.133,
+            "t1_spicka_kc_kw_mesic": 19.013,
+            "t2_kapacita_kc_kw_mesic": 22.743,
+            "t2_spicka_kc_kw_mesic": 227.429,
+            "sazba_prekroceni_kc_kw_mesic": 761.0,
+        },
+        "platne_od": _PLATNE_OD_2027,
+        "platne_do": None,
+        "je_modelovy_odhad": True,
+        "poznamka": "ČEZ 2027 VN – MODELOVÝ ODHAD (ne finální ceny ERÚ, rozhodnutí ~11/2026).",
+    },
+    {
+        "distributor": "cez",
+        "napetova_hladina": "vvn",
+        "struktura_tarifu": "nova_2027",
+        "parametry": {
+            "t1_kapacita_kc_kw_mesic": 96.862,
+            "t1_spicka_kc_kw_mesic": 9.686,
+            "t2_kapacita_kc_kw_mesic": 11.586,
+            "t2_spicka_kc_kw_mesic": 115.862,
+            "sazba_prekroceni_kc_kw_mesic": 387.0,
+        },
+        "platne_od": _PLATNE_OD_2027,
+        "platne_do": None,
+        "je_modelovy_odhad": True,
+        "poznamka": "ČEZ 2027 VVN – MODELOVÝ ODHAD (ne finální ceny ERÚ, rozhodnutí ~11/2026).",
+    },
 ]
 
 
 def seed_sazby(db: Session) -> int:
     """Idempotentně vloží výchozí sazby ČEZ 2026. Vrací počet nově vložených řádků."""
     vlozeno = 0
-    for r in _SEED_CEZ_2026:
+    for r in _SEED_CEZ:
         existuje = (
             db.query(SazbaDistributoru.id)
             .filter(

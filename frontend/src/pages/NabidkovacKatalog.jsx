@@ -54,10 +54,11 @@ const POLE_PARAMETRU = {
     { klic: "cena_prekroceni_kc_kw", label: "Pokuta za překročení (Kč/kW/měsíc)" },
   ],
   nova_2027: [
-    { klic: "sazba_a_kapacita_kc_kw_rok", label: "Sazba A – kapacita (Kč/kW/rok)" },
-    { klic: "sazba_a_zmereny_max_kc_kw_mesic", label: "Sazba A – naměřené max (Kč/kW/měsíc)" },
-    { klic: "sazba_b_kapacita_kc_kw_rok", label: "Sazba B – kapacita (Kč/kW/rok)" },
-    { klic: "sazba_b_zmereny_max_kc_kw_mesic", label: "Sazba B – naměřené max (Kč/kW/měsíc)" },
+    { klic: "t1_kapacita_kc_kw_mesic", label: "Tarif T1 – kapacita (Kč/kW/měsíc)" },
+    { klic: "t1_spicka_kc_kw_mesic", label: "Tarif T1 – špička (Kč/kW/měsíc)" },
+    { klic: "t2_kapacita_kc_kw_mesic", label: "Tarif T2 – kapacita (Kč/kW/měsíc)" },
+    { klic: "t2_spicka_kc_kw_mesic", label: "Tarif T2 – špička (Kč/kW/měsíc)" },
+    { klic: "sazba_prekroceni_kc_kw_mesic", label: "Penalizace překročení RP (Kč/kW/měsíc)" },
   ],
 };
 
@@ -282,6 +283,7 @@ function SazbaEditor({ sazba, onSave, onClose }) {
   const [platneOd, setPlatneOd] = useState((sazba?.platne_od || "").slice(0, 10));
   const [platneDo, setPlatneDo] = useState((sazba?.platne_do || "").slice(0, 10));
   const [poznamka, setPoznamka] = useState(sazba?.poznamka || "");
+  const [modelovy, setModelovy] = useState(sazba?.je_modelovy_odhad ?? false);
   // Ceny drží jako mapu textových inputů podle klíče. `null` u sazby = ceny zatím nejsou.
   const [cekaNaEru, setCekaNaEru] = useState(sazba ? sazba.parametry == null : false);
   const [ceny, setCeny] = useState(() => {
@@ -323,6 +325,7 @@ function SazbaEditor({ sazba, onSave, onClose }) {
         parametry,
         platne_od: platneOd,
         platne_do: platneDo || null,
+        je_modelovy_odhad: modelovy,
         poznamka: poznamka.trim(),
       });
     } catch (e) {
@@ -370,6 +373,10 @@ function SazbaEditor({ sazba, onSave, onClose }) {
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
           <input type="checkbox" checked={cekaNaEru} onChange={(e) => setCekaNaEru(e.target.checked)} />
           Ceny zatím nejsou (čeká se na sazby ERÚ)
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+          <input type="checkbox" checked={modelovy} onChange={(e) => setModelovy(e.target.checked)} />
+          Modelový odhad (nezávazné ceny, typicky struktura 2027)
         </label>
 
         {!cekaNaEru && (
@@ -686,7 +693,14 @@ export default function NabidkovacKatalog() {
                 <tr key={s.id} onClick={() => setEditaceSazby(s)}>
                   <td>{NAZEV_DISTRIB[s.distributor] || s.distributor}</td>
                   <td>{NAZEV_HLADINY[s.napetova_hladina] || s.napetova_hladina}</td>
-                  <td>{NAZEV_STRUKTURY[s.struktura_tarifu] || s.struktura_tarifu}</td>
+                  <td>
+                    {NAZEV_STRUKTURY[s.struktura_tarifu] || s.struktura_tarifu}
+                    {s.je_modelovy_odhad && (
+                      <span className="nb-badge" style={{ marginLeft: 6 }} title="Nezávazný odhad, ne finální cena ERÚ">
+                        modelový odhad
+                      </span>
+                    )}
+                  </td>
                   <td style={{ fontSize: 12, color: s.parametry == null ? "var(--fm-muted)" : undefined }}>
                     {shrnParametry(s)}
                   </td>

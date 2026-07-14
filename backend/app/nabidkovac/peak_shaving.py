@@ -193,61 +193,79 @@ def ekonomika_2026(
 
 
 # ----------------------------------------------------- ekonomika roku 2027
-def shozena_mesicni_maxima_2027(
+# Klíče parametrů struktury `nova_2027` (dvousložkový tarif ERÚ, vše Kč/kW/měsíc).
+KLICE_2027 = (
+    "t1_kapacita_kc_kw_mesic",
+    "t1_spicka_kc_kw_mesic",
+    "t2_kapacita_kc_kw_mesic",
+    "t2_spicka_kc_kw_mesic",
+)
+
+
+def _mesicni_naklad_2027(rp_kw: float, mesicni_max_kw: float, p: dict) -> tuple[float, str]:
+    """Náklad za jeden měsíc v modelu 2027 + který tarif vyšel levněji.
+
+    `min(RP×T1_kap + M×T1_špička, RP×T2_kap + M×T2_špička) + max(0, M−RP)×penalizace`.
+    Zákazník tarif nevybírá – distributor ex post použije levnější (kap. 4.6).
+    """
+    c1 = rp_kw * p["t1_kapacita_kc_kw_mesic"] + mesicni_max_kw * p["t1_spicka_kc_kw_mesic"]
+    c2 = rp_kw * p["t2_kapacita_kc_kw_mesic"] + mesicni_max_kw * p["t2_spicka_kc_kw_mesic"]
+    if c1 <= c2:
+        zaklad, tarif = c1, "t1"
+    else:
+        zaklad, tarif = c2, "t2"
+    penalizace = max(0.0, mesicni_max_kw - rp_kw) * float(p.get("sazba_prekroceni_kc_kw_mesic", 0.0))
+    return zaklad + penalizace, tarif
+
+
+def _rocni_naklad_2027(rp_kw: float, mesicni_maxima: dict[int, float], p: dict) -> tuple[float, int, int]:
+    """Roční náklad 2027 = součet přes 12 měsíců; vrací i počty měsíců T1/T2."""
+    naklad = 0.0
+    poc_t1 = poc_t2 = 0
+    for m in mesicni_maxima.values():
+        c, tarif = _mesicni_naklad_2027(rp_kw, m, p)
+        naklad += c
+        if tarif == "t1":
+            poc_t1 += 1
+        else:
+            poc_t2 += 1
+    return naklad, poc_t1, poc_t2
+
+
+def ekonomika_2027(
     profil_kw: list[float],
     mesice: list[int],
-    vykon_kw: float,
-    kapacita_kwh: float,
-    interval_h: float = VYCHOZI_INTERVAL_H,
-) -> dict[int, float]:
-    """Kap. 4.6: pro rok 2027 baterie "srážej co to dá".
-
-    V roce 2027 se platí přímo za naměřené měsíční maximum, takže nemá smysl
-    cílit na jeden roční strop – místo toho pro každý měsíc zvlášť najdeme
-    nejnižší udržitelné maximum (stejná simulace jako 4.2/4.3, jen po měsících).
-    Vrací dosažené měsíční maximum po baterii pro každý měsíc.
-    """
-    profil_po_mesicich: dict[int, list[float]] = {}
-    for odber, m in zip(profil_kw, mesice):
-        profil_po_mesicich.setdefault(m, []).append(odber)
-    return {
-        m: min_udrzitelny_strop(hodnoty, vykon_kw, kapacita_kwh, interval_h)
-        for m, hodnoty in profil_po_mesicich.items()
-    }
-
-
-def naklad_2027(
-    mesicni_maxima_kw: dict[int, float],
-    rezervovany_prikon_kw: float,
+    rezervovana_kapacita_kw: float,
+    nova_rezervovana_kapacita_kw: float,
     parametry: dict | None,
+    je_modelovy_odhad: bool = True,
 ) -> dict:
-    """Kap. 4.6: roční náklad v tarifu `nova_2027` = součet měsíčních min(A, B).
+    """Ekonomika roku 2027 (nová dvousložková struktura ERÚ, kap. 4.6 + PROMPT 2027).
 
-    Sazby A i B ještě ERÚ nezveřejnil → dokud jsou `parametry` prázdné/`null`,
-    vrací se status "ceka_na_sazby_eru" a appka místo čísel zobrazí hlášku
-    (kap. 5). Jakmile se sazby doplní přes admin, tenhle výpočet se rozjede beze
-    změny kódu.
+    Simulace baterie se NEMĚNÍ – bere se výsledek z roku 2026: nová RP = minimální
+    udržitelný strop `T`, měsíční maxima po baterii = `min(měsíční max, T)` (protože
+    při udržitelném `T` baterie srazí každou špičku nad `T` právě na `T`).
+    Současný stav = bez baterie (RP = aktuální sjednaná, M = naměřené měsíční maximum).
+
+    Dokud ERÚ nezveřejní závazné sazby (parametry chybí), vrací se status
+    "ceka_na_sazby_eru" a appka místo čísel ukáže hlášku.
     """
-    potreba = (
-        "sazba_a_kapacita_kc_kw_rok",
-        "sazba_a_zmereny_max_kc_kw_mesic",
-        "sazba_b_kapacita_kc_kw_rok",
-        "sazba_b_zmereny_max_kc_kw_mesic",
-    )
-    if not parametry or any(parametry.get(k) is None for k in potreba):
+    if not parametry or any(parametry.get(k) is None for k in KLICE_2027):
         return {"status": "ceka_na_sazby_eru"}
 
-    a_kap = float(parametry["sazba_a_kapacita_kc_kw_rok"])
-    a_max = float(parametry["sazba_a_zmereny_max_kc_kw_mesic"])
-    b_kap = float(parametry["sazba_b_kapacita_kc_kw_rok"])
-    b_max = float(parametry["sazba_b_zmereny_max_kc_kw_mesic"])
-
-    naklad = 0.0
-    for mesicni_max in mesicni_maxima_kw.values():
-        cena_a = rezervovany_prikon_kw * a_kap / 12 + mesicni_max * a_max
-        cena_b = rezervovany_prikon_kw * b_kap / 12 + mesicni_max * b_max
-        naklad += min(cena_a, cena_b)
-    return {"status": "spocitano", "rocni_naklad": naklad}
+    raw = _mesicni_maxima(profil_kw, mesice)  # naměřená měsíční maxima bez baterie
+    soucasny, _, _ = _rocni_naklad_2027(rezervovana_kapacita_kw, raw, parametry)
+    po_baterii = {m: min(v, nova_rezervovana_kapacita_kw) for m, v in raw.items()}
+    novy, poc_t1, poc_t2 = _rocni_naklad_2027(nova_rezervovana_kapacita_kw, po_baterii, parametry)
+    return {
+        "status": "spocitano",
+        "soucasny_rocni_naklad": soucasny,
+        "novy_rocni_naklad": novy,
+        "rocni_uspora": soucasny - novy,
+        "pocet_mesicu_t1": poc_t1,
+        "pocet_mesicu_t2": poc_t2,
+        "je_modelovy_odhad": bool(je_modelovy_odhad),
+    }
 
 
 # ---------------------------------------------- výběr varianty (kap. 4.5)
@@ -314,6 +332,7 @@ def spocti_variantu(
     max_navratnost_roky: float,
     interval_h: float = VYCHOZI_INTERVAL_H,
     parametry_2027: dict | None = None,
+    je_modelovy_2027: bool = True,
 ) -> Varianta:
     """Spočítá jednu variantu (produkt × počet kusů): kap. 4.2–4.6."""
     vykon = baterie.vykon_kw * pocet_kusu
@@ -331,10 +350,17 @@ def spocti_variantu(
     )
     navratnost = _navratnost(cena, ek.rocni_uspora)
 
-    maxima_2027 = shozena_mesicni_maxima_2027(profil_kw, mesice, vykon, kapacita, interval_h)
-    # Rezervovaný příkon pro rok 2027 bereme z aktuální sjednané kapacity
-    # (přesné pravidlo přijde se sazbami ERÚ – kap. 4.6/7).
-    ek_2027 = naklad_2027(maxima_2027, rezervovana_kapacita_kw, parametry_2027)
+    # Rok 2027 využívá stejný výsledek simulace jako 2026 (nová RP = novy_strop,
+    # měsíční maxima po baterii = min(měsíční max, novy_strop)); jen se dosadí do
+    # dvousložkového vzorce ERÚ (kap. 4.6 / PROMPT 2027).
+    ek_2027 = ekonomika_2027(
+        profil_kw,
+        mesice,
+        rezervovana_kapacita_kw,
+        novy_strop,
+        parametry_2027,
+        je_modelovy_2027,
+    )
 
     doporuceno = navratnost is not None and navratnost <= max_navratnost_roky
     return Varianta(
@@ -364,6 +390,7 @@ def vyber_reseni(
     max_pocet_kusu: int = VYCHOZI_MAX_POCET_KUSU,
     interval_h: float = VYCHOZI_INTERVAL_H,
     parametry_2027: dict | None = None,
+    je_modelovy_2027: bool = True,
 ) -> VysledekPeakShaving:
     """Kap. 4.5: projede všechny produkty × počty kusů a vybere nejrychlejší návratnost.
 
@@ -396,6 +423,7 @@ def vyber_reseni(
                 max_navratnost_roky,
                 interval_h,
                 parametry_2027,
+                je_modelovy_2027,
             )
             if nejlepsi is None or v._radici_klic() < nejlepsi._radici_klic():
                 nejlepsi = v
