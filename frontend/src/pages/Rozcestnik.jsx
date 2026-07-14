@@ -12,6 +12,10 @@ const TRASY = {
 
 // Nedostupné (zamčené) a zatím rozpracované dlaždice vedou sem.
 const VYVOJ_VIDEO = "https://youtu.be/oPLObjVAvIU";
+// Výjimky: konkrétní dlaždice s vlastním odkazem.
+const VIDEO_DLE_KLICE = {
+  finance: "https://youtu.be/Q_L5CjNLh_o",
+};
 
 export default function Rozcestnik() {
   const [data, setData] = useState(null);
@@ -57,7 +61,7 @@ export default function Rozcestnik() {
                 return;
               }
               // nedostupné (zamčené) nebo zatím ve vývoji → proklik na video
-              window.open(VYVOJ_VIDEO, "_blank", "noopener,noreferrer");
+              window.open(VIDEO_DLE_KLICE[d.klic] || VYVOJ_VIDEO, "_blank", "noopener,noreferrer");
             }}
           />
         ))}
