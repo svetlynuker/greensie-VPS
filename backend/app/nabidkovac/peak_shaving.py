@@ -232,20 +232,47 @@ def _rocni_naklad_2027(rp_kw: float, mesicni_maxima: dict[int, float], p: dict) 
     return naklad, poc_t1, poc_t2
 
 
+def mesicni_maxima_po_baterii(
+    profil_kw: list[float],
+    mesice: list[int],
+    vykon_kw: float,
+    kapacita_kwh: float,
+    interval_h: float = VYCHOZI_INTERVAL_H,
+) -> dict[int, float]:
+    """Kap. 4.6 „srážej co to dá": pro každý měsíc nejnižší udržitelné maximum.
+
+    V roce 2027 se platí přímo za naměřené měsíční maximum (M), takže baterie sráží
+    špičku každého měsíce tak hluboko, jak to fyzicky zvládne (max. výkon/kapacita) –
+    ne jen na jeden roční strop. Rezervovaná kapacita (RP) se tím NEMĚNÍ: zůstává
+    jedna roční hodnota (nelze měnit sjednanou rezervaci na síti po měsících), tady
+    jde jen o naměřené maximum M, které tvoří cenovou složku „špička".
+    """
+    po_mesicich: dict[int, list[float]] = {}
+    for odber, m in zip(profil_kw, mesice):
+        po_mesicich.setdefault(m, []).append(odber)
+    return {
+        m: min_udrzitelny_strop(vals, vykon_kw, kapacita_kwh, interval_h)
+        for m, vals in po_mesicich.items()
+    }
+
+
 def ekonomika_2027(
     profil_kw: list[float],
     mesice: list[int],
     rezervovana_kapacita_kw: float,
     nova_rezervovana_kapacita_kw: float,
+    vykon_kw: float,
+    kapacita_kwh: float,
     parametry: dict | None,
     je_modelovy_odhad: bool = True,
+    interval_h: float = VYCHOZI_INTERVAL_H,
 ) -> dict:
-    """Ekonomika roku 2027 (nová dvousložková struktura ERÚ, kap. 4.6 + PROMPT 2027).
+    """Ekonomika roku 2027 (nová dvousložková struktura ERÚ, METODIKA kap. 4.6).
 
-    Simulace baterie se NEMĚNÍ – bere se výsledek z roku 2026: nová RP = minimální
-    udržitelný strop `T`, měsíční maxima po baterii = `min(měsíční max, T)` (protože
-    při udržitelném `T` baterie srazí každou špičku nad `T` právě na `T`).
-    Současný stav = bez baterie (RP = aktuální sjednaná, M = naměřené měsíční maximum).
+    - Bez peak shavingu: RP = aktuální sjednaná kapacita, M = naměřené měsíční maximum.
+    - S peak shavingem: RP = nová (roční, jedna hodnota = min. udržitelný strop pro
+      celý rok), M = měsíční maximum PO baterii, sražené co nejhlouběji v každém
+      měsíci (kap. 4.6 „srážej co to dá“). RP se přes rok nemění – mění se jen M.
 
     Dokud ERÚ nezveřejní závazné sazby (parametry chybí), vrací se status
     "ceka_na_sazby_eru" a appka místo čísel ukáže hlášku.
@@ -255,13 +282,18 @@ def ekonomika_2027(
 
     raw = _mesicni_maxima(profil_kw, mesice)  # naměřená měsíční maxima bez baterie
     soucasny, _, _ = _rocni_naklad_2027(rezervovana_kapacita_kw, raw, parametry)
-    po_baterii = {m: min(v, nova_rezervovana_kapacita_kw) for m, v in raw.items()}
+    po_baterii = mesicni_maxima_po_baterii(
+        profil_kw, mesice, vykon_kw, kapacita_kwh, interval_h
+    )
     novy, poc_t1, poc_t2 = _rocni_naklad_2027(nova_rezervovana_kapacita_kw, po_baterii, parametry)
     return {
         "status": "spocitano",
         "soucasny_rocni_naklad": soucasny,
         "novy_rocni_naklad": novy,
         "rocni_uspora": soucasny - novy,
+        # RP je jedna roční hodnota (nemění se po měsících) – shodná s novou
+        # rezervovanou kapacitou z roku 2026.
+        "rezervovana_kapacita_kw": nova_rezervovana_kapacita_kw,
         "pocet_mesicu_t1": poc_t1,
         "pocet_mesicu_t2": poc_t2,
         "je_modelovy_odhad": bool(je_modelovy_odhad),
@@ -350,16 +382,18 @@ def spocti_variantu(
     )
     navratnost = _navratnost(cena, ek.rocni_uspora)
 
-    # Rok 2027 využívá stejný výsledek simulace jako 2026 (nová RP = novy_strop,
-    # měsíční maxima po baterii = min(měsíční max, novy_strop)); jen se dosadí do
-    # dvousložkového vzorce ERÚ (kap. 4.6 / PROMPT 2027).
+    # Rok 2027: RP zůstává roční (novy_strop = min. udržitelný strop pro celý rok),
+    # ale měsíční maxima M se sráží co nejhlouběji v každém měsíci (kap. 4.6).
     ek_2027 = ekonomika_2027(
         profil_kw,
         mesice,
         rezervovana_kapacita_kw,
         novy_strop,
+        vykon,
+        kapacita,
         parametry_2027,
         je_modelovy_2027,
+        interval_h,
     )
 
     doporuceno = navratnost is not None and navratnost <= max_navratnost_roky

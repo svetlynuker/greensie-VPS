@@ -229,8 +229,8 @@ export default function PeakShavingPanel({ nabidka }) {
                   <div style={{ fontWeight: 600, marginBottom: 8 }}>Rok 2026</div>
                   <table className="nb-table">
                     <tbody>
-                      <tr><td>Současný roční náklad</td><td>{kc(dop.ekonomika_2026?.soucasny_naklad_celkem)}</td></tr>
-                      <tr><td>Nový roční náklad</td><td>{kc(dop.ekonomika_2026?.novy_naklad_rezervace)}</td></tr>
+                      <tr><td>Roční náklad bez peak shavingu</td><td>{kc(dop.ekonomika_2026?.soucasny_naklad_celkem)}</td></tr>
+                      <tr><td>Roční náklad s peak shavingem</td><td>{kc(dop.ekonomika_2026?.novy_naklad_rezervace)}</td></tr>
                       <tr><td><b>Roční úspora</b></td><td><b>{kc(dop.ekonomika_2026?.rocni_uspora)}</b></td></tr>
                     </tbody>
                   </table>
@@ -253,8 +253,8 @@ export default function PeakShavingPanel({ nabidka }) {
                     <>
                       <table className="nb-table">
                         <tbody>
-                          <tr><td>Současný roční náklad</td><td>{kc(dop.ekonomika_2027.soucasny_rocni_naklad)}</td></tr>
-                          <tr><td>Nový roční náklad</td><td>{kc(dop.ekonomika_2027.novy_rocni_naklad)}</td></tr>
+                          <tr><td>Roční náklad bez peak shavingu</td><td>{kc(dop.ekonomika_2027.soucasny_rocni_naklad)}</td></tr>
+                          <tr><td>Roční náklad s peak shavingem</td><td>{kc(dop.ekonomika_2027.novy_rocni_naklad)}</td></tr>
                           <tr><td><b>Roční úspora</b></td><td><b>{kc(dop.ekonomika_2027.rocni_uspora)}</b></td></tr>
                           <tr><td>Měsíců na tarifu T1 / T2</td><td>{dop.ekonomika_2027.pocet_mesicu_t1} / {dop.ekonomika_2027.pocet_mesicu_t2}</td></tr>
                         </tbody>
