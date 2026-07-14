@@ -4,6 +4,8 @@ from sqlalchemy import inspect, text
 
 from app.auth import models  # noqa: F401 - registrace modelů před create_all
 from app.auth.routes import router as auth_router
+from app.finance import models as finance_models  # noqa: F401 - registrace modelů
+from app.finance.routes import router as finance_router
 from app.matice import models as matice_models  # noqa: F401 - registrace modelů
 from app.matice.routes import router as matice_router
 from app.nastaveni import models as nastaveni_models  # noqa: F401 - registrace modelů
@@ -60,6 +62,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(matice_router)
+app.include_router(finance_router)
 app.include_router(nastaveni_router)
 app.include_router(admin_router)
 

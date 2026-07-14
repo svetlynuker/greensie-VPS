@@ -1,0 +1,175 @@
+/* Pohled 2 – Přehled financí. Vychází z Pohledu 1 (pohled1.css) – stejná
+   maticová tabulka, sticky sloupce, paleta fm-. Sloupce = faktury.
+   Uživatel je barvoslepý → stav faktury je VŽDY barva + ikona + text. */
+
+@import "./pohled1.css";
+
+:root {
+  --fa-w-col: 190px;
+}
+
+/* buňka faktury */
+td.fm-fa {
+  width: var(--fa-w-col);
+  min-width: var(--fa-w-col);
+  cursor: pointer;
+}
+
+td.fm-fa:hover {
+  outline: 1px solid var(--fm-brand);
+  outline-offset: -1px;
+}
+
+td.fm-fa.fm-empty {
+  background: var(--fm-empty-bg);
+  cursor: default;
+}
+
+td.fm-fa.fm-empty:hover {
+  outline: none;
+}
+
+.fm-fa-castka {
+  font-size: 11px;
+  color: var(--fm-muted);
+  margin-top: 3px;
+}
+
+.fm-fa-vs {
+  font-size: 10.5px;
+  color: var(--fm-muted);
+  margin-top: 1px;
+}
+
+.fm-fa-pohoda {
+  font-size: 10.5px;
+  margin-top: 2px;
+  color: var(--fm-brand-dk);
+  font-weight: 600;
+}
+
+/* ---- Stavy faktury: barva + ikona + text (barvoslepě čitelné) ---- */
+/* potřeba vystavit = červená */
+.fm-st-potreba_vystavit {
+  background: #ffe9e7;
+}
+.fm-st-potreba_vystavit .fm-pin {
+  background: #e03131;
+}
+.fm-st-potreba_vystavit .fm-cell-status {
+  color: #c0261f;
+}
+
+/* vystaveno = modrá */
+.fm-st-vystaveno {
+  background: #e7f1ff;
+}
+.fm-st-vystaveno .fm-pin {
+  background: #1c7ed6;
+}
+.fm-st-vystaveno .fm-cell-status {
+  color: #1862ab;
+}
+
+/* zaplaceno = zelená */
+.fm-st-zaplaceno {
+  background: var(--fm-done-bg);
+}
+.fm-st-zaplaceno .fm-pin {
+  background: var(--fm-done);
+}
+.fm-st-zaplaceno .fm-cell-status {
+  color: var(--fm-done);
+}
+
+/* nefakturuje se = šedá */
+.fm-st-nefakturuje {
+  background: #f1f3f5;
+}
+.fm-st-nefakturuje .fm-pin {
+  background: #868e96;
+}
+.fm-st-nefakturuje .fm-cell-status {
+  color: #495057;
+}
+
+/* tmavý režim */
+:root[data-theme="dark"] .fm-st-potreba_vystavit {
+  background: #3a1614;
+}
+:root[data-theme="dark"] .fm-st-potreba_vystavit .fm-cell-status {
+  color: #ff8787;
+}
+:root[data-theme="dark"] .fm-st-vystaveno {
+  background: #12233a;
+}
+:root[data-theme="dark"] .fm-st-vystaveno .fm-cell-status {
+  color: #74c0fc;
+}
+:root[data-theme="dark"] .fm-st-nefakturuje {
+  background: #24292e;
+}
+:root[data-theme="dark"] .fm-st-nefakturuje .fm-cell-status {
+  color: #adb5bd;
+}
+
+/* legenda stavů – vždy viditelná, ikona + text */
+.fm-fa-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--fm-card);
+  border: 1px solid var(--fm-line);
+  border-radius: 12px;
+  padding: 10px 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(31, 41, 51, 0.05);
+}
+
+.fm-fa-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.fm-fa-legend .fm-pin {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* zvýraznění řádku po prokliku z Pohledu 1 (?projekt=ID) */
+tr.fm-fa-highlight td {
+  animation: fm-fa-flash 2.4s ease-out;
+}
+
+@keyframes fm-fa-flash {
+  0%,
+  40% {
+    background: var(--fm-todo-bg);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* tlačítko + faktura na řádku projektu */
+.fm-fa-add {
+  border: 1px dashed var(--fm-line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  color: var(--fm-muted);
+  font-size: 12px;
+  background: transparent;
+  white-space: nowrap;
+}
+
+.fm-fa-add:hover {
+  border-color: var(--fm-brand);
+  color: var(--fm-brand-dk);
+}

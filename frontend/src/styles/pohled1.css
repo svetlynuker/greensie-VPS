@@ -270,6 +270,21 @@ tr.fm-drop-row td {
   font-size: 11px;
 }
 
+/* proklik na Přehled financí (jen pro oprávněné) */
+.fm-fin-link {
+  display: inline-block;
+  margin-top: 3px;
+  margin-right: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fm-brand-dk);
+  text-decoration: none;
+}
+
+.fm-fin-link:hover {
+  text-decoration: underline;
+}
+
 .fm-row-hide:hover {
   color: #c92a2a;
 }

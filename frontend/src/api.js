@@ -98,6 +98,27 @@ export function nastavZobrazeniProjektu(id, skryty) {
   });
 }
 
+// ---- Finance (Přehled financí – Pohled 2) ----
+export function nactiFinance() {
+  return zavolej("/finance");
+}
+
+export function ulozFakturu(id, data) {
+  return zavolej(`/finance/faktura/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function pridejFakturu(projektId) {
+  return zavolej(`/finance/projekt/${projektId}/faktura`, { method: "POST" });
+}
+
+export function smazFakturu(id) {
+  return zavolej(`/finance/faktura/${id}`, { method: "DELETE" });
+}
+
+export function synchronizujPohodu() {
+  return zavolej("/finance/pohoda/synchronizovat", { method: "POST" });
+}
+
 // ---- Uživatelská nastavení (pohledy + vzhled, uložená v DB) ----
 export function nactiNastaveni() {
   return zavolej("/nastaveni");
