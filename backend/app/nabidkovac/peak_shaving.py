@@ -356,7 +356,8 @@ def ekonomika_2027(
     for odber, m in zip(profil_kw, mesice):
         po_mesicich.setdefault(m, []).append(odber)
 
-    novy = 0.0
+    novy = 0.0  # s AKU (optimistický)
+    novy_bez_aku = 0.0  # bez AKU (konzervativní)
     poc_t1 = poc_t2 = 0
     ucinnosti: list[float] = []
     koefy: list[float] = []
@@ -368,7 +369,10 @@ def ekonomika_2027(
         c, tarif = _mesicni_naklad_2027(
             nova_rezervovana_kapacita_kw, strop_m, parametry, koef, vykon_kw
         )
+        # Konzervativní: stejný model 2027, ale bez slevy AKU (koef = 0).
+        c0, _ = _mesicni_naklad_2027(nova_rezervovana_kapacita_kw, strop_m, parametry, 0.0, vykon_kw)
         novy += c
+        novy_bez_aku += c0
         if tarif == "t1":
             poc_t1 += 1
         else:
@@ -380,8 +384,12 @@ def ekonomika_2027(
     return {
         "status": "spocitano",
         "soucasny_rocni_naklad": soucasny,
+        # S AKU = optimistický scénář.
         "novy_rocni_naklad": novy,
         "rocni_uspora": soucasny - novy,
+        # Bez AKU = konzervativní scénář (model 2027 bez nepotvrzené slevy).
+        "novy_rocni_naklad_bez_aku": novy_bez_aku,
+        "rocni_uspora_bez_aku": soucasny - novy_bez_aku,
         # RP je jedna roční hodnota (nemění se po měsících) – shodná s novou
         # rezervovanou kapacitou z roku 2026.
         "rezervovana_kapacita_kw": nova_rezervovana_kapacita_kw,
@@ -445,6 +453,10 @@ class Varianta:
     nova_rezervovana_kapacita_kw: float
     rocni_uspora_2026: float
     navratnost_roky: float | None  # None = úspora ≤ 0 (nekonečná návratnost)
+    # Návratnost podle jednotlivých modelů (kap. 4.5/4.6/4.8):
+    navratnost_2026: float | None  # dle úspory 2026 (= navratnost_roky, výběr varianty)
+    navratnost_2027_optim: float | None  # dle úspory 2027 SE slevou AKU (optimistický)
+    navratnost_2027_konzerv: float | None  # dle úspory 2027 BEZ AKU (konzervativní)
     ekonomika_2026: dict
     ekonomika_2027: dict
     doporuceno: bool
@@ -516,6 +528,14 @@ def spocti_variantu(
         interval_h,
     )
 
+    # Návratnost dle modelu 2027 (optimistická se slevou AKU / konzervativní bez ní).
+    if ek_2027.get("status") == "spocitano":
+        navratnost_2027_optim = _navratnost(cena, ek_2027.get("rocni_uspora", 0.0))
+        navratnost_2027_konzerv = _navratnost(cena, ek_2027.get("rocni_uspora_bez_aku", 0.0))
+    else:
+        navratnost_2027_optim = None
+        navratnost_2027_konzerv = None
+
     doporuceno = navratnost is not None and navratnost <= max_navratnost_roky
     return Varianta(
         baterie_id=baterie.id,
@@ -527,6 +547,9 @@ def spocti_variantu(
         nova_rezervovana_kapacita_kw=novy_strop,
         rocni_uspora_2026=ek.rocni_uspora,
         navratnost_roky=navratnost,
+        navratnost_2026=navratnost,
+        navratnost_2027_optim=navratnost_2027_optim,
+        navratnost_2027_konzerv=navratnost_2027_konzerv,
         ekonomika_2026=ek.__dict__,
         ekonomika_2027=ek_2027,
         doporuceno=doporuceno,
