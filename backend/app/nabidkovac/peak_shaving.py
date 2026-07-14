@@ -1,0 +1,417 @@
+"""Výpočetní jádro Peak shaving (METODIKA-peak-shaving.md, kap. 4).
+
+Čistě deterministický výpočet (žádní AI agenti – viz kap. 1 SPEC-nabidkovac.md).
+Modul je záměrně bez závislosti na DB a FastAPI: pracuje jen s prostými
+seznamy 15minutových hodnot odběru (kW) a čísly ze sazebníku, aby šel snadno
+testovat i volat z různých míst. Napojení na DB/API řeší routes.py.
+
+Klíčové vzorce a rozhodnutí přebíráme 1:1 z metodiky:
+- kap. 4.1 – výchozí roční náklad (rezervace + pokuty za překročení),
+- kap. 4.2 – simulace baterie po 15min intervalech (nabíjení = vybíjení,
+  kapacita 1:1 bez ztrát a bez DoD limitu – odsouhlasené zjednodušení v1),
+- kap. 4.3 – binární hledání nejnižší udržitelné rezervované kapacity T,
+- kap. 4.4/4.5 – roční úspora, návratnost, výběr nejrychlejší varianty,
+- kap. 4.6 – struktura roku 2027 (srážej co to dá + min(sazba A, B)).
+
+Všechny peněžní hodnoty jsou bez DPH (kap. 6 bod 2).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+# Granularita vstupních dat: 15 min = 0,25 h. Použije se, když ji nejde
+# odvodit z časových značek profilu (kap. 4.2 – "dle granularity vstupních dat").
+VYCHOZI_INTERVAL_H = 0.25
+
+# Výchozí práh nedoporučené návratnosti (kap. 4.5, bod 3 v kap. 6). Reálně se
+# bere z vypoctova_nastaveni.parametry["max_navratnost_roky_peak_shaving"],
+# tohle je fallback, když parametr chybí.
+VYCHOZI_MAX_NAVRATNOST_ROKY = 5.0
+
+# Rozsah počtu kusů baterie, který se zkouší pro každý produkt (kap. 4.5:
+# "rozumný rozsah počtu kusů, např. 1–5").
+VYCHOZI_MAX_POCET_KUSU = 5
+
+# Tolerance binárního hledání T v kW (kap. 4.3). 0,01 kW je hluboko pod
+# přesností, se kterou se sjednává rezervovaná kapacita.
+_BINARNI_TOLERANCE_KW = 0.01
+
+
+# ------------------------------------------------------------------ simulace
+def _max_udrzitelny_vyboj(soc_kwh: float, vykon_kw: float, interval_h: float) -> float:
+    """Max. okamžitý výkon (kW), který baterie zvládne dodat po celý interval.
+
+    Omezuje ho jak štítkový výkon, tak zbývající energie (nesmí se vybít pod 0).
+    """
+    z_energie = soc_kwh / interval_h if interval_h > 0 else 0.0
+    return min(vykon_kw, z_energie)
+
+
+def strop_je_udrzitelny(
+    profil_kw: list[float],
+    strop_kw: float,
+    vykon_kw: float,
+    kapacita_kwh: float,
+    interval_h: float = VYCHOZI_INTERVAL_H,
+    pocatecni_soc_kwh: float | None = None,
+) -> bool:
+    """Projede profil interval po intervalu a řekne, jestli baterie udrží strop.
+
+    Implementace kap. 4.2: nad stropem baterie dodává `min(odběr − T, výkon)`
+    (omezeno stavem nabití); pokud jí dojde energie dřív, než odběr klesne pod
+    strop, strop se neudrží → False. Pod stropem se dobíjí max. výkonem,
+    omezeně volnou kapacitou a rozdílem `T − odběr` (jen z rezervy pod stropem,
+    ne z ničeho navíc).
+
+    Počáteční stav nabití: defaultně plná baterie (kap. 4.2 zavádí zjednodušení
+    1:1 bez ztrát; předpokládáme, že baterii lze před špičkou nabít – nejde-li
+    strop udržet ani s plnou baterií, nejde vůbec). Explicitně se dá přepsat.
+    """
+    if vykon_kw <= 0 or kapacita_kwh <= 0:
+        # Bez baterie se udrží jen strop, který profil nikdy nepřekročí.
+        return all(odber <= strop_kw for odber in profil_kw)
+
+    soc = kapacita_kwh if pocatecni_soc_kwh is None else pocatecni_soc_kwh
+    for odber in profil_kw:
+        if odber > strop_kw:
+            potreba = odber - strop_kw
+            dodavka = min(potreba, _max_udrzitelny_vyboj(soc, vykon_kw, interval_h))
+            if dodavka + 1e-9 < potreba:
+                return False  # baterie nestačí → strop se neudrží
+            soc -= dodavka * interval_h
+        else:
+            # Dobíjení jen z rezervy pod stropem (T − odběr), max. výkonem.
+            rezerva = min(strop_kw - odber, vykon_kw)
+            soc = min(kapacita_kwh, soc + rezerva * interval_h)
+    return True
+
+
+def min_udrzitelny_strop(
+    profil_kw: list[float],
+    vykon_kw: float,
+    kapacita_kwh: float,
+    interval_h: float = VYCHOZI_INTERVAL_H,
+) -> float:
+    """Kap. 4.3: binárně najde nejnižší strop T, který baterie udrží celý rok.
+
+    Udržitelnost je monotónní v T (vyšší strop = méně vybíjení a víc prostoru
+    na dobíjení), takže binární hledání je korektní. Horní mez = celoroční
+    maximum (to jde vždy, i bez baterie). Vrací navrhovanou novou rezervovanou
+    kapacitu pro danou variantu baterie.
+    """
+    if not profil_kw:
+        return 0.0
+    horni = max(profil_kw)
+    dolni = 0.0
+    # Když ani celoroční maximum není udržitelné (nemělo by nastat), vrať ho.
+    if not strop_je_udrzitelny(profil_kw, horni, vykon_kw, kapacita_kwh, interval_h):
+        return horni
+    while horni - dolni > _BINARNI_TOLERANCE_KW:
+        stred = (horni + dolni) / 2
+        if strop_je_udrzitelny(profil_kw, stred, vykon_kw, kapacita_kwh, interval_h):
+            horni = stred
+        else:
+            dolni = stred
+    return horni
+
+
+# ------------------------------------------------- měsíční agregace profilu
+def _mesicni_maxima(profil_kw: list[float], mesice: list[int]) -> dict[int, float]:
+    """Nejvyšší 15min hodnota odběru v každém kalendářním měsíci (kap. 4.1)."""
+    out: dict[int, float] = {}
+    for odber, m in zip(profil_kw, mesice):
+        if m not in out or odber > out[m]:
+            out[m] = odber
+    return out
+
+
+# ----------------------------------------------------- ekonomika roku 2026
+@dataclass
+class Ekonomika2026:
+    """Roční náklady/úspora pro tarif `stara_2026` (kap. 4.1–4.4)."""
+
+    soucasny_naklad_rezervace: float
+    soucasny_naklad_prekroceni: float
+    soucasny_naklad_celkem: float
+    novy_naklad_rezervace: float
+    nova_rezervovana_kapacita_kw: float
+    rocni_uspora: float
+
+
+def vychozi_rocni_naklad_2026(
+    profil_kw: list[float],
+    mesice: list[int],
+    rezervovana_kapacita_kw: float,
+    cena_rezervace_kc_kw_rok: float,
+    cena_prekroceni_kc_kw: float,
+) -> tuple[float, float]:
+    """Kap. 4.1: (roční cena za rezervaci, roční cena za překročení) bez baterie.
+
+    Překročení se účtuje dle nejvyšší 15min hodnoty v daném měsíci, sazba
+    `cena_prekroceni_kc_kw` se aplikuje na každý měsíc zvlášť a sečte přes rok.
+    """
+    naklad_rezervace = rezervovana_kapacita_kw * cena_rezervace_kc_kw_rok
+    naklad_prekroceni = 0.0
+    for mesicni_max in _mesicni_maxima(profil_kw, mesice).values():
+        prekroceni = mesicni_max - rezervovana_kapacita_kw
+        if prekroceni > 0:
+            naklad_prekroceni += prekroceni * cena_prekroceni_kc_kw
+    return naklad_rezervace, naklad_prekroceni
+
+
+def ekonomika_2026(
+    profil_kw: list[float],
+    mesice: list[int],
+    rezervovana_kapacita_kw: float,
+    cena_rezervace_kc_kw_rok: float,
+    cena_prekroceni_kc_kw: float,
+    nova_rezervovana_kapacita_kw: float,
+) -> Ekonomika2026:
+    """Složí výchozí náklad (4.1) a náklad po baterii (4.4) do jedné struktury.
+
+    Po baterii je díky kap. 4.3 překročení nulové → nový náklad = jen rezervace
+    na navrhované kapacitě T.
+    """
+    rez, prekr = vychozi_rocni_naklad_2026(
+        profil_kw,
+        mesice,
+        rezervovana_kapacita_kw,
+        cena_rezervace_kc_kw_rok,
+        cena_prekroceni_kc_kw,
+    )
+    soucasny_celkem = rez + prekr
+    novy = nova_rezervovana_kapacita_kw * cena_rezervace_kc_kw_rok
+    return Ekonomika2026(
+        soucasny_naklad_rezervace=rez,
+        soucasny_naklad_prekroceni=prekr,
+        soucasny_naklad_celkem=soucasny_celkem,
+        novy_naklad_rezervace=novy,
+        nova_rezervovana_kapacita_kw=nova_rezervovana_kapacita_kw,
+        rocni_uspora=soucasny_celkem - novy,
+    )
+
+
+# ----------------------------------------------------- ekonomika roku 2027
+def shozena_mesicni_maxima_2027(
+    profil_kw: list[float],
+    mesice: list[int],
+    vykon_kw: float,
+    kapacita_kwh: float,
+    interval_h: float = VYCHOZI_INTERVAL_H,
+) -> dict[int, float]:
+    """Kap. 4.6: pro rok 2027 baterie "srážej co to dá".
+
+    V roce 2027 se platí přímo za naměřené měsíční maximum, takže nemá smysl
+    cílit na jeden roční strop – místo toho pro každý měsíc zvlášť najdeme
+    nejnižší udržitelné maximum (stejná simulace jako 4.2/4.3, jen po měsících).
+    Vrací dosažené měsíční maximum po baterii pro každý měsíc.
+    """
+    profil_po_mesicich: dict[int, list[float]] = {}
+    for odber, m in zip(profil_kw, mesice):
+        profil_po_mesicich.setdefault(m, []).append(odber)
+    return {
+        m: min_udrzitelny_strop(hodnoty, vykon_kw, kapacita_kwh, interval_h)
+        for m, hodnoty in profil_po_mesicich.items()
+    }
+
+
+def naklad_2027(
+    mesicni_maxima_kw: dict[int, float],
+    rezervovany_prikon_kw: float,
+    parametry: dict | None,
+) -> dict:
+    """Kap. 4.6: roční náklad v tarifu `nova_2027` = součet měsíčních min(A, B).
+
+    Sazby A i B ještě ERÚ nezveřejnil → dokud jsou `parametry` prázdné/`null`,
+    vrací se status "ceka_na_sazby_eru" a appka místo čísel zobrazí hlášku
+    (kap. 5). Jakmile se sazby doplní přes admin, tenhle výpočet se rozjede beze
+    změny kódu.
+    """
+    potreba = (
+        "sazba_a_kapacita_kc_kw_rok",
+        "sazba_a_zmereny_max_kc_kw_mesic",
+        "sazba_b_kapacita_kc_kw_rok",
+        "sazba_b_zmereny_max_kc_kw_mesic",
+    )
+    if not parametry or any(parametry.get(k) is None for k in potreba):
+        return {"status": "ceka_na_sazby_eru"}
+
+    a_kap = float(parametry["sazba_a_kapacita_kc_kw_rok"])
+    a_max = float(parametry["sazba_a_zmereny_max_kc_kw_mesic"])
+    b_kap = float(parametry["sazba_b_kapacita_kc_kw_rok"])
+    b_max = float(parametry["sazba_b_zmereny_max_kc_kw_mesic"])
+
+    naklad = 0.0
+    for mesicni_max in mesicni_maxima_kw.values():
+        cena_a = rezervovany_prikon_kw * a_kap / 12 + mesicni_max * a_max
+        cena_b = rezervovany_prikon_kw * b_kap / 12 + mesicni_max * b_max
+        naklad += min(cena_a, cena_b)
+    return {"status": "spocitano", "rocni_naklad": naklad}
+
+
+# ---------------------------------------------- výběr varianty (kap. 4.5)
+@dataclass
+class Baterie:
+    """Jeden produkt z katalogu `technologie` (typ = baterie)."""
+
+    id: int
+    nazev: str
+    vykon_kw: float
+    kapacita_kwh: float
+    cena_kc: float
+
+
+@dataclass
+class Varianta:
+    """Konkrétní kombinace produkt × počet kusů a její ekonomika."""
+
+    baterie_id: int
+    nazev: str
+    pocet_kusu: int
+    celkovy_vykon_kw: float
+    celkova_kapacita_kwh: float
+    cena_celkem_kc: float
+    nova_rezervovana_kapacita_kw: float
+    rocni_uspora_2026: float
+    navratnost_roky: float | None  # None = úspora ≤ 0 (nekonečná návratnost)
+    ekonomika_2026: dict
+    ekonomika_2027: dict
+    doporuceno: bool
+
+    def _radici_klic(self) -> tuple:
+        # Řadíme podle nejkratší návratnosti; varianty bez kladné úspory
+        # (navratnost None) padají na konec.
+        if self.navratnost_roky is None:
+            return (1, float("inf"))
+        return (0, self.navratnost_roky)
+
+
+@dataclass
+class VysledekPeakShaving:
+    """Kompletní výstup výpočtu pro jednu nabídku (kap. 5)."""
+
+    varianty: list[Varianta] = field(default_factory=list)
+    doporucena: Varianta | None = None
+    upozorneni: list[str] = field(default_factory=list)
+
+
+def _navratnost(cena_celkem: float, uspora: float) -> float | None:
+    """Kap. 4.5: návratnost v letech. Nekladná úspora → None (nevrátí se)."""
+    if uspora <= 0:
+        return None
+    return cena_celkem / uspora
+
+
+def spocti_variantu(
+    baterie: Baterie,
+    pocet_kusu: int,
+    profil_kw: list[float],
+    mesice: list[int],
+    rezervovana_kapacita_kw: float,
+    cena_rezervace_kc_kw_rok: float,
+    cena_prekroceni_kc_kw: float,
+    max_navratnost_roky: float,
+    interval_h: float = VYCHOZI_INTERVAL_H,
+    parametry_2027: dict | None = None,
+) -> Varianta:
+    """Spočítá jednu variantu (produkt × počet kusů): kap. 4.2–4.6."""
+    vykon = baterie.vykon_kw * pocet_kusu
+    kapacita = baterie.kapacita_kwh * pocet_kusu
+    cena = baterie.cena_kc * pocet_kusu
+
+    novy_strop = min_udrzitelny_strop(profil_kw, vykon, kapacita, interval_h)
+    ek = ekonomika_2026(
+        profil_kw,
+        mesice,
+        rezervovana_kapacita_kw,
+        cena_rezervace_kc_kw_rok,
+        cena_prekroceni_kc_kw,
+        novy_strop,
+    )
+    navratnost = _navratnost(cena, ek.rocni_uspora)
+
+    maxima_2027 = shozena_mesicni_maxima_2027(profil_kw, mesice, vykon, kapacita, interval_h)
+    # Rezervovaný příkon pro rok 2027 bereme z aktuální sjednané kapacity
+    # (přesné pravidlo přijde se sazbami ERÚ – kap. 4.6/7).
+    ek_2027 = naklad_2027(maxima_2027, rezervovana_kapacita_kw, parametry_2027)
+
+    doporuceno = navratnost is not None and navratnost <= max_navratnost_roky
+    return Varianta(
+        baterie_id=baterie.id,
+        nazev=baterie.nazev,
+        pocet_kusu=pocet_kusu,
+        celkovy_vykon_kw=vykon,
+        celkova_kapacita_kwh=kapacita,
+        cena_celkem_kc=cena,
+        nova_rezervovana_kapacita_kw=novy_strop,
+        rocni_uspora_2026=ek.rocni_uspora,
+        navratnost_roky=navratnost,
+        ekonomika_2026=ek.__dict__,
+        ekonomika_2027=ek_2027,
+        doporuceno=doporuceno,
+    )
+
+
+def vyber_reseni(
+    baterie_katalog: list[Baterie],
+    profil_kw: list[float],
+    mesice: list[int],
+    rezervovana_kapacita_kw: float,
+    cena_rezervace_kc_kw_rok: float,
+    cena_prekroceni_kc_kw: float,
+    max_navratnost_roky: float = VYCHOZI_MAX_NAVRATNOST_ROKY,
+    max_pocet_kusu: int = VYCHOZI_MAX_POCET_KUSU,
+    interval_h: float = VYCHOZI_INTERVAL_H,
+    parametry_2027: dict | None = None,
+) -> VysledekPeakShaving:
+    """Kap. 4.5: projede všechny produkty × počty kusů a vybere nejrychlejší návratnost.
+
+    Pro každý produkt zkoušíme počty kusů 1..N a bereme jen ten nejlepší počet
+    (další kusy už jen prodražují – přírůstek úspory je omezený tím, že strop
+    nemůže klesnout pod fyzikální minimum profilu). Vítěz = nejkratší návratnost.
+    Pokud ani nejlepší varianta nedosáhne prahu `max_navratnost_roky`, vrátí se
+    stejně, ale s `doporuceno = False` (kap. 4.5 – "nezmizí, jen nedoporučeno").
+    """
+    vysledek = VysledekPeakShaving()
+    if not profil_kw:
+        vysledek.upozorneni.append("Chybí profil spotřeby – není z čeho počítat.")
+        return vysledek
+    if not baterie_katalog:
+        vysledek.upozorneni.append("V katalogu není žádná použitelná baterie.")
+        return vysledek
+
+    nejlepsi_za_produkt: list[Varianta] = []
+    for baterie in baterie_katalog:
+        nejlepsi: Varianta | None = None
+        for pocet in range(1, max_pocet_kusu + 1):
+            v = spocti_variantu(
+                baterie,
+                pocet,
+                profil_kw,
+                mesice,
+                rezervovana_kapacita_kw,
+                cena_rezervace_kc_kw_rok,
+                cena_prekroceni_kc_kw,
+                max_navratnost_roky,
+                interval_h,
+                parametry_2027,
+            )
+            if nejlepsi is None or v._radici_klic() < nejlepsi._radici_klic():
+                nejlepsi = v
+            else:
+                # Přidání kusu už návratnost nezlepšilo → další kusy nemají smysl.
+                break
+        if nejlepsi is not None:
+            nejlepsi_za_produkt.append(nejlepsi)
+
+    nejlepsi_za_produkt.sort(key=lambda v: v._radici_klic())
+    vysledek.varianty = nejlepsi_za_produkt
+    if nejlepsi_za_produkt:
+        vysledek.doporucena = nejlepsi_za_produkt[0]
+        if not vysledek.doporucena.doporuceno:
+            vysledek.upozorneni.append(
+                f"Nejlepší nalezená varianta má návratnost přes {max_navratnost_roky:g} let "
+                "(firemní práh) – označeno jako nedoporučeno."
+            )
+    return vysledek

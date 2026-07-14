@@ -9,6 +9,9 @@ StavNabidky = Literal["koncept", "data_nahrana", "zkontrolovano_oz", "spocitano"
 TypTechnologie = Literal["fve_panel", "invertor", "baterie", "jina"]
 TypDokumentu = Literal["faktura_pdf", "spotreba_csv", "jiny"]
 StavZpracovani = Literal["nahrano", "extrahovano", "chyba_extrakce", "rucne_doplneno"]
+Distributor = Literal["cez", "egd", "pre"]
+NapetovaHladina = Literal["vn", "vvn"]
+StrukturaTarifu = Literal["stara_2026", "nova_2027"]
 
 
 # ---- Nabídky ----
@@ -81,6 +84,8 @@ class TechnologieOut(BaseModel):
     ucinnost: Optional[float] = None
     dostupnost: bool = True
     raynet_id: Optional[str] = None
+    # Hodnoty vlastních sloupců katalogu ({klic_sloupce: hodnota}).
+    extra: dict = {}
 
 
 class TechnologieVstup(BaseModel):
@@ -92,6 +97,25 @@ class TechnologieVstup(BaseModel):
     cena_kc: Optional[float] = None
     ucinnost: Optional[float] = None
     dostupnost: bool = True
+    extra: dict = {}
+
+
+# ---- Vlastní sloupce katalogu ----
+TypSloupce = Literal["text", "cislo"]
+
+
+class KatalogSloupecOut(BaseModel):
+    id: int
+    klic: str
+    nazev: str
+    typ: TypSloupce
+    poradi: int = 0
+
+
+class KatalogSloupecVstup(BaseModel):
+    nazev: str
+    typ: TypSloupce = "text"
+    poradi: int = 0
 
 
 # ---- Výpočtová nastavení (verzovaná) ----
@@ -113,3 +137,43 @@ class VypoctovaNastaveniVstup(BaseModel):
     min_delka_kontraktu_roky: Optional[int] = None
     max_delka_kontraktu_roky: Optional[int] = None
     parametry: dict = {}
+
+
+# ---- Sazby distributorů (peak shaving, METODIKA kap. 3.1) ----
+class SazbaOut(BaseModel):
+    id: int
+    distributor: Distributor
+    napetova_hladina: NapetovaHladina
+    struktura_tarifu: StrukturaTarifu
+    # None = struktura připravená, ceny ještě nejsou (typicky nova_2027).
+    parametry: Optional[dict] = None
+    platne_od: Optional[str] = None
+    platne_do: Optional[str] = None
+    poznamka: str = ""
+
+
+class SazbaVstup(BaseModel):
+    """Založení/úprava sazby přes admin (kap. 6–7). `parametry=None` u nova_2027,
+    dokud ERÚ nezveřejní čísla."""
+
+    distributor: Distributor
+    napetova_hladina: NapetovaHladina
+    struktura_tarifu: StrukturaTarifu
+    parametry: Optional[dict] = None
+    platne_od: str  # ISO datum (YYYY-MM-DD)
+    platne_do: Optional[str] = None
+    poznamka: str = ""
+
+
+# ---- Peak shaving výpočet (METODIKA kap. 4–5) ----
+class PeakShavingVstup(BaseModel):
+    """Vstupy, které OZ zadá/vybere (METODIKA kap. 2). Profil odběru se čte
+    z uložené tabulky `spotreba_profil` dané nabídky.
+
+    Výběr varianty se řídí ekonomikou roku 2026 (jediné dnes známé sazby);
+    ekonomika 2027 se do výstupu přidává zvlášť (kap. 5) a dokud ERÚ nezveřejní
+    sazby, zobrazí se u ní „čeká se na oficiální sazby ERÚ“."""
+
+    distributor: Distributor
+    napetova_hladina: NapetovaHladina
+    rezervovana_kapacita_kw: float
