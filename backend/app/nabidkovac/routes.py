@@ -984,6 +984,21 @@ def spocti_peak_shaving(
             "Ekonomika roku 2027: čeká se na oficiální sazby ERÚ."
         ]
 
+    # Data pro grafy odběru (bez baterie vs. s baterií) – pro doporučenou variantu.
+    if vysledek.doporucena is not None:
+        d = vysledek.doporucena
+        graf = peak_shaving.graf_maxima(
+            profil_kw,
+            mesice,
+            d.celkovy_vykon_kw,
+            d.celkova_kapacita_kwh,
+            d.nova_rezervovana_kapacita_kw,
+            interval_h,
+        )
+        graf["rp_soucasna_kw"] = round(vstup.rezervovana_kapacita_kw, 2)
+        graf["rp_nova_kw"] = round(d.nova_rezervovana_kapacita_kw, 2)
+        popis_json["graf"] = graf
+
     reseni = NavrhovaneReseni(
         nabidka_id=nabidka_id,
         typ_reseni="peak_shaving",

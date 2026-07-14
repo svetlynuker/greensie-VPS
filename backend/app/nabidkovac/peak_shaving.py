@@ -116,6 +116,39 @@ def min_udrzitelny_strop(
     return horni
 
 
+def energie_pri_stropu(
+    profil_kw: list[float],
+    strop_kw: float,
+    vykon_kw: float,
+    kapacita_kwh: float,
+    interval_h: float = VYCHOZI_INTERVAL_H,
+    pocatecni_soc_kwh: float | None = None,
+) -> tuple[float, float]:
+    """Projede profil na daném stropu a vrátí (nabito_kwh, vybito_kwh).
+
+    Stejná simulace jako `strop_je_udrzitelny` (kap. 4.2), jen navíc sčítá
+    energii nabitou a vybitou – potřeba pro Koeficient AKU (kap. 4.8) a grafy.
+    Nemění fyziku simulace, jen ji „odposlouchává".
+    """
+    if vykon_kw <= 0 or kapacita_kwh <= 0:
+        return (0.0, 0.0)
+    soc = kapacita_kwh if pocatecni_soc_kwh is None else pocatecni_soc_kwh
+    nabito = 0.0
+    vybito = 0.0
+    for odber in profil_kw:
+        if odber > strop_kw:
+            dodavka = min(odber - strop_kw, _max_udrzitelny_vyboj(soc, vykon_kw, interval_h))
+            e = dodavka * interval_h
+            soc -= e
+            vybito += e
+        else:
+            rezerva = min(strop_kw - odber, vykon_kw)
+            e = min(rezerva * interval_h, kapacita_kwh - soc)
+            soc += e
+            nabito += e
+    return (nabito, vybito)
+
+
 # ------------------------------------------------- měsíční agregace profilu
 def _mesicni_maxima(profil_kw: list[float], mesice: list[int]) -> dict[int, float]:
     """Nejvyšší 15min hodnota odběru v každém kalendářním měsíci (kap. 4.1)."""
@@ -202,14 +235,43 @@ KLICE_2027 = (
 )
 
 
-def _mesicni_naklad_2027(rp_kw: float, mesicni_max_kw: float, p: dict) -> tuple[float, str]:
-    """Náklad za jeden měsíc v modelu 2027 + který tarif vyšel levněji.
+def _koeficient_aku(ucinnost: float, u1: float, u2: float) -> float:
+    """Koeficient AKU (kap. 4.8): 0 pod U1, lineárně do 1 mezi U1 a U2, 1 nad U2.
 
-    `min(RP×T1_kap + M×T1_špička, RP×T2_kap + M×T2_špička) + max(0, M−RP)×penalizace`.
-    Zákazník tarif nevybírá – distributor ex post použije levnější (kap. 4.6).
+    ⚠️ Optimistický, nepotvrzený předpoklad – přesná definice „účinnosti" pro
+    čistě peak-shavingovou baterii bez exportu není ověřená (viz metodika 4.8).
     """
-    c1 = rp_kw * p["t1_kapacita_kc_kw_mesic"] + mesicni_max_kw * p["t1_spicka_kc_kw_mesic"]
-    c2 = rp_kw * p["t2_kapacita_kc_kw_mesic"] + mesicni_max_kw * p["t2_spicka_kc_kw_mesic"]
+    if u2 <= u1:
+        return 1.0 if ucinnost >= u2 else 0.0
+    if ucinnost <= u1:
+        return 0.0
+    if ucinnost >= u2:
+        return 1.0
+    return (ucinnost - u1) / (u2 - u1)
+
+
+def _mesicni_naklad_2027(
+    rp_kw: float,
+    mesicni_max_kw: float,
+    p: dict,
+    koeficient_aku: float = 0.0,
+    nabijeci_vykon_kw: float = 0.0,
+) -> tuple[float, str]:
+    """Náklad za jeden měsíc v modelu 2027 + který tarif vyšel levněji (kap. 4.6/4.8).
+
+    Sleva Koeficient AKU se uplatní jen na část naměřeného maxima krytou nabíjecím
+    výkonem baterie (`M_kryto = min(M, nabíjecí výkon)`); zbytek nad tento výkon se
+    platí za plnou sazbu. Bez baterie (koef=0, výkon=0) se vzorec redukuje na
+    původní `min(RP×T1_kap + M×T1_špička, RP×T2_kap + M×T2_špička)`.
+    """
+    m_kryto = min(mesicni_max_kw, nabijeci_vykon_kw)
+    m_zbytek = mesicni_max_kw - m_kryto
+    t1_sp = p["t1_spicka_kc_kw_mesic"]
+    t2_sp = p["t2_spicka_kc_kw_mesic"]
+    nakl_spicka_t1 = m_zbytek * t1_sp + m_kryto * t1_sp * (1 - koeficient_aku)
+    nakl_spicka_t2 = m_zbytek * t2_sp + m_kryto * t2_sp * (1 - koeficient_aku)
+    c1 = rp_kw * p["t1_kapacita_kc_kw_mesic"] + nakl_spicka_t1
+    c2 = rp_kw * p["t2_kapacita_kc_kw_mesic"] + nakl_spicka_t2
     if c1 <= c2:
         zaklad, tarif = c1, "t1"
     else:
@@ -232,20 +294,47 @@ def _rocni_naklad_2027(rp_kw: float, mesicni_maxima: dict[int, float], p: dict) 
     return naklad, poc_t1, poc_t2
 
 
+def mesicni_maxima_po_baterii(
+    profil_kw: list[float],
+    mesice: list[int],
+    vykon_kw: float,
+    kapacita_kwh: float,
+    interval_h: float = VYCHOZI_INTERVAL_H,
+) -> dict[int, float]:
+    """Kap. 4.6 „srážej co to dá": pro každý měsíc nejnižší udržitelné maximum.
+
+    V roce 2027 se platí přímo za naměřené měsíční maximum (M), takže baterie sráží
+    špičku každého měsíce tak hluboko, jak to fyzicky zvládne (max. výkon/kapacita) –
+    ne jen na jeden roční strop. Rezervovaná kapacita (RP) se tím NEMĚNÍ: zůstává
+    jedna roční hodnota (nelze měnit sjednanou rezervaci na síti po měsících), tady
+    jde jen o naměřené maximum M, které tvoří cenovou složku „špička".
+    """
+    po_mesicich: dict[int, list[float]] = {}
+    for odber, m in zip(profil_kw, mesice):
+        po_mesicich.setdefault(m, []).append(odber)
+    return {
+        m: min_udrzitelny_strop(vals, vykon_kw, kapacita_kwh, interval_h)
+        for m, vals in po_mesicich.items()
+    }
+
+
 def ekonomika_2027(
     profil_kw: list[float],
     mesice: list[int],
     rezervovana_kapacita_kw: float,
     nova_rezervovana_kapacita_kw: float,
+    vykon_kw: float,
+    kapacita_kwh: float,
     parametry: dict | None,
     je_modelovy_odhad: bool = True,
+    interval_h: float = VYCHOZI_INTERVAL_H,
 ) -> dict:
-    """Ekonomika roku 2027 (nová dvousložková struktura ERÚ, kap. 4.6 + PROMPT 2027).
+    """Ekonomika roku 2027 (nová dvousložková struktura ERÚ, METODIKA kap. 4.6).
 
-    Simulace baterie se NEMĚNÍ – bere se výsledek z roku 2026: nová RP = minimální
-    udržitelný strop `T`, měsíční maxima po baterii = `min(měsíční max, T)` (protože
-    při udržitelném `T` baterie srazí každou špičku nad `T` právě na `T`).
-    Současný stav = bez baterie (RP = aktuální sjednaná, M = naměřené měsíční maximum).
+    - Bez peak shavingu: RP = aktuální sjednaná kapacita, M = naměřené měsíční maximum.
+    - S peak shavingem: RP = nová (roční, jedna hodnota = min. udržitelný strop pro
+      celý rok), M = měsíční maximum PO baterii, sražené co nejhlouběji v každém
+      měsíci (kap. 4.6 „srážej co to dá“). RP se přes rok nemění – mění se jen M.
 
     Dokud ERÚ nezveřejní závazné sazby (parametry chybí), vrací se status
     "ceka_na_sazby_eru" a appka místo čísel ukáže hlášku.
@@ -253,18 +342,81 @@ def ekonomika_2027(
     if not parametry or any(parametry.get(k) is None for k in KLICE_2027):
         return {"status": "ceka_na_sazby_eru"}
 
-    raw = _mesicni_maxima(profil_kw, mesice)  # naměřená měsíční maxima bez baterie
+    # Bez peak shavingu (RP = aktuální sjednaná, M = naměřené maximum, bez slevy AKU).
+    raw = _mesicni_maxima(profil_kw, mesice)
     soucasny, _, _ = _rocni_naklad_2027(rezervovana_kapacita_kw, raw, parametry)
-    po_baterii = {m: min(v, nova_rezervovana_kapacita_kw) for m, v in raw.items()}
-    novy, poc_t1, poc_t2 = _rocni_naklad_2027(nova_rezervovana_kapacita_kw, po_baterii, parametry)
+
+    # Prahy účinnosti Koeficientu AKU (kap. 4.8) – z parametrů, s fallbackem.
+    u1 = float(parametry.get("u1_ucinnost", 0.60))
+    u2 = float(parametry.get("u2_ucinnost", 0.75))
+
+    # S peak shavingem: po měsících srazit M co nejhlouběji a spočítat účinnost
+    # nabito/vybito → koeficient AKU → sleva na složku „špička".
+    po_mesicich: dict[int, list[float]] = {}
+    for odber, m in zip(profil_kw, mesice):
+        po_mesicich.setdefault(m, []).append(odber)
+
+    novy = 0.0
+    poc_t1 = poc_t2 = 0
+    ucinnosti: list[float] = []
+    koefy: list[float] = []
+    for vals in po_mesicich.values():
+        strop_m = min_udrzitelny_strop(vals, vykon_kw, kapacita_kwh, interval_h)
+        nabito, vybito = energie_pri_stropu(vals, strop_m, vykon_kw, kapacita_kwh, interval_h)
+        ucinnost = (vybito / nabito) if nabito > 0 else 0.0
+        koef = _koeficient_aku(ucinnost, u1, u2)
+        c, tarif = _mesicni_naklad_2027(
+            nova_rezervovana_kapacita_kw, strop_m, parametry, koef, vykon_kw
+        )
+        novy += c
+        if tarif == "t1":
+            poc_t1 += 1
+        else:
+            poc_t2 += 1
+        ucinnosti.append(min(ucinnost, 1.0))  # v bezztrátovém modelu může poměr přesáhnout 1
+        koefy.append(koef)
+
+    n = len(po_mesicich) or 1
     return {
         "status": "spocitano",
         "soucasny_rocni_naklad": soucasny,
         "novy_rocni_naklad": novy,
         "rocni_uspora": soucasny - novy,
+        # RP je jedna roční hodnota (nemění se po měsících) – shodná s novou
+        # rezervovanou kapacitou z roku 2026.
+        "rezervovana_kapacita_kw": nova_rezervovana_kapacita_kw,
         "pocet_mesicu_t1": poc_t1,
         "pocet_mesicu_t2": poc_t2,
+        # Koeficient AKU (kap. 4.8) – NEPOTVRZENÝ optimistický předpoklad.
+        "predpoklad_aku_neoverovany": True,
+        "prumerna_ucinnost": sum(ucinnosti) / n,
+        "prumerny_koeficient_aku": sum(koefy) / n,
         "je_modelovy_odhad": bool(je_modelovy_odhad),
+    }
+
+
+def graf_maxima(
+    profil_kw: list[float],
+    mesice: list[int],
+    vykon_kw: float,
+    kapacita_kwh: float,
+    rocni_strop_kw: float,
+    interval_h: float = VYCHOZI_INTERVAL_H,
+) -> dict:
+    """Data pro graf měsíčních maxim odběru: bez baterie vs. s baterií (kap. B promptu).
+
+    `bez_baterie` = naměřené měsíční maximum z profilu (stejné pro oba roky).
+    `s_baterii_2026` = maximum po baterii při držení ročního stropu (M = min(raw, T)).
+    `s_baterii_2027` = maximum po baterii při srážení co to dá po měsících (kap. 4.6).
+    """
+    raw = _mesicni_maxima(profil_kw, mesice)
+    per_mesic = mesicni_maxima_po_baterii(profil_kw, mesice, vykon_kw, kapacita_kwh, interval_h)
+    ms = sorted(raw)
+    return {
+        "mesice": ms,
+        "bez_baterie_kw": [round(raw[m], 2) for m in ms],
+        "s_baterii_2026_kw": [round(min(raw[m], rocni_strop_kw), 2) for m in ms],
+        "s_baterii_2027_kw": [round(per_mesic[m], 2) for m in ms],
     }
 
 
@@ -350,16 +502,18 @@ def spocti_variantu(
     )
     navratnost = _navratnost(cena, ek.rocni_uspora)
 
-    # Rok 2027 využívá stejný výsledek simulace jako 2026 (nová RP = novy_strop,
-    # měsíční maxima po baterii = min(měsíční max, novy_strop)); jen se dosadí do
-    # dvousložkového vzorce ERÚ (kap. 4.6 / PROMPT 2027).
+    # Rok 2027: RP zůstává roční (novy_strop = min. udržitelný strop pro celý rok),
+    # ale měsíční maxima M se sráží co nejhlouběji v každém měsíci (kap. 4.6).
     ek_2027 = ekonomika_2027(
         profil_kw,
         mesice,
         rezervovana_kapacita_kw,
         novy_strop,
+        vykon,
+        kapacita,
         parametry_2027,
         je_modelovy_2027,
+        interval_h,
     )
 
     doporuceno = navratnost is not None and navratnost <= max_navratnost_roky
