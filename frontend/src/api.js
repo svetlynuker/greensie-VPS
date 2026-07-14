@@ -236,6 +236,14 @@ export function peakShavingVypocet(nabidkaId, data) {
   });
 }
 
+export function peakShavingProfilSouhrn(nabidkaId) {
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/peak-shaving/profil-souhrn`);
+}
+
+export function profilZpracuj(dokumentId) {
+  return zavolej(`/nabidkovac/dokumenty/${dokumentId}/zpracuj-profil`, { method: "POST" });
+}
+
 // ---- Uživatelská nastavení (pohledy + vzhled, uložená v DB) ----
 export function nactiNastaveni() {
   return zavolej("/nastaveni");
