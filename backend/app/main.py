@@ -46,6 +46,12 @@ def _lehka_migrace():
             conn.execute(text("UPDATE uzivatele SET je_admin = true WHERE role = 'admin'"))
             conn.execute(text("ALTER TABLE uzivatele ALTER COLUMN role DROP NOT NULL"))
 
+        # Vlastní sloupce katalogu: hodnoty se drží v Technologie.extra (JSONB).
+        # create_all nepřidá sloupec do už existující tabulky → doplníme ručně.
+        conn.execute(
+            text("ALTER TABLE technologie ADD COLUMN IF NOT EXISTS extra JSONB NOT NULL DEFAULT '{}'")
+        )
+
 
 _lehka_migrace()
 

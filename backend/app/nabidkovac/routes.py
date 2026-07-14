@@ -5,6 +5,8 @@ správa katalogu technologií a verzovaných výpočtových nastavení. Žádná
 výpočetní logika (sizing, PVGIS, ROI, LLM extrakce, generování PDF) tu není.
 """
 
+import re
+import unicodedata
 from datetime import date, datetime
 
 from pathlib import Path
@@ -22,6 +24,8 @@ from app.nabidkovac.models import (
     STRUKTURY_TARIFU,
     TYPY_DOKUMENTU,
     TYPY_NABIDKY,
+    TYPY_SLOUPCE,
+    KatalogSloupec,
     Nabidka,
     NabidkaDokument,
     NavrhovaneReseni,
@@ -33,6 +37,8 @@ from app.nabidkovac.models import (
 from app.nabidkovac.permissions import vyzaduj_katalog, vyzaduj_nabidkovac
 from app.nabidkovac.schemas import (
     DokumentOut,
+    KatalogSloupecOut,
+    KatalogSloupecVstup,
     NabidkaDetailOut,
     NabidkaRadekOut,
     NabidkaUprava,
@@ -276,7 +282,33 @@ def _technologie_out(t: Technologie) -> TechnologieOut:
         ucinnost=_num(t.ucinnost),
         dostupnost=t.dostupnost,
         raynet_id=t.raynet_id,
+        extra=t.extra or {},
     )
+
+
+def _zpracuj_extra(db: Session, extra_vstup: dict | None) -> dict:
+    """Očistí hodnoty vlastních sloupců: nechá jen definované sloupce a u typu
+    `cislo` převede na číslo (prázdné → klíč se vynechá). Neznámé klíče zahodí."""
+    if not extra_vstup:
+        return {}
+    sloupce = {s.klic: s.typ for s in db.query(KatalogSloupec).all()}
+    out: dict = {}
+    for klic, hodnota in extra_vstup.items():
+        if klic not in sloupce:
+            continue  # sloupec neexistuje (např. mezitím smazaný) → ignoruj
+        if hodnota is None or (isinstance(hodnota, str) and hodnota.strip() == ""):
+            continue  # prázdná hodnota se neukládá
+        if sloupce[klic] == "cislo":
+            try:
+                out[klic] = float(str(hodnota).replace(",", "."))
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Sloupec '{klic}' je číselný, ale '{hodnota}' není číslo.",
+                )
+        else:
+            out[klic] = str(hodnota).strip()
+    return out
 
 
 def _over_technologii(vstup: TechnologieVstup) -> str:
@@ -327,6 +359,7 @@ def pridej_technologii(
         cena_kc=vstup.cena_kc,
         ucinnost=vstup.ucinnost,
         dostupnost=vstup.dostupnost,
+        extra=_zpracuj_extra(db, vstup.extra),
         vytvoril_user_id=user.id,
     )
     db.add(t)
@@ -354,6 +387,7 @@ def uprav_technologii(
     t.cena_kc = vstup.cena_kc
     t.ucinnost = vstup.ucinnost
     t.dostupnost = vstup.dostupnost
+    t.extra = _zpracuj_extra(db, vstup.extra)
     db.commit()
     db.refresh(t)
     return _technologie_out(t)
@@ -371,6 +405,104 @@ def smaz_technologii(
     db.delete(t)
     db.commit()
     return {"smazano": technologie_id}
+
+
+# ================= Vlastní sloupce katalogu =================
+def _sloupec_out(s: KatalogSloupec) -> KatalogSloupecOut:
+    return KatalogSloupecOut(id=s.id, klic=s.klic, nazev=s.nazev, typ=s.typ, poradi=s.poradi)
+
+
+def _uniq_klic(db: Session, nazev: str) -> str:
+    """Odvodí strojový klíč z názvu (bez diakritiky, [a-z0-9_]) a zajistí unikátnost."""
+    zaklad = unicodedata.normalize("NFKD", nazev).encode("ascii", "ignore").decode()
+    zaklad = re.sub(r"[^a-zA-Z0-9]+", "_", zaklad).strip("_").lower()
+    if not zaklad:
+        zaklad = "sloupec"
+    existujici = {k for (k,) in db.query(KatalogSloupec.klic).all()}
+    if zaklad not in existujici:
+        return zaklad
+    i = 2
+    while f"{zaklad}_{i}" in existujici:
+        i += 1
+    return f"{zaklad}_{i}"
+
+
+@router.get("/katalog-sloupce", response_model=list[KatalogSloupecOut])
+def seznam_sloupcu(
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Definice vlastních sloupců katalogu (řazeno dle pořadí, pak názvu)."""
+    ss = (
+        db.query(KatalogSloupec)
+        .order_by(KatalogSloupec.poradi, KatalogSloupec.nazev, KatalogSloupec.id)
+        .all()
+    )
+    return [_sloupec_out(s) for s in ss]
+
+
+@router.post("/katalog-sloupce", response_model=KatalogSloupecOut)
+def pridej_sloupec(
+    vstup: KatalogSloupecVstup,
+    user: User = Depends(vyzaduj_katalog),
+    db: Session = Depends(get_db),
+):
+    nazev = vstup.nazev.strip()
+    if not nazev:
+        raise HTTPException(status_code=422, detail="Název sloupce je povinný")
+    if vstup.typ not in TYPY_SLOUPCE:
+        raise HTTPException(status_code=422, detail=f"Neznámý typ sloupce: {vstup.typ}")
+    s = KatalogSloupec(
+        klic=_uniq_klic(db, nazev),
+        nazev=nazev,
+        typ=vstup.typ,
+        poradi=vstup.poradi,
+        vytvoril_user_id=user.id,
+    )
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    return _sloupec_out(s)
+
+
+@router.put("/katalog-sloupce/{sloupec_id}", response_model=KatalogSloupecOut)
+def uprav_sloupec(
+    sloupec_id: int,
+    vstup: KatalogSloupecVstup,
+    user: User = Depends(vyzaduj_katalog),
+    db: Session = Depends(get_db),
+):
+    """Přejmenování / změna typu / pořadí. `klic` zůstává (drží vazbu na hodnoty)."""
+    s = db.get(KatalogSloupec, sloupec_id)
+    if s is None:
+        raise HTTPException(status_code=404, detail="Sloupec neexistuje")
+    nazev = vstup.nazev.strip()
+    if not nazev:
+        raise HTTPException(status_code=422, detail="Název sloupce je povinný")
+    if vstup.typ not in TYPY_SLOUPCE:
+        raise HTTPException(status_code=422, detail=f"Neznámý typ sloupce: {vstup.typ}")
+    s.nazev = nazev
+    s.typ = vstup.typ
+    s.poradi = vstup.poradi
+    db.commit()
+    db.refresh(s)
+    return _sloupec_out(s)
+
+
+@router.delete("/katalog-sloupce/{sloupec_id}")
+def smaz_sloupec(
+    sloupec_id: int,
+    user: User = Depends(vyzaduj_katalog),
+    db: Session = Depends(get_db),
+):
+    """Smaže definici sloupce. Hodnoty v Technologie.extra zůstanou jako osiřelé
+    klíče (neškodí, jen se nezobrazují) – nepřepisujeme kvůli tomu celý katalog."""
+    s = db.get(KatalogSloupec, sloupec_id)
+    if s is None:
+        raise HTTPException(status_code=404, detail="Sloupec neexistuje")
+    db.delete(s)
+    db.commit()
+    return {"smazano": sloupec_id}
 
 
 # ================= Výpočtová nastavení (verzovaná) =================

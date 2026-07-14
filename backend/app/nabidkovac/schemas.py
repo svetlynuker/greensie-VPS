@@ -84,6 +84,8 @@ class TechnologieOut(BaseModel):
     ucinnost: Optional[float] = None
     dostupnost: bool = True
     raynet_id: Optional[str] = None
+    # Hodnoty vlastních sloupců katalogu ({klic_sloupce: hodnota}).
+    extra: dict = {}
 
 
 class TechnologieVstup(BaseModel):
@@ -95,6 +97,25 @@ class TechnologieVstup(BaseModel):
     cena_kc: Optional[float] = None
     ucinnost: Optional[float] = None
     dostupnost: bool = True
+    extra: dict = {}
+
+
+# ---- Vlastní sloupce katalogu ----
+TypSloupce = Literal["text", "cislo"]
+
+
+class KatalogSloupecOut(BaseModel):
+    id: int
+    klic: str
+    nazev: str
+    typ: TypSloupce
+    poradi: int = 0
+
+
+class KatalogSloupecVstup(BaseModel):
+    nazev: str
+    typ: TypSloupce = "text"
+    poradi: int = 0
 
 
 # ---- Výpočtová nastavení (verzovaná) ----

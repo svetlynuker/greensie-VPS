@@ -67,6 +67,9 @@ NAPETOVE_HLADINY = ("vn", "vvn")
 # STRUKTURA výpočtu → proto typ struktury + flexibilní JSONB parametry.
 STRUKTURY_TARIFU = ("stara_2026", "nova_2027")
 
+# Datový typ vlastního (admin definovaného) sloupce katalogu technologií.
+TYPY_SLOUPCE = ("text", "cislo")
+
 
 class Technologie(Base):
     """Katalog technologií (FVE panely, invertory, baterie…).
@@ -93,6 +96,12 @@ class Technologie(Base):
 
     dostupnost = Column(Boolean, nullable=False, default=True, server_default="true")
 
+    # Hodnoty vlastních (admin definovaných) sloupců katalogu – mapa
+    # {klic_sloupce: hodnota}. Definice sloupců drží KatalogSloupec; tady jsou
+    # jen hodnoty konkrétní technologie. JSONB, ať se dají přidávat sloupce bez
+    # migrace (stejný princip jako parametry u sazeb / výpočtových nastavení).
+    extra = Column(JSONB, nullable=False, default=dict, server_default="{}")
+
     # Budoucí sync z Raynetu (zatím jen ruční správa – kap. 6 SPEC).
     raynet_id = Column(String, nullable=True, index=True)
     synchronizovano_at = Column(DateTime(timezone=True), nullable=True)
@@ -101,6 +110,30 @@ class Technologie(Base):
     aktualizovano_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+    vytvoril_user_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True
+    )
+
+
+class KatalogSloupec(Base):
+    """Vlastní (admin definovaný) sloupec katalogu technologií.
+
+    Umožňuje vedení/adminovi přidat do katalogu další sloupce (např. „Záruka“,
+    „Hmotnost“) bez zásahu do kódu. Definice (název, typ, pořadí) žije tady,
+    hodnoty se ukládají do Technologie.extra pod klíčem `klic`. Smazání sloupce
+    jen skryje hodnoty – v JSONB `extra` osiřelé klíče nevadí.
+    """
+
+    __tablename__ = "katalog_sloupce"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Strojový klíč do Technologie.extra (odvozený z názvu, unikátní, neměnný).
+    klic = Column(String, nullable=False, unique=True, index=True)
+    nazev = Column(String, nullable=False)  # zobrazovaný název sloupce
+    typ = Column(String, nullable=False, default="text", server_default="text")  # TYPY_SLOUPCE
+    poradi = Column(Integer, nullable=False, default=0, server_default="0")
+
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     vytvoril_user_id = Column(
         Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True
     )

@@ -14,6 +14,10 @@ import {
   sazbaPridej,
   sazbaUprav,
   sazbaSmaz,
+  katalogSloupceSeznam,
+  katalogSloupecPridej,
+  katalogSloupecUprav,
+  katalogSloupecSmaz,
 } from "../api";
 import "../styles/nabidkovac.css";
 
@@ -76,7 +80,7 @@ function shrnParametry(s) {
 }
 
 /* ---------- modal editoru technologie ---------- */
-function TechEditor({ tech, onSave, onClose }) {
+function TechEditor({ tech, sloupce, onSave, onClose }) {
   const [typ, setTyp] = useState(tech?.typ || "fve_panel");
   const [nazev, setNazev] = useState(tech?.nazev || "");
   const [model, setModel] = useState(tech?.model || "");
@@ -85,13 +89,28 @@ function TechEditor({ tech, onSave, onClose }) {
   const [cena, setCena] = useState(str(tech?.cena_kc));
   const [ucinnost, setUcinnost] = useState(str(tech?.ucinnost));
   const [dostupnost, setDostupnost] = useState(tech?.dostupnost ?? true);
+  // Hodnoty vlastních sloupců (mapa klíč→text pro input).
+  const [extra, setExtra] = useState(() => {
+    const e = tech?.extra || {};
+    return Object.fromEntries((sloupce || []).map((s) => [s.klic, str(e[s.klic])]));
+  });
   const [uklada, setUklada] = useState(false);
   const [chyba, setChyba] = useState(null);
+
+  function nastavExtra(klic, hodnota) {
+    setExtra((e) => ({ ...e, [klic]: hodnota }));
+  }
 
   async function uloz() {
     if (!nazev.trim()) {
       setChyba("Název je povinný.");
       return;
+    }
+    // Prázdné hodnoty vynecháme, číselné pošleme jako string (backend převede).
+    const extraOut = {};
+    for (const s of sloupce || []) {
+      const v = (extra[s.klic] ?? "").trim();
+      if (v !== "") extraOut[s.klic] = v;
     }
     setUklada(true);
     setChyba(null);
@@ -105,6 +124,7 @@ function TechEditor({ tech, onSave, onClose }) {
         cena_kc: num(cena),
         ucinnost: num(ucinnost),
         dostupnost,
+        extra: extraOut,
       });
     } catch (e) {
       setChyba(e.message);
@@ -153,10 +173,94 @@ function TechEditor({ tech, onSave, onClose }) {
             <input className="nb-pole" value={ucinnost} onChange={(e) => setUcinnost(e.target.value)} inputMode="decimal" />
           </div>
         </div>
+        {(sloupce || []).length > 0 && (
+          <div className="nb-form-grid">
+            {sloupce.map((s) => (
+              <div key={s.klic}>
+                <label className="nb-label">{s.nazev}{s.typ === "cislo" ? " (číslo)" : ""}</label>
+                <input
+                  className="nb-pole"
+                  value={extra[s.klic] ?? ""}
+                  onChange={(e) => nastavExtra(s.klic, e.target.value)}
+                  inputMode={s.typ === "cislo" ? "decimal" : "text"}
+                />
+              </div>
+            ))}
+          </div>
+        )}
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
           <input type="checkbox" checked={dostupnost} onChange={(e) => setDostupnost(e.target.checked)} />
           Dostupná v katalogu
         </label>
+        {chyba && <div style={{ color: "#c92a2a", fontSize: 13 }}>{chyba}</div>}
+        <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+          <span style={{ flex: 1 }} />
+          <button className="fm-btn" onClick={onClose} disabled={uklada}>Zrušit</button>
+          <button className="fm-btn fm-primary" onClick={uloz} disabled={uklada}>
+            {uklada ? "Ukládám…" : "Uložit"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- modal editoru vlastního sloupce ---------- */
+function SloupecEditor({ sloupec, onSave, onClose }) {
+  const [nazev, setNazev] = useState(sloupec?.nazev || "");
+  const [typ, setTyp] = useState(sloupec?.typ || "text");
+  const [poradi, setPoradi] = useState(str(sloupec?.poradi ?? ""));
+  const [uklada, setUklada] = useState(false);
+  const [chyba, setChyba] = useState(null);
+
+  async function uloz() {
+    if (!nazev.trim()) {
+      setChyba("Název sloupce je povinný.");
+      return;
+    }
+    setUklada(true);
+    setChyba(null);
+    try {
+      await onSave({
+        nazev: nazev.trim(),
+        typ,
+        poradi: poradi.trim() === "" ? 0 : parseInt(poradi, 10),
+      });
+    } catch (e) {
+      setChyba(e.message);
+      setUklada(false);
+    }
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, background: "rgba(31,41,51,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}
+    >
+      <div className="fm-card" onClick={(e) => e.stopPropagation()} style={{ padding: 20, width: "min(420px, 100%)", display: "flex", flexDirection: "column", gap: 12 }}>
+        <h3 style={{ margin: 0, fontSize: 15 }}>{sloupec ? "Upravit sloupec" : "Nový vlastní sloupec"}</h3>
+        <div>
+          <label className="nb-label">Název sloupce</label>
+          <input className="nb-pole" value={nazev} onChange={(e) => setNazev(e.target.value)} placeholder="např. Záruka (roky)" />
+        </div>
+        <div className="nb-form-grid">
+          <div>
+            <label className="nb-label">Typ hodnoty</label>
+            <select className="nb-pole" value={typ} onChange={(e) => setTyp(e.target.value)}>
+              <option value="text">Text</option>
+              <option value="cislo">Číslo</option>
+            </select>
+          </div>
+          <div>
+            <label className="nb-label">Pořadí</label>
+            <input className="nb-pole" value={poradi} onChange={(e) => setPoradi(e.target.value)} inputMode="numeric" placeholder="0" />
+          </div>
+        </div>
+        {sloupec && (
+          <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: 0 }}>
+            Přejmenování a změna typu se projeví hned; už uložené hodnoty zůstávají.
+          </p>
+        )}
         {chyba && <div style={{ color: "#c92a2a", fontSize: 13 }}>{chyba}</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
           <span style={{ flex: 1 }} />
@@ -303,9 +407,11 @@ export default function NabidkovacKatalog() {
   const [tech, setTech] = useState(null);
   const [nastaveni, setNastaveni] = useState(null);
   const [sazby, setSazby] = useState(null);
+  const [sloupce, setSloupce] = useState(null);
   const [chyba, setChyba] = useState(null);
   const [editace, setEditace] = useState(undefined); // undefined = zavřeno, null = nová, obj = úprava
   const [editaceSazby, setEditaceSazby] = useState(undefined);
+  const [editaceSloupce, setEditaceSloupce] = useState(undefined);
 
   // formulář výpočtových nastavení (nová verze)
   const [koef, setKoef] = useState("");
@@ -315,14 +421,16 @@ export default function NabidkovacKatalog() {
   const [nastavUklada, setNastavUklada] = useState(false);
 
   async function nactiVse() {
-    const [ts, ns, sz] = await Promise.all([
+    const [ts, ns, sz, sl] = await Promise.all([
       technologieSeznam(),
       vypoctovaNastaveniSeznam(),
       sazbySeznam(),
+      katalogSloupceSeznam(),
     ]);
     setTech(ts);
     setNastaveni(ns);
     setSazby(sz);
+    setSloupce(sl);
     const akt = ns[0];
     setKoef(str(akt?.koeficient_zisku));
     setMinRoky(str(akt?.min_delka_kontraktu_roky));
@@ -380,6 +488,19 @@ export default function NabidkovacKatalog() {
     await nactiVse();
   }
 
+  async function ulozSloupec(data) {
+    if (editaceSloupce) await katalogSloupecUprav(editaceSloupce.id, data);
+    else await katalogSloupecPridej(data);
+    setEditaceSloupce(undefined);
+    await nactiVse();
+  }
+
+  async function smazSloupec(s) {
+    if (!window.confirm(`Smazat sloupec "${s.nazev}"? Uložené hodnoty se přestanou zobrazovat.`)) return;
+    await katalogSloupecSmaz(s.id);
+    await nactiVse();
+  }
+
   async function ulozNastaveni() {
     setNastavUklada(true);
     setNastavZprava(null);
@@ -406,7 +527,7 @@ export default function NabidkovacKatalog() {
       </Layout>
     );
   }
-  if (!me || !tech || !nastaveni || !sazby) return null;
+  if (!me || !tech || !nastaveni || !sazby || !sloupce) return null;
 
   const aktualni = nastaveni[0];
 
@@ -424,13 +545,39 @@ export default function NabidkovacKatalog() {
         <div className="nb-toolbar">
           <h3 style={{ margin: 0, fontSize: 15 }}>Katalog technologií</h3>
           <span className="nb-spacer" />
+          <button className="fm-btn" onClick={() => setEditaceSloupce(null)}>+ Sloupec</button>
           <button className="fm-btn fm-primary" onClick={() => setEditace(null)}>+ Technologie</button>
         </div>
+        {sloupce.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", margin: "0 0 12px" }}>
+            <span style={{ fontSize: 12, color: "var(--fm-muted)" }}>Vlastní sloupce:</span>
+            {sloupce.map((s) => (
+              <span key={s.klic} className="nb-badge" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <button
+                  onClick={() => setEditaceSloupce(s)}
+                  title="Upravit sloupec"
+                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit", color: "inherit" }}
+                >
+                  {s.nazev}{s.typ === "cislo" ? " (č.)" : ""}
+                </button>
+                <button
+                  onClick={() => smazSloupec(s)}
+                  title="Smazat sloupec"
+                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "#c92a2a", fontWeight: 700 }}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="nb-scroll" style={{ marginBottom: 24 }}>
           <table className="nb-table">
             <thead>
               <tr>
-                <th>Typ</th><th>Název</th><th>Model</th><th>Výkon/kap.</th><th>Cena</th><th>Dostupná</th><th></th>
+                <th>Typ</th><th>Název</th><th>Model</th><th>Výkon (kW)</th><th>Kapacita (kWh)</th><th>Cena</th><th>Dostupná</th>
+                {sloupce.map((s) => <th key={s.klic}>{s.nazev}</th>)}
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -439,16 +586,29 @@ export default function NabidkovacKatalog() {
                   <td>{NAZEV_TYPU[t.typ] || t.typ}</td>
                   <td>{t.nazev}</td>
                   <td>{t.model || "—"}</td>
-                  <td>{t.vykon_kw != null ? `${t.vykon_kw} kW` : t.kapacita_kwh != null ? `${t.kapacita_kwh} kWh` : "—"}</td>
+                  <td>{t.vykon_kw != null ? t.vykon_kw.toLocaleString("cs-CZ") : "—"}</td>
+                  <td>{t.kapacita_kwh != null ? t.kapacita_kwh.toLocaleString("cs-CZ") : "—"}</td>
                   <td>{t.cena_kc != null ? `${t.cena_kc.toLocaleString("cs-CZ")} Kč` : "—"}</td>
                   <td>{t.dostupnost ? "Ano" : "Ne"}</td>
+                  {sloupce.map((s) => {
+                    const v = t.extra?.[s.klic];
+                    return (
+                      <td key={s.klic}>
+                        {v == null || v === ""
+                          ? "—"
+                          : s.typ === "cislo" && typeof v === "number"
+                          ? v.toLocaleString("cs-CZ")
+                          : String(v)}
+                      </td>
+                    );
+                  })}
                   <td onClick={(e) => e.stopPropagation()}>
                     <button className="fm-btn" style={{ padding: "4px 10px", color: "#c92a2a" }} onClick={() => smazTech(t)}>Smazat</button>
                   </td>
                 </tr>
               ))}
               {tech.length === 0 && (
-                <tr><td colSpan={7} className="nb-empty">Katalog je zatím prázdný.</td></tr>
+                <tr><td colSpan={8 + sloupce.length} className="nb-empty">Katalog je zatím prázdný.</td></tr>
               )}
             </tbody>
           </table>
@@ -548,7 +708,10 @@ export default function NabidkovacKatalog() {
       </div>
 
       {editace !== undefined && (
-        <TechEditor tech={editace} onSave={ulozTech} onClose={() => setEditace(undefined)} />
+        <TechEditor tech={editace} sloupce={sloupce} onSave={ulozTech} onClose={() => setEditace(undefined)} />
+      )}
+      {editaceSloupce !== undefined && (
+        <SloupecEditor sloupec={editaceSloupce} onSave={ulozSloupec} onClose={() => setEditaceSloupce(undefined)} />
       )}
       {editaceSazby !== undefined && (
         <SazbaEditor sazba={editaceSazby} onSave={ulozSazbu} onClose={() => setEditaceSazby(undefined)} />

@@ -185,6 +185,22 @@ export function technologieSmaz(id) {
   return zavolej(`/nabidkovac/technologie/${id}`, { method: "DELETE" });
 }
 
+export function katalogSloupceSeznam() {
+  return zavolej("/nabidkovac/katalog-sloupce");
+}
+
+export function katalogSloupecPridej(data) {
+  return zavolej("/nabidkovac/katalog-sloupce", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function katalogSloupecUprav(id, data) {
+  return zavolej(`/nabidkovac/katalog-sloupce/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function katalogSloupecSmaz(id) {
+  return zavolej(`/nabidkovac/katalog-sloupce/${id}`, { method: "DELETE" });
+}
+
 export function vypoctovaNastaveniSeznam() {
   return zavolej("/nabidkovac/vypoctova-nastaveni");
 }
