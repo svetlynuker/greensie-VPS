@@ -13,6 +13,24 @@ deterministický výpočet bez AI agentů za běhu, ceny **bez DPH**, práva `na
 (OZ používá) / `nabidkovac_katalog` (vedení/admin edituje katalog a nastavení), SVG grafy
 bez knihovny.
 
+> **Stav implementace (v1 – nasazuje se):** metodika je zdrojová, kód na ni navazuje.
+> Vědomé odchylky/zjednodušení oproti níže popsanému, s dokumentovaným defaultem:
+> - **Bez tabulky `profil_vyroby_fve` (kap. 3.1)** – výroba se deterministicky přepočítá při
+>   výpočtu (kap. 3.1 to připouští jako alternativu k ukládání), měsíční agregáty jsou v
+>   `popis_json`.
+> - **Spotřeba se čte z `spotreba_profil.hodnota_kw`** (činný výkon, sdílené s peak shavingem) a
+>   přepočítá na kWh × interval (otevřený bod 11) – zvláštní import kWh se zatím nedělá.
+> - **Počítá se jedna zadaná velikost FVE** (OZ zadá kWp); vícevariantní sweep a kritérium
+>   doporučení (kap. 4.7) zůstávají na později (otevřený bod 5).
+> - **Režim B (dopočet PPA ceny z marže, kap. 4.6)** není implementovaný – cenu zadává OZ (režim A).
+> - Fyzikální koeficienty výroby (kap. 4.1) jsou v kódu (`ppa_fve.py`) jako ilustrativní
+>   defaulty ke kalibraci; ekonomické defaulty jsou v manažerském nastavení.
+>
+> Klíčové soubory: `backend/app/nabidkovac/ppa_fve.py` (výpočetní jádro),
+> `routes.py` (`/nabidkovac/nabidky/{id}/ppa/vypocet` + `…/ppa/profil-souhrn`),
+> `schemas.py` (`PpaVstup`), `frontend/src/components/PpaPanel.jsx`,
+> `GrafVyrobaSpotreba.jsx`, admin PPA nastavení v `pages/NabidkovacKatalog.jsx`.
+
 ---
 
 ## 1. Princip

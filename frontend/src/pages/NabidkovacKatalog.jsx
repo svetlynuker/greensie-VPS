@@ -64,6 +64,20 @@ const POLE_PARAMETRU = {
   ],
 };
 
+// PPA pro FVE – manažerské parametry ukládané do vypoctova_nastaveni.parametry
+// (klíče musí sedět s backendem app/nabidkovac/routes.py `_ppa_param`).
+const PPA_POLE = [
+  { klic: "ppa_cena_fve_kc_kwp", label: "Cena za kWp (Kč/kWp)" },
+  { klic: "ppa_ostatni_naklady_kc_kwp", label: "Ostatní náklady / BOS (Kč/kWp)" },
+  { klic: "ppa_merny_vynos_kwh_kwp", label: "Měrný výnos FVE (kWh/kWp/rok)" },
+  { klic: "ppa_index_ceny_rocni", label: "Index PPA ceny (%/rok, např. 0.03)" },
+  { klic: "ppa_index_dodavatel_rocni", label: "Index ceny dodavatele (%/rok)" },
+  { klic: "ppa_index_prebytek_rocni", label: "Index ceny přebytku (%/rok)" },
+  { klic: "ppa_degradace_rocni", label: "Degradace panelů (%/rok, např. 0.005)" },
+  { klic: "ppa_oam_kc_kwp_rok", label: "O&M (Kč/kWp/rok)" },
+  { klic: "ppa_diskontni_sazba", label: "Diskontní sazba NPV/IRR (např. 0.05)" },
+];
+
 function num(v) {
   return v.trim() === "" ? null : Number(v.replace(",", "."));
 }
@@ -426,6 +440,7 @@ export default function NabidkovacKatalog() {
   const [koef, setKoef] = useState("");
   const [minRoky, setMinRoky] = useState("");
   const [maxRoky, setMaxRoky] = useState("");
+  const [ppaParam, setPpaParam] = useState({});
   const [nastavZprava, setNastavZprava] = useState(null);
   const [nastavUklada, setNastavUklada] = useState(false);
 
@@ -444,6 +459,8 @@ export default function NabidkovacKatalog() {
     setKoef(str(akt?.koeficient_zisku));
     setMinRoky(str(akt?.min_delka_kontraktu_roky));
     setMaxRoky(str(akt?.max_delka_kontraktu_roky));
+    const p = akt?.parametry || {};
+    setPpaParam(Object.fromEntries(PPA_POLE.map((f) => [f.klic, p[f.klic] == null ? "" : String(p[f.klic])])));
   }
 
   useEffect(() => {
@@ -514,11 +531,19 @@ export default function NabidkovacKatalog() {
     setNastavUklada(true);
     setNastavZprava(null);
     try {
+      // Zachovej existující klíče parametrů (např. max_navratnost_roky_peak_shaving)
+      // a přepiš/doplň jen PPA pole; prázdné pole klíč odebere.
+      const parametry = { ...(nastaveni?.[0]?.parametry || {}) };
+      for (const f of PPA_POLE) {
+        const val = num(ppaParam[f.klic] ?? "");
+        if (val == null) delete parametry[f.klic];
+        else parametry[f.klic] = val;
+      }
       await vypoctovaNastaveniUloz({
         koeficient_zisku: num(koef),
         min_delka_kontraktu_roky: minRoky.trim() === "" ? null : parseInt(minRoky, 10),
         max_delka_kontraktu_roky: maxRoky.trim() === "" ? null : parseInt(maxRoky, 10),
-        parametry: {},
+        parametry,
       });
       await nactiVse();
       setNastavZprava("Uložena nová verze nastavení.");
@@ -644,6 +669,25 @@ export default function NabidkovacKatalog() {
               <input className="nb-pole" value={maxRoky} onChange={(e) => setMaxRoky(e.target.value)} inputMode="numeric" placeholder="např. 20" />
             </div>
           </div>
+
+          <div style={{ marginTop: 16, marginBottom: 4, fontSize: 13, fontWeight: 600 }}>PPA pro FVE – náklady a defaulty</div>
+          <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 10px" }}>
+            Cena za kWp (zjednodušený režim CAPEX), degradace, indexy eskalace a další výchozí hodnoty PPA výpočtu. OZ je u konkrétní nabídky může přepsat. Prázdné pole = použije se kódový default.
+          </p>
+          <div className="nb-form-grid">
+            {PPA_POLE.map((f) => (
+              <div key={f.klic}>
+                <label className="nb-label">{f.label}</label>
+                <input
+                  className="nb-pole"
+                  value={ppaParam[f.klic] ?? ""}
+                  onChange={(e) => setPpaParam((s) => ({ ...s, [f.klic]: e.target.value }))}
+                  inputMode="decimal"
+                />
+              </div>
+            ))}
+          </div>
+
           {nastavZprava && <div style={{ fontSize: 13, marginTop: 10, color: "var(--fm-brand-dk)" }}>{nastavZprava}</div>}
           <div style={{ marginTop: 14 }}>
             <button className="fm-btn fm-primary" onClick={ulozNastaveni} disabled={nastavUklada}>

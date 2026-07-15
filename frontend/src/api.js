@@ -244,6 +244,18 @@ export function profilZpracuj(dokumentId) {
   return zavolej(`/nabidkovac/dokumenty/${dokumentId}/zpracuj-profil`, { method: "POST" });
 }
 
+// ---- PPA pro FVE ----
+export function ppaVypocet(nabidkaId, data) {
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/ppa/vypocet`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function ppaProfilSouhrn(nabidkaId) {
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/ppa/profil-souhrn`);
+}
+
 // ---- Uživatelská nastavení (pohledy + vzhled, uložená v DB) ----
 export function nactiNastaveni() {
   return zavolej("/nastaveni");
