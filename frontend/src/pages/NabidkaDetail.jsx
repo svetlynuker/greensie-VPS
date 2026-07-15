@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import DokumentUpload from "../components/DokumentUpload";
 import PeakShavingPanel from "../components/PeakShavingPanel";
+import PpaPanel from "../components/PpaPanel";
 import { nactiMe, logout, nabidkaDetail, nabidkaUprav, nabidkaSmaz } from "../api";
 import { PODSEKCE, STAV_NABIDKY, fmtDatum } from "../nabidkovac";
 import "../styles/nabidkovac.css";
@@ -170,6 +171,8 @@ export default function NabidkaDetail() {
         {/* Navržená řešení */}
         {nabidka.typ === "peak_shaving" ? (
           <PeakShavingPanel nabidka={nabidka} />
+        ) : nabidka.typ === "ppa" ? (
+          <PpaPanel nabidka={nabidka} />
         ) : (
           <div className="fm-card" style={{ padding: 18 }}>
             <h3 style={{ margin: "0 0 8px", fontSize: 14 }}>Navržená řešení</h3>

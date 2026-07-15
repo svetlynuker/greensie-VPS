@@ -179,3 +179,38 @@ class PeakShavingVstup(BaseModel):
     distributor: Distributor
     napetova_hladina: NapetovaHladina
     rezervovana_kapacita_kw: float
+
+
+# ---- PPA pro FVE výpočet (METODIKA-ppa-fve.md, kap. 2/4) ----
+RezimCapex = Literal["cena_kwp", "komponenty"]
+
+
+class PpaVstup(BaseModel):
+    """Vstupy PPA výpočtu, které OZ zadá ve výpočtovém pohledu (METODIKA kap. 2).
+
+    Volitelná pole (None) se v routes.py doplní z manažerského nastavení
+    (`vypoctova_nastaveni`) nebo z kódových defaultů. Profil spotřeby se čte
+    z `spotreba_profil` dané nabídky (činný výkon kW → energie kWh × interval).
+    """
+
+    sklon_st: float = 35.0
+    azimut_st: float = 0.0  # 0 = jih, ±90 = V/Z, 180 = sever
+    cena_ppa_kc_mwh: float
+    cena_dodavatel_kc_mwh: float
+    delka_kontraktu_roky: int
+
+    # Velikost FVE navrhuje appka sama (kap. 4.7). `instalovany_vykon_kwp` je
+    # volitelný ruční override; `max_kwp` = limit střechy/připojení pro auto-návrh.
+    instalovany_vykon_kwp: Optional[float] = None
+    max_kwp: Optional[float] = None
+
+    # Volitelné – default z nastavení / kódu.
+    index_ppa_rocni: Optional[float] = None
+    index_dodavatel_rocni: Optional[float] = None
+    degradace_rocni: Optional[float] = None
+
+    # Náklady na FVE (kap. 3.4) – přepínač + volitelný přetok.
+    rezim_capex: RezimCapex = "cena_kwp"
+    prebytek_uctovat: bool = False
+    prebytek_cena_kc_mwh: Optional[float] = None
+    rezervovany_vykon_dodavky_kw: Optional[float] = None

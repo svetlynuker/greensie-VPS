@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import User
 from app.database import get_db
-from app.nabidkovac import peak_shaving, profil_import, soubory
+from app.nabidkovac import peak_shaving, ppa_fve, profil_import, soubory
 from app.nabidkovac.models import (
     DISTRIBUTORI,
     NAPETOVE_HLADINY,
@@ -44,6 +44,7 @@ from app.nabidkovac.schemas import (
     NabidkaUprava,
     NabidkaVstup,
     PeakShavingVstup,
+    PpaVstup,
     ReseniOut,
     SazbaOut,
     SazbaVstup,
@@ -1021,4 +1022,269 @@ def spocti_peak_shaving(
     db.commit()
     db.refresh(reseni)
 
+    return {"reseni_id": reseni.id, "popis_json": popis_json}
+
+
+# ================= PPA pro FVE – výpočet (METODIKA-ppa-fve.md kap. 4–5) =================
+def _profil_spotreby_kwh(db: Session, nabidka_id: int) -> tuple[list, list[float], float]:
+    """Načte 15min profil nabídky a vrátí (časy, spotřeba_kwh, interval_h).
+
+    Profil je uložený jako činný výkon (kW) ve `spotreba_profil.hodnota_kw`
+    (společné s peak shavingem). PPA počítá s energií, proto se každý interval
+    přepočte na kWh = kW × interval_h (METODIKA kap. 2/3.4, otevřený bod 11).
+    """
+    radky = (
+        db.query(SpotrebaProfil)
+        .filter(
+            SpotrebaProfil.nabidka_id == nabidka_id,
+            SpotrebaProfil.hodnota_kw.isnot(None),
+        )
+        .order_by(SpotrebaProfil.cas)
+        .all()
+    )
+    casy = [r.cas for r in radky]
+    interval_h = _interval_h_z_profilu(casy)
+    spotreba_kwh = [float(r.hodnota_kw) * interval_h for r in radky]
+    return casy, spotreba_kwh, interval_h
+
+
+def _ppa_param(nastaveni, klic: str, default: float) -> float:
+    """Přečte PPA parametr z manažerského nastavení (JSONB `parametry`) s fallbackem."""
+    if nastaveni is not None and nastaveni.parametry:
+        hodnota = nastaveni.parametry.get(klic)
+        if hodnota is not None:
+            try:
+                return float(hodnota)
+            except (TypeError, ValueError):
+                pass
+    return default
+
+
+@router.get("/nabidky/{nabidka_id}/ppa/profil-souhrn")
+def ppa_profil_souhrn(
+    nabidka_id: int,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Souhrn profilu spotřeby pro PPA (počet, rozsah, roční spotřeba v MWh)."""
+    if db.get(Nabidka, nabidka_id) is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    casy, spotreba_kwh, interval_h = _profil_spotreby_kwh(db, nabidka_id)
+    if not casy:
+        return {"pocet": 0}
+    return {
+        "pocet": len(casy),
+        "od": _iso(min(casy)),
+        "do": _iso(max(casy)),
+        "interval_h": interval_h,
+        "rocni_spotreba_mwh": round(sum(spotreba_kwh) / 1000.0, 2),
+    }
+
+
+@router.post("/nabidky/{nabidka_id}/ppa/vypocet")
+def spocti_ppa(
+    nabidka_id: int,
+    vstup: PpaVstup,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Spustí PPA výpočet a uloží výsledek do `navrhovana_reseni` (typ_reseni = ppa).
+
+    Postup dle METODIKY kap. 4–5:
+    1. načte 15min profil spotřeby (kW → kWh) z `spotreba_profil`,
+    2. simuluje výrobu FVE (kWp + lokalita + sklon/azimut),
+    3. spáruje výrobu se spotřebou, spočítá ekonomiku klienta i investora po letech,
+    4. uloží `NavrhovaneReseni` s ekonomikou a daty pro graf.
+    """
+    n = db.get(Nabidka, nabidka_id)
+    if n is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    if vstup.instalovany_vykon_kwp is not None and vstup.instalovany_vykon_kwp <= 0:
+        raise HTTPException(status_code=422, detail="Ruční výkon FVE (kWp) musí být kladný.")
+    if vstup.delka_kontraktu_roky <= 0:
+        raise HTTPException(status_code=422, detail="Délka kontraktu musí být kladná.")
+
+    casy, spotreba_kwh, interval_h = _profil_spotreby_kwh(db, nabidka_id)
+    if not casy:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Nabídka nemá nahraný 15min profil spotřeby. Nahraj a načti profil "
+                "(sekce Podklady), bez něj nejde PPA počítat."
+            ),
+        )
+
+    # Manažerské nastavení (defaulty PPA) – aktuální verze.
+    nastaveni = db.query(VypoctovaNastaveni).order_by(VypoctovaNastaveni.verze.desc()).first()
+    cena_fve_kc_kwp = _ppa_param(nastaveni, "ppa_cena_fve_kc_kwp", ppa_fve.VYCHOZI_CENA_FVE_KC_KWP)
+    ostatni_kc_kwp = _ppa_param(nastaveni, "ppa_ostatni_naklady_kc_kwp", 0.0)
+    oam_kc_kwp_rok = _ppa_param(nastaveni, "ppa_oam_kc_kwp_rok", 0.0)
+    diskont = _ppa_param(nastaveni, "ppa_diskontni_sazba", 0.05)
+    merny_vynos = _ppa_param(nastaveni, "ppa_merny_vynos_kwh_kwp", ppa_fve.VYCHOZI_MERNY_VYNOS_KWH_KWP)
+    index_prebytek = _ppa_param(nastaveni, "ppa_index_prebytek_rocni", 0.0)
+    cil_samospotreby = _ppa_param(
+        nastaveni, "ppa_cil_mira_samospotreby", ppa_fve.VYCHOZI_CIL_MIRA_SAMOSPOTREBY
+    )
+
+    # Indexy / degradace: vstup má přednost, jinak nastavení, jinak kódový default.
+    index_ppa = vstup.index_ppa_rocni
+    if index_ppa is None:
+        index_ppa = _ppa_param(nastaveni, "ppa_index_ceny_rocni", 0.03)
+    index_dod = vstup.index_dodavatel_rocni
+    if index_dod is None:
+        # Default = stejný jako PPA index (METODIKA kap. 4.4 – ať srovnání není zkreslené).
+        index_dod = _ppa_param(nastaveni, "ppa_index_dodavatel_rocni", index_ppa)
+    degradace = vstup.degradace_rocni
+    if degradace is None:
+        degradace = _ppa_param(nastaveni, "ppa_degradace_rocni", ppa_fve.VYCHOZI_DEGRADACE_ROCNI)
+
+    upozorneni: list[str] = []
+
+    # Lokalita: GPS z nabídky, fallback střed ČR.
+    lat = ppa_fve.VYCHOZI_LAT
+    if n.zakaznik_gps_lat is not None:
+        lat = float(n.zakaznik_gps_lat)
+    else:
+        upozorneni.append(
+            f"Nabídka nemá GPS – použita výchozí šířka {ppa_fve.VYCHOZI_LAT}° (střed ČR). "
+            "Doplň GPS zákazníka pro přesnější simulaci výroby."
+        )
+
+    # Velikost FVE: appka ji navrhne sama tak, aby výroba co nejlépe pokrývala
+    # spotřebu (kap. 4.7). Ruční `instalovany_vykon_kwp` je volitelný override.
+    max_kwp = float(vstup.max_kwp) if vstup.max_kwp else None
+    navrzeno_automaticky = vstup.instalovany_vykon_kwp is None
+    if navrzeno_automaticky:
+        kwp = ppa_fve.navrhni_kwp(
+            casy,
+            spotreba_kwh,
+            lat,
+            float(vstup.sklon_st),
+            float(vstup.azimut_st),
+            merny_vynos,
+            cil_samospotreby,
+            max_kwp,
+        )
+        if kwp <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail="Nepodařilo se navrhnout velikost FVE (zkontroluj profil spotřeby).",
+            )
+    else:
+        kwp = float(vstup.instalovany_vykon_kwp)
+
+    # CAPEX dle režimu (kap. 3.4).
+    capex_rozpad: dict | None = None
+    if vstup.rezim_capex == "komponenty":
+        tech = (
+            db.query(Technologie)
+            .filter(
+                Technologie.dostupnost.is_(True),
+                Technologie.vykon_kw.isnot(None),
+                Technologie.cena_kc.isnot(None),
+            )
+            .all()
+        )
+        panely = [
+            ppa_fve.Komponenta(t.id, t.typ, t.nazev, float(t.vykon_kw), float(t.cena_kc))
+            for t in tech
+            if t.typ == "fve_panel" and float(t.vykon_kw) > 0 and float(t.cena_kc) > 0
+        ]
+        invertory = [
+            ppa_fve.Komponenta(t.id, t.typ, t.nazev, float(t.vykon_kw), float(t.cena_kc))
+            for t in tech
+            if t.typ == "invertor" and float(t.vykon_kw) > 0 and float(t.cena_kc) > 0
+        ]
+        capex, capex_rozpad = ppa_fve.capex_komponenty(kwp, panely, invertory, ostatni_kc_kwp)
+        if capex_rozpad.get("panely", {}).get("chybi"):
+            upozorneni.append("V katalogu není použitelný FVE panel – panely nejsou v CAPEX započítány.")
+        if capex_rozpad.get("invertory", {}).get("chybi"):
+            upozorneni.append("V katalogu není použitelný invertor – invertory nejsou v CAPEX započítány.")
+        if capex <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Komponentový režim: v katalogu chybí panely i invertory s cenou. "
+                    "Doplň je v Katalogu, nebo přepni na režim „cena za kWp“."
+                ),
+            )
+    else:
+        capex = kwp * cena_fve_kc_kwp
+        capex_rozpad = {"rezim": "cena_kwp", "cena_kc_kwp": cena_fve_kc_kwp, "celkem_kc": round(capex, 2)}
+
+    prebytek_cena = vstup.prebytek_cena_kc_mwh
+    if vstup.prebytek_uctovat and (prebytek_cena is None or prebytek_cena <= 0):
+        raise HTTPException(
+            status_code=422,
+            detail="Účtování přebytku je zapnuté, ale chybí cena přebytku (Kč/MWh).",
+        )
+    if prebytek_cena is None:
+        prebytek_cena = 0.0
+
+    vstup_calc = ppa_fve.VstupPPA(
+        kwp=kwp,
+        lat=lat,
+        sklon_st=float(vstup.sklon_st),
+        azimut_st=float(vstup.azimut_st),
+        cena_ppa_kc_mwh=float(vstup.cena_ppa_kc_mwh),
+        index_ppa_rocni=float(index_ppa),
+        cena_dodavatel_kc_mwh=float(vstup.cena_dodavatel_kc_mwh),
+        index_dodavatel_rocni=float(index_dod),
+        delka_kontraktu_roky=int(vstup.delka_kontraktu_roky),
+        degradace_rocni=float(degradace),
+        capex_kc=float(capex),
+        prebytek_uctovat=bool(vstup.prebytek_uctovat),
+        prebytek_cena_kc_mwh=float(prebytek_cena),
+        index_prebytek_rocni=float(index_prebytek),
+        rezervovany_vykon_dodavky_kw=(
+            float(vstup.rezervovany_vykon_dodavky_kw)
+            if vstup.rezervovany_vykon_dodavky_kw
+            else None
+        ),
+        oam_kc_kwp_rok=float(oam_kc_kwp_rok),
+        diskontni_sazba=float(diskont),
+        capex_rozpad=capex_rozpad,
+        merny_vynos_kwh_kwp=float(merny_vynos),
+        interval_h=interval_h,
+    )
+    vysledek = ppa_fve.spocti_ppa(vstup_calc, casy, spotreba_kwh)
+
+    if vysledek.get("mira_orezu", 0) >= 0.05:
+        upozorneni.append(
+            f"Rezervovaný výkon dodávky ořezává {round(vysledek['mira_orezu'] * 100)} % výroby – "
+            "část přebytku se nevyužije."
+        )
+    if vstup.rezim_capex == "cena_kwp":
+        upozorneni.append("CAPEX je odhad z ceny za kWp (manažerské nastavení), ne skutečné náklady.")
+
+    popis_json = {
+        "typ_reseni": "ppa",
+        "vstup": {
+            "instalovany_vykon_kwp": kwp,
+            "navrzeno_automaticky": navrzeno_automaticky,
+            "cil_mira_samospotreby": cil_samospotreby,
+            "max_kwp": max_kwp,
+            "sklon_st": vstup.sklon_st,
+            "azimut_st": vstup.azimut_st,
+            "cena_ppa_kc_mwh": vstup.cena_ppa_kc_mwh,
+            "cena_dodavatel_kc_mwh": vstup.cena_dodavatel_kc_mwh,
+            "delka_kontraktu_roky": vstup.delka_kontraktu_roky,
+            "rezim_capex": vstup.rezim_capex,
+            "prebytek_uctovat": vstup.prebytek_uctovat,
+            "rezervovany_vykon_dodavky_kw": vstup.rezervovany_vykon_dodavky_kw,
+            "interval_h": interval_h,
+            "poctu_intervalu": len(casy),
+        },
+        "vysledek": vysledek,
+        "upozorneni": upozorneni,
+    }
+
+    reseni = NavrhovaneReseni(nabidka_id=nabidka_id, typ_reseni="ppa", popis_json=popis_json)
+    db.add(reseni)
+    if nastaveni is not None:
+        n.vypoctova_nastaveni_id = nastaveni.id
+    if n.stav in ("koncept", "data_nahrana", "zkontrolovano_oz"):
+        n.stav = "spocitano"
+    db.commit()
+    db.refresh(reseni)
     return {"reseni_id": reseni.id, "popis_json": popis_json}
