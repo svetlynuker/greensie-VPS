@@ -217,8 +217,8 @@ export default function PpaPanel({ nabidka }) {
           <h4 style={{ margin: "0 0 8px", fontSize: 13 }}>
             Navržená FVE: <b>{v.kwp} kWp</b>
             {vysledek.vstup?.navrzeno_automaticky ? (
-              <span className="nb-badge" style={{ marginLeft: 8 }} title="Velikost navrhla appka podle pokrytí spotřeby">
-                automatický návrh
+              <span className="nb-badge" style={{ marginLeft: 8 }} title="Velikost navrhla appka podle nejlepší ekonomiky (NPV/návratnost)">
+                ekonomický návrh
               </span>
             ) : (
               <span className="nb-badge" style={{ marginLeft: 8 }}>ruční výkon</span>
@@ -257,6 +257,35 @@ export default function PpaPanel({ nabidka }) {
               <div style={{ fontSize: 18, fontWeight: 700 }}>{kc(v.souhrn_klient?.uspora_kum_kc)}</div>
             </div>
           </div>
+
+          {(vysledek.varianty || []).length > 1 && (
+            <>
+              <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Srovnání velikostí (ekonomický výběr)</h4>
+              <div className="nb-scroll" style={{ marginBottom: 14 }}>
+                <table className="nb-table">
+                  <thead>
+                    <tr><th>Velikost</th><th>Pokrytí spotřeby</th><th>Samospotřeba</th><th>Výroba</th><th>CAPEX</th><th>Návratnost</th><th>NPV</th></tr>
+                  </thead>
+                  <tbody>
+                    {vysledek.varianty.map((z) => (
+                      <tr key={z.kwp} style={z.kwp === v.kwp ? { fontWeight: 700, background: "rgba(47,158,68,.08)" } : undefined}>
+                        <td>{z.kwp} kWp{z.kwp === v.kwp ? " ◄" : ""}</td>
+                        <td>{pct(z.pokryti_spotreby_fve)}</td>
+                        <td>{pct(z.mira_samospotreby)}</td>
+                        <td>{mwh(z.vyroba_rok1_kwh)}</td>
+                        <td>{kc(z.capex_kc)}</td>
+                        <td>{roky(z.navratnost_roky)}</td>
+                        <td>{kc(z.npv_kc)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: -8, marginBottom: 14 }}>
+                Vybrána velikost s nejlepší ekonomikou (nejvyšší NPV / nejkratší návratnost). Řádek ◄ = navržená.
+              </div>
+            </>
+          )}
 
           {v.graf && (
             <>

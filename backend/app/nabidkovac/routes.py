@@ -5,6 +5,7 @@ správa katalogu technologií a verzovaných výpočtových nastavení. Žádná
 výpočetní logika (sizing, PVGIS, ROI, LLM extrakce, generování PDF) tu není.
 """
 
+import dataclasses
 import re
 import unicodedata
 from datetime import date, datetime
@@ -1060,6 +1061,20 @@ def _ppa_param(nastaveni, klic: str, default: float) -> float:
     return default
 
 
+def _ppa_varianta_souhrn(r: dict) -> dict:
+    """Kompaktní souhrn jedné velikosti pro srovnání variant (bez těžkých polí)."""
+    return {
+        "kwp": r.get("kwp"),
+        "capex_kc": r.get("capex_kc"),
+        "pokryti_spotreby_fve": r.get("pokryti_spotreby_fve"),
+        "mira_samospotreby": r.get("mira_samospotreby"),
+        "vyroba_rok1_kwh": r.get("vyroba_rok1_kwh"),
+        "navratnost_roky": r.get("navratnost_roky"),
+        "npv_kc": r.get("npv_kc"),
+        "irr": r.get("irr"),
+    }
+
+
 @router.get("/nabidky/{nabidka_id}/ppa/profil-souhrn")
 def ppa_profil_souhrn(
     nabidka_id: int,
@@ -1122,9 +1137,6 @@ def spocti_ppa(
     diskont = _ppa_param(nastaveni, "ppa_diskontni_sazba", 0.05)
     merny_vynos = _ppa_param(nastaveni, "ppa_merny_vynos_kwh_kwp", ppa_fve.VYCHOZI_MERNY_VYNOS_KWH_KWP)
     index_prebytek = _ppa_param(nastaveni, "ppa_index_prebytek_rocni", 0.0)
-    cil_samospotreby = _ppa_param(
-        nastaveni, "ppa_cil_mira_samospotreby", ppa_fve.VYCHOZI_CIL_MIRA_SAMOSPOTREBY
-    )
 
     # Indexy / degradace: vstup má přednost, jinak nastavení, jinak kódový default.
     index_ppa = vstup.index_ppa_rocni
@@ -1150,31 +1162,17 @@ def spocti_ppa(
             "Doplň GPS zákazníka pro přesnější simulaci výroby."
         )
 
-    # Velikost FVE: appka ji navrhne sama tak, aby výroba co nejlépe pokrývala
-    # spotřebu (kap. 4.7). Ruční `instalovany_vykon_kwp` je volitelný override.
-    max_kwp = float(vstup.max_kwp) if vstup.max_kwp else None
-    navrzeno_automaticky = vstup.instalovany_vykon_kwp is None
-    if navrzeno_automaticky:
-        kwp = ppa_fve.navrhni_kwp(
-            casy,
-            spotreba_kwh,
-            lat,
-            float(vstup.sklon_st),
-            float(vstup.azimut_st),
-            merny_vynos,
-            cil_samospotreby,
-            max_kwp,
+    # Cena přebytku – validace (potřeba i pro sweep velikostí).
+    prebytek_cena = vstup.prebytek_cena_kc_mwh
+    if vstup.prebytek_uctovat and (prebytek_cena is None or prebytek_cena <= 0):
+        raise HTTPException(
+            status_code=422,
+            detail="Účtování přebytku je zapnuté, ale chybí cena přebytku (Kč/MWh).",
         )
-        if kwp <= 0:
-            raise HTTPException(
-                status_code=422,
-                detail="Nepodařilo se navrhnout velikost FVE (zkontroluj profil spotřeby).",
-            )
-    else:
-        kwp = float(vstup.instalovany_vykon_kwp)
+    if prebytek_cena is None:
+        prebytek_cena = 0.0
 
-    # CAPEX dle režimu (kap. 3.4).
-    capex_rozpad: dict | None = None
+    # CAPEX jako funkce velikosti (kap. 3.4) – potřeba pro ekonomický sweep i override.
     if vstup.rezim_capex == "komponenty":
         tech = (
             db.query(Technologie)
@@ -1195,12 +1193,7 @@ def spocti_ppa(
             for t in tech
             if t.typ == "invertor" and float(t.vykon_kw) > 0 and float(t.cena_kc) > 0
         ]
-        capex, capex_rozpad = ppa_fve.capex_komponenty(kwp, panely, invertory, ostatni_kc_kwp)
-        if capex_rozpad.get("panely", {}).get("chybi"):
-            upozorneni.append("V katalogu není použitelný FVE panel – panely nejsou v CAPEX započítány.")
-        if capex_rozpad.get("invertory", {}).get("chybi"):
-            upozorneni.append("V katalogu není použitelný invertor – invertory nejsou v CAPEX započítány.")
-        if capex <= 0:
+        if not panely and not invertory:
             raise HTTPException(
                 status_code=422,
                 detail=(
@@ -1208,21 +1201,23 @@ def spocti_ppa(
                     "Doplň je v Katalogu, nebo přepni na režim „cena za kWp“."
                 ),
             )
+        if not panely:
+            upozorneni.append("V katalogu není použitelný FVE panel – panely nejsou v CAPEX započítány.")
+        if not invertory:
+            upozorneni.append("V katalogu není použitelný invertor – invertory nejsou v CAPEX započítány.")
+
+        def capex_fn(kwp: float):
+            return ppa_fve.capex_komponenty(kwp, panely, invertory, ostatni_kc_kwp)
     else:
-        capex = kwp * cena_fve_kc_kwp
-        capex_rozpad = {"rezim": "cena_kwp", "cena_kc_kwp": cena_fve_kc_kwp, "celkem_kc": round(capex, 2)}
+        def capex_fn(kwp: float):
+            c = kwp * cena_fve_kc_kwp
+            return c, {"rezim": "cena_kwp", "cena_kc_kwp": cena_fve_kc_kwp, "celkem_kc": round(c, 2)}
 
-    prebytek_cena = vstup.prebytek_cena_kc_mwh
-    if vstup.prebytek_uctovat and (prebytek_cena is None or prebytek_cena <= 0):
-        raise HTTPException(
-            status_code=422,
-            detail="Účtování přebytku je zapnuté, ale chybí cena přebytku (Kč/MWh).",
-        )
-    if prebytek_cena is None:
-        prebytek_cena = 0.0
+        upozorneni.append("CAPEX je odhad z ceny za kWp (manažerské nastavení), ne skutečné náklady.")
 
-    vstup_calc = ppa_fve.VstupPPA(
-        kwp=kwp,
+    # Šablona ekonomických vstupů (kWp a CAPEX se doplní pro každou velikost zvlášť).
+    sablona = ppa_fve.VstupPPA(
+        kwp=0.0,
         lat=lat,
         sklon_st=float(vstup.sklon_st),
         azimut_st=float(vstup.azimut_st),
@@ -1232,37 +1227,63 @@ def spocti_ppa(
         index_dodavatel_rocni=float(index_dod),
         delka_kontraktu_roky=int(vstup.delka_kontraktu_roky),
         degradace_rocni=float(degradace),
-        capex_kc=float(capex),
+        capex_kc=0.0,
         prebytek_uctovat=bool(vstup.prebytek_uctovat),
         prebytek_cena_kc_mwh=float(prebytek_cena),
         index_prebytek_rocni=float(index_prebytek),
         rezervovany_vykon_dodavky_kw=(
-            float(vstup.rezervovany_vykon_dodavky_kw)
-            if vstup.rezervovany_vykon_dodavky_kw
-            else None
+            float(vstup.rezervovany_vykon_dodavky_kw) if vstup.rezervovany_vykon_dodavky_kw else None
         ),
         oam_kc_kwp_rok=float(oam_kc_kwp_rok),
         diskontni_sazba=float(diskont),
-        capex_rozpad=capex_rozpad,
         merny_vynos_kwh_kwp=float(merny_vynos),
         interval_h=interval_h,
     )
-    vysledek = ppa_fve.spocti_ppa(vstup_calc, casy, spotreba_kwh)
+
+    # Velikost FVE: ruční override, jinak ekonomický sweep (kap. 4.7 – režim
+    # „nejlepší ekonomika“: pro škálu velikostí vybere nejvyšší NPV / nejkratší
+    # návratnost, se zohledněním prodeje přebytku).
+    max_kwp = float(vstup.max_kwp) if vstup.max_kwp else None
+    navrzeno_automaticky = vstup.instalovany_vykon_kwp is None
+    base1 = ppa_fve.simuluj_vyrobu(
+        casy, 1.0, lat, float(vstup.sklon_st), float(vstup.azimut_st), merny_vynos
+    )
+    metoda_navrhu = "rucne"
+    varianty: list[dict] = []
+    if navrzeno_automaticky:
+        kandidati = ppa_fve.kandidatni_velikosti(casy, spotreba_kwh, base1, max_kwp, pocet=30)
+        if not kandidati:
+            raise HTTPException(
+                status_code=422,
+                detail="Nepodařilo se navrhnout velikost FVE (zkontroluj profil spotřeby).",
+            )
+        vsechny = ppa_fve.vyber_velikost(sablona, casy, spotreba_kwh, kandidati, capex_fn, base1)
+        vysledek = vsechny[0]
+        metoda_navrhu = "ekonomicky"
+        varianty = [_ppa_varianta_souhrn(r) for r in vsechny[:4]]
+    else:
+        kwp = float(vstup.instalovany_vykon_kwp)
+        capex, rozpad = capex_fn(kwp)
+        vstup_calc = dataclasses.replace(sablona, kwp=kwp, capex_kc=float(capex), capex_rozpad=rozpad)
+        vysledek = ppa_fve.spocti_ppa(vstup_calc, casy, spotreba_kwh, [x * kwp for x in base1])
 
     if vysledek.get("mira_orezu", 0) >= 0.05:
         upozorneni.append(
             f"Rezervovaný výkon dodávky ořezává {round(vysledek['mira_orezu'] * 100)} % výroby – "
             "část přebytku se nevyužije."
         )
-    if vstup.rezim_capex == "cena_kwp":
-        upozorneni.append("CAPEX je odhad z ceny za kWp (manažerské nastavení), ne skutečné náklady.")
+    if navrzeno_automaticky and not vstup.prebytek_uctovat:
+        upozorneni.append(
+            "Velikost vybrána podle ekonomiky bez prodeje přebytku – přebytek se nezapočítává do "
+            "výnosu, proto vychází menší FVE. Zapnutím prodeje přebytku se optimum posune výš."
+        )
 
     popis_json = {
         "typ_reseni": "ppa",
         "vstup": {
-            "instalovany_vykon_kwp": kwp,
+            "instalovany_vykon_kwp": vysledek.get("kwp"),
             "navrzeno_automaticky": navrzeno_automaticky,
-            "cil_mira_samospotreby": cil_samospotreby,
+            "metoda_navrhu": metoda_navrhu,
             "max_kwp": max_kwp,
             "sklon_st": vstup.sklon_st,
             "azimut_st": vstup.azimut_st,
@@ -1276,6 +1297,7 @@ def spocti_ppa(
             "poctu_intervalu": len(casy),
         },
         "vysledek": vysledek,
+        "varianty": varianty,
         "upozorneni": upozorneni,
     }
 

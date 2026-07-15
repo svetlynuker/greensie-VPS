@@ -20,10 +20,10 @@ bez knihovny.
 >   `popis_json`.
 > - **Spotřeba se čte z `spotreba_profil.hodnota_kw`** (činný výkon, sdílené s peak shavingem) a
 >   přepočítá na kWh × interval (otevřený bod 11) – zvláštní import kWh se zatím nedělá.
-> - **Velikost FVE navrhuje appka sama** (kap. 4.7) – největší kWp, u něhož se ještě aspoň
->   cílový podíl výroby (`ppa_cil_mira_samospotreby`, default 0,80) přímo spotřebuje; OZ může
->   omezit `max_kwp` (střecha) nebo zadat výkon napevno. Headline výstup = **% pokrytí spotřeby
->   z FVE**. Vícevariantní sweep (víc velikostí vedle sebe) zůstává na později.
+> - **Velikost FVE navrhuje appka sama – ekonomický výběr** (kap. 4.7): vyzkouší řadu velikostí
+>   a vybere nejlepší ekonomiku (nejvyšší NPV / nejkratší návratnost, se zohledněním prodeje
+>   přebytku); vrací i 2.–3. variantu pro srovnání. OZ může omezit `max_kwp` (střecha) nebo zadat
+>   výkon napevno. Headline výstup = **% pokrytí spotřeby z FVE**.
 > - **Režim B (dopočet PPA ceny z marže, kap. 4.6)** není implementovaný – cenu zadává OZ (režim A).
 > - Fyzikální koeficienty výroby (kap. 4.1) jsou v kódu (`ppa_fve.py`) jako ilustrativní
 >   defaulty ke kalibraci; ekonomické defaulty jsou v manažerském nastavení.
@@ -391,31 +391,37 @@ Dva režimy (navrhuji v1 podpořit režim A, B nechat jako otevřený bod):
   ji popisuje jako „rozdíl cena výroby vs. cena pro zákazníka × koeficient zisku". Potřebuju od
   tebe závaznou definici, než tenhle režim zdrátujeme.
 
-### 4.7 Automatický návrh velikosti FVE (implementováno)
+### 4.7 Automatický návrh velikosti FVE – ekonomický výběr (implementováno)
 
-Velikost FVE **navrhuje appka sama** tak, aby výroba **co nejlépe pokrývala spotřebu** na daném
-místě – OZ kWp nezadává (jen volitelně omezí střechou nebo zadá napevno). Cíl a mechanismus:
+Velikost FVE **navrhuje appka sama** – OZ kWp nezadává (jen volitelně omezí střechou `max_kwp`
+nebo zadá napevno). Zvolený režim je **„nejlepší ekonomika"**:
 
-- Míra samospotřeby `SS(kWp)/V(kWp)` **monotónně klesá** s rostoucím kWp (větší FVE = víc
-  přebytku, který se přímo nespotřebuje). Míra soběstačnosti `SS/E_spotreba` naopak roste, ale
-  saturuje.
-- **Návrh = největší kWp, u něhož se ještě aspoň `ppa_cil_mira_samospotreby` výroby přímo
-  spotřebuje** (default **0,80**). To je největší pokrytí spotřeby bez velkého plýtvání
-  přebytkem. Protože je míra monotónní v kWp, hledá se **binárně** (obdoba binárního hledání
-  stropu u peak shavingu, kap. 4.3).
-- Horní mez hledání: výroba nepřekročí `_MAX_POMER_VYROBA_SPOTREBA` (3×) roční spotřeby, a dál
-  ji sníží `max_kwp` (limit střechy/připojení), pokud ho OZ zadá.
-- Výroba pro 1 kWp se simuluje (kap. 4.1) a dosadí do 15min průběhu spotřeby; větší kWp = jen
-  přeškálování (výroba je v kWp lineární, `SS` ne – proto se počítá napřímo).
+- Appka vygeneruje řadu kandidátních velikostí (`kandidatni_velikosti` – rovnoměrný krok od
+  malé FVE po horní mez `_MAX_POMER_VYROBA_SPOTREBA` × roční spotřeby, příp. `max_kwp`).
+- Pro **každou** velikost spočítá kompletní ekonomiku (kap. 4.4/4.5: CAPEX dle režimu, výnos
+  z PPA + volitelně z prodeje přebytku, O&M, payback, NPV, IRR).
+- **Vybere velikost s nejlepší ekonomikou** – primárně **nejvyšší NPV**, sekundárně nejkratší
+  návratnost (`_skore_ekonomiky`). Vrací i **2.–3. nejlepší variantu pro srovnání** (jako u
+  peak shavingu).
+- Výroba pro 1 kWp se simuluje jednou (kap. 4.1) a jen se škáluje (výroba je v kWp lineární) –
+  sweep ~30 velikostí × celá doba kontraktu je pod ~2 s.
+
+**Klíčové:** výběr **respektuje nakládání s přebytkem** (kap. 4.3). Když se přebytek neprodává,
+větší FVE dává přebytek zadarmo → ekonomika táhne k menší FVE; když se přebytek prodává za
+dobrou cenu, optimum se posune k větší FVE. Sizing tak dává obchodně smysluplný výsledek místo
+arbitrárního pravidla.
 
 **Headline výstup: `pokryti_spotreby_fve`** = `SS / E_spotreba` = jaký **podíl spotřeby klienta
 pokryje elektřina z FVE** (samospotřeba). Doplňkově `mira_samospotreby` (SS/V) a
 `pomer_vyroba_spotreba` (V/E).
 
-Cíl samospotřeby je laditelný v manažerském nastavení (`ppa_cil_mira_samospotreby`) – vyšší cíl
-= menší, konzervativnější FVE (víc se spotřebuje, míň pokryje); nižší cíl = větší FVE (víc
-pokryje, ale roste přebytek). Vícevariantní sweep (víc velikostí vedle sebe pro srovnání) je
-možné rozšíření na později.
+> **Pozn. k tvaru zátěže:** u klienta s večerní/noční spotřebou (odběr klesá, když FVE vyrábí)
+> je samospotřeba z FVE fyzicky omezená – bez baterie lze pokrýt jen menší část spotřeby a nad
+> určitou velikost je vše navíc přebytek. Ekonomický výběr to zohlední a nenavrhne předimenzovanou
+> FVE, pokud se přebytek neprodává.
+>
+> Alternativní režim „největší kWp s mírou samospotřeby ≥ cíl" je v kódu k dispozici
+> (`navrhni_kwp`), ale výchozí je ekonomický výběr.
 
 ---
 
@@ -509,9 +515,9 @@ NPV, kumulativní úspora klienta, celkový přetok vs. ořez za dobu kontraktu.
    eskalovat? Citlivý předpoklad, teď parametr s defaultem = PPA index.
 4. **Definice `koeficient_zisku`** a zda dělat režim B (dopočet PPA ceny z marže, kap. 4.6).
    Bez jednoznačné definice zdrátuju jen režim A (cena zadaná OZ).
-5. **Návrh velikosti FVE** (kap. 4.7) – implementováno: appka navrhne největší kWp s mírou
-   samospotřeby ≥ cíl (`ppa_cil_mira_samospotreby`, default 0,80). K potvrzení: **výše cíle**
-   (0,80?) a jestli chceme i vícevariantní sweep / práh nedoporučené návratnosti.
+5. **Návrh velikosti FVE** (kap. 4.7) – implementováno: **ekonomický výběr** (nejvyšší NPV /
+   nejkratší návratnost přes řadu velikostí, se zohledněním prodeje přebytku), vrací i 2.–3.
+   variantu. Pozn.: u večerní/noční zátěže je pokrytí z FVE fyzicky omezené (bez baterie).
 6. **Zdroj simulace výroby** (kap. 4.1) – stačí interní model (default 1000 kWh/kWp, měsíční
    koeficienty, korekce orientace, clear-sky denní křivka), nebo chceme PVGIS? Interní model
    = nulové závislosti, ale koeficienty a tabulka orientace jsou **ilustrativní k kalibraci**
@@ -549,8 +555,8 @@ Než půjdeme do implementace (PR po PR, jako u peak shavingu), potřebuju rozho
    orientační **cenu za kWp** (zjednodušený režim) + pravidlo výběru komponent a **O&M**. (body 7, 8)
 5. **`koeficient_zisku`** – závazná definice a jestli dělat dopočet PPA ceny z marže (režim B),
    nebo v1 jen cena zadaná OZ (režim A). (bod 4)
-6. **Návrh velikosti FVE** – appka navrhuje sama (cíl samospotřeby, default 0,80); stačí
-   potvrdit výši cíle. (bod 5)
+6. **Návrh velikosti FVE** – appka navrhuje sama podle **nejlepší ekonomiky** (NPV/návratnost);
+   vrací i alternativy. (bod 5)
 
 Zbytek (uložení profilu, formát importu kWh, konstantní spotřeba, letní čas, LID) jsou menší
 implementační detaily – navrhl jsem u nich default, stačí když je potvrdíš nebo opravíš.

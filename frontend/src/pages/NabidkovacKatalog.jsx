@@ -70,7 +70,6 @@ const PPA_POLE = [
   { klic: "ppa_cena_fve_kc_kwp", label: "Cena za kWp (Kč/kWp)" },
   { klic: "ppa_ostatni_naklady_kc_kwp", label: "Ostatní náklady / BOS (Kč/kWp)" },
   { klic: "ppa_merny_vynos_kwh_kwp", label: "Měrný výnos FVE (kWh/kWp/rok)" },
-  { klic: "ppa_cil_mira_samospotreby", label: "Cíl samospotřeby pro návrh velikosti (např. 0.80)" },
   { klic: "ppa_index_ceny_rocni", label: "Index PPA ceny (%/rok, např. 0.03)" },
   { klic: "ppa_index_dodavatel_rocni", label: "Index ceny dodavatele (%/rok)" },
   { klic: "ppa_index_prebytek_rocni", label: "Index ceny přebytku (%/rok)" },
