@@ -28,7 +28,8 @@ export default function PpaPanel({ nabidka }) {
 
   // Vstupy FVE + PPA (METODIKA kap. 2). Volitelné indexy necháváme prázdné =
   // backend doplní z manažerského nastavení.
-  const [kwp, setKwp] = useState("");
+  const [maxKwp, setMaxKwp] = useState("");
+  const [kwpOverride, setKwpOverride] = useState("");
   const [sklon, setSklon] = useState("35");
   const [azimut, setAzimut] = useState("0");
   const [cenaPpa, setCenaPpa] = useState("");
@@ -59,7 +60,7 @@ export default function PpaPanel({ nabidka }) {
     (d) => d.typ === "spotreba_csv" || d.typ === "jiny"
   );
   const profilOk = souhrn && souhrn.pocet > 0;
-  const vstupyOk = n(kwp) > 0 && n(cenaPpa) > 0 && n(cenaDod) > 0 && n(delka) > 0;
+  const vstupyOk = n(cenaPpa) > 0 && n(cenaDod) > 0 && n(delka) > 0;
 
   async function nactiProfil(dokId) {
     setZpracovavaId(dokId);
@@ -83,7 +84,8 @@ export default function PpaPanel({ nabidka }) {
     setZprava(null);
     try {
       const r = await ppaVypocet(nabidka.id, {
-        instalovany_vykon_kwp: n(kwp),
+        instalovany_vykon_kwp: n(kwpOverride),
+        max_kwp: n(maxKwp),
         sklon_st: n(sklon) ?? 35,
         azimut_st: n(azimut) ?? 0,
         cena_ppa_kc_mwh: n(cenaPpa),
@@ -138,12 +140,16 @@ export default function PpaPanel({ nabidka }) {
 
       {/* 2) Parametry FVE */}
       <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 8px" }}>
-        <b>2. Parametry FVE a PPA.</b>
+        <b>2. Parametry FVE a PPA.</b> Velikost FVE (kWp) navrhne appka sama tak, aby výroba co nejlépe pokrývala spotřebu. Volitelně omez výkon střechou, nebo ho zadej napevno.
       </p>
       <div className="nb-form-grid" style={{ marginBottom: 8 }}>
         <div>
-          <label className="nb-label">Instalovaný výkon (kWp)</label>
-          <input className="nb-pole" value={kwp} onChange={(e) => setKwp(e.target.value)} inputMode="decimal" placeholder="např. 250" />
+          <label className="nb-label">Max. výkon dle střechy (kWp, volit.)</label>
+          <input className="nb-pole" value={maxKwp} onChange={(e) => setMaxKwp(e.target.value)} inputMode="decimal" placeholder="strop pro auto-návrh" />
+        </div>
+        <div>
+          <label className="nb-label">Výkon napevno (kWp, volit.)</label>
+          <input className="nb-pole" value={kwpOverride} onChange={(e) => setKwpOverride(e.target.value)} inputMode="decimal" placeholder="prázdné = navrhne appka" />
         </div>
         <div>
           <label className="nb-label">Sklon panelů (°)</label>
@@ -208,12 +214,25 @@ export default function PpaPanel({ nabidka }) {
       {/* 3) Výsledek */}
       {v && (
         <div style={{ marginTop: 18 }}>
-          <h4 style={{ margin: "0 0 8px", fontSize: 13 }}>Návrh FVE {v.kwp} kWp</h4>
+          <h4 style={{ margin: "0 0 8px", fontSize: 13 }}>
+            Navržená FVE: <b>{v.kwp} kWp</b>
+            {vysledek.vstup?.navrzeno_automaticky ? (
+              <span className="nb-badge" style={{ marginLeft: 8 }} title="Velikost navrhla appka podle pokrytí spotřeby">
+                automatický návrh
+              </span>
+            ) : (
+              <span className="nb-badge" style={{ marginLeft: 8 }}>ruční výkon</span>
+            )}
+          </h4>
           <div className="fm-card" style={{ padding: 14, marginBottom: 14, background: "var(--fm-bg, #fafafa)" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+              <span style={{ fontSize: 26, fontWeight: 700, color: "#2f9e44" }}>{pct(v.pokryti_spotreby_fve)}</span>
+              <span style={{ fontSize: 13 }}>spotřeby klienta pokryje elektřina z FVE (samospotřeba)</span>
+            </div>
             <div style={{ fontSize: 13, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 6 }}>
               <div>Roční výroba: <b>{mwh(v.vyroba_rok1_kwh)}</b> ({v.merny_vynos_kwh_kwp} kWh/kWp · orientace {v.k_orient})</div>
+              <div>Roční spotřeba: <b>{mwh(v.rocni_spotreba_kwh)}</b> (výroba/spotřeba {pct(v.pomer_vyroba_spotreba)})</div>
               <div>Samospotřeba: <b>{mwh(v.samospotreba_rok1_kwh)}</b> ({pct(v.mira_samospotreby)} výroby)</div>
-              <div>Soběstačnost klienta: <b>{pct(v.mira_sobestacnosti)}</b></div>
               <div>Přetok do sítě: {mwh(v.export_rok1_kwh)}{v.orez_rok1_kwh > 0 ? `, ořez ${mwh(v.orez_rok1_kwh)}` : ""}</div>
               <div>Investice (CAPEX): <b>{kc(v.capex_kc)}</b></div>
             </div>

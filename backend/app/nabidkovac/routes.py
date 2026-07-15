@@ -1099,8 +1099,8 @@ def spocti_ppa(
     n = db.get(Nabidka, nabidka_id)
     if n is None:
         raise HTTPException(status_code=404, detail="Nabídka neexistuje")
-    if vstup.instalovany_vykon_kwp <= 0:
-        raise HTTPException(status_code=422, detail="Instalovaný výkon (kWp) musí být kladný.")
+    if vstup.instalovany_vykon_kwp is not None and vstup.instalovany_vykon_kwp <= 0:
+        raise HTTPException(status_code=422, detail="Ruční výkon FVE (kWp) musí být kladný.")
     if vstup.delka_kontraktu_roky <= 0:
         raise HTTPException(status_code=422, detail="Délka kontraktu musí být kladná.")
 
@@ -1122,6 +1122,9 @@ def spocti_ppa(
     diskont = _ppa_param(nastaveni, "ppa_diskontni_sazba", 0.05)
     merny_vynos = _ppa_param(nastaveni, "ppa_merny_vynos_kwh_kwp", ppa_fve.VYCHOZI_MERNY_VYNOS_KWH_KWP)
     index_prebytek = _ppa_param(nastaveni, "ppa_index_prebytek_rocni", 0.0)
+    cil_samospotreby = _ppa_param(
+        nastaveni, "ppa_cil_mira_samospotreby", ppa_fve.VYCHOZI_CIL_MIRA_SAMOSPOTREBY
+    )
 
     # Indexy / degradace: vstup má přednost, jinak nastavení, jinak kódový default.
     index_ppa = vstup.index_ppa_rocni
@@ -1147,7 +1150,28 @@ def spocti_ppa(
             "Doplň GPS zákazníka pro přesnější simulaci výroby."
         )
 
-    kwp = float(vstup.instalovany_vykon_kwp)
+    # Velikost FVE: appka ji navrhne sama tak, aby výroba co nejlépe pokrývala
+    # spotřebu (kap. 4.7). Ruční `instalovany_vykon_kwp` je volitelný override.
+    max_kwp = float(vstup.max_kwp) if vstup.max_kwp else None
+    navrzeno_automaticky = vstup.instalovany_vykon_kwp is None
+    if navrzeno_automaticky:
+        kwp = ppa_fve.navrhni_kwp(
+            casy,
+            spotreba_kwh,
+            lat,
+            float(vstup.sklon_st),
+            float(vstup.azimut_st),
+            merny_vynos,
+            cil_samospotreby,
+            max_kwp,
+        )
+        if kwp <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail="Nepodařilo se navrhnout velikost FVE (zkontroluj profil spotřeby).",
+            )
+    else:
+        kwp = float(vstup.instalovany_vykon_kwp)
 
     # CAPEX dle režimu (kap. 3.4).
     capex_rozpad: dict | None = None
@@ -1237,6 +1261,9 @@ def spocti_ppa(
         "typ_reseni": "ppa",
         "vstup": {
             "instalovany_vykon_kwp": kwp,
+            "navrzeno_automaticky": navrzeno_automaticky,
+            "cil_mira_samospotreby": cil_samospotreby,
+            "max_kwp": max_kwp,
             "sklon_st": vstup.sklon_st,
             "azimut_st": vstup.azimut_st,
             "cena_ppa_kc_mwh": vstup.cena_ppa_kc_mwh,

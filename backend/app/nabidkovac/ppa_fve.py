@@ -39,6 +39,15 @@ VYCHOZI_CENA_FVE_KC_KWP = 25000.0
 # Zeměpisná šířka středu ČR – fallback, když nabídka nemá GPS (kap. 4.1).
 VYCHOZI_LAT = 49.8
 
+# Cílová míra samospotřeby pro automatický návrh velikosti FVE (kap. 4.7).
+# Návrh = největší kWp, u něhož se ještě aspoň tento podíl výroby přímo spotřebuje
+# (= nejlepší pokrytí spotřeby bez velkého plýtvání přebytkem). Laditelné.
+VYCHOZI_CIL_MIRA_SAMOSPOTREBY = 0.80
+
+# Horní mez hledání velikosti: násobek roční spotřeby, který výroba nepřekročí
+# (ochrana proti absurdně velké FVE u ryze denní zátěže).
+_MAX_POMER_VYROBA_SPOTREBA = 3.0
+
 # Měsíční rozdělení ročního výnosu pro ČR – kWh/kWp/měsíc při ročním výnosu 1000
 # (METODIKA kap. 4.1). ⚠️ Ilustrativní, součet = 1000; ke kalibraci.
 _MESICNI_VYNOS = {
@@ -157,6 +166,68 @@ def simuluj_vyrobu(
         s = soucet_dne[klic_dne[i]]
         out[i] = (e_den * tvar[i] / s) if s > 0 else 0.0
     return out
+
+
+# -------------------------------------------- automatický návrh velikosti FVE
+def _mira_samospotreby_pri_kwp(vyroba_1kwp: list[float], spotreba_kwh: list[float], kwp: float) -> float:
+    """Míra samospotřeby (samospotřeba/výroba) pro danou velikost (kap. 4.7).
+
+    Výroba je lineární v kWp, samospotřeba `Σ min(kWp·V_i, S_i)` ne – proto se
+    počítá napřímo. Klesá s rostoucím kWp (víc přebytku).
+    """
+    v_celkem = 0.0
+    ss = 0.0
+    for v1, s in zip(vyroba_1kwp, spotreba_kwh):
+        v = kwp * v1
+        v_celkem += v
+        ss += v if v < s else s
+    return (ss / v_celkem) if v_celkem > 0 else 1.0
+
+
+def navrhni_kwp(
+    casy: list[datetime],
+    spotreba_kwh: list[float],
+    lat_deg: float,
+    sklon_st: float,
+    azimut_st: float,
+    merny_vynos_kwh_kwp: float = VYCHOZI_MERNY_VYNOS_KWH_KWP,
+    cil_mira_samospotreby: float = VYCHOZI_CIL_MIRA_SAMOSPOTREBY,
+    max_kwp: float | None = None,
+) -> float:
+    """Navrhne velikost FVE (kWp) tak, aby výroba co nejlépe pokrývala spotřebu (kap. 4.7).
+
+    Cíl: největší FVE, u níž se ještě aspoň `cil_mira_samospotreby` výroby přímo
+    spotřebuje. Míra samospotřeby monotónně klesá v kWp, takže se hledá binárně
+    přechod přes cíl. `max_kwp` (limit střechy/připojení) horní mez ještě sníží.
+    Výsledek se zaokrouhlí na celé kWp (min. 1).
+    """
+    if not casy:
+        return 0.0
+    vyroba_1kwp = simuluj_vyrobu(casy, 1.0, lat_deg, sklon_st, azimut_st, merny_vynos_kwh_kwp)
+    prod_per_kwp = sum(vyroba_1kwp)
+    e_spotreba = sum(spotreba_kwh)
+    if prod_per_kwp <= 0 or e_spotreba <= 0:
+        return 0.0
+
+    hi = _MAX_POMER_VYROBA_SPOTREBA * e_spotreba / prod_per_kwp
+    if max_kwp and max_kwp > 0:
+        hi = min(hi, max_kwp)
+    if hi <= 0:
+        return 0.0
+
+    # Když i při horní mezi zůstává míra nad cílem (ryze denní zátěž / malý strop),
+    # ber horní mez – větší už jít nemá smysl / nelze.
+    if _mira_samospotreby_pri_kwp(vyroba_1kwp, spotreba_kwh, hi) >= cil_mira_samospotreby:
+        return max(1.0, round(hi))
+
+    lo = 0.0
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        if _mira_samospotreby_pri_kwp(vyroba_1kwp, spotreba_kwh, mid) >= cil_mira_samospotreby:
+            lo = mid
+        else:
+            hi = mid
+    return max(1.0, round(lo))
 
 
 # -------------------------------------------- spárování výroby a spotřeby
@@ -459,6 +530,10 @@ def spocti_ppa(vstup: VstupPPA, casy: list[datetime], spotreba_kwh: list[float])
         "orez_rok1_kwh": round(bil1.orez_kwh, 1),
         "mira_samospotreby": round(bil1.samospotreba_kwh / vyroba_rok1, 3) if vyroba_rok1 > 0 else 0.0,
         "mira_sobestacnosti": round(bil1.samospotreba_kwh / e_spotreba, 3) if e_spotreba > 0 else 0.0,
+        # Headline % – jaký podíl spotřeby klienta pokryje FVE (= míra soběstačnosti).
+        "pokryti_spotreby_fve": round(bil1.samospotreba_kwh / e_spotreba, 3) if e_spotreba > 0 else 0.0,
+        # Poměr roční výroby k roční spotřebě (informativní, kap. 6).
+        "pomer_vyroba_spotreba": round(vyroba_rok1 / e_spotreba, 3) if e_spotreba > 0 else 0.0,
         "mira_orezu": round(bil1.orez_kwh / vyroba_rok1, 3) if vyroba_rok1 > 0 else 0.0,
         "prebytek_uctovat": v.prebytek_uctovat,
         "prebytek_cena_kc_mwh": round(v.prebytek_cena_kc_mwh, 2),
