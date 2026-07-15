@@ -17,3 +17,4 @@ Cíl: aby šlo modul pochopit a udržovat bez pročítání celého kódu a hist
 
 ## Obsah
 - [`peak-shaving.md`](./peak-shaving.md) – peak shaving kalkulátor (sazby distributorů, ekonomika 2026/2027, Koeficient AKU, grafy, návratnosti).
+- [`ppa-fve.md`](./ppa-fve.md) – PPA pro FVE (simulace výroby, spárování se spotřebou, ekonomika klienta i investora, ekonomický návrh velikosti, % pokrytí spotřeby).

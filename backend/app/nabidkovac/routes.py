@@ -1129,6 +1129,8 @@ def spocti_ppa(
             ),
         )
 
+    upozorneni: list[str] = []
+
     # Manažerské nastavení (defaulty PPA) – aktuální verze.
     nastaveni = db.query(VypoctovaNastaveni).order_by(VypoctovaNastaveni.verze.desc()).first()
     cena_fve_kc_kwp = _ppa_param(nastaveni, "ppa_cena_fve_kc_kwp", ppa_fve.VYCHOZI_CENA_FVE_KC_KWP)
@@ -1136,6 +1138,15 @@ def spocti_ppa(
     oam_kc_kwp_rok = _ppa_param(nastaveni, "ppa_oam_kc_kwp_rok", 0.0)
     diskont = _ppa_param(nastaveni, "ppa_diskontni_sazba", 0.05)
     merny_vynos = _ppa_param(nastaveni, "ppa_merny_vynos_kwh_kwp", ppa_fve.VYCHOZI_MERNY_VYNOS_KWH_KWP)
+    # Pojistka proti překlepu: měrný výnos FVE v ČR je ~800–1100 kWh/kWp/rok.
+    # Mimo rozumný rozsah (např. omylem zadaná 1) by zkreslil návrh velikosti → default.
+    if not (100.0 <= merny_vynos <= 2000.0):
+        upozorneni.append(
+            f"Měrný výnos v nastavení ({merny_vynos:g} kWh/kWp) je mimo reálný rozsah – "
+            f"použita výchozí hodnota {ppa_fve.VYCHOZI_MERNY_VYNOS_KWH_KWP:g}. "
+            "Oprav ho v Katalogu a výpočtech (PPA nastavení)."
+        )
+        merny_vynos = ppa_fve.VYCHOZI_MERNY_VYNOS_KWH_KWP
     index_prebytek = _ppa_param(nastaveni, "ppa_index_prebytek_rocni", 0.0)
 
     # Indexy / degradace: vstup má přednost, jinak nastavení, jinak kódový default.
@@ -1149,8 +1160,6 @@ def spocti_ppa(
     degradace = vstup.degradace_rocni
     if degradace is None:
         degradace = _ppa_param(nastaveni, "ppa_degradace_rocni", ppa_fve.VYCHOZI_DEGRADACE_ROCNI)
-
-    upozorneni: list[str] = []
 
     # Lokalita: GPS z nabídky, fallback střed ČR.
     lat = ppa_fve.VYCHOZI_LAT

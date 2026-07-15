@@ -28,24 +28,29 @@ export default function PpaPanel({ nabidka }) {
 
   // Vstupy FVE + PPA (METODIKA kap. 2). Volitelné indexy necháváme prázdné =
   // backend doplní z manažerského nastavení.
-  const [maxKwp, setMaxKwp] = useState("");
-  const [kwpOverride, setKwpOverride] = useState("");
-  const [sklon, setSklon] = useState("35");
-  const [azimut, setAzimut] = useState("0");
-  const [cenaPpa, setCenaPpa] = useState("");
-  const [cenaDod, setCenaDod] = useState("");
-  const [delka, setDelka] = useState("15");
-  const [rezimCapex, setRezimCapex] = useState("cena_kwp");
-  const [prebytekUctovat, setPrebytekUctovat] = useState(false);
-  const [prebytekCena, setPrebytekCena] = useState("");
-  const [rezVykon, setRezVykon] = useState("");
+  // Poslední uložený PPA výpočet – z něj předvyplníme vstupy, ať jde po
+  // znovuotevření nabídky rovnou přepočítávat (jinak by prázdná pole vypnula tlačítko).
+  const _rr = (nabidka.reseni || []).filter((x) => x.typ_reseni === "ppa");
+  const _posl = _rr.length ? _rr[_rr.length - 1].popis_json : null;
+  const _v = _posl?.vstup || {};
+  const _r = _posl?.vysledek || {};
+  const s = (x) => (x == null ? "" : String(x));
+
+  const [maxKwp, setMaxKwp] = useState(s(_v.max_kwp));
+  const [kwpOverride, setKwpOverride] = useState(_v.metoda_navrhu === "rucne" ? s(_v.instalovany_vykon_kwp) : "");
+  const [sklon, setSklon] = useState(_v.sklon_st != null ? s(_v.sklon_st) : "35");
+  const [azimut, setAzimut] = useState(_v.azimut_st != null ? s(_v.azimut_st) : "0");
+  const [cenaPpa, setCenaPpa] = useState(s(_v.cena_ppa_kc_mwh));
+  const [cenaDod, setCenaDod] = useState(s(_v.cena_dodavatel_kc_mwh));
+  const [delka, setDelka] = useState(_v.delka_kontraktu_roky != null ? s(_v.delka_kontraktu_roky) : "15");
+  const [rezimCapex, setRezimCapex] = useState(_v.rezim_capex || "cena_kwp");
+  const [prebytekUctovat, setPrebytekUctovat] = useState(!!_v.prebytek_uctovat);
+  const [prebytekCena, setPrebytekCena] = useState(_v.prebytek_uctovat && _r.prebytek_cena_kc_mwh ? s(_r.prebytek_cena_kc_mwh) : "");
+  const [rezVykon, setRezVykon] = useState(s(_v.rezervovany_vykon_dodavky_kw));
   const [indexPpa, setIndexPpa] = useState("");
   const [indexDod, setIndexDod] = useState("");
 
-  const [vysledek, setVysledek] = useState(() => {
-    const rr = (nabidka.reseni || []).filter((x) => x.typ_reseni === "ppa");
-    return rr.length ? rr[rr.length - 1].popis_json : null;
-  });
+  const [vysledek, setVysledek] = useState(_posl);
   const [chyba, setChyba] = useState(null);
   const [zprava, setZprava] = useState(null);
   const [pocita, setPocita] = useState(false);
