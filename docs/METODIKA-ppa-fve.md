@@ -57,7 +57,8 @@ baterie je samostatné budoucí téma – řešení se stejně ukládají vedle 
 | Současná cena dodavatele (Kč/MWh) | z faktury (`extrahovana_data_faktury.cena_kwh`) nebo ručně | referenční cena „bez PPA" |
 | Index eskalace ceny dodavatele (%/rok) | default z `vypoctova_nastaveni` | ⚠️ předpoklad, kap. 8 |
 | Délka kontraktu (roky) | OZ zadá v rozsahu `min/max_delka_kontraktu_roky` | už existuje ve `vypoctova_nastaveni` |
-| Cena FVE (Kč/kWp CAPEX) | katalog `technologie` nebo parametr | vstup do ekonomiky investora (kap. 4.5) |
+| Režim nákladů na FVE (`cena_kwp` / `komponenty`) | OZ přepne ve výpočtovém pohledu | cena/kWp (zjednodušeně) vs. skutečné náklady po komponentech z katalogu (kap. 3.4) |
+| Cena za kWp (Kč/kWp) | **manažerské nastavení** (`vypoctova_nastaveni`) | sazba pro zjednodušený režim (kap. 3.4/4.5) |
 | Degradace panelů (%/rok) | default z `vypoctova_nastaveni` (~0,5 %) | kap. 4.2 |
 | Účtovat přebytek (prodej do sítě) – zapnout/vypnout | OZ přepne, default z `vypoctova_nastaveni` | volitelné; když vyp., přebytek = 0 Kč (kap. 4.3, 4.5) |
 | Cena přebytku (Kč/MWh) | **OZ zadá u každé nabídky** | liší se dle lokality a smlouvy → per-výpočet, ne globální default |
@@ -97,7 +98,8 @@ může přepsat):
 - `ppa_index_ceny_rocni` (default např. 0,03 = 3 %/rok)
 - `ppa_index_dodavatel_rocni` (default např. 0,03) ⚠️ kap. 8
 - `ppa_degradace_rocni` (default 0,005 = 0,5 %/rok)
-- `ppa_cena_fve_kc_kwp` (fallback CAPEX, když se nepočítá z katalogu – kap. 4.5)
+- `ppa_cena_fve_kc_kwp` (**cena za kWp** pro zjednodušený režim CAPEX – kap. 3.4/4.5)
+- `ppa_ostatni_naklady_kc_kwp` (BOS – montáž/konstrukce/kabeláž pro komponentový režim, Kč/kWp) ⚠️ kap. 3.4
 - `ppa_oam_kc_kwp_rok` (provozní náklady, default např. 0 nebo ~200 Kč/kWp/rok) ⚠️ kap. 8
 - `ppa_diskontni_sazba` (pro NPV/IRR, default např. 0,05)
 - `ppa_prebytek_uctovat` (bool, default `false` – **potvrzeno vypnuto**) – zapnout prodej přebytku do sítě (kap. 4.3, 4.5)
@@ -119,18 +121,37 @@ možností přepsat je přes `vypoctova_nastaveni.parametry` – nejsou to komer
 se měnily po distributorech. Nezavádím kvůli nim samostatnou tabulku (na rozdíl od
 `sazby_distributoru`, které se liší per distributor a mění se ročně).
 
-### 3.4 Katalog `technologie` – FVE komponenty a cena Kč/kWp
+### 3.4 Náklady na FVE – dva režimy řízené přepínačem
 
-`typ = fve_panel` už existuje (`vykon_kw`, `cena_kc`, `ucinnost`). Pro CAPEX v Kč/kWp navrhuji:
+CAPEX (náklad na postavení FVE) se počítá jedním ze dvou režimů. **Přepínač `rezim_capex`
+volí OZ ve výpočtovém pohledu** (zadání nabídky), sazby k němu jsou v **manažerském nastavení**
+(`vypoctova_nastaveni`, edituje jen vedení/admin – právo `nabidkovac_katalog`):
 
-- **v1 (jednodušší):** CAPEX = `kWp × ppa_cena_fve_kc_kwp` (jeden parametr z
-  `vypoctova_nastaveni`, editovatelný adminem). Rychle spustitelné, nezávisí na úplnosti
-  katalogu.
-- **v2 (přesnější, později):** poskládat CAPEX z katalogu (panely + invertor + instalace),
-  obdoba výběru baterie u peak shavingu. Pro to případně přidat vlastní sloupec katalogu
-  (`katalog_sloupce`) `cena_kc_kwp` u panelů.
+- **`cena_kwp` (zjednodušeně, default):**
+  ```
+  CAPEX = navržené_kWp × ppa_cena_fve_kc_kwp
+  ```
+  `ppa_cena_fve_kc_kwp` = **cena za kWp z manažerského nastavení**. Rychlé, nezávisí na
+  úplnosti katalogu.
 
-Navrhuji začít v1 (parametr) a katalogovou variantu nechat jako otevřený bod (kap. 8).
+- **`komponenty` (skutečné náklady):** appka navrhne elektrárnu **po komponentech z katalogu
+  `technologie`** (analogie výběru baterie u peak shavingu) a CAPEX sečte z jejich cen:
+  ```
+  pocet_panelu   = ceil(navržené_kWp / panel.vykon_kw)          # panel typu fve_panel
+  CAPEX_panely   = pocet_panelu × panel.cena_kc
+  CAPEX_invertory= Σ vybraných invertorů (typ = invertor) pokrývajících kWp   # dle DC/AC poměru
+  CAPEX_ostatni  = navržené_kWp × ppa_ostatni_naklady_kc_kwp    # konstrukce/kabeláž/montáž (BOS)
+  CAPEX          = CAPEX_panely + CAPEX_invertory + CAPEX_ostatni
+  ```
+  Výběr komponent: který panel/invertor z katalogu použít (nejlevnější dostupný daného typu,
+  nebo výběr OZ) potvrdíme při implementaci. „Ostatní náklady" (montáž, konstrukce, kabeláž =
+  BOS) katalog typicky nemá po položkách → doplňkový přepočet `ppa_ostatni_naklady_kc_kwp`
+  z manažerského nastavení; ⚠️ jestli je součástí skutečných nákladů, nebo se do katalogu
+  přidá jako položka `typ = jina`, je otevřený bod (kap. 8).
+
+Výstup nese `rezim_capex` a rozpad CAPEX, ať je v nabídce vidět, jak se k číslu došlo.
+Katalog už `typ = fve_panel` i `typ = invertor` má (`vykon_kw`, `cena_kc`); komponentový režim
+závisí na tom, že jsou v katalogu naplněné.
 
 ### 3.5 Výstup `navrhovana_reseni`
 
@@ -300,7 +321,8 @@ jádro nabídky pro klienta.
 ### 4.5 Ekonomika investora (Greensie)
 
 ```
-CAPEX             = kWp × ppa_cena_fve_kc_kwp               # (v2: součet z katalogu)
+CAPEX             = dle rezim_capex (kap. 3.4):            # cena_kwp: kWp × ppa_cena_fve_kc_kwp
+                                                           # komponenty: součet položek z katalogu
 cena_prebytek_t   = prebytek_cena_kc_mwh × (1 + i_prebytek)^(t−1)   # cena zadaná OZ; i_prebytek default 0
 
 vynos_ppa_t       = (SS_t / 1000) × cena_ppa_t             # platby klienta za samospotřebu z FVE
@@ -376,9 +398,10 @@ kritérium a práh.**
 `popis_json` (obdoba peak shavingu – `vstup`, `doporucena`, `varianty`, `graf`, `upozorneni`):
 
 - `vstup`: kWp, lokalita, sklon, azimut, cena_ppa_1, indexy, cena_dod_1, délka_kontraktu,
-  CAPEX, degradace, `prebytek_uctovat`, `prebytek_cena_kc_mwh`, `rezervovany_vykon_dodavky_kw`.
+  `rezim_capex`, degradace, `prebytek_uctovat`, `prebytek_cena_kc_mwh`, `rezervovany_vykon_dodavky_kw`.
 - `doporucena` a `varianty` (top 3), každá varianta:
-  - `kwp`, `capex_kc`, `merny_vynos_kwh_kwp`, `k_orient`, `vyroba_rok1_kwh`,
+  - `kwp`, `capex_kc`, `capex_rozpad` (dle režimu: cena_kwp × kWp, nebo panely/invertory/ostatní
+    z katalogu vč. počtu kusů), `merny_vynos_kwh_kwp`, `k_orient`, `vyroba_rok1_kwh`,
   - `mira_samospotreby`, `mira_sobestacnosti`, `mira_orezu` (rok 1),
   - `export_rok1_kwh`, `orez_rok1_kwh`,
   - `navratnost_roky`, `irr`, `npv_kc`, `min_delka_kontraktu_roky`,
@@ -465,8 +488,11 @@ NPV, kumulativní úspora klienta, celkový přetok vs. ořez za dobu kontraktu.
    koeficienty, korekce orientace, clear-sky denní křivka), nebo chceme PVGIS? Interní model
    = nulové závislosti, ale koeficienty a tabulka orientace jsou **ilustrativní k kalibraci**
    (potřebuju potvrdit/dodat reálné hodnoty pro ČR, případně po krajích).
-7. **CAPEX FVE** (kap. 3.4/4.5) – v1 jeden parametr Kč/kWp, nebo hned skládat z katalogu?
-   Potřebuju orientační Kč/kWp pro default.
+7. **CAPEX FVE** (kap. 3.4/4.5) – oba režimy rozhodnuté: přepínač `rezim_capex` volí OZ mezi
+   zjednodušeným (cena/kWp z manažerského nastavení) a komponentovým (poskládání z katalogu).
+   K potvrzení: orientační **cena za kWp** pro zjednodušený režim; a u komponentového režimu
+   pravidlo výběru panelu/invertoru z katalogu + jestli BOS (montáž/konstrukce) řešit
+   přepočtem `ppa_ostatni_naklady_kc_kwp`, nebo položkou `typ = jina` v katalogu.
 8. **O&M a další náklady investora** (kap. 4.5) – O&M (Kč/kWp/rok nebo % CAPEX), výměna
    invertoru, pojištění, nájem střechy. Které zapnout v v1 a s jakými defaulty?
 9. **Konstantní spotřeba klienta** přes roky kontraktu (kap. 4.3) – v1 předpoklad; chceme
@@ -491,7 +517,8 @@ Než půjdeme do implementace (PR po PR, jako u peak shavingu), potřebuju rozho
    dodavatele. (body 2, 3)
 3. **Simulace výroby** – stačí interní model, nebo chceš PVGIS? A prosím reálné hodnoty
    měrného výnosu / orientační tabulky pro ČR (moje jsou ilustrativní). (bod 6)
-4. **CAPEX Kč/kWp** default a **O&M** – s jakými čísly počítat pro investora. (body 7, 8)
+4. **Náklady na FVE** – přepínač cena/kWp vs. komponenty z katalogu je hotový; potřebuju
+   orientační **cenu za kWp** (zjednodušený režim) + pravidlo výběru komponent a **O&M**. (body 7, 8)
 5. **`koeficient_zisku`** – závazná definice a jestli dělat dopočet PPA ceny z marže (režim B),
    nebo v1 jen cena zadaná OZ (režim A). (bod 4)
 6. **Kritérium doporučené varianty** a práh návratnosti pro PPA. (bod 5)
