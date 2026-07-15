@@ -59,7 +59,9 @@ baterie je samostatné budoucí téma – řešení se stejně ukládají vedle 
 | Délka kontraktu (roky) | OZ zadá v rozsahu `min/max_delka_kontraktu_roky` | už existuje ve `vypoctova_nastaveni` |
 | Cena FVE (Kč/kWp CAPEX) | katalog `technologie` nebo parametr | vstup do ekonomiky investora (kap. 4.5) |
 | Degradace panelů (%/rok) | default z `vypoctova_nastaveni` (~0,5 %) | kap. 4.2 |
-| Nakládání s přebytkem + výkupní cena | OZ vybere / parametr | ⚠️ zásadní otevřený bod, kap. 4.3 |
+| Účtovat přebytek (prodej do sítě) – zapnout/vypnout | OZ přepne, default z `vypoctova_nastaveni` | volitelné; když vyp., přebytek = 0 Kč (kap. 4.3, 4.5) |
+| Cena přebytku (Kč/MWh) | OZ zadá / default z `vypoctova_nastaveni` | výkupní/tržní cena za přetok do sítě |
+| Max. rezervovaný výkon dodávky do sítě (kW) | OZ zadá (ze smlouvy o připojení) | strop přetoku do DS; **nemusí = výkon FVE**, nadbytek se ořízne (kap. 4.3) |
 
 ---
 
@@ -98,7 +100,13 @@ může přepsat):
 - `ppa_cena_fve_kc_kwp` (fallback CAPEX, když se nepočítá z katalogu – kap. 4.5)
 - `ppa_oam_kc_kwp_rok` (provozní náklady, default např. 0 nebo ~200 Kč/kWp/rok) ⚠️ kap. 8
 - `ppa_diskontni_sazba` (pro NPV/IRR, default např. 0,05)
-- `ppa_vykupni_cena_kc_mwh` (cena za přebytek do sítě, jen když se přebytek prodává) ⚠️ kap. 4.3
+- `ppa_prebytek_uctovat` (bool, default `false`) – zapnout prodej přebytku do sítě (kap. 4.3, 4.5)
+- `ppa_prebytek_cena_kc_mwh` (výchozí cena za exportovaný přetok, Kč/MWh) ⚠️ kap. 4.5
+- `ppa_index_prebytek_rocni` (eskalace ceny přebytku %/rok, default 0 = drží se plochá) ⚠️ kap. 8
+
+Per-nabídku (ne globální default – závisí na smlouvě o připojení konkrétního místa):
+- `rezervovany_vykon_dodavky_kw` – strop přetoku do distribuční soustavy (kap. 4.3). `null` /
+  0 = neomezeno (limituje jen výkon FVE).
 - `koeficient_zisku`, `min_delka_kontraktu_roky`, `max_delka_kontraktu_roky` – **už existují**
   jako sloupce `vypoctova_nastaveni` (kap. 4.6)
 
@@ -209,34 +217,56 @@ uložení). ⚠️ Zvážit „rok 0" degradaci (LID, ~1–2 % hned první rok) 
 ### 4.3 Spárování výroby a spotřeby (samospotřeba, přebytek, dokup)
 
 Oba profily zarovnané na stejnou kalendářní mřížku (výroba se generuje pro `cas` každého
-intervalu spotřeby – kap. 4.1). Pro každý interval `i`:
+intervalu spotřeby – kap. 4.1). Pořadí toku energie v každém intervalu `i`: **nejdřív
+samospotřeba** (lokální, neteče do sítě), **pak přetok do sítě** až do rezervovaného výkonu
+dodávky, **zbytek se ořízne** (fyzicky neexportuje, výnos = 0).
+
+`P_rez` = `rezervovany_vykon_dodavky_kw` (kW), `interval_h` = délka intervalu (0,25 h).
+Přepočet výkonového stropu na energii intervalu: `P_rez × interval_h` (kWh).
 ```
-samospotreba_i = min(V_i, S_i)               # co klient reálně spotřebuje z FVE
-prebytek_i     = max(0, V_i − S_i)           # co FVE vyrobí navíc
-dokup_i        = max(0, S_i − V_i)           # co klient dokoupí ze sítě
+samospotreba_i = min(V_i, S_i)                        # co klient reálně spotřebuje z FVE
+prebytek_i     = max(0, V_i − S_i)                    # potenciální přetok (energie navíc)
+export_i       = min(prebytek_i, P_rez × interval_h)  # přetok omezený rez. výkonem dodávky
+orez_i         = prebytek_i − export_i                # co se do rez. výkonu nevejde → ořez
+dokup_i        = max(0, S_i − V_i)                    # co klient dokoupí ze sítě
 ```
+Když `P_rez` není zadaný (neomezeno), platí `export_i = prebytek_i`, `orez_i = 0`. **Ořez
+neovlivňuje samospotřebu** (ta je lokální, před exportem) – limituje jen to, co jde do sítě.
+
+**Příklad (čísla ze zadání), 15min interval `interval_h = 0,25`:** FVE 250 kWp v daném
+intervalu vyrábí **180 kW**, spotřeba **50 kW**, `P_rez = 100 kW`.
+```
+V_i = 180 × 0,25 = 45 kWh ;  S_i = 50 × 0,25 = 12,5 kWh
+samospotreba_i = min(45; 12,5) = 12,5 kWh   → 50 kW kryje klient sám
+prebytek_i     = 45 − 12,5     = 32,5 kWh   → 130 kW by chtělo do sítě
+export_i       = min(32,5; 100 × 0,25) = min(32,5; 25) = 25 kWh   → do sítě jen 100 kW
+orez_i         = 32,5 − 25     = 7,5 kWh    → 30 kW se ořízne (nevyužije)
+```
+
 Roční agregáty (rok `t`, s degradovanou výrobou dle 4.2):
 ```
 E_spotreba = Σ_i S_i                         # konstantní přes roky (⚠️ předpoklad)
 V_t        = Σ_i V_i,t
 SS_t       = Σ_i min(V_i,t, S_i)             # samospotřeba
-PRE_t      = V_t − SS_t                      # přebytek
+PRE_t      = V_t − SS_t                      # přebytek celkem (potenciální)
+EXP_t      = Σ_i export_i,t                  # skutečně exportováno do sítě (≤ PRE_t)
+OREZ_t     = PRE_t − EXP_t                   # ořez (nad rezervovaným výkonem dodávky)
 IMP_t      = E_spotreba − SS_t               # dokup ze sítě
 ```
-`min()` je nelineární, proto se `SS_t` **počítá znovu každý rok** s degradovaným profilem
-(levné – stejná smyčka). Ukazatele: míra samospotřeby `SS_t/V_t`, míra soběstačnosti
-`SS_t/E_spotreba`.
+`min()` je nelineární, proto se `SS_t`/`EXP_t` **počítají znovu každý rok** s degradovaným
+profilem (levné – stejná smyčka). Ukazatele: míra samospotřeby `SS_t/V_t`, míra soběstačnosti
+`SS_t/E_spotreba`, míra ořezu `OREZ_t/V_t`.
 
-⚠️ **OTEVŘENÝ PŘEDPOKLAD (zásadní, neprosazuji jednu variantu) – co s přebytkem `PRE_t`:**
-1. **neúčtuje se v PPA** – klient platí jen za `SS_t`, přebytek propadá / řeší investor mimo
-   model (nejjednodušší, konzervativní pro klienta i investora),
-2. **prodává se do sítě** za výkupní/spotovou cenu `ppa_vykupni_cena_kc_mwh` (nižší než PPA) –
-   přidává výnos **investorovi** (kap. 4.5), klientovi ne,
-3. jiná varianta (sdílení, agregátor, virtuální baterie…).
+**Nakládání s přebytkem `PRE_t` – nyní podporováno jako volitelný prodej (kap. 4.5):**
+- když `ppa_prebytek_uctovat = false` (default): přebytek se neúčtuje, `EXP_t` nepřináší
+  výnos (konzervativní, čísla se nenafukují nepotvrzeným výkupem),
+- když `ppa_prebytek_uctovat = true`: exportovaná část `EXP_t` se prodává do sítě za
+  `ppa_prebytek_cena_kc_mwh` → **výnos investorovi** (klientovi ne). Ořezaná část `OREZ_t`
+  vždy propadá (0 Kč) bez ohledu na přepínač.
 
-Metodika i vzorce jsou napsané tak, že přebytek vstupuje **jen do výnosu investora** a jen
-volitelně (kap. 4.5). Default v1 navrhuji **variantu 1** (přebytek = 0 Kč), ať čísla nejsou
-opticky nafouknutá nepotvrzeným výkupem. **Potřebuju od tebe rozhodnutí.**
+⚠️ **Zůstává k potvrzení:** default přepínače (navrhuji vypnuto), výše ceny přebytku a zda ji
+eskalovat (`ppa_index_prebytek_rocni`, kap. 8). Jiné modely (sdílení, agregátor, virtuální
+baterie) jsou mimo v1.
 
 ### 4.4 Ekonomika klienta po letech
 
@@ -269,13 +299,20 @@ jádro nabídky pro klienta.
 ### 4.5 Ekonomika investora (Greensie)
 
 ```
-CAPEX   = kWp × ppa_cena_fve_kc_kwp                         # (v2: součet z katalogu)
-vynos_t = (SS_t / 1000) × cena_ppa_t                        # platby klienta za FVE energii
-        [ + (PRE_t / 1000) × ppa_vykupni_cena_kc_mwh ]      # jen když se přebytek prodává (4.3)
-oam_t   = ppa_oam_kc_kwp_rok × kWp                          # provoz/údržba ⚠️ kap. 8
-cf_t    = vynos_t − oam_t                                   # roční cash-flow
-cf_kumulativni_t = (Σ_{k=1..t} cf_k) − CAPEX               # kumulovaně, po odečtení investice
+CAPEX             = kWp × ppa_cena_fve_kc_kwp               # (v2: součet z katalogu)
+cena_prebytek_t   = ppa_prebytek_cena_kc_mwh × (1 + i_prebytek)^(t−1)   # i_prebytek default 0
+
+vynos_ppa_t       = (SS_t / 1000) × cena_ppa_t             # platby klienta za samospotřebu z FVE
+vynos_prebytek_t  = ppa_prebytek_uctovat ? (EXP_t / 1000) × cena_prebytek_t : 0
+                                                           # prodej EXPORTOVANÉ části do sítě (4.3)
+vynos_t           = vynos_ppa_t + vynos_prebytek_t         # celkový roční výnos
+oam_t             = ppa_oam_kc_kwp_rok × kWp               # provoz/údržba ⚠️ kap. 8
+cf_t              = vynos_t − oam_t                        # roční cash-flow
+cf_kumulativni_t  = (Σ_{k=1..t} cf_k) − CAPEX             # kumulovaně, po odečtení investice
 ```
+Do výnosu z přebytku vstupuje **jen `EXP_t`** (co reálně prošlo do sítě), ne `PRE_t` – ořez
+`OREZ_t` daný rezervovaným výkonem dodávky nepřináší nic. Rezervovaný výkon dodávky tak přímo
+strope, kolik lze z přebytku zpeněžit.
 **Návratnost (payback):** nejmenší `t`, kde `cf_kumulativni_t ≥ 0` (s lineární interpolací
 uvnitř roku pro desetinnou hodnotu, obdoba návratnosti u peak shavingu).
 
@@ -338,19 +375,21 @@ kritérium a práh.**
 `popis_json` (obdoba peak shavingu – `vstup`, `doporucena`, `varianty`, `graf`, `upozorneni`):
 
 - `vstup`: kWp, lokalita, sklon, azimut, cena_ppa_1, indexy, cena_dod_1, délka_kontraktu,
-  CAPEX, degradace, volba nakládání s přebytkem.
+  CAPEX, degradace, `prebytek_uctovat`, `prebytek_cena_kc_mwh`, `rezervovany_vykon_dodavky_kw`.
 - `doporucena` a `varianty` (top 3), každá varianta:
   - `kwp`, `capex_kc`, `merny_vynos_kwh_kwp`, `k_orient`, `vyroba_rok1_kwh`,
-  - `mira_samospotreby`, `mira_sobestacnosti` (rok 1),
+  - `mira_samospotreby`, `mira_sobestacnosti`, `mira_orezu` (rok 1),
+  - `export_rok1_kwh`, `orez_rok1_kwh`,
   - `navratnost_roky`, `irr`, `npv_kc`, `min_delka_kontraktu_roky`,
   - `roky[]` – pole po letech (viz kap. 6),
   - `souhrn_klient`: kumulativní úspora klienta za dobu kontraktu,
   - `souhrn_investor`: kumulativní CF, payback.
-- `upozorneni`: seznam hlášek (chybějící cena dodavatele, přebytek se neúčtuje, O&M = 0,
-  cena z faktury nezkontrolovaná apod.) – stejný princip jako u peak shavingu.
-- příznaky předpokladů: `prebytek_rezim`, `oam_zapnuto`, `cena_dod_obsahuje` (silová vs. vč.
-  distribuce) – ať je v nabídce jasně vidět, na čem čísla stojí (obdoba `je_modelovy_odhad`
-  / `predpoklad_aku_neoverovany` u peak shavingu).
+- `upozorneni`: seznam hlášek (chybějící cena dodavatele, přebytek se neúčtuje, výrazný ořez
+  kvůli nízkému rezervovanému výkonu dodávky, O&M = 0, cena z faktury nezkontrolovaná apod.) –
+  stejný princip jako u peak shavingu.
+- příznaky předpokladů: `prebytek_uctovat`, `rezervovany_vykon_dodavky_kw`, `oam_zapnuto`,
+  `cena_dod_obsahuje` (silová vs. vč. distribuce) – ať je v nabídce jasně vidět, na čem čísla
+  stojí (obdoba `je_modelovy_odhad` / `predpoklad_aku_neoverovany` u peak shavingu).
 
 ---
 
@@ -365,13 +404,16 @@ graf = {
   spotreba_kwh:      [...],   # Σ S_i v měsíci
   vyroba_kwh:        [...],   # Σ V_i v měsíci
   samospotreba_kwh:  [...],   # Σ min(V_i,S_i) v měsíci
-  prebytek_kwh:      [...],   # vyroba − samospotreba
+  export_kwh:        [...],   # Σ export_i (přetok do sítě, ≤ rez. výkon dodávky)
+  orez_kwh:          [...],   # Σ orez_i (nad rez. výkonem dodávky)
   dokup_kwh:         [...],   # spotreba − samospotreba
 }
 ```
 Vizuál: pro každý měsíc dva sloupce – **spotřeba** (z toho barevně odlišená samospotřeba
-z FVE vs. dokup ze sítě) a **výroba** (z toho samospotřeba vs. přebytek). Legenda: samospotřeba
-/ dokup / přebytek. Volitelně druhý graf – **typický letní vs. zimní den** (15min křivka
+z FVE vs. dokup ze sítě) a **výroba** (rozdělená na samospotřeba / **přetok do sítě** /
+**ořez**). Legenda: samospotřeba / dokup / přetok do sítě / ořez. Ořez zviditelní, kolik
+výroby padá kvůli nízkému rezervovanému výkonu dodávky. Volitelně druhý graf – **typický
+letní vs. zimní den** (15min křivka
 výroby přes spotřebu), ať je vidět denní souběh; navrhuji jako „later" (obdoba 15min detailu
 u peak shavingu, který zůstal na potom).
 
@@ -379,11 +421,12 @@ u peak shavingu, který zůstal na potom).
 
 Řádek na každý rok kontraktu `t = 1..N`:
 
-| Rok | Výroba (kWh) | Samospotřeba (kWh) | Přebytek (kWh) | Cena PPA (Kč/MWh) | Cena dodav. (Kč/MWh) | Úspora klienta (Kč) | Kum. úspora klienta (Kč) | Výnos investora (Kč) | CF investora (Kč) | Kum. CF investora (Kč) |
-|---|---|---|---|---|---|---|---|---|---|---|
+| Rok | Výroba (kWh) | Samospotřeba (kWh) | Přetok do sítě (kWh) | Ořez (kWh) | Cena PPA (Kč/MWh) | Cena dodav. (Kč/MWh) | Úspora klienta (Kč) | Kum. úspora klienta (Kč) | Výnos PPA (Kč) | Výnos přetok (Kč) | CF investora (Kč) | Kum. CF investora (Kč) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
 
-Zvýrazněný **rok návratnosti** (kde kum. CF investora poprvé ≥ 0). Pod tabulkou souhrn: CAPEX,
-payback, IRR, NPV, kumulativní úspora klienta.
+Sloupec „Výnos přetok" je nulový, když je prodej přebytku vypnutý. Zvýrazněný **rok
+návratnosti** (kde kum. CF investora poprvé ≥ 0). Pod tabulkou souhrn: CAPEX, payback, IRR,
+NPV, kumulativní úspora klienta, celkový přetok vs. ořez za dobu kontraktu.
 
 ---
 
@@ -397,13 +440,18 @@ payback, IRR, NPV, kumulativní úspora klienta.
    návratnosti** po celou dobu kontraktu. ✅
 6. Ceny bez DPH, práva `nabidkovac` / `nabidkovac_katalog`, deterministický výpočet, SVG grafy
    bez knihovny (konvence převzaté z peak shavingu). ✅
+7. **Přebytek lze prodat do sítě** – volitelný přepínač účtování přebytku + cena přebytku,
+   omezené **max. rezervovaným výkonem dodávky do sítě** (nadbytek nad stropem se ořízne).
+   Výnos z prodeje jde investorovi. ✅ (defaulty a cena k doladění – kap. 8)
 
 ---
 
 ## 8. Otevřené body / předpoklady k ověření (⚠️)
 
-1. **Nakládání s přebytkem** (kap. 4.3) – neúčtuje se / prodej do sítě za nižší cenu / jiné?
-   Zásadní pro výnos investora. Default navrhuji „neúčtuje se". **Rozhodnutí.**
+1. **Prodej přebytku** (kap. 4.3/4.5) – funkce je zabudovaná (přepínač `ppa_prebytek_uctovat`,
+   cena `ppa_prebytek_cena_kc_mwh`, strop `rezervovany_vykon_dodavky_kw`). K potvrzení zbývá:
+   default přepínače (navrhuji **vypnuto**), výchozí **cena přebytku** (Kč/MWh) a zda ji
+   eskalovat (`ppa_index_prebytek_rocni`, default 0 = plochá).
 2. **Co obsahuje „cena dodavatele"** (kap. 4.4) – jen silová elektřina, nebo i distribuce/
    poplatky? PPA typicky nahrazuje jen silovou složku. Ovlivní to výši úspory zásadně.
 3. **Index eskalace ceny dodavatele** (kap. 4.4) – jaká výchozí hodnota, fixovat vs.
@@ -436,7 +484,8 @@ payback, IRR, NPV, kumulativní úspora klienta.
 
 Než půjdeme do implementace (PR po PR, jako u peak shavingu), potřebuju rozhodnout hlavně:
 
-1. **Přebytek FVE** – neúčtuje se / prodej do sítě (za jakou cenu)? (bod 1)
+1. **Přebytek FVE** – prodej do sítě je hotový (přepínač + strop rez. výkonu dodávky); potřebuju
+   jen default přepínače a **výchozí cenu přebytku** v Kč/MWh (příp. index eskalace). (bod 1)
 2. **„Cena dodavatele"** – jen silová složka, nebo vč. distribuce? A jak eskalovat cenu
    dodavatele. (body 2, 3)
 3. **Simulace výroby** – stačí interní model, nebo chceš PVGIS? A prosím reálné hodnoty
