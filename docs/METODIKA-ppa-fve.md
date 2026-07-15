@@ -60,7 +60,7 @@ baterie je samostatné budoucí téma – řešení se stejně ukládají vedle 
 | Cena FVE (Kč/kWp CAPEX) | katalog `technologie` nebo parametr | vstup do ekonomiky investora (kap. 4.5) |
 | Degradace panelů (%/rok) | default z `vypoctova_nastaveni` (~0,5 %) | kap. 4.2 |
 | Účtovat přebytek (prodej do sítě) – zapnout/vypnout | OZ přepne, default z `vypoctova_nastaveni` | volitelné; když vyp., přebytek = 0 Kč (kap. 4.3, 4.5) |
-| Cena přebytku (Kč/MWh) | OZ zadá / default z `vypoctova_nastaveni` | výkupní/tržní cena za přetok do sítě |
+| Cena přebytku (Kč/MWh) | **OZ zadá u každé nabídky** | liší se dle lokality a smlouvy → per-výpočet, ne globální default |
 | Max. rezervovaný výkon dodávky do sítě (kW) | OZ zadá (ze smlouvy o připojení) | strop přetoku do DS; **nemusí = výkon FVE**, nadbytek se ořízne (kap. 4.3) |
 
 ---
@@ -101,10 +101,11 @@ může přepsat):
 - `ppa_oam_kc_kwp_rok` (provozní náklady, default např. 0 nebo ~200 Kč/kWp/rok) ⚠️ kap. 8
 - `ppa_diskontni_sazba` (pro NPV/IRR, default např. 0,05)
 - `ppa_prebytek_uctovat` (bool, default `false`) – zapnout prodej přebytku do sítě (kap. 4.3, 4.5)
-- `ppa_prebytek_cena_kc_mwh` (výchozí cena za exportovaný přetok, Kč/MWh) ⚠️ kap. 4.5
 - `ppa_index_prebytek_rocni` (eskalace ceny přebytku %/rok, default 0 = drží se plochá) ⚠️ kap. 8
 
-Per-nabídku (ne globální default – závisí na smlouvě o připojení konkrétního místa):
+Per-nabídku (ne globální default – závisí na konkrétní lokalitě / smlouvě o připojení):
+- `prebytek_cena_kc_mwh` – výkupní/tržní cena za exportovaný přetok. **OZ zadá u každé
+  nabídky** (liší se dle lokality a smlouvy), proto se nedrží jako globální default (kap. 4.5).
 - `rezervovany_vykon_dodavky_kw` – strop přetoku do distribuční soustavy (kap. 4.3). `null` /
   0 = neomezeno (limituje jen výkon FVE).
 - `koeficient_zisku`, `min_delka_kontraktu_roky`, `max_delka_kontraktu_roky` – **už existují**
@@ -261,7 +262,7 @@ profilem (levné – stejná smyčka). Ukazatele: míra samospotřeby `SS_t/V_t`
 - když `ppa_prebytek_uctovat = false` (default): přebytek se neúčtuje, `EXP_t` nepřináší
   výnos (konzervativní, čísla se nenafukují nepotvrzeným výkupem),
 - když `ppa_prebytek_uctovat = true`: exportovaná část `EXP_t` se prodává do sítě za
-  `ppa_prebytek_cena_kc_mwh` → **výnos investorovi** (klientovi ne). Ořezaná část `OREZ_t`
+  `prebytek_cena_kc_mwh` (zadaná OZ) → **výnos investorovi** (klientovi ne). Ořezaná část `OREZ_t`
   vždy propadá (0 Kč) bez ohledu na přepínač.
 
 ⚠️ **Zůstává k potvrzení:** default přepínače (navrhuji vypnuto), výše ceny přebytku a zda ji
@@ -300,7 +301,7 @@ jádro nabídky pro klienta.
 
 ```
 CAPEX             = kWp × ppa_cena_fve_kc_kwp               # (v2: součet z katalogu)
-cena_prebytek_t   = ppa_prebytek_cena_kc_mwh × (1 + i_prebytek)^(t−1)   # i_prebytek default 0
+cena_prebytek_t   = prebytek_cena_kc_mwh × (1 + i_prebytek)^(t−1)   # cena zadaná OZ; i_prebytek default 0
 
 vynos_ppa_t       = (SS_t / 1000) × cena_ppa_t             # platby klienta za samospotřebu z FVE
 vynos_prebytek_t  = ppa_prebytek_uctovat ? (EXP_t / 1000) × cena_prebytek_t : 0
@@ -449,8 +450,8 @@ NPV, kumulativní úspora klienta, celkový přetok vs. ořez za dobu kontraktu.
 ## 8. Otevřené body / předpoklady k ověření (⚠️)
 
 1. **Prodej přebytku** (kap. 4.3/4.5) – funkce je zabudovaná (přepínač `ppa_prebytek_uctovat`,
-   cena `ppa_prebytek_cena_kc_mwh`, strop `rezervovany_vykon_dodavky_kw`). K potvrzení zbývá:
-   default přepínače (navrhuji **vypnuto**), výchozí **cena přebytku** (Kč/MWh) a zda ji
+   cena `prebytek_cena_kc_mwh` zadaná OZ u každé nabídky, strop `rezervovany_vykon_dodavky_kw`).
+   K potvrzení zbývá už jen: default přepínače (navrhuji **vypnuto**) a zda cenu přebytku
    eskalovat (`ppa_index_prebytek_rocni`, default 0 = plochá).
 2. **Co obsahuje „cena dodavatele"** (kap. 4.4) – jen silová elektřina, nebo i distribuce/
    poplatky? PPA typicky nahrazuje jen silovou složku. Ovlivní to výši úspory zásadně.
@@ -484,8 +485,8 @@ NPV, kumulativní úspora klienta, celkový přetok vs. ořez za dobu kontraktu.
 
 Než půjdeme do implementace (PR po PR, jako u peak shavingu), potřebuju rozhodnout hlavně:
 
-1. **Přebytek FVE** – prodej do sítě je hotový (přepínač + strop rez. výkonu dodávky); potřebuju
-   jen default přepínače a **výchozí cenu přebytku** v Kč/MWh (příp. index eskalace). (bod 1)
+1. **Přebytek FVE** – prodej do sítě je hotový; cena přebytku se zadává u každé nabídky (dle
+   lokality/smlouvy). Zbývá jen default přepínače (vyp.) a zda cenu eskalovat. (bod 1)
 2. **„Cena dodavatele"** – jen silová složka, nebo vč. distribuce? A jak eskalovat cenu
    dodavatele. (body 2, 3)
 3. **Simulace výroby** – stačí interní model, nebo chceš PVGIS? A prosím reálné hodnoty
