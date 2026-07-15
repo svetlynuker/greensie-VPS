@@ -18,6 +18,7 @@ Všechny peněžní hodnoty jsou bez DPH.
 
 from __future__ import annotations
 
+import dataclasses
 import math
 from dataclasses import dataclass
 from datetime import datetime
@@ -443,16 +444,28 @@ class VstupPPA:
     interval_h: float = VYCHOZI_INTERVAL_H
 
 
-def spocti_ppa(vstup: VstupPPA, casy: list[datetime], spotreba_kwh: list[float]) -> dict:
+def spocti_ppa(
+    vstup: VstupPPA,
+    casy: list[datetime],
+    spotreba_kwh: list[float],
+    vyroba_rok1_override: list[float] | None = None,
+) -> dict:
     """Kompletní PPA výpočet pro jednu FVE (METODIKA kap. 4). Vrací popis_json.
 
     Simuluje výrobu (kap. 4.1), rok po roce aplikuje degradaci (4.2), spáruje se
     spotřebou (4.3), spočítá ekonomiku klienta (4.4) i investora (4.5) a data pro
     graf (6.1). Výběr velikosti FVE tu není – počítá se pro zadané `kwp`.
+
+    `vyroba_rok1_override` = předpočítaný profil výroby rok 1 (kWh/interval, už
+    škálovaný na `kwp`); využívá ho sweep `vyber_velikost`, aby se nemusela solární
+    geometrie počítat pro každou kandidátní velikost znovu.
     """
     n = len(casy)
     v = vstup
-    vyroba1 = simuluj_vyrobu(casy, v.kwp, v.lat, v.sklon_st, v.azimut_st, v.merny_vynos_kwh_kwp)
+    if vyroba_rok1_override is not None:
+        vyroba1 = vyroba_rok1_override
+    else:
+        vyroba1 = simuluj_vyrobu(casy, v.kwp, v.lat, v.sklon_st, v.azimut_st, v.merny_vynos_kwh_kwp)
     k_or = korekce_orientace(v.azimut_st, v.sklon_st)
     mesice = [c.month for c in casy]
     e_spotreba = sum(spotreba_kwh)
@@ -552,3 +565,67 @@ def spocti_ppa(vstup: VstupPPA, casy: list[datetime], spotreba_kwh: list[float])
         "roky": roky,
         "graf": graf,
     }
+
+
+# ------------------------------------------- výběr velikosti dle ekonomiky (kap. 4.7)
+def _skore_ekonomiky(r: dict) -> tuple:
+    """Řadicí klíč: primárně nejvyšší NPV, sekundárně nejkratší návratnost."""
+    npv = r.get("npv_kc", float("-inf"))
+    nav = r.get("navratnost_roky")
+    return (-npv, nav if nav is not None else float("inf"))
+
+
+def kandidatni_velikosti(
+    casy: list[datetime],
+    spotreba_kwh: list[float],
+    base_vyroba_1kwp: list[float],
+    max_kwp: float | None = None,
+    pocet: int = 40,
+) -> list[int]:
+    """Řada kandidátních velikostí (kWp) pro ekonomický sweep (kap. 4.7).
+
+    Horní mez = `_MAX_POMER_VYROBA_SPOTREBA`× roční spotřeby (příp. `max_kwp`).
+    Rovnoměrný krok, zaokrouhleno na celé kWp, unikátní, min. 1 kWp.
+    """
+    prod_per_kwp = sum(base_vyroba_1kwp)
+    e_spotreba = sum(spotreba_kwh)
+    if prod_per_kwp <= 0 or e_spotreba <= 0:
+        return []
+    cap = _MAX_POMER_VYROBA_SPOTREBA * e_spotreba / prod_per_kwp
+    if max_kwp and max_kwp > 0:
+        cap = min(cap, max_kwp)
+    cap = max(cap, 5.0)
+    krok = max(1, round(cap / pocet))
+    return sorted({k for k in range(krok, int(cap) + 1, krok) if k >= 1})
+
+
+def vyber_velikost(
+    sablona: VstupPPA,
+    casy: list[datetime],
+    spotreba_kwh: list[float],
+    kwp_kandidati: list[int],
+    capex_fn,
+    base_vyroba_1kwp: list[float] | None = None,
+) -> list[dict]:
+    """Ekonomický sweep velikostí FVE (kap. 4.7 – zvolený režim „nejlepší ekonomika“).
+
+    Pro každou kandidátní velikost dopočítá CAPEX (`capex_fn(kwp) -> (capex, rozpad)`),
+    spustí plný výpočet a seřadí výsledky podle ekonomiky (nejvyšší NPV, pak nejkratší
+    návratnost). Vrací seznam výsledků (`popis_json` jednotlivých velikostí), nejlepší
+    první. Výroba se počítá jednou pro 1 kWp a jen se škáluje (výroba je v kWp lineární).
+    """
+    base1 = base_vyroba_1kwp
+    if base1 is None:
+        base1 = simuluj_vyrobu(
+            casy, 1.0, sablona.lat, sablona.sklon_st, sablona.azimut_st, sablona.merny_vynos_kwh_kwp
+        )
+    vysledky: list[dict] = []
+    for kwp in kwp_kandidati:
+        if kwp <= 0:
+            continue
+        capex, rozpad = capex_fn(kwp)
+        vstup = dataclasses.replace(sablona, kwp=float(kwp), capex_kc=float(capex), capex_rozpad=rozpad)
+        vyroba1 = [x * kwp for x in base1]
+        vysledky.append(spocti_ppa(vstup, casy, spotreba_kwh, vyroba_rok1_override=vyroba1))
+    vysledky.sort(key=_skore_ekonomiky)
+    return vysledky
