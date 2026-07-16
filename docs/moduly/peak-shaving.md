@@ -78,22 +78,27 @@ a VVN chybělo). Seed je idempotentní; do už existujících řádků navíc:
   s dovětkem o zdroji do poznámky — ruční úpravy adminem nikdy nepřepíše.
 
 ### 3.1 `stara_2026` (ostrá čísla, platnost 2026-01-01 – 2026-12-31)
-| DSO | Hladina | roční RK [Kč/kW/rok] | `cena_mesicni_rk_kc_kw_mesic` | `cena_prekroceni_kc_kw` |
+| DSO | Hladina | roční RK [Kč/kW/rok] | `cena_mesicni_rk_kc_kw_mesic` | pokuta za překročení RK (odvozená 1,5×) |
 |---|---|---|---|---|
-| ČEZ | VN | **3 030,78** (= 252,565 × 12) | 281,823 | 1 108 |
-| ČEZ | VVN | **1 409,18** (= 117,432 × 12) | 131,036 | 521 |
-| EG.D | VN | 2 766,61 (= 230,551 × 12) | 254,260 | 1 108 |
-| EG.D | VVN | 1 329,91 (= 110,826 × 12) | 122,223 | 521 |
-| PRE | VN | 3 253,12 (= 271,093 × 12) | 299,351 | 1 108 |
-| PRE | VVN | 1 554,96 (= 129,580 × 12) | 143,087 | 521 |
+| ČEZ | VN | **3 030,78** (= 252,565 × 12) | 281,823 | 422,73 |
+| ČEZ | VVN | **1 409,18** (= 117,432 × 12) | 131,036 | 196,55 |
+| EG.D | VN | 2 766,61 (= 230,551 × 12) | 254,260 | 381,39 |
+| EG.D | VVN | 1 329,91 (= 110,826 × 12) | 122,223 | 183,33 |
+| PRE | VN | 3 253,12 (= 271,093 × 12) | 299,351 | 449,03 |
+| PRE | VVN | 1 554,96 (= 129,580 × 12) | 143,087 | 214,63 |
 
 > **Pozn. k jednotce:** výměr uvádí Kč/kW/**měsíc**; klíč `*_kc_kw_rok` je roční
 > sazba (vzorec kap. 4.1 násobí jednou) → ukládá se ×12 z měsíční ceny za
 > **roční** RK. `cena_mesicni_rk_kc_kw_mesic` je cena jiného produktu —
-> **měsíční** RK (potřeba pro pokuty dle bodu 4.24 a kombinaci roční+měsíční RK).
-> **Pozn. k pokutě:** hodnoty 1 108/521 jsou ceny za překročení rezervovaného
-> **výkonu** (dodávka do sítě, bod 4.38) — mechanismus pokut za překročení RK
-> přepracovává bughunt PS-2 (1,5× měsíční cena měsíční RK).
+> **měsíční** RK.
+> **Pozn. k pokutě (bughunt PS-2):** pokuta za překročení RK se v sazebníku
+> **nedrží jako samostatné číslo** — výpočet ji odvozuje jako **1,5× měsíční
+> cena měsíční RK** (bod 4.24 výměru, `peak_shaving.pokuta_prekroceni_rk_kc_kw`),
+> aby se při roční aktualizaci sazeb nemohla rozjet. Původní seed hodnoty
+> 1 108/521 Kč/kW/měs byly ceny za překročení rezervovaného **výkonu** (dodávka
+> do sítě, bod 4.38) — backfill je z produkční DB cíleně odstraňuje. Starší klíč
+> `cena_prekroceni_kc_kw` funguje už jen jako fallback ručně založených sazeb
+> (výstup pak nese upozornění).
 
 ### 3.2 `nova_2027` (MODELOVÝ ODHAD, `je_modelovy_odhad = true`, platné od 2027-01-01)
 Čísla z **informativního CV ERÚ k NTS (5/2026)** — nejsou finální, závazný
@@ -141,13 +146,16 @@ projde celý rok bez překročení. Udržitelnost je monotónní v `T`. Výslede
 
 ### 4.4 Ekonomika 2026 (`stara_2026`, kap. 4.1–4.4)
 ```
+pokuta_kc_kw           = 1,5 × cena_mesicni_rk_kc_kw_mesic          (bod 4.24 výměru, PS-2)
 náklad_rezervace_před  = aktuální_RP × cena_rezervovana_kapacita_kc_kw_rok
-náklad_překročení_před = Σ_měsíce max(0, měsíční_max − aktuální_RP) × cena_prekroceni_kc_kw
+náklad_překročení_před = Σ_měsíce max(0, měsíční_max − aktuální_RP) × pokuta_kc_kw
 současný_náklad        = náklad_rezervace_před + náklad_překročení_před
 
 nový_náklad            = T × cena_rezervovana_kapacita_kc_kw_rok    (po baterii je překročení 0)
 roční_úspora_2026      = současný_náklad − nový_náklad
 ```
+Použitá sazba pokuty se pro dohledatelnost ukládá do výstupu
+(`sazby.cena_prekroceni_kc_kw_pouzita` + `pokuta_odvozena_z_mesicni_rk`).
 
 ### 4.5 Ekonomika 2027 (`nova_2027`, kap. 4.6 + 4.8)
 Dvousložkový tarif, každý měsíc se ex post použije **levnější** z T1/T2.

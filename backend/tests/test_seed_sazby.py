@@ -51,8 +51,9 @@ def test_stara_2026_sazby_odpovidaji_vymeru(klic):
     p = r["parametry"]
     assert p["cena_rezervovana_kapacita_kc_kw_rok"] == pytest.approx(rocni, abs=0.005)
     assert p["cena_mesicni_rk_kc_kw_mesic"] == pytest.approx(mesicni, abs=1e-9)
-    # PS-1 nemění mechanismus pokut (to řeší PS-2) – klíč musí být vyplněný.
-    assert p["cena_prekroceni_kc_kw"] is not None
+    # Pokuta za překročení RK se odvozuje výpočtem (1,5× měsíční RK, PS-2)
+    # a v sazebníku se jako samostatné číslo nedrží.
+    assert "cena_prekroceni_kc_kw" not in p
     assert str(r["platne_od"]) == "2026-01-01"
     assert str(r["platne_do"]) == "2026-12-31"
     assert not r.get("je_modelovy_odhad", False)
@@ -131,14 +132,17 @@ def test_doplneni_chybejicich_je_idempotentni():
     assert podruhe == jednou
 
 
-OPRAVA_CEZ_VN = next(
-    o
-    for o in seed._BACKFILL_OPRAVY
-    if o["napetova_hladina"] == "vn" and o["klic"] == "cena_rezervovana_kapacita_kc_kw_rok"
-)
-OPRAVA_CEZ_VVN = next(
-    o for o in seed._BACKFILL_OPRAVY if o["napetova_hladina"] == "vvn"
-)
+def _oprava(hladina: str, klic: str) -> dict:
+    return next(
+        o
+        for o in seed._BACKFILL_OPRAVY
+        if o["napetova_hladina"] == hladina and o["klic"] == klic
+    )
+
+
+OPRAVA_CEZ_VN = _oprava("vn", "cena_rezervovana_kapacita_kc_kw_rok")
+OPRAVA_CEZ_VVN = _oprava("vvn", "cena_rezervovana_kapacita_kc_kw_rok")
+OPRAVA_POKUTA_VN = _oprava("vn", "cena_prekroceni_kc_kw")
 
 
 def test_oprava_prepise_presne_znamou_chybnou_hodnotu_a_doplni_poznamku():
@@ -174,3 +178,24 @@ def test_oprava_doplni_nedohledanou_vvn_hodnotu():
     assert zmena is True
     assert out["cena_rezervovana_kapacita_kc_kw_rok"] == 1409.18
     assert "1409,18" in poznamka
+
+
+def test_oprava_odstrani_chybnou_pokutu_z_puvodniho_seedu():
+    # PS-2: 1108 Kč/kW/měs = překročení rezervovaného VÝKONU, do sazebníku
+    # nepatří (pokuta za RK se odvozuje 1,5× z měsíční RK).
+    parametry = {"cena_rezervovana_kapacita_kc_kw_rok": 3030.78, "cena_prekroceni_kc_kw": 1108.0}
+    out, poznamka, zmena = seed.aplikuj_opravu(parametry, "pozn.", OPRAVA_POKUTA_VN)
+    assert zmena is True
+    assert "cena_prekroceni_kc_kw" not in out
+    assert out["cena_rezervovana_kapacita_kc_kw_rok"] == 3030.78
+    assert "1,5× měsíční RK" in poznamka
+    # Idempotence: druhé spuštění už nic nemění.
+    out2, _, zmena2 = seed.aplikuj_opravu(out, poznamka, OPRAVA_POKUTA_VN)
+    assert zmena2 is False and out2 == out
+
+
+def test_oprava_nesahne_na_rucne_zadanou_pokutu():
+    parametry = {"cena_prekroceni_kc_kw": 900.0}  # admin zadal vlastní hodnotu
+    out, poznamka, zmena = seed.aplikuj_opravu(parametry, "", OPRAVA_POKUTA_VN)
+    assert zmena is False
+    assert out["cena_prekroceni_kc_kw"] == 900.0

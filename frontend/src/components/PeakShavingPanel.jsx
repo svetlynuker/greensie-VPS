@@ -75,11 +75,14 @@ export default function PeakShavingPanel({ nabidka }) {
   const sazba = (sazby || []).find(
     (s) => s.distributor === distributor && s.napetova_hladina === hladina && s.struktura_tarifu === "stara_2026"
   );
+  // Pokuta za překročení se odvozuje z měsíční RK (1,5×, bod 4.24 výměru);
+  // starší pole cena_prekroceni_kc_kw drží jen ručně založené sazby.
   const sazbaOk =
     sazba &&
     sazba.parametry &&
     sazba.parametry.cena_rezervovana_kapacita_kc_kw_rok != null &&
-    sazba.parametry.cena_prekroceni_kc_kw != null;
+    (sazba.parametry.cena_mesicni_rk_kc_kw_mesic != null ||
+      sazba.parametry.cena_prekroceni_kc_kw != null);
   const profilOk = souhrn && souhrn.pocet > 0;
   const rezOk = Number(String(rezKap).replace(",", ".")) > 0;
 

@@ -50,8 +50,10 @@ const NAZEV_STRUKTURY = Object.fromEntries(STRUKTURY.map((s) => [s.klic, s.nazev
 // Parametry (ceny) podle struktury tarifu – klíče musí sedět s backendem.
 const POLE_PARAMETRU = {
   stara_2026: [
-    { klic: "cena_rezervovana_kapacita_kc_kw_rok", label: "Rezervovaná kapacita (Kč/kW/rok)" },
-    { klic: "cena_prekroceni_kc_kw", label: "Pokuta za překročení (Kč/kW/měsíc)" },
+    { klic: "cena_rezervovana_kapacita_kc_kw_rok", label: "Roční RK (Kč/kW/rok = 12× měsíční cena roční RK)" },
+    // Pokuta za překročení RK se NEzadává – odvozuje se výpočtem jako
+    // 1,5× měsíční RK (bod 4.24 výměru ERÚ; audit 16. 7. 2026, PS-2).
+    { klic: "cena_mesicni_rk_kc_kw_mesic", label: "Měsíční RK (Kč/kW/měsíc; pokuta za překročení = 1,5×)" },
   ],
   nova_2027: [
     { klic: "t1_kapacita_kc_kw_mesic", label: "Tarif T1 – kapacita (Kč/kW/měsíc)" },

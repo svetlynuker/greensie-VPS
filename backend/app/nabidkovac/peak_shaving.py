@@ -37,6 +37,21 @@ VYCHOZI_MAX_POCET_KUSU = 5
 # přesností, se kterou se sjednává rezervovaná kapacita.
 _BINARNI_TOLERANCE_KW = 0.01
 
+# Překročení rezervované kapacity (bod 4.24 CV ERÚ): platba = 1,5× měsíční
+# cena za MĚSÍČNÍ rezervovanou kapacitu za každý kW nejvyššího čtvrthodinového
+# překročení v kalendářním měsíci.
+NASOBEK_POKUTY_PREKROCENI_RK = 1.5
+
+
+def pokuta_prekroceni_rk_kc_kw(cena_mesicni_rk_kc_kw_mesic: float) -> float:
+    """Sazba pokuty za překročení RK (Kč/kW/měsíc) odvozená z měsíční RK.
+
+    Bod 4.24 cenového výměru ERÚ: 1,5× měsíční cena za měsíční RK. Odvozuje se
+    výpočtem (ne samostatným číslem v sazebníku), aby se při roční aktualizaci
+    sazeb nemohla rozjet od cen RK (audit 16. 7. 2026, bughunt PS-2).
+    """
+    return NASOBEK_POKUTY_PREKROCENI_RK * cena_mesicni_rk_kc_kw_mesic
+
 
 # ------------------------------------------------------------------ simulace
 def _max_udrzitelny_vyboj(soc_kwh: float, vykon_kw: float, interval_h: float) -> float:

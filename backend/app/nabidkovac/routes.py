@@ -897,14 +897,39 @@ def spocti_peak_shaving(
         )
     p2026 = sazba_2026.parametry
     cena_rezervace = p2026.get("cena_rezervovana_kapacita_kc_kw_rok")
-    cena_prekroceni = p2026.get("cena_prekroceni_kc_kw")
-    if cena_rezervace is None or cena_prekroceni is None:
+    if cena_rezervace is None:
         raise HTTPException(
             status_code=422,
             detail=(
                 f"Sazba stara_2026 pro {vstup.distributor}/{vstup.napetova_hladina} nemá "
-                "vyplněnou cenu rezervované kapacity nebo pokutu za překročení "
-                "(u této kombinace se hodnota teprve dohledává – doplň v adminu)."
+                "vyplněnou cenu rezervované kapacity – doplň ji v adminu."
+            ),
+        )
+
+    # Pokuta za překročení RK se ODVOZUJE z měsíční RK (bod 4.24 výměru:
+    # 1,5× měsíční cena měsíční RK), ne ze samostatného čísla v sazebníku –
+    # audit 16. 7. 2026, PS-2. Starší klíč cena_prekroceni_kc_kw slouží jen
+    # jako fallback pro ručně založené sazby bez měsíční RK.
+    upozorneni_sazeb: list[str] = []
+    cena_mesicni_rk = p2026.get("cena_mesicni_rk_kc_kw_mesic")
+    if cena_mesicni_rk is not None:
+        cena_prekroceni = peak_shaving.pokuta_prekroceni_rk_kc_kw(float(cena_mesicni_rk))
+        pokuta_odvozena = True
+    elif p2026.get("cena_prekroceni_kc_kw") is not None:
+        cena_prekroceni = float(p2026["cena_prekroceni_kc_kw"])
+        pokuta_odvozena = False
+        upozorneni_sazeb.append(
+            "Sazba nemá vyplněnou měsíční RK – pokuta za překročení převzata "
+            "ze staršího pole sazebníku. Doplň měsíční RK v adminu (pokuta se "
+            "pak správně odvodí jako 1,5× měsíční RK dle bodu 4.24 výměru)."
+        )
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Sazba stara_2026 pro {vstup.distributor}/{vstup.napetova_hladina} nemá "
+                "vyplněnou měsíční RK (Kč/kW/měsíc) – bez ní nejde odvodit pokuta "
+                "za překročení (1,5× měsíční RK). Doplň ji v adminu."
             ),
         )
 
@@ -982,15 +1007,18 @@ def spocti_peak_shaving(
             "nova_2027_id": (sazba_2027.id if sazba_2027 is not None else None),
             "sazby_2027_k_dispozici": bool(parametry_2027),
             "sazby_2027_modelovy_odhad": je_modelovy_2027,
+            # Transparentnost pokuty (PS-2): jaká sazba se použila a odkud je.
+            "cena_prekroceni_kc_kw_pouzita": round(float(cena_prekroceni), 4),
+            "pokuta_odvozena_z_mesicni_rk": pokuta_odvozena,
         },
         "max_navratnost_roky": max_navratnost,
         "doporucena": (_varianta_json(vysledek.doporucena) if vysledek.doporucena else None),
         # 2.–3. nejlepší varianta pro srovnání (kap. 5) – vítěz je [0].
         "varianty": [_varianta_json(v) for v in vysledek.varianty[:3]],
-        "upozorneni": vysledek.upozorneni,
+        "upozorneni": list(vysledek.upozorneni) + upozorneni_sazeb,
     }
     if not parametry_2027:
-        popis_json["upozorneni"] = list(vysledek.upozorneni) + [
+        popis_json["upozorneni"] = popis_json["upozorneni"] + [
             "Ekonomika roku 2027: čeká se na oficiální sazby ERÚ."
         ]
 

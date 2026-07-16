@@ -42,6 +42,14 @@ výpočty u ČEZ.
 
 ## PS-2 ⛔ P0 — Záměna mechanismu pokut: použité ceny platí pro překročení rezervovaného VÝKONU (směr do sítě), ne KAPACITY
 
+> ✅ **Vyřešeno 16. 7. 2026** — commit `fix(peak-shaving): pokuta za překročení RK = 1,5× měsíční RK (PS-2)`
+> na větvi `bughunt-opravy-p0`. Pokuta se odvozuje výpočtem
+> (`peak_shaving.pokuta_prekroceni_rk_kc_kw` = 1,5× `cena_mesicni_rk_kc_kw_mesic`),
+> v sazebníku se samostatné číslo nedrží; chybné 1108/521 odstraní backfill
+> (jen přesnou shodu). Starší klíč funguje jako fallback ručních sazeb
+> s upozorněním ve výstupu. Admin UI zadává měsíční RK místo pokuty.
+> Testy: `test_peak_shaving.py::TestPokutaPrekroceniRk`, `test_seed_sazby.py`.
+
 **Kde:** `seed.py` (`_POKUTA_VN = 1108`, `_POKUTA_VVN = 521`), používá
 `vychozi_rocni_naklad_2026()` v `peak_shaving.py`.
 
