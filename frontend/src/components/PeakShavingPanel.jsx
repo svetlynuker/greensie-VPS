@@ -45,6 +45,7 @@ function VariantaRadek({ v, hlavni }) {
       <td>{kc(v.rocni_uspora_2026_kc)}</td>
       <td>{kc(v.cena_celkem_kc)}</td>
       <td>{roky(v.navratnost_roky)}</td>
+      <td>{v.npv_kc != null ? kc(v.npv_kc) : "—"}</td>
     </tr>
   );
 }
@@ -267,6 +268,17 @@ export default function PeakShavingPanel({ nabidka }) {
                     {kw(dop.celkovy_vykon_kw)} / {dop.celkova_kapacita_kwh?.toLocaleString("cs-CZ")} kWh · {kc(dop.cena_celkem_kc)}
                   </div>
                 </div>
+                {dop.npv_kc != null && (
+                  <div className="gs-kpi">
+                    <div className="gs-kpi-label">NPV ({dop.npv_horizont_roky} let)</div>
+                    <div className="gs-kpi-value">{kc(dop.npv_kc)}</div>
+                    <div className="gs-kpi-sub">
+                      {dop.irr != null ? `IRR ${Math.round(dop.irr * 100)} % · ` : ""}
+                      {dop.npv_pouzit_model_2027 ? "rok 1 tarif 2026, dál NTS 2027" : "celý horizont model 2026"}
+                      {" · řídí výběr varianty"}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="fm-card" style={{ padding: 14, marginBottom: 14 }}>
@@ -431,7 +443,7 @@ export default function PeakShavingPanel({ nabidka }) {
                   <div className="nb-scroll">
                     <table className="nb-table">
                       <thead>
-                        <tr><th>Baterie</th><th>Výkon / kapacita</th><th>Nová rez.</th><th>Úspora/rok</th><th>Cena</th><th>Návratnost 2026</th></tr>
+                        <tr><th>Baterie</th><th>Výkon / kapacita</th><th>Nová rez.</th><th>Úspora/rok</th><th>Cena</th><th>Návratnost</th><th>NPV</th></tr>
                       </thead>
                       <tbody>
                         {vysledek.varianty.map((v, i) => (

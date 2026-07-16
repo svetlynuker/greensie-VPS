@@ -98,6 +98,11 @@ const PS_POLE = [
   { klic: "ps_cena_energie_kc_mwh", label: "Cena energie pro ztráty baterie (Kč/MWh, default 3000)" },
   // Rezerva sjednané RK nad nalezený strop (PS-6).
   { klic: "ps_rezerva_rk_procenta", label: "Rezerva RK nad strop (%, default 5)" },
+  // NPV ekonomika baterie (PS-8/PS-9) – řídí výběr vítěze.
+  { klic: "ps_diskontni_sazba", label: "Diskont NPV baterie (default 0.08)" },
+  { klic: "ps_horizont_npv_roky", label: "Horizont NPV (roky, default 10)" },
+  { klic: "ps_oam_procenta_capex_rok", label: "O&M baterie (% CAPEX/rok, default 2)" },
+  { klic: "ps_degradace_uspor_procenta_rok", label: "Degradace úspor (%/rok, default 1.5)" },
 ];
 
 function num(v) {

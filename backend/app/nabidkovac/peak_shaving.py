@@ -47,6 +47,14 @@ VYCHOZI_CENA_ENERGIE_KC_MWH = 3000.0
 # 5–15 %; default 5 % (manažerský parametr `ps_rezerva_rk_procenta`).
 VYCHOZI_REZERVA_RK_PROCENTA = 5.0
 
+# NPV ekonomika baterie (audit PS-8/PS-9, rozhodnuto 16. 7. 2026): baterie
+# kupovaná v H2 2026 prožije životnost v NTS 2027+ → cash flow = rok 1 přínos
+# dle modelu 2026, roky 2+ dle modelu 2027 (bez AKU); vítěz se řadí dle NPV.
+VYCHOZI_PS_DISKONT = 0.08
+VYCHOZI_PS_HORIZONT_ROKY = 10
+VYCHOZI_PS_OAM_PROCENTA_CAPEX = 2.0  # O&M % z CAPEX za rok
+VYCHOZI_PS_DEGRADACE_USPOR_PROCENTA = 1.5  # pokles přínosu %/rok (degradace baterie)
+
 # Výchozí práh nedoporučené návratnosti (kap. 4.5, bod 3 v kap. 6). Reálně se
 # bere z vypoctova_nastaveni.parametry["max_navratnost_roky_peak_shaving"],
 # tohle je fallback, když parametr chybí.
@@ -595,6 +603,42 @@ def graf_maxima(
 
 # ---------------------------------------------- výběr varianty (kap. 4.5)
 @dataclass
+class NastaveniNpv:
+    """Parametry NPV ekonomiky baterie (audit PS-9); vše z manažerského nastavení."""
+
+    diskontni_sazba: float = VYCHOZI_PS_DISKONT
+    horizont_roky: int = VYCHOZI_PS_HORIZONT_ROKY
+    oam_procenta_capex_rok: float = VYCHOZI_PS_OAM_PROCENTA_CAPEX
+    degradace_uspor_procenta_rok: float = VYCHOZI_PS_DEGRADACE_USPOR_PROCENTA
+
+
+def _npv_baterie(
+    cena_kc: float,
+    prinos_2026_kc: float,
+    prinos_2027_kc: float | None,
+    n: NastaveniNpv,
+) -> tuple[float, float | None, list[float], bool]:
+    """NPV/IRR baterie na horizontu životnosti (audit PS-8/PS-9).
+
+    Cash flow: rok 1 = přínos dle modelu 2026 (tarif platí do konce 2026),
+    roky 2+ = přínos dle modelu 2027 (NTS). Bez sazeb 2027 se konzervativně
+    použije model 2026 pro celý horizont (a příznak to hlásí). Přínos klesá
+    degradací úspor, O&M = % z CAPEX ročně. NPV/IRR sdílí vzorce s PPA modulem.
+    Vrací (npv, irr, cash_flow, pouzit_model_2027).
+    """
+    from app.nabidkovac.ppa_fve import _irr, _npv  # sdílené finanční vzorce (PS-9)
+
+    pouzit_2027 = prinos_2027_kc is not None
+    oam = cena_kc * max(0.0, n.oam_procenta_capex_rok) / 100.0
+    degradace = max(0.0, n.degradace_uspor_procenta_rok) / 100.0
+    cf: list[float] = []
+    for rok in range(1, max(1, n.horizont_roky) + 1):
+        zaklad = prinos_2026_kc if (rok == 1 or not pouzit_2027) else prinos_2027_kc
+        cf.append(zaklad * (1.0 - degradace) ** (rok - 1) - oam)
+    return _npv(cf, cena_kc, n.diskontni_sazba), _irr(cf, cena_kc), cf, pouzit_2027
+
+
+@dataclass
 class Baterie:
     """Jeden produkt z katalogu `technologie` (typ = baterie).
 
@@ -636,18 +680,24 @@ class Varianta:
     navratnost_roky: float | None  # None = přínos ≤ 0 (nekonečná návratnost)
     # Návratnost podle jednotlivých modelů (kap. 4.5/4.6). Od PS-7 se počítá
     # z PŘÍNOSU BATERIE (proti optimalizované RK), ne z celkové úspory.
-    navratnost_2026: float | None  # dle přínosu baterie 2026 (výběr varianty)
+    navratnost_2026: float | None  # dle přínosu baterie 2026
     navratnost_2027: float | None  # dle úspory 2027 (jediný model, bez slevy AKU – PS-3)
+    # NPV na horizontu životnosti (audit PS-8/PS-9) – řídí výběr vítěze.
+    npv_kc: float
+    irr: float | None
+    npv_horizont_roky: int
+    npv_pouzit_model_2027: bool
     ekonomika_2026: dict
     ekonomika_2027: dict
     doporuceno: bool
 
     def _radici_klic(self) -> tuple:
-        # Řadíme podle nejkratší návratnosti; varianty bez kladné úspory
-        # (navratnost None) padají na konec.
-        if self.navratnost_roky is None:
-            return (1, float("inf"))
-        return (0, self.navratnost_roky)
+        # Vítěze řadí NPV na horizontu životnosti (PS-8: tarif 2026 platí jen
+        # do konce roku); prostá návratnost je jen sekundární tie-break.
+        return (
+            -self.npv_kc,
+            self.navratnost_roky if self.navratnost_roky is not None else float("inf"),
+        )
 
 
 @dataclass
@@ -683,8 +733,9 @@ def spocti_variantu(
     rezervovany_prikon_kw: float | None = None,
     uvazovat_snizeni_rp: bool = False,
     cena_mesicni_rk_kc_kw_mesic: float | None = None,
+    npv_nastaveni: NastaveniNpv | None = None,
 ) -> Varianta:
-    """Spočítá jednu variantu (produkt × počet kusů): kap. 4.2–4.6 + PS-4/5/6/7."""
+    """Spočítá jednu variantu (produkt × počet kusů): kap. 4.2–4.6 + PS-4…9."""
     vykon = baterie.vykon_kw * pocet_kusu
     kapacita = baterie.kapacita_kwh * pocet_kusu
     # Simulace jede na využitelné kapacitě (SOC okno 10–95 %) a se ztrátami
@@ -738,9 +789,16 @@ def spocti_variantu(
 
     # Návratnost dle modelu 2027 (jediný model – bez slevy AKU, PS-3).
     if ek_2027.get("status") == "spocitano":
-        navratnost_2027 = _navratnost(cena, ek_2027.get("rocni_uspora", 0.0))
+        prinos_2027 = ek_2027.get("rocni_uspora", 0.0)
+        navratnost_2027 = _navratnost(cena, prinos_2027)
     else:
+        prinos_2027 = None
         navratnost_2027 = None
+
+    # NPV na horizontu životnosti (PS-8/PS-9): rok 1 = model 2026, dál 2027.
+    npv, irr, _, npv_pouzit_2027 = _npv_baterie(
+        cena, ek.prinos_baterie, prinos_2027, npv_nastaveni or NastaveniNpv()
+    )
 
     doporuceno = navratnost is not None and navratnost <= max_navratnost_roky
     return Varianta(
@@ -761,6 +819,10 @@ def spocti_variantu(
         navratnost_roky=navratnost,
         navratnost_2026=navratnost,
         navratnost_2027=navratnost_2027,
+        npv_kc=npv,
+        irr=irr,
+        npv_horizont_roky=(npv_nastaveni or NastaveniNpv()).horizont_roky,
+        npv_pouzit_model_2027=npv_pouzit_2027,
         ekonomika_2026=ek.__dict__,
         ekonomika_2027=ek_2027,
         doporuceno=doporuceno,
@@ -784,14 +846,17 @@ def vyber_reseni(
     rezervovany_prikon_kw: float | None = None,
     uvazovat_snizeni_rp: bool = False,
     cena_mesicni_rk_kc_kw_mesic: float | None = None,
+    npv_nastaveni: NastaveniNpv | None = None,
 ) -> VysledekPeakShaving:
-    """Kap. 4.5: projede všechny produkty × počty kusů a vybere nejrychlejší návratnost.
+    """Kap. 4.5 + PS-8/PS-9: projede produkty × počty kusů, vítěze řadí dle NPV.
 
     Pro každý produkt zkoušíme počty kusů 1..N a bereme jen ten nejlepší počet
     (další kusy už jen prodražují – přírůstek úspory je omezený tím, že strop
-    nemůže klesnout pod fyzikální minimum profilu). Vítěz = nejkratší návratnost.
-    Pokud ani nejlepší varianta nedosáhne prahu `max_navratnost_roky`, vrátí se
-    stejně, ale s `doporuceno = False` (kap. 4.5 – "nezmizí, jen nedoporučeno").
+    nemůže klesnout pod fyzikální minimum profilu). Vítěz = nejvyšší NPV na
+    horizontu životnosti (rok 1 model 2026, roky 2+ model 2027); prostá
+    návratnost z přínosu baterie je sekundární tie-break a řídí práh
+    `max_navratnost_roky` (nedosažení prahu variantu neskryje, jen ji označí
+    `doporuceno = False` – kap. 4.5).
     """
     vysledek = VysledekPeakShaving()
     if not profil_kw:
@@ -822,6 +887,7 @@ def vyber_reseni(
                 rezervovany_prikon_kw,
                 uvazovat_snizeni_rp,
                 cena_mesicni_rk_kc_kw_mesic,
+                npv_nastaveni,
             )
             if nejlepsi is None or v._radici_klic() < nejlepsi._radici_klic():
                 nejlepsi = v

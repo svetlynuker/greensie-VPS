@@ -232,6 +232,13 @@ měsíční RK (sezónnost) — další úspora bez investice.
 
 ## PS-8 ⚠️ P2 — Výběr vítěze řídí tarif 2026, který platí jen do konce roku 2026
 
+> ✅ **Vyřešeno 16. 7. 2026** — commit `fix(peak-shaving): výběr vítěze dle NPV na horizontu životnosti (PS-8, PS-9)`
+> na větvi `bughunt-opravy-p0`. Cash flow: rok 1 = model 2026, roky 2+ = model
+> 2027 (NTS, bez AKU); vítěz dle NPV, prostá návratnost jen tie-break + práh
+> doporučení. Bez sazeb 2027 konzervativní fallback na model 2026 s příznakem.
+> Modelovost NTS drží existující `je_modelovy_odhad`.
+> Testy: `test_peak_shaving.py::TestNpvBaterie` + `TestFairBaseline::test_npv_ridi_vyber`.
+
 **Kde:** `vyber_reseni()` / `Varianta._radici_klic()` — řadí podle `navratnost_roky`
 (= model 2026).
 
@@ -246,6 +253,13 @@ existuje a funguje dobře).
 ---
 
 ## PS-9 ⚠️ P2 — Prostá návratnost bez diskontu, O&M, degradace a životnosti
+
+> ✅ **Vyřešeno 16. 7. 2026** — commit `fix(peak-shaving): výběr vítěze dle NPV na horizontu životnosti (PS-8, PS-9)`
+> na větvi `bughunt-opravy-p0`. NPV/IRR sdílí vzorce s PPA modulem; defaulty
+> dle rozhodnutí: diskont 8 %, horizont 10 let, O&M 2 % CAPEX/rok, degradace
+> úspor 1,5 %/rok (vše v manažerském nastavení). Ztráty baterie (PS-5) jsou
+> v přínosech. Prostá návratnost zůstává zobrazená doplňkově.
+> Testy: `test_peak_shaving.py::TestNpvBaterie`.
 
 **Kde:** `_navratnost()` = cena/úspora; žádné O&M, diskont, degradace úspor, životnost.
 

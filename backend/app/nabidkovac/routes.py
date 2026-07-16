@@ -870,6 +870,11 @@ def _varianta_json(v: peak_shaving.Varianta) -> dict:
         "navratnost_2027": (
             round(v.navratnost_2027, 2) if v.navratnost_2027 is not None else None
         ),
+        # NPV na horizontu životnosti (PS-8/PS-9) – řídí výběr vítěze.
+        "npv_kc": round(v.npv_kc, 2),
+        "irr": round(v.irr, 4) if v.irr is not None else None,
+        "npv_horizont_roky": v.npv_horizont_roky,
+        "npv_pouzit_model_2027": v.npv_pouzit_model_2027,
         "doporuceno": v.doporuceno,
         "ekonomika_2026": {
             k: (round(x, 2) if isinstance(x, float) else x) for k, x in v.ekonomika_2026.items()
@@ -1040,6 +1045,28 @@ def spocti_peak_shaving(
     if rezerva_rk is None:
         rezerva_rk = peak_shaving.VYCHOZI_REZERVA_RK_PROCENTA
 
+    # NPV parametry (audit PS-8/PS-9): diskont, horizont, O&M, degradace úspor.
+    def _ps_param(klic: str, default: float) -> float:
+        if aktualni_nastaveni is not None and aktualni_nastaveni.parametry:
+            hodnota = aktualni_nastaveni.parametry.get(klic)
+            if hodnota is not None:
+                try:
+                    return float(hodnota)
+                except (TypeError, ValueError):
+                    pass
+        return default
+
+    npv_nastaveni = peak_shaving.NastaveniNpv(
+        diskontni_sazba=_ps_param("ps_diskontni_sazba", peak_shaving.VYCHOZI_PS_DISKONT),
+        horizont_roky=int(_ps_param("ps_horizont_npv_roky", peak_shaving.VYCHOZI_PS_HORIZONT_ROKY)),
+        oam_procenta_capex_rok=_ps_param(
+            "ps_oam_procenta_capex_rok", peak_shaving.VYCHOZI_PS_OAM_PROCENTA_CAPEX
+        ),
+        degradace_uspor_procenta_rok=_ps_param(
+            "ps_degradace_uspor_procenta_rok", peak_shaving.VYCHOZI_PS_DEGRADACE_USPOR_PROCENTA
+        ),
+    )
+
     # 4) výpočet (kap. 4.2–4.6)
     vysledek = peak_shaving.vyber_reseni(
         baterie_katalog=baterie,
@@ -1061,6 +1088,7 @@ def spocti_peak_shaving(
         cena_mesicni_rk_kc_kw_mesic=(
             float(cena_mesicni_rk) if cena_mesicni_rk is not None else None
         ),
+        npv_nastaveni=npv_nastaveni,
     )
 
     # Upozornění k modelu 2027 (audit PS-4).

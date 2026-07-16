@@ -245,17 +245,31 @@ dřívější „konzervativní bez AKU“. Prahy `u1_ucinnost`/`u2_ucinnost` v 
 zůstávají (předběžné hodnoty, VKP ERÚ 10/2026) pro případné budoucí použití
 u míst s velkým exportem (kombinace PPA + baterie, fáze 2).
 
-### 4.7 Výběr varianty a návratnost (kap. 4.5)
+### 4.7 Výběr varianty: NPV na horizontu životnosti (kap. 4.5 + bughunt PS-8/PS-9)
 - Pro každý produkt z katalogu (`typ = baterie`, dostupný, s výkonem i kapacitou) × počet kusů 1–5.
 - Kus s celkovým výkonem/kapacitou/cenou = jednotka × počet.
-- Vybere se nejlepší počet kusů (přidání kusu, které už nezlepší návratnost, ukončí hledání).
-- **Výběr vítěze řídí návratnost dle modelu 2026** (potvrzený tarif).
-- Práh: pokud nejlepší varianta má návratnost > `max_navratnost_roky_peak_shaving` (výchozí 5 let), vrátí se stejně, ale označená `doporuceno = false`.
+- Vybere se nejlepší počet kusů (přidání kusu, které už nezlepší řadicí klíč, ukončí hledání).
+- **Výběr vítěze řídí NPV na horizontu životnosti** (PS-8: tarif 2026 platí jen
+  do konce roku — baterie kupovaná v H2 2026 prožije životnost v NTS 2027+):
+  ```
+  CF_rok1  = přínos_baterie(model 2026) − O&M
+  CF_rok2+ = přínos(model 2027, bez AKU) × (1 − degradace_úspor)^(rok−1) − O&M
+  NPV      = −cena + Σ CF_k / (1 + diskont)^k        (NPV/IRR sdílené s PPA modulem)
+  ```
+  Defaulty (rozhodnuto 16. 7. 2026, manažerské nastavení): diskont **8 %**
+  (`ps_diskontni_sazba`), horizont **10 let** (`ps_horizont_npv_roky`), O&M
+  **2 % CAPEX/rok** (`ps_oam_procenta_capex_rok`), degradace úspor
+  **1,5 %/rok** (`ps_degradace_uspor_procenta_rok`). Bez sazeb 2027 se
+  konzervativně použije model 2026 pro celý horizont (příznak
+  `npv_pouzit_model_2027`). Dokud platí modelový odhad NTS, je NPV modelové.
+- Práh: pokud nejlepší varianta má prostou návratnost > `max_navratnost_roky_peak_shaving`
+  (výchozí 5 let), vrátí se stejně, ale označená `doporuceno = false`.
 
-**Návratnost = cena_baterie_celkem / roční_úspora_daného_modelu** (`None`, když úspora ≤ 0). Zobrazují se **dvě návratnosti**:
-| Model | Základ (roční úspora) |
+**Prostá návratnost = cena_baterie_celkem / přínos_daného_modelu** (`None`, když
+přínos ≤ 0) — zobrazuje se doplňkově (PS-9). Dvě návratnosti:
+| Model | Základ |
 |---|---|
-| **2026** | úspora 2026 (řídí výběr varianty) |
+| **2026** | **přínos baterie** proti optimalizované RK (PS-7) |
 | **2027** | úspora 2027 (jediný model — bez slevy AKU, viz 4.6 / bughunt PS-3) |
 
 Starší uložené výsledky nesou pole `navratnost_2027_optim`/`navratnost_2027_konzerv`

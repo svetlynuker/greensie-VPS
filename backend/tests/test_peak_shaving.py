@@ -280,6 +280,36 @@ class TestFairBaseline:
         # konzistence rozpadu
         assert ek.rocni_uspora == pytest.approx(ek.uspora_bez_investice + ek.prinos_baterie)
 
+    def test_npv_ridi_vyber_vitezneho_produktu(self):
+        # Dva produkty: levný s rychlou návratností, ale malým přínosem, vs.
+        # dražší s pomalejší návratností a větším NPV → vítěz dle NPV (PS-8).
+        profil, mesice = [], []
+        for m in range(1, 13):
+            profil += [200.0] * 6 + [400.0] + [200.0] * 5
+            mesice += [m] * 12
+        maly = ps.Baterie(id=1, nazev="Malý", vykon_kw=30.0, kapacita_kwh=100.0, cena_kc=300_000.0, ucinnost_rt=1.0)
+        velky = ps.Baterie(id=2, nazev="Velký", vykon_kw=190.0, kapacita_kwh=600.0, cena_kc=2_400_000.0, ucinnost_rt=1.0)
+        vysledek = ps.vyber_reseni(
+            [maly, velky],
+            profil,
+            mesice,
+            400.0,
+            self.CENA_ROCNI,
+            ps.pokuta_prekroceni_rk_kc_kw(self.CENA_MESICNI),
+            max_navratnost_roky=100.0,
+            max_pocet_kusu=1,
+            cena_energie_kc_mwh=0.0,
+            rezerva_rk_procenta=0.0,
+            cena_mesicni_rk_kc_kw_mesic=self.CENA_MESICNI,
+            npv_nastaveni=ps.NastaveniNpv(
+                diskontni_sazba=0.08, horizont_roky=10,
+                oam_procenta_capex_rok=0.0, degradace_uspor_procenta_rok=0.0,
+            ),
+        )
+        assert vysledek.doporucena is not None
+        npv_vitez = vysledek.doporucena.npv_kc
+        assert all(v.npv_kc <= npv_vitez + 1e-6 for v in vysledek.varianty)
+
     def test_navratnost_varianty_je_z_prinosu_baterie(self):
         profil, mesice = [], []
         for m, maximum in sorted(self.MAXIMA_T5.items()):
@@ -306,6 +336,46 @@ class TestFairBaseline:
         assert v.rocni_uspora_2026 == pytest.approx(
             v.uspora_bez_investice_2026 + v.prinos_baterie_2026
         )
+
+
+# ------------------------------------------------- PS-8/PS-9: NPV baterie
+class TestNpvBaterie:
+    def test_defaulty_dle_rozhodnuti(self):
+        n = ps.NastaveniNpv()
+        assert n.diskontni_sazba == 0.08
+        assert n.horizont_roky == 10
+        assert n.oam_procenta_capex_rok == 2.0
+        assert n.degradace_uspor_procenta_rok == 1.5
+
+    def test_jednoduchy_pripad_bez_diskontu(self):
+        # horizont 2, bez diskontu/O&M/degradace: NPV = přínos26 + přínos27 − cena
+        n = ps.NastaveniNpv(diskontni_sazba=0.0, horizont_roky=2,
+                            oam_procenta_capex_rok=0.0, degradace_uspor_procenta_rok=0.0)
+        npv, irr, cf, pouzit = ps._npv_baterie(500_000.0, 300_000.0, 400_000.0, n)
+        assert cf == [300_000.0, 400_000.0]
+        assert npv == pytest.approx(200_000.0)
+        assert pouzit is True
+
+    def test_rok1_model_2026_dalsi_roky_2027(self):
+        n = ps.NastaveniNpv(diskontni_sazba=0.0, horizont_roky=3,
+                            oam_procenta_capex_rok=0.0, degradace_uspor_procenta_rok=0.0)
+        _, _, cf, _ = ps._npv_baterie(0.0, 100.0, 250.0, n)
+        assert cf == [100.0, 250.0, 250.0]
+
+    def test_oam_a_degradace_snizuji_cf(self):
+        n = ps.NastaveniNpv(diskontni_sazba=0.0, horizont_roky=2,
+                            oam_procenta_capex_rok=2.0, degradace_uspor_procenta_rok=10.0)
+        _, _, cf, _ = ps._npv_baterie(1_000_000.0, 500_000.0, 500_000.0, n)
+        # O&M = 20 000/rok; rok 2 přínos × 0,9
+        assert cf[0] == pytest.approx(500_000.0 - 20_000.0)
+        assert cf[1] == pytest.approx(500_000.0 * 0.9 - 20_000.0)
+
+    def test_bez_sazeb_2027_pouzije_model_2026(self):
+        n = ps.NastaveniNpv(diskontni_sazba=0.0, horizont_roky=3,
+                            oam_procenta_capex_rok=0.0, degradace_uspor_procenta_rok=0.0)
+        npv, _, cf, pouzit = ps._npv_baterie(0.0, 100.0, None, n)
+        assert pouzit is False
+        assert cf == [100.0, 100.0, 100.0]
 
 
 # ------------------------------------------ PS-4: rezervovaný příkon (2027)
