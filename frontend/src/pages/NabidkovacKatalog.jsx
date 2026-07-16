@@ -351,11 +351,12 @@ function SazbaEditor({ sazba, onSave, onClose }) {
     }
     let parametry = null;
     if (!cekaNaEru) {
-      // Poskládej objekt s klíči dané struktury; prázdné pole = null
-      // (např. ČEZ VVN má vyplněnou jen pokutu, rezervace zůstává null).
+      // Poskládej objekt s klíči dané struktury; prázdný input klíč vynechá
+      // (nezapisuje null – uklízí to i legacy klíče, které struktura už nemá).
       parametry = {};
       for (const p of pole) {
-        parametry[p.klic] = num(ceny[p.klic] ?? "");
+        const val = num(ceny[p.klic] ?? "");
+        if (val != null) parametry[p.klic] = val;
       }
     }
     setUklada(true);

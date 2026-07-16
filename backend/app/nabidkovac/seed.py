@@ -176,37 +176,41 @@ _BACKFILL_OPRAVY = (
             "= 1409,18 Kč/kW/rok dle CV č. 13/2025 (ERV 17/2025)."
         ),
     },
-    # Odstranění chybné pokuty (bughunt PS-2): 1108/521 Kč/kW/měs jsou ceny za
-    # překročení rezervovaného VÝKONU (bod 4.38, dodávka do sítě), ne kapacity.
-    # Pokuta za překročení RK se nově odvozuje výpočtem (1,5× měsíční RK).
-    {
-        "distributor": "cez",
-        "napetova_hladina": "vn",
-        "struktura_tarifu": "stara_2026",
-        "platne_od": _PLATNE_OD_2026,
-        "klic": "cena_prekroceni_kc_kw",
-        "chybna": 1108.0,
-        "spravna": None,
-        "poznamka_dodatek": (
-            "OPRAVA (audit 16. 7. 2026): pokuta 1108 Kč/kW/měs patřila překročení "
-            "rezervovaného VÝKONU (bod 4.38); překročení RK se nově odvozuje "
-            "výpočtem jako 1,5× měsíční RK (bod 4.24) = 422,73 Kč/kW/měs."
-        ),
-    },
-    {
-        "distributor": "cez",
-        "napetova_hladina": "vvn",
-        "struktura_tarifu": "stara_2026",
-        "platne_od": _PLATNE_OD_2026,
-        "klic": "cena_prekroceni_kc_kw",
-        "chybna": 521.0,
-        "spravna": None,
-        "poznamka_dodatek": (
-            "OPRAVA (audit 16. 7. 2026): pokuta 521 Kč/kW/měs patřila překročení "
-            "rezervovaného VÝKONU (bod 4.38); překročení RK se nově odvozuje "
-            "výpočtem jako 1,5× měsíční RK (bod 4.24) = 196,55 Kč/kW/měs."
-        ),
-    },
+) + tuple(
+    # Odstranění chybné pokuty (bughunt PS-2) ze VŠECH řádků stara_2026:
+    # 1108/521 Kč/kW/měs jsou ceny za překročení rezervovaného VÝKONU (bod
+    # 4.38, dodávka do sítě), ne kapacity – pokuta za překročení RK se nově
+    # odvozuje výpočtem (1,5× měsíční RK). Druhá varianta (`chybna=None`)
+    # uklízí prázdný pozůstatek klíče (např. po uložení starším admin
+    # formulářem nebo po běhu mezistavu seedu s uvicorn --reload).
+    oprava
+    for (dso, hladina) in sorted(_RK_2026)
+    for oprava in (
+        {
+            "distributor": dso,
+            "napetova_hladina": hladina,
+            "struktura_tarifu": "stara_2026",
+            "platne_od": _PLATNE_OD_2026,
+            "klic": "cena_prekroceni_kc_kw",
+            "chybna": 1108.0 if hladina == "vn" else 521.0,
+            "spravna": None,
+            "poznamka_dodatek": (
+                "OPRAVA (audit 16. 7. 2026): pokuta "
+                f"{'1108' if hladina == 'vn' else '521'} Kč/kW/měs patřila překročení "
+                "rezervovaného VÝKONU (bod 4.38); překročení RK se nově odvozuje "
+                "výpočtem jako 1,5× měsíční RK (bod 4.24)."
+            ),
+        },
+        {
+            "distributor": dso,
+            "napetova_hladina": hladina,
+            "struktura_tarifu": "stara_2026",
+            "platne_od": _PLATNE_OD_2026,
+            "klic": "cena_prekroceni_kc_kw",
+            "chybna": None,
+            "spravna": None,
+        },
+    )
 )
 
 
@@ -231,17 +235,23 @@ def aplikuj_opravu(parametry: dict, poznamka: str, oprava: dict) -> tuple[dict, 
     Přepíše jen hodnotu PŘESNĚ rovnou známé chybné (`oprava["chybna"]`); cokoli
     jiného (ruční úprava adminem, už opravená hodnota) nechává být.
     `spravna=None` znamená odstranění klíče (pro klíče, které v sazebníku nemají
-    co dělat). Dovětek do poznámky se přidá jen jednou. Vrací (parametry,
-    poznámka, došlo-li ke změně).
+    co dělat); `chybna=None` přitom cílí na klíč přítomný s prázdnou hodnotou.
+    Dovětek do poznámky se přidá jen jednou. Vrací (parametry, poznámka,
+    došlo-li ke změně).
     """
-    aktualni = parametry.get(oprava["klic"])
-    if aktualni != oprava["chybna"] or aktualni == oprava["spravna"]:
-        return parametry, poznamka, False
-    out = dict(parametry)
+    klic = oprava["klic"]
+    aktualni = parametry.get(klic)
     if oprava["spravna"] is None:
-        out.pop(oprava["klic"], None)
+        # Odstranění klíče: jen když existuje a má přesně známou (chybnou) hodnotu.
+        if klic not in parametry or aktualni != oprava["chybna"]:
+            return parametry, poznamka, False
+        out = dict(parametry)
+        out.pop(klic)
     else:
-        out[oprava["klic"]] = oprava["spravna"]
+        if aktualni != oprava["chybna"] or aktualni == oprava["spravna"]:
+            return parametry, poznamka, False
+        out = dict(parametry)
+        out[klic] = oprava["spravna"]
     nova_poznamka = poznamka or ""
     dodatek = oprava.get("poznamka_dodatek") or ""
     if dodatek and dodatek not in nova_poznamka:

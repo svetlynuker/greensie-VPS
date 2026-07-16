@@ -199,3 +199,33 @@ def test_oprava_nesahne_na_rucne_zadanou_pokutu():
     out, poznamka, zmena = seed.aplikuj_opravu(parametry, "", OPRAVA_POKUTA_VN)
     assert zmena is False
     assert out["cena_prekroceni_kc_kw"] == 900.0
+
+
+def test_opravy_pokuty_pokryvaji_vsechny_kombinace_dso():
+    # Chybná pokuta mohla vzniknout i u EG.D/PRE (řádky z mezistavu seedu
+    # nebo staršího admin formuláře) → úklid cílí na všech 6 kombinací.
+    cile = {
+        (o["distributor"], o["napetova_hladina"])
+        for o in seed._BACKFILL_OPRAVY
+        if o["klic"] == "cena_prekroceni_kc_kw"
+    }
+    assert cile == set(seed._RK_2026)
+
+
+def test_oprava_uklidi_prazdny_pozustatek_pokuty():
+    # Klíč přítomný s hodnotou None (zápis staršího admin formuláře / mezistav
+    # seedu s uvicorn --reload) se odstraní; chybějící klíč je no-op.
+    oprava_none = next(
+        o
+        for o in seed._BACKFILL_OPRAVY
+        if o["klic"] == "cena_prekroceni_kc_kw" and o["chybna"] is None
+    )
+    parametry = {"cena_prekroceni_kc_kw": None, "cena_rezervovana_kapacita_kc_kw_rok": 3030.78}
+    out, poznamka, zmena = seed.aplikuj_opravu(parametry, "pozn", oprava_none)
+    assert zmena is True
+    assert "cena_prekroceni_kc_kw" not in out
+    assert out["cena_rezervovana_kapacita_kc_kw_rok"] == 3030.78
+    assert poznamka == "pozn"  # úklid prázdného klíče poznámku nemění
+    # bez klíče se nic neděje (idempotence)
+    out2, _, zmena2 = seed.aplikuj_opravu(out, poznamka, oprava_none)
+    assert zmena2 is False
