@@ -1,0 +1,143 @@
+# Rešerše: modelování a dimenzování bateriového úložiště pro peak shaving (srážení ¼h maxim) u průmyslových odběratelů
+
+> Součást auditu kalkulátorů 16. 7. 2026 (viz [README](README.md)). Hodnoceno vůči
+> nástroji v1 (`backend/app/nabidkovac/peak_shaving.py`: 15min roční profil, greedy
+> simulace, binární hledání stropu T, RK = T, prostá návratnost). Zdroje EN/CZ, text česky.
+
+---
+
+## Shrnutí: co v nástroji zkresluje výsledek nejvíc (prioritizace)
+
+| # | Problém v1 | Směr zkreslení | Typická velikost | Náprava |
+|---|---|---|---|---|
+| 1 | Účinnost 100 %, bez DoD, bez degradace → přeceněná využitelná energie | T vyjde nerealisticky nízké → v provozu pokuty; úspora nadhodnocena | využitelná energie přeceněna o **~20–30 %** (RTE ~88 % AC-AC, DoD 90 %, konec životnosti 80 %: 0,9×0,8 = 0,72 využitelné kapacity vs. 1,0) | η_ch/η_dis, SOC okno 10–90 (95) %, dimenzovat na kapacitu na konci životnosti |
+| 2 | Nová RK = přesně T z jednoho historického roku (perfect hindsight, bez rezervy) | jediné překročení = pokuta; polovina projektů může vyjít ex post neprofitabilně | robustní literatura: prescientní dimenzování → **neprofitabilní na ~50 % odběrných míst ex post** ([arXiv 2511.21619](https://arxiv.org/html/2511.21619)) | rezerva 5–15 % (praxe 10–20 %), percentil/CVaR místo minima, walk-forward validace |
+| 3 | Úspora počítána proti současné (často předimenzované) RK | přínos baterie nadhodnocen — část úspory lze získat zadarmo přenastavením RK | optimalizace RK bez investice šetří **jednotky % celkových nákladů na elektřinu** (RK = 20–30 % ceny) | baseline = kvantilově optimalizovaná RK bez baterie (viz bod 3) |
+| 4 | Prostá návratnost bez diskontu, O&M, degradace, životnosti | návratnost podhodnocena (vypadá lépe, než je) | diskontovaná návratnost o **~30–60 % delší** než prostá (diskont 7–9 %, O&M 1,5–2,5 % CAPEX/rok, úspora klesá s degradací) | NPV/IRR přes 10–15 let, výběr baterie dle NPV, ne dle nejkratší prosté návratnosti |
+| 5 | Nabíjení bez ztrát (nabitá kWh = odebraná kWh) | mírně optimistické dobíjení mezi špičkami + chybí vícenáklad na MWh | energie navíc = throughput×(1/η−1) ≈ **+14 %** nabíjecí energie při η=0,88; v Kč obvykle malé (viz bod 1) | nabíjecí výkon do baterie = (T − odběr)×η_ch, náklad energie navíc do cash flow |
+| 6 | Chybí value stacking (arbitráž, SVR) | hodnota baterie podhodnocena (opačný směr) | arbitráž na spotu může přidat řádově srovnatelný výnos; SVR výnosy ale v ČR strmě klesají | druhá fáze; konzervativně (bod 5) |
+
+---
+
+## 1. Ztráty a technické limity LFP úložišť
+
+**Round-trip účinnost (AC-AC):**
+- Systémová AC-AC RTE u LFP C&I systémů: **86–92 %** (typicky se počítá ~88 %); DC-DC na článcích 95–98 %. Ztráty: PCS ~2–3 % každým směrem, transformátor, kabeláž. AC-coupled systémy 88–91 %, DC-coupled až 94–96 % ([Sunlith – AC vs DC RTE](https://sunlithenergy.com/ac-vs-dc-round-trip-efficiency-in-battery-energy-storage-systems/), [Polinovel](https://www.polinovelbess.com/info/battery-round-trip-efficiency-ac-dc-rte-bess-103485789.html), [FFD Power](https://ffdpower.com/round-trip-efficiency-rte-a-key-performance-metric-for-energy-storage-systems/)). PNNL v referenčních podkladech (ESGC Cost & Performance Database) používá pro Li-ion AC-AC RTE ~86 % ([PNNL ESGC](https://www.pnnl.gov/projects/esgc-cost-performance), [report 2022, PDF](https://www.pnnl.gov/sites/default/files/media/file/ESGC%20Cost%20Performance%20Report%202022%20PNNL-33283.pdf)).
+- Účinnost klesá s C-rate (vyšší vnitřní odpor → teplo); při ≤0,5C je nejvyšší ([Sunlith RTE](https://sunlithenergy.com/bess-round-trip-efficiency-rte/)).
+
+**DoD / SOC okno:** LFP se běžně provozuje s **DoD 80–90 %** (min. SOC 10–20 % jako provozní a bezpečnostní rezerva); vadiMAP doporučuje min. SOC ≥ 20 % ([vadiMAP](https://www.vadimap.com/blog/peak-shaving-101-slashing-demand-charges-with-solar-batteries-a50)); německý přehled pro C&I uvádí použitelnou kapacitu s rezervou do ~10–20 % SOC — **nikdy nepočítat se jmenovitou kapacitou** ([pv-magazine.de 4/2026](https://www.pv-magazine.de/2026/04/17/lastspitzenkappung-mit-batteriespeicher-im-gewerbe-auslegung-wirtschaftlichkeit-und-typische-fehler/)).
+
+**C-rate:** pro peak shaving se dimenzuje typicky **0,25–1C** (1–4h systémy); krátké ostré špičky mohou žádat 1–2C, což ale snižuje účinnost a životnost ([cntepower](https://en.cntepower.com/solar-panels-and-battery-storage-systems-engineering-high-density-lfp-bess-for-ci-microgrids/)).
+
+**Degradace:** provozní data velkých LFP systémů: **~1,3–2 %/rok** kombinovaně (kalendářní + cyklická), tj. 20–30 % za dekádu; kalendářní stárnutí urychluje držení vysokého SOC (>80 %) — pozor, v1 předpokládá „počáteční SOC = plná“ a strategie „držet plno“ degradaci zhoršuje ([IndexBox – LFP aging](https://www.indexbox.io/blog/understanding-lithium-ion-battery-degradation-in-bess-key-factors-and-challenges/), [PowerKonnekt](https://powerkonnekt.com/articles/bess-battery-capacity-degradation-lifetime), [MDPI Appl. Sci. – LFP calendar/cycle aging](https://doi.org/10.3390/app152312749)). Cyklická životnost LFP 6 000–10 000 cyklů dle DoD. **Standard praxe: dimenzovat na kapacitu na konci životnosti (EOL, typicky 70–80 % jmenovité), nebo plánovat augmentaci.**
+
+**Vlastní spotřeba (aux):** kontejnerový 5MWh blok: **11–22 kW trvale (0,8–1,6 % výkonu PCS)**; DC blok 1,5–4 % throughputu + ~1 % ostatní systémy (SCADA, osvětlení…); HVAC v horkém klimatu hýbe systémovou RTE o **2–4 procentní body** sezónně ([Energy Central – 5 MWh aux](https://www.energycentral.com/energy-biz/post/bess-5-mwh-aux-consumption-nB19OmDcUfffS2B), [learnBESS RTE](https://www.learnbess.com/blog/round-trip-efficiency-rte-bess), [OSTI – Impact of Heating/Cooling Loads on BESS](https://www.osti.gov/servlets/purl/2311513)).
+
+**Jak moc zanedbání ztrát mění výsledek:**
+- *Energie navíc (Kč):* malá položka. Příklad: srážení 100 kW, ~50 špičkových dní × 2 h → ~10 MWh/rok vybito; při η=0,88 nákup navíc ~1,4 MWh/rok, tj. ~5–7 tis. Kč — zanedbatelné proti úspoře RK. Aux spotřeba (~2 kW trvale u malého systému) ale přidá ~17 MWh/rok — **stand-by/HVAC může stát víc než ztráty cyklování** a patří do cash flow.
+- *Využitelná energie (kritické):* bez RTE/DoD/EOL najde binární hledání strop T, který reálná baterie **neudrží** — každé neudržení = pokuta a/nebo vyšší RK. Kombinace 0,9 (DoD) × 0,88 (RTE, projeví se v dobíjení) × 0,8 (EOL) znamená, že v posledních letech životnosti má systém jen ~65–72 % „papírové“ schopnosti.
+- *Rozlišení dat a výkon:* Lange et al. (Applied Energy 2020) ukázali, že konvenční dimenzování (ideální znalost profilu, hrubší data) vede k podcenění potřebné kapacity o **−7 % až +75 % a vybíjecího výkonu až o 43 %** proti dimenzování s reálným řídicím algoritmem na 1min datech ([ScienceDirect](https://www.sciencedirect.com/science/article/abs/pii/S0306261920314379)). Pro ČR je fakturačně rozhodný ¼h průměr (15min data tedy pro fakturaci stačí), ale střídač musí výkonově pokrýt dynamiku uvnitř čtvrthodiny.
+
+**Doporučení pro nástroj:** parametry η_ch = η_dis = √0,88 ≈ 0,94 (AC-AC 88 %), SOC okno 10–95 %, kapacita × (1 − degradace)^rok nebo rovnou EOL derating 0,8; aux příkon ~1 % výkonu PCS trvale do nákladů; C-rate limit z katalogu (výkon ≤ C_max × kapacita).
+
+---
+
+## 2. Bezpečnostní rezerva — RK nikdy přesně na fyzikální minimum
+
+Praxe i literatura jednoznačně: **nastavit RK = přesné minimum z jednoho historického roku je chyba.**
+
+- **Doporučené rezervy v praxi:** česká platforma Flowbox doporučuje rozdíl mezi max. realizovanou čtvrthodinou a RK **10–20 %** (víc při volatilní spotřebě) ([Flowbox blog](https://www.flowbox.com/blog/electricity-cost-optimization-reserved-capacity-as-a-new-key-to-savings)); vadiMAP uvádí rezervní faktor **~1,15** na účinnost a nepřesnost řízení ([vadiMAP](https://www.vadimap.com/blog/peak-shaving-101-slashing-demand-charges-with-solar-batteries-a50)); pv-magazine doporučuje **konzervativní dimenzování nad výsledek simulace** a **víceletá data** (jednoletá data = riziko sezónního zkreslení) ([pv-magazine.de](https://www.pv-magazine.de/2026/04/17/lastspitzenkappung-mit-batteriespeicher-im-gewerbe-auslegung-wirtschaftlichkeit-und-typische-fehler/)).
+- **Percentilový/robustní přístup je stav poznání:** nejnovější práce (SNSF/EPFL, 11/2025) ladí pravidlové řízení a velikost baterie **stochasticky přes CVaR (α = 0,95) po měsících** — cílí na chvost rozdělení denních špiček, ne na deterministické minimum. Klíčové zjištění: **při prescientním (perfect-foresight) dimenzování vychází projekt ex post neprofitabilní na ~polovině odběrných míst**; robustně laděné pravidlové řízení zůstává profitabilní ve většině případů a vede k **menším doporučeným systémům** ([arXiv 2511.21619](https://arxiv.org/html/2511.21619)).
+- **Meziroční variabilita:** používat ≥2 roky dat, nebo bootstrap/scénáře (přeskládání dnů, škálování špiček ±5–10 %), a **walk-forward test**: strop T nalezený na roce 1 vyhodnotit na roce 2. Deterministická kalkulačka to zvládne bez optimalizačního aparátu.
+- **Riziko výpadku/servisu baterie:** v ČR jedno překročení není katastrofa — platí se přirážka za nejvyšší překročení v daném měsíci, řádově desítky až stovky tisíc Kč u větších odběrů ([Flowbox](https://www.flowbox.com/blog/electricity-cost-optimization-reserved-capacity-as-a-new-key-to-savings)). Kalkulačka by měla umět spočítat „cenu jednoho selhání“ a zahrnout očekávaný počet selhání (dostupnost systému ~97–99 %).
+
+**Doporučení pro nástroj:** (a) T hledat na datech degradovaných na EOL a s účinností; (b) RK sjednat = T × (1 + rezerva), default rezerva 5–10 % (uživatelsky nastavitelná), (c) volitelně „percentilový režim“: strop T, který udrží 95.–99. percentil dní, se známou očekávanou pokutou za zbytek; (d) reportovat citlivost: „RK o 5 % níž = úspora +X, riziko pokut +Y“.
+
+---
+
+## 3. Optimalizace RK bez baterie — běžná praxe (a nutný fair baseline)
+
+**Mechanika v ČR:** RK (roční + měsíční kombinovatelné) se platí měsíčně za kW; vyhodnocuje se nejvyšší ¼h výkon měsíce. Dle cenových rozhodnutí ERÚ je **cena za překročení RK v kalendářním měsíci = 1,5násobek měsíční ceny za měsíční RK, za každý kW nejvyššího překročení** (bod 4.22 CR ERÚ, věstník 7/2023; stejná konstrukce v CR 13/2024 a výměru pro 2026) ([Kurzy.cz – text CR 7/2023](https://zpravy.kurzy.cz/750660-cenove-rozhodnuti-kterym-se-stanovuji-ceny-za-souvisejici-sluzbu-v-elektroenergetice-a-ostatni/), [PREdistribuce – CR 13/2024](https://www.predistribuce.cz/Files/ceny/cenove-rozhodnuti-eru-c-132024/), [ERÚ – návrh výměru 2026 VVN/VN](https://eru.gov.cz/sites/default/files/obsah/prilohy/cveru2026vvn-vn251030vkp.pdf)). Odběr zcela bez sjednané kapacity je za 2násobek; překročení rezervovaného příkonu (připojovací limit) je penalizováno tvrději (4násobek) ([E.ON – rezervovaná kapacita](https://www.eon.cz/byznys-energie/rezervovana-kapacita-elektricke-site/), [Refsite – optimalizace RK](https://sluzby.refsite.info/wiki/clanek/optimalizace-rezervovane-kapacity)).
+
+**Ceny RK 2026 (roční RK, VN):** ČEZ Distribuce **237,31 Kč/kW/měs**, EG.D 219,85, PRE 248,63 ([Peníze na střeše](https://www.penizenastrese.cz/blog/peak-shaving-ctvrthodinove-maximum)). ⚠️ POZOR: tyto hodnoty ze sekundárního zdroje jsou ve skutečnosti sazby **2025** — finální výměr ERÚ 13/2025 pro 2026 má ČEZ VN 252,565 (viz [eru-sazby-2026-a-nts-2027.md](eru-sazby-2026-a-nts-2027.md)). RK tvoří **20–30 % celkové ceny elektřiny** velkoodběratele ([Refsite](https://sluzby.refsite.info/wiki/clanek/optimalizace-rezervovane-kapacity)).
+
+**Kvantilová logika (marginální kalkulace):** snížení roční RK o 1 kW šetří 12 × c_roční ≈ 3 031 Kč/rok (ČEZ VN 2026). Marginální pokuta je 1,5 × c_měsíční za každý měsíc, kdy maximum RK překročí (ČEZ VN 2026: 1,5 × 281,823 ≈ 423 Kč/kW/měs). **Break-even ≈ 7 měsíců s překročením** — čistě finančně je tedy optimální RK zhruba u mediánu měsíčních maxim, ne u ročního maxima(!). Prakticky se jde méně agresivně (riziko, nejistota profilu), ale závěr platí. Navíc lze kombinovat nižší roční RK + měsíční RK jen pro sezónní měsíce (klasika: chlazení v létě) ([Refsite](https://sluzby.refsite.info/wiki/clanek/optimalizace-rezervovane-kapacity), [E.ON](https://www.eon.cz/byznys-energie/rezervovana-kapacita-elektricke-site/)). ⚠️ Od 2027 platí nová tarifní struktura — parametry a struktura plateb se mění (viz rešerše ERÚ).
+
+**Kdo to dělá:**
+- ČR: **Flowbox** (analýza faktur → optimální rezerva; blokace souběhů; automatické řízení s predikcí ¼h — uvádí úspory na kapacitních platbách 0–10 % základní optimalizací, přes 30 % s řízením) ([Flowbox](https://www.flowbox.com/blog/electricity-cost-optimization-reserved-capacity-as-a-new-key-to-savings)); energetičtí poradci a ESCO (ČEZ ESCO, [E.ON](https://www.eon.cz/firemni-zakaznici/zakaznicka-pece/technicke-dotazy/sjednani-kapacit/)); tradiční **hlídače ¼h maxima s odpínáním zátěží** (např. regulátory HMP) ([KBH](https://www.kbh.cz/a/optimalizujte-spotrebu-energie-a-usetrete-s-regulatory-hmp), [Refsite – měření a regulace ¼h příkonu](https://sluzby.refsite.info/wiki/clanek/mereni-a-regulace-hodinoveho-prikonu)).
+- Zahraničí/akademicky: problém „optimal contract capacity“ je etablovaná výzkumná oblast (Taiwan, Korea…): GA/evoluční algoritmy ([Electric Power Components and Systems 2003](https://www.tandfonline.com/doi/abs/10.1080/15325000390208138)), deep learning s **kvantilovou loss** ([Energies 2021](https://doi.org/10.3390/en14082181)), risk-assessment přístupy ([MDPI Inventions 2024](https://www.mdpi.com/2411-5134/9/4/81)); pokuty v některých tarifech až 10× základní sazby → optimum je kvantil rozdělení maxim.
+
+**Důsledek pro nástroj (zásadní):** úsporu baterie počítat **proti optimalizované RK bez baterie** (stejný kvantilový algoritmus spustit jednou bez baterie a jednou s baterií; přínos baterie = rozdíl). Jinak nástroj přiřkne baterii úsporu, kterou zákazník získá zadarmo administrativní změnou — a doporučí předimenzovanou investici. Bonus: výstup „kolik ušetříte hned bez investice“ zvyšuje důvěryhodnost nástroje.
+
+---
+
+## 4. Řízení v reálném provozu: threshold vs. prediktivní
+
+- **Reaktivní threshold řízení je v C&I standard a pro ¼h fakturaci zpravidla stačí** — rozhoduje 15min průměr, takže reakční doby v minutách jsou OK ([pv-magazine.de](https://www.pv-magazine.de/2026/04/17/lastspitzenkappung-mit-batteriespeicher-im-gewerbe-auslegung-wirtschaftlichkeit-und-typische-fehler/)). NREL SAM dokumentuje, že **look-behind (jen zpětná data) dává malé srážení špiček, zatímco look-ahead 24 h stačí na dobrou strategii** ([NREL TP-6A20-68614 – Automated Dispatch Controller Algorithms in SAM](https://docs.nrel.gov/docs/fy18osti/68614.pdf), [SAM Battery Dispatch BTM](https://samrepo.nrelcloud.org/help/battery_dispatch_btm.html)).
+- **MPC s reálnou predikcí vs. perfect foresight:** reálné předpovědi mají značnou chybu právě u špiček; úspěšnost multi-use strategií na predikci silně závisí (Fraunhofer ISE, IRES 2022: [Getting Closer to Reality?](https://www.atlantis-press.com/proceedings/ires-22/125987292)). U arbitráže dosahuje dobré řízení ~89 % zisku perfect foresight ([flex-power](https://flex-power.energy/energyblog/battery-storage-trading-strategy/)); u peak shavingu je citlivost vyšší (jedna zmeškaná špička = celá měsíční penalizace). Pokročilé MPC snížilo špičku o dalších ~5,8 % proti standardnímu MPC v průmyslovém case study ([MDPI Processes 2025](https://www.mdpi.com/2227-9717/13/11/3421)).
+- **Dobře naladěná pravidla ≈ MPC:** stochasticky laděné RBC dávají realističtější (a robustnější) výsledky než deterministické MPC a počítají se v mikrosekundách (120 µs vs. 44 s na roční simulaci) — ideální pro kalkulačku ([arXiv 2511.21619](https://arxiv.org/html/2511.21619)).
+- **Riziko nedobití mezi špičkami:** reálné omezení — dobíjecí výkon = min(P_batt, (T − aktuální odběr)) × η_ch; dvojité špičky (ráno/odpoledne) jsou hlavní důvod, proč roste potřebná kapacita nadproporcionálně s hloubkou srážení („každý další kW šetří lineárně, ale potřebná kapacita roste nadproporcionálně“) ([pv-magazine.de](https://www.pv-magazine.de/2026/04/17/lastspitzenkappung-mit-batteriespeicher-im-gewerbe-auslegung-wirtschaftlichkeit-und-typische-fehler/)).
+
+**Hodnocení v1:** samotná greedy simulace (vybíjet nad T, nabíjet pod T z rezervy) je **kauzální a odpovídá reálnému threshold řízení — to je v pořádku a blízko praxi**. Nerealistický je výběr T s dokonalou znalostí celého roku a bez ztrát. Řešení bez MILP: T z roku 1 validovat na roce 2 (nebo bootstrap), přidat headroom, ztráty při nabíjení, a penalizovat měsíce, kde simulace selže.
+
+---
+
+## 5. Value stacking
+
+- **Proč:** čistý peak shaving využije baterii jen ~stovky hodin ročně (řádově 200 h) — zbytek času může vydělávat jinde ([muGrid Analytics](https://www.mugrid.com/blog/batterystoragestacking)). Kombinace peak shaving + regulace frekvence zvyšuje hodnotu až o ~15 % ([Shi et al., arXiv 1702.08065](https://arxiv.org/pdf/1702.08065)); obecně je stacking dnes podmínkou dobré ekonomiky BESS ([PV Toolbox](https://pvtoolbox.eu/2025/08/20/beyond-arbitrage-why-value-stacking-is-essential-for-bess-projects/), [flex-power – value stacking](https://flex-power.energy/school-of-flex/bess-energy-markets/)).
+- **Stackovatelné toky:** samospotřeba FVE, spotová/intradenní arbitráž (dynamické ceny), SVR (FCR/aFRR/mFRR přes agregátora), snížení odchylky subjektu zúčtování, záložní napájení (AERS uvádí přechod do ostrova ~10 ms). Konflikt: SVR vyžaduje rezervovaný výkon a SOC → koliduje se špičkami; řeší se prioritizací peak shavingu v rizikových hodinách/měsících.
+- **ČR — trh a hráči:** **Nano Energies** (největší agregátor flexibility, projekt DFLEX) ([nanoenergies.cz](https://nanoenergies.cz/blog/projekt-dflex-overil-vyuzitelnost-agregace-flexibility)), **Delta Green** (první aFRR agregace domácností/malých baterií, certifikovaný 1MW blok; platforma s 15s řídicí smyčkou) ([deltagreen.cz/flexibilita](https://www.deltagreen.cz/flexibilita), [TZB-info](https://oze.tzb-info.cz/akumulace-elektriny/28252-delta-green-uspesne-certifikovala-1mw-agregacni-blok-slozeny-pouze-z-domacnosti)), **ČEZ ESCO** (10MW baterie Vítkovice) ([cez.cz](https://www.cez.cz/cs/pro-media/tiskove-zpravy/nejvetsi-ceska-baterie-ve-vitkovicich-zahajila-ostry-provoz.-akumulator-od-cez-esco-pomuze-stabilizovat-energetickou-soustavu-188487)), **AERS (Fenix Group)** — české peak-shaving stanice SAS pro průmysl (např. Strojírny Rumburk 200 kW / 204 kWh, řízení ¼h maxima + záloha) ([vseoprumyslu.cz](https://www.vseoprumyslu.cz/inspirace/firemni-novinky/bateriove-akumulacni-stanice-firmy-aers-pronikaji-do-prumyslu.html)), dále EnergoBox, Enposol, Valeon ([energobox.cz](https://www.energobox.cz/sluzby-vykonove-rovnovahy/), [enposol.com](https://enposol.com/sluzby-vykonove-rovnovahy/), [valeon.cz](https://www.valeon.cz/clanek/rozdily-mezi-affr-fcr-a-mfrr)).
+- **Pozor na klesající výnosy SVR:** průměrná cena dlouhodobých kontraktů aFRR+ spadla z **20,8 €/MW/h (2025) na 10,8 €/MW/h (2026)**, v H2 2026 jen 7,0 €/MW/h; konkurence vzrostla (ALPACA, agregátoři) — „konec iluze snadných výnosů“ ([oenergetice.cz](https://oenergetice.cz/energetika-v-cr/trh-podpurnych-sluzeb-se-meni-vysledky-aukci-ceps-ukazuji-nastup-agregatoru-i-tlak-na-cenu-flexibility), [Průmyslová ekologie](https://www.prumyslovaekologie.cz/info/rok-2025-konec-iluze-snadnych-vynosu-na-trhu-sluzeb-vykonove-rovnovahy)). Návratnosti „4–6 let čistě z SVR“ z let 2023–24 už neplatí.
+- **Dopad na dimenzování:** stacking posouvá optimum k větší baterii, než žádá samotný peak shaving; do deterministické kalkulačky lze přidat jednoduchý modul spotové arbitráže (nabij v n nejlevnějších hodinách dne, vybij v nejdražších, s respektováním stropu T) — deterministicky spočitatelné z historických spotových cen OTE.
+- **Dotace:** RES+ č. 5/2025 (Modernizační fond) — 2 mld. Kč na akumulaci, max 20 % CAPEX, ale jen pro samostatně připojená úložiště (ne za odběrným místem se stávající výrobnou) ([enovation](https://www.enovation.cz/dotacni-titul/akumulace-obnovitelne-energie), [Solární novinky](https://www.solarninovinky.cz/cesko-poprve-spousti-dotace-na-volne-stojici-baterie-o-vykonu-nad-1-mw/)); pro behind-the-meter C&I sledovat OP TAK.
+
+**Jak to dělají komerční nástroje:** HOMER Grid (UL) modeluje demand charges + dispatch + degradaci (multi-year, kinetický model baterie) ([HOMER](https://homerenergy.com/), [UL Solutions](https://www.ul.com/software/ultrus/homer-microgrid-and-hybrid-power-modeling-software)); Energy Toolbase modeluje stacknuté toky (demand charge + TOU arbitráž + grid services) s uživatelskou degradací a plným cash flow NPV/IRR na 25 let, provozně pak Acumen EMS s predikcí ([ETB](https://www.energytoolbase.com/solutions/etb-developer/), [ETB – demand charge management](https://www.energytoolbase.com/blog/energy-storage/mastering-demand-charge-management/)); Stem Athena = AI predikce + dispatch ([přehled](https://gitnux.org/best/energy-storage-software/)); NREL SAM (open source!) má BTM dispatch módy vč. peak shavingu s look-ahead — dobrá referenční implementace pro validaci vlastní kalkulačky ([SAM BTM dispatch](https://samrepo.nrelcloud.org/help/battery_dispatch_btm.html)).
+
+---
+
+## 6. Ekonomika a návratnost
+
+**Správný výpočet (standard komerčních nástrojů i literatury):**
+- **NPV/IRR/diskontovaná návratnost**, ne prostá: diskont = WACC firmy (obvykle 6–10 %), horizont = životnost projektu **10–15 let** nebo cyklová životnost (LFP 6–8 tis. cyklů; peak shaving dělá typicky 100–250 ekvivalentních cyklů/rok → limituje kalendář, ne cykly).
+- **O&M:** NREL ATB pro komerční BESS používá **fixní O&M 2,5 % CAPEX/rok vč. augmentace** (dorovnávání kapacity po celou 15letou životnost) ([NREL ATB 2024 – Commercial Battery Storage](https://atb.nrel.gov/electricity/2024/commercial_battery_storage)); běžné rozpětí v praxi 1–2,5 % CAPEX/rok. Připočíst pojištění a vlastní spotřebu (bod 1).
+- **Degradace úspor v čase:** úspora není konstanta — buď klesá schopnost držet T (od roku, kdy EOL kapacita < potřebná energie špičkového dne, rostou pokuty), nebo se platí augmentace. Jednoduchý model: úspora_t = úspora_0 × f(kapacita_t), kapacita_t = (1 − 0,015÷0,02)^t.
+- **Výměna/zůstatek:** střídač/PCS výměna po ~10–15 letech (~5–10 % CAPEX); zůstatková hodnota baterie na konci ~0–10 % (konzervativně 0).
+- **Efekt:** proti prosté návratnosti v1 vyjde diskontovaná návratnost typicky o 30–60 % delší; výběr „nejkratší prostá návratnost“ navíc systematicky preferuje nejmenší baterii — správně je maximalizovat **NPV** (případně ukázat obě metriky).
+
+**Benchmark CAPEX 2025/2026 (LFP, systém vč. instalace):**
+
+| Segment | Cena | Zdroj |
+|---|---|---|
+| Utility-scale turnkey 4h, globální průměr 2025 | **117 $/kWh** (−31 % YoY); Čína 73, **Evropa 177**, USA 219 $/kWh | [BNEF via Energy-Storage.News](https://www.energy-storage.news/battery-storage-system-prices-continue-to-fall-sharply-bnef-and-ember-reports-find/) |
+| Velké C&I (MWh-třída, kontejner) Evropa | **~140–210 €/kWh** (turnkey) | [U-Energie guide](https://en.u-energie.de/blogs/industrial-battery-energy-storage-costs-roi-in-europe-a-guide-for-commercial-industrial-users) |
+| Střední komerční instalace Evropa | **~220–350 €/kWh** (DE 2025: 280–350 €/kWh) | [U-Energie](https://en.u-energie.de/blogs/industrial-battery-energy-storage-costs-roi-in-europe-a-guide-for-commercial-industrial-users), [zvepow – DE C&I](https://www.zvepow.com/news/commercial-battery-storage-germany) |
+| Menší C&I / složité retrofity | 400–900 €/kWh | [U-Energie](https://en.u-energie.de/blogs/industrial-battery-energy-storage-costs-roi-in-europe-a-guide-for-commercial-industrial-users) |
+| ČR datapoint: 100 kW/100 kWh vč. řízení | ~1,05–1,23 mil. Kč ≈ **10 500–12 300 Kč/kWh (~420–490 €/kWh)** | [Peníze na střeše](https://www.penizenastrese.cz/blog/peak-shaving-ctvrthodinove-maximum) |
+| Německý příklad pro výpočty | 400 €/kWh (≈10 000 Kč/kWh) | [pv-magazine.de](https://www.pv-magazine.de/2026/04/17/lastspitzenkappung-mit-batteriespeicher-im-gewerbe-auslegung-wirtschaftlichkeit-und-typische-fehler/) |
+
+Orientačně pro ČR C&I 2026: **~7 000–12 000 Kč/kWh** podle velikosti (MWh kontejner dole, malé systémy nahoře). Ceny článků dál klesají (pack průměr 108 $/kWh, [BNEF/ess-news](https://www.ess-news.com/2025/12/09/bnef-lithium-ion-battery-pack-prices-fall-to-108-kwh-stationary-storage-becomes-lowest-price-segment/)) — v katalogu baterií udržovat aktuální ceny a množstevní slevy (větší DC bloky jsou na kWh výrazně levnější).
+
+**Sanity check ekonomiky peak shavingu v ČR:** srážení 100 kW → úspora RK ~285–300 tis. Kč/rok (ČEZ VN). Baterie ~250 kWh/150 kW (na 2h špičku s rezervou a EOL) à ~9 000 Kč/kWh ≈ 2,3 mil. Kč → prostá návratnost ~8 let, diskontovaně >10 → **samotný peak shaving je v ČR na hraně; ekonomiku dělá kombinace s FVE, arbitráží a optimalizací RK** (potvrzuje příklad Peníze na střeše: FVE+baterie+řízení, návratnost 5,8 roku; Tesvolt pro DE s vyššími Leistungspreis uvádí ~4 roky / ROI 20–25 % — v DE je cena za kW špičky výrazně vyšší) ([Tesvolt peak shaving](https://www.tesvolt.com/en/applications/peak-shaving.html)).
+
+---
+
+## 7. Akademická literatura k dimenzování (co je přenositelné)
+
+- **Zakládající práce:** Oudalov, Cherkaoui, Béguin: *Sizing and Optimal Operation of BESS for Peak Shaving* (2007) — iterativní dimenzování na maximalizaci benefitu + dynamické programování pro provoz ([Semantic Scholar](https://www.semanticscholar.org/paper/1e8bbb30b06a74ef083d06cda5a418ecc92c7bcb)).
+- **Analytické přístupy:** energie nad stropem z load-duration křivky / analýza nejhorší špičkové epizody — přesně to, co dělá v1; rychlé a interpretovatelné, ale deterministické (viz omezení výše).
+- **LP/MILP:** exaktní co-optimalizace velikosti a dispatch; novinka 2025: degradation-aware **Bayesian Optimization + MILP** ([Energy Conversion and Management 2025](https://www.sciencedirect.com/science/article/pii/S0196890425014712)); MILP mírně nadhodnocuje kapacitu proti nelineárním modelům ([J. Energy Storage 2025](https://www.sciencedirect.com/science/article/pii/S2352152X25042161)).
+- **Stochastické/robustní:** multiperiod stochastic MPC pro demand charge přes hranice fakturačních období ([arXiv 2007.02928](https://arxiv.org/pdf/2007.02928)); robustní kvantilově laděné RBC s CVaR — nejrelevantnější pro praktickou kalkulačku ([arXiv 2511.21619](https://arxiv.org/html/2511.21619)); dopad reálných předpovědí na multi-use (Fraunhofer, [IRES 2022](https://www.atlantis-press.com/proceedings/ires-22/125987292)); vliv rozlišení dat a reálného řízení na dimenzování ([Lange et al., Applied Energy 2020](https://www.sciencedirect.com/science/article/abs/pii/S0306261920314379)); přehled faktorů ovlivňujících sizing ([arXiv 2011.06963](https://arxiv.org/abs/2011.06963)).
+
+**Prakticky přenositelné do deterministické kalkulačky (bez MILP):** účinnost + SOC okno + EOL derating; kvantilový výběr stropu T (např. „udrž 95.–99. percentil dní, zbytek oceň pokutou“) místo binárního hledání absolutního minima; walk-forward/bootstrap validace T; kvantilová optimalizace RK bez baterie jako baseline; NPV cash flow; headroom na dobíjení. To vše jsou O(n) průchody 15min řadou.
+
+---
+
+## Souhrn doporučených změn v nástroji (v pořadí podle dopadu)
+
+1. **Přidat RTE (AC-AC ~88 %), SOC okno (10–95 %) a EOL derating kapacity (×0,8)** do simulace — jinak je nalezené T v reálu neudržitelné. Nabíjení: do baterie jde (T − odběr) × η_ch; z baterie na síť jde P × η_dis.
+2. **RK ≠ T přesně:** default RK = T × 1,05–1,10, konfigurovatelné; a/nebo percentilový režim s explicitním oceněním očekávaných pokut (1,5× měsíční cena za měsíční RK/kW/měs, dle platného výměru ERÚ).
+3. **Fair baseline:** spočítat optimální RK bez baterie (kvantil měsíčních maxim + kombinace roční/měsíční RK) a úsporu baterie vykazovat proti ní. Vedlejší produkt: report „úspora bez investice“.
+4. **Ekonomika:** NPV s diskontem (default 8 %), životnost 10–15 let, O&M 1,5–2,5 % CAPEX/rok + aux spotřeba, degradace úspor ~1,5–2 %/rok, výběr varianty dle NPV (prostou návratnost zobrazit jen doplňkově). CAPEX katalog validovat proti ~7–12 tis. Kč/kWh (C&I 2026).
+5. **Robustnost:** walk-forward (T z roku 1 testovat na roce 2 / bootstrap dnů ±5–10 % škálování špiček); reportovat počet „selhaných“ měsíců a jejich cenu.
+6. **Value stacking (fáze 2):** deterministický modul spotové arbitráže z historických cen OTE (při respektování stropu T); SVR jen jako konzervativní poznámku — ceny aFRR v ČR meziročně −48 %.
+7. **Drobnosti:** počáteční SOC = plná je OK pro billing simulaci, ale strategie „držet 100 % SOC“ zhoršuje kalendářní degradaci LFP — v provozu držet ~50–80 % mimo rizikové hodiny; upozornit na tarifní reformu ERÚ 2027 (citlivost výsledků na strukturu tarifu).
