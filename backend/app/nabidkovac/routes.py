@@ -737,7 +737,11 @@ def zpracuj_profil(
 ):
     """Naparsuje nahraný soubor s 15min profilem (XLS/XLSX/CSV) do `spotreba_profil`.
 
-    Idempotentní: nejdřív smaže dřívější profil z tohoto dokumentu, pak vloží nový.
+    „Poslední vyhrává“ (audit SP-2): nahradí se CELÝ dosavadní profil nabídky
+    (i z jiných dokumentů) – dřív se mazaly jen řádky ze stejného dokumentu
+    a dva různé soubory se tiše sečetly do dvojnásobné spotřeby. Duplicitní
+    časy uvnitř souboru (podzimní přechod času) se slučují před vkladem,
+    unikátnost (nabidka_id, cas) jistí i DB constraint.
     """
     d = db.get(NabidkaDokument, dokument_id)
     if d is None:
@@ -757,10 +761,12 @@ def zpracuj_profil(
         db.commit()
         raise HTTPException(status_code=422, detail=f"Zpracování profilu selhalo: {e}")
 
-    # idempotence – zahoď předchozí profil z tohoto dokumentu a vlož nový (bulk kvůli objemu)
+    body, pocet_duplicit = profil_import.deduplikuj_casy(body)
+
+    # „Poslední vyhrává" – zahoď celý předchozí profil nabídky a vlož nový
+    # (bulk kvůli objemu ~35 tis. řádků).
     db.query(SpotrebaProfil).filter(
         SpotrebaProfil.nabidka_id == d.nabidka_id,
-        SpotrebaProfil.zdroj_dokument_id == d.id,
     ).delete(synchronize_session=False)
     db.bulk_insert_mappings(
         SpotrebaProfil,
@@ -771,7 +777,10 @@ def zpracuj_profil(
     )
     d.stav_zpracovani = "extrahovano"
     db.commit()
-    return {"dokument_id": d.id, **_profil_souhrn(db, d.nabidka_id)}
+    out = {"dokument_id": d.id, **_profil_souhrn(db, d.nabidka_id)}
+    if pocet_duplicit:
+        out["slouceno_duplicitnich_radku"] = pocet_duplicit
+    return out
 
 
 # ================= Peak shaving – výpočet (METODIKA kap. 4–5) =================

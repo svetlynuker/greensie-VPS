@@ -63,6 +63,10 @@ Unikátní klíč: `(distributor, napetova_hladina, struktura_tarifu, platne_od)
 
 ### 2.4 Použité existující tabulky
 - `spotreba_profil` — 15min profil (`cas`, `hodnota_kw`, `zdroj_dokument_id`).
+  Od auditu SP-2 s **unique constraintem `(nabidka_id, cas)`** (na existující DB
+  ho doplní `_lehka_migrace()` vč. deduplikace „poslední vyhrává“); zpracování
+  profilu nahrazuje **celý** profil nabídky (dřív se dva soubory tiše sečetly)
+  a duplicitní lokální časy z podzimního přechodu času slučuje na maximum.
 - `navrhovana_reseni` — výstup výpočtu v `popis_json` (`typ_reseni = peak_shaving`).
 - `vypoctova_nastaveni.parametry.max_navratnost_roky_peak_shaving` — práh nedoporučené návratnosti (výchozí **5 let**).
 

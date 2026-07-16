@@ -43,6 +43,15 @@ tam je; `ppa_fve.spocti_ppa()` označí `sum(spotreba_kwh)` jako `rocni_spotreba
 
 ## SP-2 ⛔ P0 — Duplicitní profily se sčítají (chybí unique constraint / filtr zdroje)
 
+> ✅ **Vyřešeno 16. 7. 2026** — commit `fix(nabidkovac): duplicitní profily – poslední vyhrává + unique constraint (SP-2)`
+> na větvi `bughunt-opravy-p0`. Implementovány OBĚ nápravy: (1) `zpracuj-profil`
+> maže celý dosavadní profil nabídky („poslední vyhrává“), (2) unique constraint
+> `(nabidka_id, cas)` v modelu + `_lehka_migrace()` na existující DB (napřed
+> DELETE duplicit — vyšší id vyhrává — pak CREATE UNIQUE INDEX IF NOT EXISTS,
+> takže start nespadne). Duplicitní lokální časy z podzimního DST se slučují
+> na maximum už při importu (`profil_import.deduplikuj_casy`), počet sloučených
+> řádků jde do odpovědi. Testy: `backend/tests/test_profil_import.py`.
+
 **Kde:** `models.py` — `SpotrebaProfil` má jen indexy, žádný unique na
 `(nabidka_id, cas)`; `routes.py` čte **všechny** řádky nabídky
 (`zpracuj_profil()` maže jen řádky ze *stejného* dokumentu).
