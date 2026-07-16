@@ -208,6 +208,8 @@ class PpaVstup(BaseModel):
     index_ppa_rocni: Optional[float] = None
     index_dodavatel_rocni: Optional[float] = None
     degradace_rocni: Optional[float] = None
+    # LID – degradace 1. roku (audit PPA-4); default z nastavení (−2 % PERC).
+    degradace_rok1: Optional[float] = None
 
     # Náklady na FVE (kap. 3.4) – přepínač + volitelný přetok.
     rezim_capex: RezimCapex = "cena_kwp"

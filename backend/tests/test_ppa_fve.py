@@ -124,3 +124,58 @@ class TestLetniCas:
         casy2 = den_casy(2025, 7, 15) + den_casy(2025, 7, 16)
         vyroba2 = ppa.simuluj_vyrobu(casy2, 1.0, 49.8, 35, 0)
         assert sum(vyroba2[:96]) == pytest.approx(sum(vyroba2[96:]), rel=1e-9)
+
+
+# --------------------------------------------------- PPA-4: LID prvního roku
+def vstup_ppa(**zmeny):
+    """Vstup PPA s neutrálními defaulty pro testy ekonomiky."""
+    zaklad = dict(
+        kwp=100.0,
+        lat=49.8,
+        sklon_st=35,
+        azimut_st=0,
+        cena_ppa_kc_mwh=2500,
+        index_ppa_rocni=0.0,
+        cena_dodavatel_kc_mwh=3500,
+        index_dodavatel_rocni=0.0,
+        delka_kontraktu_roky=3,
+        degradace_rocni=0.005,
+        capex_kc=2_500_000,
+        prebytek_uctovat=False,
+        prebytek_cena_kc_mwh=0,
+        index_prebytek_rocni=0,
+        rezervovany_vykon_dodavky_kw=None,
+        oam_kc_kwp_rok=0,
+        diskontni_sazba=0.05,
+    )
+    zaklad.update(zmeny)
+    return ppa.VstupPPA(**zaklad)
+
+
+class TestDegradaceLid:
+    """Bughunt PPA-4: f(t) = (1 − LID) × (1 − d)^(t−1), LID už v roce 1."""
+
+    CASY = den_casy(2025, 7, 15)
+    SPOTREBA = [5.0] * 96  # kWh/interval – dost vysoká, ať je vše samospotřeba
+
+    def test_default_lid_je_2_procenta(self):
+        assert ppa.VYCHOZI_DEGRADACE_ROK1 == 0.02
+        assert vstup_ppa().degradace_rok1 == 0.02
+
+    def test_rok1_zahrnuje_lid_a_dalsi_roky_navazuji(self):
+        bez_lid = ppa.spocti_ppa(vstup_ppa(degradace_rok1=0.0), self.CASY, self.SPOTREBA)
+        s_lid = ppa.spocti_ppa(vstup_ppa(degradace_rok1=0.02), self.CASY, self.SPOTREBA)
+        for t in range(3):
+            # výstup je zaokrouhlený na 0,1 kWh → absolutní tolerance
+            assert s_lid["roky"][t]["vyroba_kwh"] == pytest.approx(
+                bez_lid["roky"][t]["vyroba_kwh"] * 0.98, abs=0.2
+            )
+        # meziroční poměr zůstává (1 − d)
+        assert s_lid["roky"][1]["vyroba_kwh"] / s_lid["roky"][0]["vyroba_kwh"] == pytest.approx(
+            0.995, rel=1e-4
+        )
+
+    def test_headline_vyroba_rok1_odpovida_prvnimu_roku_tabulky(self):
+        r = ppa.spocti_ppa(vstup_ppa(), self.CASY, self.SPOTREBA)
+        assert r["vyroba_rok1_kwh"] == pytest.approx(r["roky"][0]["vyroba_kwh"], abs=0.2)
+        assert r["degradace_rok1"] == 0.02

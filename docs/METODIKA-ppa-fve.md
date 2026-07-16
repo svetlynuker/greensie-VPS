@@ -253,6 +253,11 @@ appky.
 
 ### 4.2 Degradace panelů po letech kontraktu
 
+> **Aktualizace (bughunt PPA-4, rozhodnuto 16. 7. 2026):** degradační faktor je
+> `f(t) = (1 − LID) × (1 − d)^(t−1)` — první rok zahrnuje LID (default −2 %
+> PERC, −1 % TOPCon; manažerský parametr `ppa_degradace_rok1`), dále −0,5 %/rok.
+> Zdroj: NREL (Jordan & Kurtz), viz `docs/reserze_kalkulator/pvgis-kalibrace-vyroby-fve.md` kap. D1.
+
 Výroba v roce `t` (t = 1..N):
 ```
 faktor_degradace(t) = (1 − d)^(t−1)          # d = ppa_degradace_rocni, default 0,005

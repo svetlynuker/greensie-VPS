@@ -83,6 +83,12 @@ délky (λ − 15°) × 4 min a času (equation of time) — viz PVGIS rešerše
 
 ## PPA-4 ⚠️ P1 — Degradace: chybí LID prvního roku
 
+> ✅ **Vyřešeno 16. 7. 2026** — commit `fix(ppa): LID prvního roku v degradaci (PPA-4)`
+> na větvi `bughunt-opravy-p0`. `f(t) = (1 − LID) × (1 − d)^(t−1)`; parametr
+> `ppa_degradace_rok1` v manažerském nastavení, default 0,02 (PERC; rozhodnuto),
+> TOPCon 0,01 ručně. Headline metriky i graf ukazují rok 1 včetně LID.
+> Testy: `test_ppa_fve.py::TestDegradaceLid`.
+
 **Kde:** `VYCHOZI_DEGRADACE_ROCNI = 0.005`, `spocti_ppa()` — `(1−d)^(t−1)`.
 
 **Co je špatně:** plochých 0,5 %/rok ignoruje pokles prvního roku (LID): PERC typicky

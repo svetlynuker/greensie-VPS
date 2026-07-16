@@ -57,6 +57,7 @@ existující tabulky:
   | `ppa_index_dodavatel_rocni` | roční eskalace ceny dodavatele | default = index PPA |
   | `ppa_index_prebytek_rocni` | roční eskalace ceny přebytku | default 0 |
   | `ppa_degradace_rocni` | degradace panelů | default 0,005 |
+  | `ppa_degradace_rok1` | LID – degradace 1. roku (PPA-4) | default 0,02 (PERC); TOPCon 0,01 |
   | `ppa_oam_kc_kwp_rok` | provozní náklady investora | default 0 |
   | `ppa_diskontni_sazba` | diskont pro NPV/IRR | default 0,05 |
 
@@ -103,9 +104,11 @@ Výroba je **lineární v kWp** → pro sweep se simuluje jednou pro 1 kWp a jen
 Zdroj kalibrace: `docs/reserze_kalkulator/pvgis-kalibrace-vyroby-fve.md` (+ surová data
 `pvgis-data.csv`); regionální rozpětí ČR ~1 030–1 165 kWh/kWp, meziroční nejistota ±6 %.
 
-### 3.2 Degradace (kap. 4.2 metodiky)
-Rok `t`: `V_t = V_1 × (1 − degradace)^(t−1)`. Spárování se počítá znovu každý rok (min() je
-nelineární).
+### 3.2 Degradace (kap. 4.2 metodiky) — s LID prvního roku (bughunt PPA-4)
+Rok `t`: `V_t = V_nom × (1 − LID) × (1 − degradace)^(t−1)` — pokles prvního roku
+(LID, default −2 % PERC / −1 % TOPCon přes `ppa_degradace_rok1`) se projeví už
+v roce 1 a nese se celý kontrakt; headline metriky i graf ukazují rok 1 včetně
+LID. Spárování se počítá znovu každý rok (min() je nelineární).
 
 ### 3.3 Spárování výroby a spotřeby (`sparuj`) — samospotřeba / přetok / ořez / dokup
 Pořadí toku v každém intervalu: nejdřív samospotřeba, pak přetok do sítě omezený rezervovaným

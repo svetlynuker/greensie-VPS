@@ -1224,6 +1224,10 @@ def spocti_ppa(
     degradace = vstup.degradace_rocni
     if degradace is None:
         degradace = _ppa_param(nastaveni, "ppa_degradace_rocni", ppa_fve.VYCHOZI_DEGRADACE_ROCNI)
+    # LID – degradace prvního roku (audit PPA-4): −2 % PERC / −1 % TOPCon.
+    degradace_rok1 = vstup.degradace_rok1
+    if degradace_rok1 is None:
+        degradace_rok1 = _ppa_param(nastaveni, "ppa_degradace_rok1", ppa_fve.VYCHOZI_DEGRADACE_ROK1)
 
     # Lokalita: GPS z nabídky, fallback střed ČR.
     lat = ppa_fve.VYCHOZI_LAT
@@ -1300,6 +1304,7 @@ def spocti_ppa(
         index_dodavatel_rocni=float(index_dod),
         delka_kontraktu_roky=int(vstup.delka_kontraktu_roky),
         degradace_rocni=float(degradace),
+        degradace_rok1=float(degradace_rok1),
         capex_kc=0.0,
         prebytek_uctovat=bool(vstup.prebytek_uctovat),
         prebytek_cena_kc_mwh=float(prebytek_cena),

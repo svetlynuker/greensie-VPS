@@ -35,8 +35,13 @@ VYCHOZI_INTERVAL_H = 0.25
 # docs/reserze_kalkulator/pvgis-kalibrace-vyroby-fve.md.
 VYCHOZI_MERNY_VYNOS_KWH_KWP = 1055.0
 
-# Výchozí roční degradace panelů (kap. 4.2).
+# Výchozí roční degradace panelů (kap. 4.2). Medián terénních dat NREL.
 VYCHOZI_DEGRADACE_ROCNI = 0.005
+
+# Degradace prvního roku – LID (audit PPA-4, rozhodnuto 16. 7. 2026):
+# p-type PERC typicky −1,5 až −3 % (default −2 %), n-type TOPCon ~−1 %
+# (přes manažerské nastavení `ppa_degradace_rok1`).
+VYCHOZI_DEGRADACE_ROK1 = 0.02
 
 # Výchozí cena za kWp pro zjednodušený režim CAPEX (kap. 3.4/4.5).
 # ⚠️ Orientační odhad k potvrzení.
@@ -482,6 +487,8 @@ class VstupPPA:
     capex_rozpad: dict | None = None
     merny_vynos_kwh_kwp: float = VYCHOZI_MERNY_VYNOS_KWH_KWP
     interval_h: float = VYCHOZI_INTERVAL_H
+    # LID – pokles výroby už v prvním roce (audit PPA-4).
+    degradace_rok1: float = VYCHOZI_DEGRADACE_ROK1
 
 
 def spocti_ppa(
@@ -510,15 +517,23 @@ def spocti_ppa(
     mesice = [c.month for c in casy]
     e_spotreba = sum(spotreba_kwh)
 
-    bil1 = sparuj(vyroba1, spotreba_kwh, v.rezervovany_vykon_dodavky_kw, v.interval_h)
+    def _faktor_degradace(t: int) -> float:
+        # Kap. 4.2 + audit PPA-4: f(t) = (1 − LID) × (1 − d)^(t−1) – pokles
+        # prvního roku (LID) se projeví už v roce 1 a nese se celý kontrakt.
+        return (1.0 - v.degradace_rok1) * (1.0 - v.degradace_rocni) ** (t - 1)
+
+    # Headline bilance a graf reflektují rok 1 VČETNĚ LID (to klient dostane).
+    f1 = _faktor_degradace(1)
+    vyroba_r1 = [x * f1 for x in vyroba1] if f1 != 1.0 else vyroba1
+    bil1 = sparuj(vyroba_r1, spotreba_kwh, v.rezervovany_vykon_dodavky_kw, v.interval_h)
 
     roky = []
     uspora_kum = 0.0
     cf_rok: list[float] = []
     for t in range(1, max(1, v.delka_kontraktu_roky) + 1):
-        f = (1.0 - v.degradace_rocni) ** (t - 1)
-        vyroba_t = [x * f for x in vyroba1] if t > 1 else vyroba1
-        bil = sparuj(vyroba_t, spotreba_kwh, v.rezervovany_vykon_dodavky_kw, v.interval_h)
+        f = _faktor_degradace(t)
+        vyroba_t = [x * f for x in vyroba1] if t > 1 else vyroba_r1
+        bil = sparuj(vyroba_t, spotreba_kwh, v.rezervovany_vykon_dodavky_kw, v.interval_h) if t > 1 else bil1
 
         cena_ppa_t = v.cena_ppa_kc_mwh * (1 + v.index_ppa_rocni) ** (t - 1)
         cena_dod_t = v.cena_dodavatel_kc_mwh * (1 + v.index_dodavatel_rocni) ** (t - 1)
@@ -564,7 +579,7 @@ def spocti_ppa(
     irr = _irr(cf_rok, v.capex_kc)
 
     vyroba_rok1 = bil1.vyroba_kwh
-    graf = _graf_mesicni(mesice, vyroba1, spotreba_kwh, v.rezervovany_vykon_dodavky_kw, v.interval_h)
+    graf = _graf_mesicni(mesice, vyroba_r1, spotreba_kwh, v.rezervovany_vykon_dodavky_kw, v.interval_h)
 
     return {
         "kwp": round(v.kwp, 2),
@@ -593,6 +608,8 @@ def spocti_ppa(
         "rezervovany_vykon_dodavky_kw": v.rezervovany_vykon_dodavky_kw,
         "index_ppa_rocni": v.index_ppa_rocni,
         "index_dodavatel_rocni": v.index_dodavatel_rocni,
+        "degradace_rocni": v.degradace_rocni,
+        "degradace_rok1": v.degradace_rok1,
         "navratnost_roky": round(navratnost, 2) if navratnost is not None else None,
         "irr": round(irr, 4) if irr is not None else None,
         "npv_kc": round(npv, 2),

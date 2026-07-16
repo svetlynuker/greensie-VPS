@@ -78,6 +78,7 @@ const PPA_POLE = [
   { klic: "ppa_index_dodavatel_rocni", label: "Index ceny dodavatele (%/rok)" },
   { klic: "ppa_index_prebytek_rocni", label: "Index ceny přebytku (%/rok)" },
   { klic: "ppa_degradace_rocni", label: "Degradace panelů (%/rok, např. 0.005)" },
+  { klic: "ppa_degradace_rok1", label: "Degradace 1. roku – LID (0.02 = PERC, 0.01 = TOPCon)" },
   { klic: "ppa_oam_kc_kwp_rok", label: "O&M (Kč/kWp/rok)" },
   { klic: "ppa_diskontni_sazba", label: "Diskontní sazba NPV/IRR (např. 0.05)" },
 ];
