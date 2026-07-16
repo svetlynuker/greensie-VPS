@@ -73,6 +73,16 @@ překročení rezervovaného výkonu (1 108/521) se hodí jinam — viz PPA-9 (s
 
 ## PS-3 ⛔ P0 — Koeficient AKU: špatná definice „účinnosti“ (rozhodnuto: přepsat dle ERÚ)
 
+> ✅ **Vyřešeno 16. 7. 2026** — commit `fix(peak-shaving): model 2027 bez slevy AKU dle definice ERÚ (PS-3)`
+> na větvi `bughunt-opravy-p0`. Optimistická větev odstraněna (`_koeficient_aku`,
+> `navratnost_2027_optim`, `prumerny_koeficient_aku`, `predpoklad_aku_neoverovany`,
+> `*_bez_aku` pole i FE zobrazení slevy); jediný model 2027 = dřívější
+> konzervativní. Prahy U1/U2 v sazebníku ponechány (označené „předběžné,
+> model neaplikuje“). FE zpětně kompatibilní se staršími uloženými výsledky
+> (fallback na `*_konzerv`/`*_bez_aku`). Fáze 2 (výpočet K z bilance
+> předávacího místa pro místa s exportem) odložena po VKP ERÚ 10/2026.
+> Testy: `test_peak_shaving.py::TestEkonomika2027BezAku`.
+
 **Kde:** `peak_shaving.py` — `_koeficient_aku()`, `energie_pri_stropu()`, použití v
 `ekonomika_2027()`; seed klíče `u1_ucinnost`/`u2_ucinnost`.
 

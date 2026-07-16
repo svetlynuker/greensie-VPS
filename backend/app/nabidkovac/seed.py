@@ -142,7 +142,7 @@ _SEED_SAZBY = [_radek_2026(d, h) for (d, h) in sorted(_RK_2026)] + [
 
 # Klíče, které se do už existujících řádků smí DOPLNIT, když chybí/jsou None
 # (vyplněné hodnoty se nikdy nepřepisují – neztratí se ruční úprava z adminu):
-# prahy AKU (kap. 4.8) a měsíční cena RK (audit PS-1/PS-2).
+# prahy AKU (předběžné, v modelu se neaplikují – PS-3) a měsíční cena RK (PS-1/PS-2).
 _BACKFILL_KLICE = ("u1_ucinnost", "u2_ucinnost", "cena_mesicni_rk_kc_kw_mesic")
 
 # Cílené opravy přesně známých chybných hodnot z dřívějších seedů

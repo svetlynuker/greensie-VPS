@@ -142,7 +142,7 @@ def energie_pri_stropu(
     """Projede profil na daném stropu a vrátí (nabito_kwh, vybito_kwh).
 
     Stejná simulace jako `strop_je_udrzitelny` (kap. 4.2), jen navíc sčítá
-    energii nabitou a vybitou – potřeba pro Koeficient AKU (kap. 4.8) a grafy.
+    energii nabitou a vybitou – potřeba pro grafy a ocenění ztrát baterie.
     Nemění fyziku simulace, jen ji „odposlouchává".
     """
     if vykon_kw <= 0 or kapacita_kwh <= 0:
@@ -250,47 +250,23 @@ KLICE_2027 = (
 )
 
 
-def _koeficient_aku(ucinnost: float, u1: float, u2: float) -> float:
-    """Koeficient AKU (kap. 4.8): 0 pod U1, lineárně do 1 mezi U1 a U2, 1 nad U2.
+def _mesicni_naklad_2027(rp_kw: float, mesicni_max_kw: float, p: dict) -> tuple[float, str]:
+    """Náklad za jeden měsíc v modelu 2027 + který tarif vyšel levněji (kap. 4.6).
 
-    ⚠️ Optimistický, nepotvrzený předpoklad – přesná definice „účinnosti" pro
-    čistě peak-shavingovou baterii bez exportu není ověřená (viz metodika 4.8).
+    `min(RP×T1_kap + M×T1_špička, RP×T2_kap + M×T2_špička)` + penalizace za
+    překročení RP. Sleva „Koeficient AKU" se NEaplikuje: dle definice ERÚ (část
+    24 informativního CV) se koeficient počítá z podílu zpětně dodané / odebrané
+    elektřiny ZA CELÉ PŘEDÁVACÍ MÍSTO – peak-shavingová baterie uvnitř odběru
+    nic zpětně nedodává → podíl ≈ 0 → K = 0 → žádná sleva (audit 16. 7. 2026,
+    bughunt PS-3; rozhodnuto). Prahy U1/U2 zůstávají v sazebníku pro případné
+    budoucí použití u míst s velkým exportem (po VKP ERÚ 10/2026).
     """
-    if u2 <= u1:
-        return 1.0 if ucinnost >= u2 else 0.0
-    if ucinnost <= u1:
-        return 0.0
-    if ucinnost >= u2:
-        return 1.0
-    return (ucinnost - u1) / (u2 - u1)
-
-
-def _mesicni_naklad_2027(
-    rp_kw: float,
-    mesicni_max_kw: float,
-    p: dict,
-    koeficient_aku: float = 0.0,
-    nabijeci_vykon_kw: float = 0.0,
-) -> tuple[float, str]:
-    """Náklad za jeden měsíc v modelu 2027 + který tarif vyšel levněji (kap. 4.6/4.8).
-
-    Sleva Koeficient AKU se uplatní jen na část naměřeného maxima krytou nabíjecím
-    výkonem baterie (`M_kryto = min(M, nabíjecí výkon)`); zbytek nad tento výkon se
-    platí za plnou sazbu. Bez baterie (koef=0, výkon=0) se vzorec redukuje na
-    původní `min(RP×T1_kap + M×T1_špička, RP×T2_kap + M×T2_špička)`.
-    """
-    m_kryto = min(mesicni_max_kw, nabijeci_vykon_kw)
-    m_zbytek = mesicni_max_kw - m_kryto
-    t1_sp = p["t1_spicka_kc_kw_mesic"]
-    t2_sp = p["t2_spicka_kc_kw_mesic"]
-    nakl_spicka_t1 = m_zbytek * t1_sp + m_kryto * t1_sp * (1 - koeficient_aku)
-    nakl_spicka_t2 = m_zbytek * t2_sp + m_kryto * t2_sp * (1 - koeficient_aku)
-    c1 = rp_kw * p["t1_kapacita_kc_kw_mesic"] + nakl_spicka_t1
-    c2 = rp_kw * p["t2_kapacita_kc_kw_mesic"] + nakl_spicka_t2
-    if c1 <= c2:
-        zaklad, tarif = c1, "t1"
+    t1 = rp_kw * p["t1_kapacita_kc_kw_mesic"] + mesicni_max_kw * p["t1_spicka_kc_kw_mesic"]
+    t2 = rp_kw * p["t2_kapacita_kc_kw_mesic"] + mesicni_max_kw * p["t2_spicka_kc_kw_mesic"]
+    if t1 <= t2:
+        zaklad, tarif = t1, "t1"
     else:
-        zaklad, tarif = c2, "t2"
+        zaklad, tarif = t2, "t2"
     penalizace = max(0.0, mesicni_max_kw - rp_kw) * float(p.get("sazba_prekroceni_kc_kw_mesic", 0.0))
     return zaklad + penalizace, tarif
 
@@ -351,69 +327,34 @@ def ekonomika_2027(
       celý rok), M = měsíční maximum PO baterii, sražené co nejhlouběji v každém
       měsíci (kap. 4.6 „srážej co to dá“). RP se přes rok nemění – mění se jen M.
 
+    Sleva „Koeficient AKU" se NEuplatňuje – dle definice ERÚ vychází pro
+    peak-shavingovou baterii uvnitř odběru (bez exportu do soustavy) K = 0
+    (audit 16. 7. 2026, PS-3). Jediný model 2027 = dřívější „konzervativní".
+
     Dokud ERÚ nezveřejní závazné sazby (parametry chybí), vrací se status
     "ceka_na_sazby_eru" a appka místo čísel ukáže hlášku.
     """
     if not parametry or any(parametry.get(k) is None for k in KLICE_2027):
         return {"status": "ceka_na_sazby_eru"}
 
-    # Bez peak shavingu (RP = aktuální sjednaná, M = naměřené maximum, bez slevy AKU).
+    # Bez peak shavingu (RP = aktuální sjednaná, M = naměřené maximum).
     raw = _mesicni_maxima(profil_kw, mesice)
     soucasny, _, _ = _rocni_naklad_2027(rezervovana_kapacita_kw, raw, parametry)
 
-    # Prahy účinnosti Koeficientu AKU (kap. 4.8) – z parametrů, s fallbackem.
-    u1 = float(parametry.get("u1_ucinnost", 0.60))
-    u2 = float(parametry.get("u2_ucinnost", 0.75))
+    # S peak shavingem: po měsících srazit M co nejhlouběji (kap. 4.6).
+    mesicni_po = mesicni_maxima_po_baterii(profil_kw, mesice, vykon_kw, kapacita_kwh, interval_h)
+    novy, poc_t1, poc_t2 = _rocni_naklad_2027(nova_rezervovana_kapacita_kw, mesicni_po, parametry)
 
-    # S peak shavingem: po měsících srazit M co nejhlouběji a spočítat účinnost
-    # nabito/vybito → koeficient AKU → sleva na složku „špička".
-    po_mesicich: dict[int, list[float]] = {}
-    for odber, m in zip(profil_kw, mesice):
-        po_mesicich.setdefault(m, []).append(odber)
-
-    novy = 0.0  # s AKU (optimistický)
-    novy_bez_aku = 0.0  # bez AKU (konzervativní)
-    poc_t1 = poc_t2 = 0
-    ucinnosti: list[float] = []
-    koefy: list[float] = []
-    for vals in po_mesicich.values():
-        strop_m = min_udrzitelny_strop(vals, vykon_kw, kapacita_kwh, interval_h)
-        nabito, vybito = energie_pri_stropu(vals, strop_m, vykon_kw, kapacita_kwh, interval_h)
-        ucinnost = (vybito / nabito) if nabito > 0 else 0.0
-        koef = _koeficient_aku(ucinnost, u1, u2)
-        c, tarif = _mesicni_naklad_2027(
-            nova_rezervovana_kapacita_kw, strop_m, parametry, koef, vykon_kw
-        )
-        # Konzervativní: stejný model 2027, ale bez slevy AKU (koef = 0).
-        c0, _ = _mesicni_naklad_2027(nova_rezervovana_kapacita_kw, strop_m, parametry, 0.0, vykon_kw)
-        novy += c
-        novy_bez_aku += c0
-        if tarif == "t1":
-            poc_t1 += 1
-        else:
-            poc_t2 += 1
-        ucinnosti.append(min(ucinnost, 1.0))  # v bezztrátovém modelu může poměr přesáhnout 1
-        koefy.append(koef)
-
-    n = len(po_mesicich) or 1
     return {
         "status": "spocitano",
         "soucasny_rocni_naklad": soucasny,
-        # S AKU = optimistický scénář.
         "novy_rocni_naklad": novy,
         "rocni_uspora": soucasny - novy,
-        # Bez AKU = konzervativní scénář (model 2027 bez nepotvrzené slevy).
-        "novy_rocni_naklad_bez_aku": novy_bez_aku,
-        "rocni_uspora_bez_aku": soucasny - novy_bez_aku,
         # RP je jedna roční hodnota (nemění se po měsících) – shodná s novou
         # rezervovanou kapacitou z roku 2026.
         "rezervovana_kapacita_kw": nova_rezervovana_kapacita_kw,
         "pocet_mesicu_t1": poc_t1,
         "pocet_mesicu_t2": poc_t2,
-        # Koeficient AKU (kap. 4.8) – NEPOTVRZENÝ optimistický předpoklad.
-        "predpoklad_aku_neoverovany": True,
-        "prumerna_ucinnost": sum(ucinnosti) / n,
-        "prumerny_koeficient_aku": sum(koefy) / n,
         "je_modelovy_odhad": bool(je_modelovy_odhad),
     }
 
@@ -468,10 +409,9 @@ class Varianta:
     nova_rezervovana_kapacita_kw: float
     rocni_uspora_2026: float
     navratnost_roky: float | None  # None = úspora ≤ 0 (nekonečná návratnost)
-    # Návratnost podle jednotlivých modelů (kap. 4.5/4.6/4.8):
+    # Návratnost podle jednotlivých modelů (kap. 4.5/4.6):
     navratnost_2026: float | None  # dle úspory 2026 (= navratnost_roky, výběr varianty)
-    navratnost_2027_optim: float | None  # dle úspory 2027 SE slevou AKU (optimistický)
-    navratnost_2027_konzerv: float | None  # dle úspory 2027 BEZ AKU (konzervativní)
+    navratnost_2027: float | None  # dle úspory 2027 (jediný model, bez slevy AKU – PS-3)
     ekonomika_2026: dict
     ekonomika_2027: dict
     doporuceno: bool
@@ -543,13 +483,11 @@ def spocti_variantu(
         interval_h,
     )
 
-    # Návratnost dle modelu 2027 (optimistická se slevou AKU / konzervativní bez ní).
+    # Návratnost dle modelu 2027 (jediný model – bez slevy AKU, PS-3).
     if ek_2027.get("status") == "spocitano":
-        navratnost_2027_optim = _navratnost(cena, ek_2027.get("rocni_uspora", 0.0))
-        navratnost_2027_konzerv = _navratnost(cena, ek_2027.get("rocni_uspora_bez_aku", 0.0))
+        navratnost_2027 = _navratnost(cena, ek_2027.get("rocni_uspora", 0.0))
     else:
-        navratnost_2027_optim = None
-        navratnost_2027_konzerv = None
+        navratnost_2027 = None
 
     doporuceno = navratnost is not None and navratnost <= max_navratnost_roky
     return Varianta(
@@ -563,8 +501,7 @@ def spocti_variantu(
         rocni_uspora_2026=ek.rocni_uspora,
         navratnost_roky=navratnost,
         navratnost_2026=navratnost,
-        navratnost_2027_optim=navratnost_2027_optim,
-        navratnost_2027_konzerv=navratnost_2027_konzerv,
+        navratnost_2027=navratnost_2027,
         ekonomika_2026=ek.__dict__,
         ekonomika_2027=ek_2027,
         doporuceno=doporuceno,

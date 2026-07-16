@@ -48,8 +48,10 @@ Nese dvě různé tarifní struktury (2026 vs. 2027) přes flexibilní JSONB.
 Unikátní klíč: `(distributor, napetova_hladina, struktura_tarifu, platne_od)`.
 
 **Obsah `parametry`:**
-- `stara_2026`: `cena_rezervovana_kapacita_kc_kw_rok`, `cena_prekroceni_kc_kw`
-- `nova_2027`: `t1_kapacita_kc_kw_mesic`, `t1_spicka_kc_kw_mesic`, `t2_kapacita_kc_kw_mesic`, `t2_spicka_kc_kw_mesic`, `sazba_prekroceni_kc_kw_mesic`, `u1_ucinnost`, `u2_ucinnost`
+- `stara_2026`: `cena_rezervovana_kapacita_kc_kw_rok`, `cena_mesicni_rk_kc_kw_mesic`
+  (pokuta za překročení RK se odvozuje 1,5× — PS-2; starší klíč
+  `cena_prekroceni_kc_kw` jen jako fallback ručních sazeb)
+- `nova_2027`: `t1_kapacita_kc_kw_mesic`, `t1_spicka_kc_kw_mesic`, `t2_kapacita_kc_kw_mesic`, `t2_spicka_kc_kw_mesic`, `sazba_prekroceni_kc_kw_mesic`, `u1_ucinnost`, `u2_ucinnost` (prahy AKU: předběžné, v modelu se neaplikují — PS-3)
 
 ### 2.2 `technologie` (upravená)
 - Pro `typ = baterie` musí být vyplněné **obě** pole: `vykon_kw` (nabíjecí = vybíjecí výkon) i `kapacita_kwh`. Validace v API.
@@ -163,35 +165,33 @@ Zákazník tarif nevybírá, určuje ho distributor podle skutečné spotřeby.
 
 **Měsíční náklad:**
 ```
-M_kryto  = min(M, nabíjecí_výkon_baterie)
-M_zbytek = M − M_kryto
-spička_Tx = M_zbytek × Tx_špička + M_kryto × Tx_špička × (1 − koeficient_aku)
-
-měsíční_náklad = min(RP × T1_kapacita + spička_T1,
-                     RP × T2_kapacita + spička_T2)
+měsíční_náklad = min(RP × T1_kapacita + M × T1_špička,
+                     RP × T2_kapacita + M × T2_špička)
                + max(0, M − RP) × sazba_prekroceni
 roční_náklad_2027 = Σ přes 12 měsíců
 ```
 kde `M` = naměřené měsíční maximum, `RP` = rezervovaný příkon.
 
 **Dva scénáře (RP je vždy JEDNA roční hodnota – rezervaci na síti nelze měnit po měsících):**
-- **Bez peak shavingu:** `RP` = aktuální sjednaná, `M` = naměřené měsíční maximum z profilu, `koeficient_aku = 0`.
+- **Bez peak shavingu:** `RP` = aktuální sjednaná, `M` = naměřené měsíční maximum z profilu.
 - **S peak shavingem:** `RP` = nová (min. udržitelný strop pro celý rok), `M` = **měsíční maximum po baterii sražené co nejhlouběji v každém měsíci** (kap. 4.6 „srážej co to dá“ – per měsíc se hledá nejnižší udržitelný strop; mění se jen `M`, ne `RP`).
 
 > **Klíčová oprava během vývoje:** původně (dle promptu) baterie 2027 srážela jen na jeden roční strop → v letních měsících nedělala nic a úspora vycházela nízká. Přepnuto na per-měsíční srážení `M` dle metodiky 4.6 → úspora 2027 výrazně vyšší. Rezervovaná kapacita zůstává jedna roční hodnota.
 
-### 4.6 Koeficient AKU (kap. 4.8) — ⚠️ NEPOTVRZENÝ optimistický předpoklad
-Sleva na složku „špička“ pro bateriová úložiště podle „účinnosti“ provozu:
-```
-účinnost_měsíc = energie_vybito_kwh / energie_nabito_kwh      (ze simulace, po měsících)
-koeficient_aku = 0                              když účinnost ≤ U1
-               = (účinnost − U1) / (U2 − U1)    když U1 < účinnost < U2
-               = 1                              když účinnost ≥ U2
-```
-`U1 = 0,60`; `U2 = 0,75` (VN) / `0,70` (VVN). Sleva se uplatní jen do výše
-nabíjecího výkonu baterie (`M_kryto`).
+### 4.6 Koeficient AKU — ❌ neaplikuje se (vyřešeno auditem, bughunt PS-3)
+ERÚ (část 24 informativního CV) definuje koeficient AKU z podílu **zpětně
+dodané elektřiny do soustavy / odebrané elektřiny ze soustavy za celé předávací
+místo a zúčtovací období** (K = 0 pod U1, lineárně do 1 mezi U1–U2; sleva
+násobí celý čtvrthodinový diagram odebraného výkonu a snižuje jen platbu za
+maximální odebraný výkon). **Peak-shavingová baterie uvnitř odběru závodu nic
+zpětně nedodává → podíl ≈ 0 → K = 0 → žádná sleva.** Benefit cílí na
+samostatná úložiště a přečerpávací elektrárny.
 
-> **Dopad:** v bezztrátovém v1 modelu vychází účinnost ≈ 1,0 → **plná sleva (100 %)** → náklad 2027 „s PS“ výrazně klesá. Je to optimistický, jasně označený odhad. Výstup nese `predpoklad_aku_neoverovany: true` + průměrnou účinnost/slevu. UI to viditelně hlásí. **K ověření:** přesná definice „účinnosti odběrného místa“ pro peak-shaving baterii bez exportu (manuál ERÚ).
+Dřívější optimistická větev (účinnost = vybito/nabito baterie ≈ 1 → plná
+sleva) byla **strukturálně mylná a byla odstraněna** — jediný model 2027 je
+dřívější „konzervativní bez AKU“. Prahy `u1_ucinnost`/`u2_ucinnost` v sazebníku
+zůstávají (předběžné hodnoty, VKP ERÚ 10/2026) pro případné budoucí použití
+u míst s velkým exportem (kombinace PPA + baterie, fáze 2).
 
 ### 4.7 Výběr varianty a návratnost (kap. 4.5)
 - Pro každý produkt z katalogu (`typ = baterie`, dostupný, s výkonem i kapacitou) × počet kusů 1–5.
@@ -200,12 +200,14 @@ nabíjecího výkonu baterie (`M_kryto`).
 - **Výběr vítěze řídí návratnost dle modelu 2026** (potvrzený tarif).
 - Práh: pokud nejlepší varianta má návratnost > `max_navratnost_roky_peak_shaving` (výchozí 5 let), vrátí se stejně, ale označená `doporuceno = false`.
 
-**Návratnost = cena_baterie_celkem / roční_úspora_daného_modelu** (`None`, když úspora ≤ 0). Zobrazují se **tři návratnosti**:
+**Návratnost = cena_baterie_celkem / roční_úspora_daného_modelu** (`None`, když úspora ≤ 0). Zobrazují se **dvě návratnosti**:
 | Model | Základ (roční úspora) |
 |---|---|
 | **2026** | úspora 2026 (řídí výběr varianty) |
-| **2027 optimistický** | úspora 2027 **se slevou AKU** |
-| **2027 konzervativní** | úspora 2027 **bez AKU** |
+| **2027** | úspora 2027 (jediný model — bez slevy AKU, viz 4.6 / bughunt PS-3) |
+
+Starší uložené výsledky nesou pole `navratnost_2027_optim`/`navratnost_2027_konzerv`
+a `*_bez_aku` — FE u nich zobrazuje konzervativní hodnoty.
 
 ### 4.8 Data pro grafy (`graf_maxima`)
 Měsíční maxima odběru: `bez_baterie` (naměřené), `s_baterii_2026` (= min(raw, roční strop)),
@@ -255,7 +257,7 @@ nese `ekonomika_2026`, `ekonomika_2027` (vč. AKU polí) a tři návratnosti.
 
 ## 8. Otevřené body / předpoklady k ověření
 
-1. **Definice účinnosti pro Koeficient AKU** (kap. 4.8) – nepotvrzeno, zda pro peak-shaving baterii bez exportu stačí interní cyklování. V bezztrátovém v1 → účinnost ≈ 1 → plná sleva. Ověřit s manuálem ERÚ.
+1. ~~**Definice účinnosti pro Koeficient AKU**~~ → vyřešeno (bughunt PS-3, 16. 7. 2026): dle ERÚ se počítá z toku na předávacím místě; pro BTM baterii bez exportu K = 0 → sleva odstraněna z modelu. Znovu vyhodnotit po VKP ERÚ (10/2026) pro místa s velkým exportem.
 2. **Sazby 2027** – modelový odhad, ne finální ceny ERÚ (rozhodnutí ~11/2026). Označeno `je_modelovy_odhad`.
 3. ~~**EG.D a PRE** – sazby nedoplněny~~ → doplněno seedem z CV 13/2025 (bughunt PS-1, 16. 7. 2026).
 4. ~~**ČEZ VVN rezervovaná kapacita 2026** – nedohledáno~~ → doplněno (117,432 Kč/kW/měs, bughunt PS-1).

@@ -248,12 +248,13 @@ export default function PeakShavingPanel({ nabidka }) {
                   <table className="nb-table">
                     <tbody>
                       <tr><td>Model 2026 (dnešní tarif)</td><td><b>{roky(dop.navratnost_2026 ?? dop.navratnost_roky)}</b></td></tr>
-                      <tr><td>Model 2027 – optimistický (se slevou AKU)</td><td>{roky(dop.navratnost_2027_optim)}</td></tr>
-                      <tr><td>Model 2027 – konzervativní (bez AKU)</td><td>{roky(dop.navratnost_2027_konzerv)}</td></tr>
+                      {/* Starší uložené výsledky nesou navratnost_2027_konzerv (PS-3). */}
+                      <tr><td>Model 2027 (nová struktura ERÚ)</td><td>{roky(dop.navratnost_2027 ?? dop.navratnost_2027_konzerv)}</td></tr>
                     </tbody>
                   </table>
                   <div style={{ fontSize: 11, color: "color-mix(in srgb, var(--st-warn) 72%, var(--ink))", marginTop: 4 }}>
-                    Výběr varianty se řídí modelem 2026. Hodnoty 2027 jsou modelový odhad; optimistická varianta zahrnuje nepotvrzenou slevu AKU.
+                    Výběr varianty se řídí modelem 2026. Hodnoty 2027 jsou modelový odhad (závazný výměr ERÚ ~11/2026).
+                    Sleva AKU se dle definice ERÚ na peak-shavingovou baterii bez exportu nevztahuje.
                   </div>
                 </div>
               </div>
@@ -289,23 +290,18 @@ export default function PeakShavingPanel({ nabidka }) {
                     <>
                       <table className="nb-table">
                         <tbody>
+                          {/* Starší uložené výsledky (před PS-3) nesou *_bez_aku – zobrazí se
+                              konzervativní čísla; sleva AKU pro BTM baterii neexistuje. */}
                           <tr><td>Roční náklad bez peak shavingu</td><td>{kc(dop.ekonomika_2027.soucasny_rocni_naklad)}</td></tr>
-                          <tr><td>Roční náklad s peak shavingem</td><td>{kc(dop.ekonomika_2027.novy_rocni_naklad)}</td></tr>
-                          <tr><td><b>Roční úspora</b></td><td><b>{kc(dop.ekonomika_2027.rocni_uspora)}</b></td></tr>
+                          <tr><td>Roční náklad s peak shavingem</td><td>{kc(dop.ekonomika_2027.novy_rocni_naklad_bez_aku ?? dop.ekonomika_2027.novy_rocni_naklad)}</td></tr>
+                          <tr><td><b>Roční úspora</b></td><td><b>{kc(dop.ekonomika_2027.rocni_uspora_bez_aku ?? dop.ekonomika_2027.rocni_uspora)}</b></td></tr>
                           <tr><td>Měsíců na tarifu T1 / T2</td><td>{dop.ekonomika_2027.pocet_mesicu_t1} / {dop.ekonomika_2027.pocet_mesicu_t2}</td></tr>
-                          {dop.ekonomika_2027.prumerny_koeficient_aku != null && (
-                            <tr><td>Průměrná sleva AKU</td><td>{Math.round(dop.ekonomika_2027.prumerny_koeficient_aku * 100)} %</td></tr>
-                          )}
                         </tbody>
                       </table>
                       <div style={{ fontSize: 11, color: "color-mix(in srgb, var(--st-warn) 72%, var(--ink))", marginTop: 6 }}>
-                        Modelový odhad, ne finální cena ERÚ (závazné rozhodnutí ~11/2026).
+                        Modelový odhad, ne finální cena ERÚ (závazné rozhodnutí ~11/2026). Bez slevy AKU –
+                        dle ERÚ se počítá z toku na předávacím místě a pro baterii uvnitř odběru vychází nulová.
                       </div>
-                      {dop.ekonomika_2027.predpoklad_aku_neoverovany && (
-                        <div style={{ fontSize: 11, color: "var(--st-crit)", marginTop: 4 }}>
-                          ⚠ Zahrnuje nepotvrzený předpoklad slevy pro baterie (Koeficient AKU) – k ověření s manuálem ERÚ.
-                        </div>
-                      )}
                     </>
                   ) : (
                     <div style={{ fontSize: 13, color: "var(--fm-muted)" }}>Čeká se na oficiální sazby ERÚ.</div>
