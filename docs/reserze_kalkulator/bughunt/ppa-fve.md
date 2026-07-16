@@ -32,6 +32,12 @@ if max_kwp and max_kwp > 0:
 
 ## PPA-2 ⚠️ P1 — Kalibrace: měrný výnos, měsíční tabulka a orientace jsou ilustrativní a odchylují se od reality
 
+> ✅ **Vyřešeno 16. 7. 2026** — commit `fix(ppa): kalibrace výroby dle PVGIS v5.3 + posun letního času (PPA-2, PPA-3)`
+> na větvi `bughunt-opravy-p0`. Výnos 1055, měsíční řada = přesné normované
+> hodnoty SARAH3 (Σ = 1000; celočíselná řada z rešerše by sečetla 1001),
+> k_orient dle kap. C. Regionalizace dle GPS a PVGIS API = fáze 2.
+> Testy: `test_ppa_fve.py::TestKalibraceVyroby`.
+
 **Kde:** `VYCHOZI_MERNY_VYNOS_KWH_KWP = 1000`, `_MESICNI_VYNOS`, `_ORIENT_TAB`
 (vše označeno ⚠️ ke kalibraci — kalibrace je teď hotová, viz PVGIS rešerše).
 
@@ -55,6 +61,12 @@ Fáze 2: PVGIS API za runtime z GPS (s cache, fallback na interní model).
 ---
 
 ## PPA-3 ⚠️ P1 — Letní čas: výroba centrovaná na 12:00 místního času, reálně ~13:00 SELČ
+
+> ✅ **Vyřešeno 16. 7. 2026** — commit `fix(ppa): kalibrace výroby dle PVGIS v5.3 + posun letního času (PPA-2, PPA-3)`
+> na větvi `bughunt-opravy-p0`. V okně SELČ (poslední neděle března 02:00 –
+> poslední neděle října 03:00) se tvar dne vyhodnocuje v `g(t − 1 h)` → letní
+> špička výroby ~13:00 lokálního času. Jemnější korekce (délka, časová rovnice,
+> ±15 min) zůstávají vědomě zanedbané. Testy: `test_ppa_fve.py::TestLetniCas`.
 
 **Kde:** `simuluj_vyrobu()` — `t_h` z lokálních časových značek, solární okno centrované
 na 12:00 (`_slunecni_okno`).

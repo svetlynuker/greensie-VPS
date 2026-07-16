@@ -52,7 +52,7 @@ existující tabulky:
   |---|---|---|
   | `ppa_cena_fve_kc_kwp` | cena za kWp (zjednodušený CAPEX) | default 25 000 |
   | `ppa_ostatni_naklady_kc_kwp` | BOS (montáž/konstrukce) pro komponentový CAPEX | default 0 |
-  | `ppa_merny_vynos_kwh_kwp` | měrný výnos FVE | default 1000; **pojistka 100–2000** |
+  | `ppa_merny_vynos_kwh_kwp` | měrný výnos FVE | default 1055 (PVGIS v5.3, střed ČR — PPA-2); **pojistka 100–2000** |
   | `ppa_index_ceny_rocni` | roční eskalace PPA ceny | default 0,03 |
   | `ppa_index_dodavatel_rocni` | roční eskalace ceny dodavatele | default = index PPA |
   | `ppa_index_prebytek_rocni` | roční eskalace ceny přebytku | default 0 |
@@ -70,13 +70,17 @@ existující tabulky:
 ## 3. Výpočtová logika — `backend/app/nabidkovac/ppa_fve.py`
 
 Čistě deterministický modul bez závislosti na DB/FastAPI (jako `peak_shaving.py`). Konstanty:
-interval `0,25 h`, měrný výnos `1000` kWh/kWp, degradace `0,5 %/rok`, cena FVE `25 000` Kč/kWp,
-šířka ČR `49,8°`, horní mez velikosti `3× roční spotřeba`.
+interval `0,25 h`, měrný výnos `1055` kWh/kWp (PVGIS v5.3, střed ČR — bughunt PPA-2),
+degradace `0,5 %/rok`, cena FVE `25 000` Kč/kWp, šířka ČR `49,8°`, horní mez velikosti
+`3× roční spotřeba`.
 
-### 3.1 Simulace výroby FVE (`simuluj_vyrobu`)
+### 3.1 Simulace výroby FVE (`simuluj_vyrobu`) — kalibrováno PVGIS v5.3 (PPA-2)
 Roční výnos `E_rok = kWp × měrný_výnos × korekce_orientace(azimut, sklon)`. Rozpuštění:
-- **po měsících** dle tabulky (kWh/kWp/měsíc při ročním výnosu 1000):
-  led 26, úno 42, bře 83, dub 120, kvě 135, čvn 132, čvc 138, srp 120, zář 90, říj 58, lis 30, pro 26 (Σ = 1000);
+- **po měsících** dle tabulky (kWh/kWp/měsíc při ročním výnosu 1000; normované hodnoty
+  SARAH3, střed ČR, Σ = přesně 1000):
+  led 30,6 · úno 51,8 · bře 84,9 · dub 113,7 · kvě 120,9 · čvn 123,1 · čvc 124,6 ·
+  srp 114,9 · zář 98,5 · říj 72,0 · lis 36,0 · pro 29,0 — zimní půlrok 30,4 % ročního
+  výnosu (dřívější ilustrativní tabulka jen 26,5 %);
 - **měsíc na dny** podle počtu dní přítomných v profilu;
 - **den na intervaly** clear-sky křivkou ze solární geometrie:
   ```
@@ -86,9 +90,18 @@ Roční výnos `E_rok = kWp × měrný_výnos × korekce_orientace(azimut, sklon
   g(t) = max(0, sin(π·(t−t_východ)/(t_západ−t_východ)))
   V_i  = E_den · g(t_i) / Σ_den g                  # kWh za interval
   ```
-- **korekce orientace** `k_orient(azimut, sklon)` – bilineární interpolace tabulky (jih+35° = 1,00; V/Z+35° ≈ 0,84; sever ≈ 0,50). ⚠️ ilustrativní hodnoty ke kalibraci.
+  **Letní čas (PPA-3):** časové značky profilu jsou lokální → v okně SELČ
+  (poslední neděle v březnu 02:00 – poslední neděle v říjnu 03:00) se tvar dne
+  vyhodnocuje v `t − 1 h`. Špička výroby tak v létě padne na ~13:00 lokálního
+  času (dřív model „vyráběl“ o hodinu dřív a u odpolední zátěže podstřeloval
+  samospotřebu o ~7 % — bughunt test T4).
+- **korekce orientace** `k_orient(azimut, sklon)` – bilineární interpolace tabulky
+  PVGIS v5.3 (jih+35° = 1,00; JV/JZ+35° = 0,94; V/Z+35° = 0,80; sever+35° = 0,54;
+  sever+60° = 0,34; horizontála = 0,85; strmý jih 60° = 0,94).
 
 Výroba je **lineární v kWp** → pro sweep se simuluje jednou pro 1 kWp a jen se škáluje.
+Zdroj kalibrace: `docs/reserze_kalkulator/pvgis-kalibrace-vyroby-fve.md` (+ surová data
+`pvgis-data.csv`); regionální rozpětí ČR ~1 030–1 165 kWh/kWp, meziroční nejistota ±6 %.
 
 ### 3.2 Degradace (kap. 4.2 metodiky)
 Rok `t`: `V_t = V_1 × (1 − degradace)^(t−1)`. Spárování se počítá znovu každý rok (min() je
@@ -210,8 +223,9 @@ nastavují v adminu (jsou to data, ne kód – změna se projeví bez deploye).
 ---
 
 ## 7. Otevřené body / předpoklady k ověření (⚠️)
-1. **Koeficienty výroby** (měrný výnos 1000, měsíční rozdělení, tabulka orientace) jsou
-   ilustrativní – kalibrovat pro ČR, ideálně po krajích / z GPS (příp. PVGIS).
+1. ~~**Koeficienty výroby** ilustrativní~~ → kalibrováno PVGIS v5.3/SARAH3 (bughunt PPA-2,
+   16. 7. 2026): výnos 1055, měsíční řada i k_orient z reálných all-sky dat. Zbývá fáze 2:
+   regionalizace dle GPS (interpolace tabulky A rešerše), příp. PVGIS API za runtime s cache.
 2. **Cena za kWp / O&M** – doplnit reálné hodnoty do manažerského nastavení.
 3. **„Cena dodavatele"** – jen silová složka vs. vč. distribuce; a jak eskalovat.
 4. **Prodej přebytku** – default vypnuto; cena se zadává u nabídky.

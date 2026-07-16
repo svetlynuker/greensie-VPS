@@ -18,17 +18,22 @@ Všechny peněžní hodnoty jsou bez DPH.
 
 from __future__ import annotations
 
+import calendar
 import dataclasses
 import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
+from functools import lru_cache
 
 # Granularita vstupních dat (fallback, když ji nejde odvodit z časových značek).
 VYCHOZI_INTERVAL_H = 0.25
 
-# Výchozí měrný výnos ČR, jižní orientace, optimální sklon ~35° (kap. 4.1).
-# ⚠️ Ilustrativní default k potvrzení/kalibraci – reálné rozpětí ČR ~950–1080.
-VYCHOZI_MERNY_VYNOS_KWH_KWP = 1000.0
+# Výchozí měrný výnos ČR, jižní orientace, optimální sklon ~35°, ztráty 14 %
+# (kap. 4.1). Kalibrováno PVGIS v5.3 / SARAH3 (audit 16. 7. 2026, PPA-2):
+# střed ČR 1 055 kWh/kWp/rok; regionální rozpětí ~1 030 (sever) – 1 165
+# (jižní Morava), meziroční variabilita ±6 %. Zdroj:
+# docs/reserze_kalkulator/pvgis-kalibrace-vyroby-fve.md.
+VYCHOZI_MERNY_VYNOS_KWH_KWP = 1055.0
 
 # Výchozí roční degradace panelů (kap. 4.2).
 VYCHOZI_DEGRADACE_ROCNI = 0.005
@@ -49,24 +54,29 @@ VYCHOZI_CIL_MIRA_SAMOSPOTREBY = 0.80
 # (ochrana proti absurdně velké FVE u ryze denní zátěže).
 _MAX_POMER_VYROBA_SPOTREBA = 3.0
 
-# Měsíční rozdělení ročního výnosu pro ČR – kWh/kWp/měsíc při ročním výnosu 1000
-# (METODIKA kap. 4.1). ⚠️ Ilustrativní, součet = 1000; ke kalibraci.
+# Měsíční rozdělení ročního výnosu pro ČR – kWh/kWp/měsíc při ročním výnosu
+# 1000 (METODIKA kap. 4.1). Kalibrováno PVGIS v5.3, střed ČR, 35°/jih
+# (audit PPA-2) – normované měsíční hodnoty ze SARAH3, součet přesně 1000
+# (celočíselná řada z rešerše by sečetla 1001). Zimní půlrok tvoří 30,4 %
+# ročního výnosu (dřívější ilustrativní tabulka jen 26,5 % – moc „letní“).
 _MESICNI_VYNOS = {
-    1: 26.0, 2: 42.0, 3: 83.0, 4: 120.0, 5: 135.0, 6: 132.0,
-    7: 138.0, 8: 120.0, 9: 90.0, 10: 58.0, 11: 30.0, 12: 26.0,
+    1: 30.6, 2: 51.8, 3: 84.9, 4: 113.7, 5: 120.9, 6: 123.1,
+    7: 124.6, 8: 114.9, 9: 98.5, 10: 72.0, 11: 36.0, 12: 29.0,
 }
 _SUMA_MESICNI = sum(_MESICNI_VYNOS.values())  # = 1000
 
 # Korekce orientace k_orient(azimut, sklon), METODIKA kap. 4.1. Řádky = sklon,
 # sloupce = |azimut| (0 = jih, 45 = JV/JZ, 90 = V/Z, 180 = sever). Bilineární
-# interpolace mezi uzly. ⚠️ Ilustrativní hodnoty, kalibrovat proti PVGIS.
+# interpolace mezi uzly. Kalibrováno PVGIS v5.3, střed ČR (audit PPA-2) –
+# hlavní opravy proti dřívější ilustrativní tabulce: sever 35° 0,66 → 0,54,
+# sever 60° 0,50 → 0,34, horizontála 0,88 → 0,85, strmý jih 0,91 → 0,94.
 _ORIENT_SKLONY = [0, 15, 35, 60]
 _ORIENT_AZIMUTY = [0, 45, 90, 180]
 _ORIENT_TAB = {
-    0: [0.88, 0.88, 0.88, 0.88],
-    15: [0.96, 0.94, 0.88, 0.80],
-    35: [1.00, 0.96, 0.84, 0.66],
-    60: [0.91, 0.86, 0.72, 0.50],
+    0: [0.85, 0.85, 0.85, 0.85],
+    15: [0.95, 0.92, 0.84, 0.72],
+    35: [1.00, 0.94, 0.80, 0.54],
+    60: [0.94, 0.87, 0.70, 0.34],
 }
 
 
@@ -102,6 +112,32 @@ def korekce_orientace(azimut_st: float, sklon_st: float) -> float:
 
 
 # -------------------------------------------------------- solární geometrie
+def _posledni_nedele(rok: int, mesic: int) -> date:
+    """Datum poslední neděle daného měsíce (přechody SEČ/SELČ)."""
+    posledni_den = date(rok, mesic, calendar.monthrange(rok, mesic)[1])
+    return posledni_den - timedelta(days=(posledni_den.weekday() + 1) % 7)
+
+
+@lru_cache(maxsize=None)
+def _okno_letniho_casu(rok: int) -> tuple[datetime, datetime]:
+    """(začátek, konec) letního času v lokálním čase pro daný rok."""
+    zacatek = datetime.combine(_posledni_nedele(rok, 3), datetime.min.time()).replace(hour=2)
+    konec = datetime.combine(_posledni_nedele(rok, 10), datetime.min.time()).replace(hour=3)
+    return zacatek, konec
+
+
+def _je_letni_cas(c: datetime) -> bool:
+    """Platí v `c` (lokální čas ČR) letní čas (SELČ)?
+
+    Okno: poslední neděle v březnu 02:00 – poslední neděle v říjnu 03:00.
+    Profily z portálů distributorů jsou v lokálním čase, takže v létě je
+    solární poledne ~13:00, ne 12:00 (audit PPA-3: model bez posunu „vyráběl"
+    o hodinu dřív a u odpolední zátěže podstřeloval samospotřebu o ~7 %).
+    """
+    zacatek, konec = _okno_letniho_casu(c.year)
+    return zacatek <= c < konec
+
+
 def _slunecni_okno(den_v_roce: int, lat_deg: float) -> tuple[float, float]:
     """Solární čas východu a západu Slunce pro daný den v roce a šířku (kap. 4.1)."""
     dekl = 23.45 * math.sin(math.radians(360.0 * (284 + den_v_roce) / 365.0))
@@ -132,7 +168,9 @@ def simuluj_vyrobu(
 
     Roční výnos `E_rok = kWp × měrný_výnos × korekce_orientace` se rozdělí po
     měsících (tabulka `_MESICNI_VYNOS`), měsíc na dny (podle počtu dní přítomných
-    v profilu) a den na intervaly clear-sky křivkou. Vrací kWh za interval.
+    v profilu) a den na intervaly clear-sky křivkou. Časové značky profilu jsou
+    v lokálním čase ČR – v okně letního času se tvar dne vyhodnocuje v `t − 1 h`
+    (SELČ → SEČ ~ solární čas; audit PPA-3). Vrací kWh za interval.
     """
     n = len(casy)
     if n == 0 or kwp <= 0:
@@ -153,6 +191,8 @@ def simuluj_vyrobu(
         yday = c.timetuple().tm_yday
         t_vychod, t_zapad = _slunecni_okno(yday, lat_deg)
         t_h = c.hour + c.minute / 60.0 + c.second / 3600.0
+        if _je_letni_cas(c):
+            t_h -= 1.0  # SELČ → SEČ: v létě je solární poledne ~13:00 lokálního času
         g = _tvar_produkce(t_h, t_vychod, t_zapad)
         tvar[i] = g
         kd = (c.year, yday)

@@ -195,28 +195,32 @@ kalendářní mřížku jako profil spotřeby.
 E_rok = kWp × merny_vynos_kwh_kwp(lokalita) × k_orient(azimut, sklon)
 ```
 - `merny_vynos_kwh_kwp` – referenční měrný výnos pro ČR, jižní orientace, optimální sklon
-  ~35°. Navrhuji **default 1000 kWh/kWp/rok** (⚠️ reálné rozpětí ČR ~950 severozápad – ~1080
-  jižní Morava; v1 jedna editovatelná konstanta, zpřesnění podle GPS/kraje = otevřený bod).
-- `k_orient` ∈ (0;1], = 1,0 pro jih + sklon 30–40°. Korekční tabulka (⚠️ ilustrativní hodnoty
-  k kalibraci proti PVGIS/standardním tabulkám):
+  ~35°, ztráty 14 %. **Default 1055 kWh/kWp/rok** — kalibrováno PVGIS v5.3/SARAH3, střed ČR
+  (audit 16. 7. 2026, bughunt PPA-2; zdroj `docs/reserze_kalkulator/pvgis-kalibrace-vyroby-fve.md`).
+  Reálné rozpětí ČR ~1 030 (sever) – 1 165 (jižní Morava), meziroční variabilita ±6 %;
+  regionalizace dle GPS = otevřený bod (fáze 2).
+- `k_orient` ∈ (0;1], = 1,0 pro jih + sklon 35°. Korekční tabulka (kalibrováno PVGIS v5.3,
+  střed ČR — bughunt PPA-2):
 
-  | Azimut \ Sklon | 0° (rovina) | 15° | 30–40° | 60° |
+  | Azimut \ Sklon | 0° (rovina) | 15° | 35° | 60° |
   |---|---|---|---|---|
-  | Jih (0°) | 0,88 | 0,96 | **1,00** | 0,91 |
-  | JV/JZ (±45°) | 0,88 | 0,94 | 0,96 | 0,86 |
-  | V/Z (±90°) | 0,88 | 0,88 | 0,84 | 0,72 |
-  | Sever (180°) | 0,88 | 0,80 | 0,66 | 0,50 |
+  | Jih (0°) | 0,85 | 0,95 | **1,00** | 0,94 |
+  | JV/JZ (±45°) | 0,85 | 0,92 | 0,94 | 0,87 |
+  | V/Z (±90°) | 0,85 | 0,84 | 0,80 | 0,70 |
+  | Sever (180°) | 0,85 | 0,72 | 0,54 | 0,34 |
 
   Mezilehlé hodnoty bilineární interpolací. (Pro rovinu je azimut irelevantní → jedna
-  hodnota.)
+  hodnota.) Hlavní opravy proti dřívější ilustrativní tabulce: sever 35° 0,66 → 0,54,
+  sever 60° 0,50 → 0,34, horizontála 0,88 → 0,85, strmý jih 0,91 → 0,94.
 
-**Krok 2 – rozdělení do měsíců** dle typického profilu ČR (⚠️ ilustrativní, kalibrovat):
+**Krok 2 – rozdělení do měsíců** dle PVGIS v5.3 (SARAH3, střed ČR, 35°/jih — bughunt PPA-2):
 
 | měs | led | úno | bře | dub | kvě | čvn | čvc | srp | zář | říj | lis | pro |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| kWh/kWp (z 1000) | 26 | 42 | 83 | 120 | 135 | 132 | 138 | 120 | 90 | 58 | 30 | 26 |
+| kWh/kWp (z 1000) | 30,6 | 51,8 | 84,9 | 113,7 | 120,9 | 123,1 | 124,6 | 114,9 | 98,5 | 72,0 | 36,0 | 29,0 |
 
-Měsíční podíl = hodnota / 1000. `E_měsíc = E_rok × podíl_měsíc`.
+Měsíční podíl = hodnota / 1000. `E_měsíc = E_rok × podíl_měsíc`. Zimní půlrok (říj–bře)
+tvoří 30,4 % ročního výnosu.
 
 **Krok 3 – rozdělení dne (denní křivka, clear-sky):** pro daný den v roce `n` a zeměpisnou
 šířku `φ`:
@@ -234,8 +238,9 @@ Tím vznikne 15min (nebo hodinový) profil, jehož roční součet = `E_rok`.
 
 ⚠️ **Zjednodušení v1:** clear-sky zvonovina bez denní proměnlivosti počasí – reálná výroba je
 „zubatější", ale pro odhad **samospotřeby** (kap. 4.3) na měsíční/roční úrovni to stačí; na
-15min špičky se to hodí hůř. Solární vs. hodinový čas (posun ~+1 h, letní čas) je detail
-k ošetření při implementaci (⚠️ kap. 8).
+15min špičky se to hodí hůř. **Letní čas je ošetřen** (bughunt PPA-3): v okně SELČ se tvar
+dne vyhodnocuje v `t − 1 h`, takže špička výroby padne na ~13:00 lokálního času; jemnější
+korekce délky ((λ−15°)×4 min) a časové rovnice (±15 min) zůstávají zanedbané.
 
 **Rozlišení:** navrhuji počítat **hodinově** (8 760 hodnot – levné, PVGIS-kompatibilní) a pro
 párování s 15min spotřebou hodnotu hodiny rovnoměrně rozdělit na 4 čtvrthodiny (`V_15 =
