@@ -275,6 +275,14 @@ přínos ≤ 0) — zobrazuje se doplňkově (PS-9). Dvě návratnosti:
 Starší uložené výsledky nesou pole `navratnost_2027_optim`/`navratnost_2027_konzerv`
 a `*_bez_aku` — FE u nich zobrazuje konzervativní hodnoty.
 
+### 4.7b Citlivost stropu (bughunt PS-10)
+Levná bootstrap alternativa walk-forward validace (ta by chtěla ≥ 2 roky dat,
+SP-1 profil ořezává na 12 měsíců): profil doporučené varianty se přeškáluje
+**±5 %** a znovu se najde udržitelný strop. Výkon baterie se s rokem neškáluje
+→ při špičkách +5 % roste strop typicky o **víc** než 5 %; výstup
+(`citlivost_stropu`) hlásí, jestli horní scénář pokryje rezerva RK (PS-6).
+FE to zobrazuje jako větu pod ekonomikou.
+
 ### 4.8 Data pro grafy (`graf_maxima`)
 Měsíční maxima odběru: `bez_baterie` (naměřené), `s_baterii_2026` (= min(raw, roční strop)),
 `s_baterii_2027` (per-měsíční sražené maximum) + čáry `rp_soucasna` a `rp_nova`.

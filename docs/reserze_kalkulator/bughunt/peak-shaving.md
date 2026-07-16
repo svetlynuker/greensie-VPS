@@ -274,6 +274,14 @@ prostou návratnost zobrazit doplňkově. PPA modul už `_npv`/`_irr` má — lz
 
 ## PS-10 ℹ️ P2 — Robustnost stropu: jednoletá historie, žádná validace
 
+> ✅ **Vyřešeno 16. 7. 2026 (levná varianta)** — commit `fix(peak-shaving): bootstrap citlivost stropu ±5 % (PS-10)`
+> na větvi `bughunt-opravy-p0`. `citlivost_stropu()`: profil ±5 % → strop
+> min/max + příznak, zda horní scénář pokryje rezerva RK (PS-6); počítá se pro
+> doporučenou variantu, FE zobrazuje větou. Walk-forward přes ≥ 2 roky dat
+> neimplementován (SP-1 profil ořezává na 12 měsíců; vyžadovalo by podporu
+> víceletých profilů — případná fáze 2).
+> Testy: `test_peak_shaving.py::TestCitlivostStropu`.
+
 **Kde:** celé jádro pracuje s jedním rokem profilu.
 
 **Náprava:** podpora ≥ 2 let profilu (walk-forward: strop z roku 1 vyhodnotit na roce 2,

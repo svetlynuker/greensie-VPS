@@ -573,6 +573,42 @@ def ekonomika_2027(
     }
 
 
+def citlivost_stropu(
+    profil_kw: list[float],
+    vykon_kw: float,
+    kapacita_kwh: float,
+    strop_kw: float,
+    rezerva_rk_procenta: float,
+    interval_h: float = VYCHOZI_INTERVAL_H,
+    ucinnost_rt: float = 1.0,
+    procenta: float = 5.0,
+) -> dict:
+    """Citlivost stropu na meziroční variabilitu profilu (audit PS-10).
+
+    Levná bootstrap alternativa walk-forward validace (na tu by byly potřeba
+    ≥ 2 roky dat): profil se přeškáluje ±X % (aproximace „jiného roku“ –
+    špičky rostou zhruba proporčně, výkon a kapacita baterie ne) a znovu se
+    najde udržitelný strop. Vrací i příznak, jestli horní scénář pokryje
+    rezerva RK (PS-6) – výkon baterie se s rokem neškáluje, takže strop při
+    špičkách +5 % typicky roste VÍC než o 5 %.
+    """
+    faktor = procenta / 100.0
+    strop_minus = min_udrzitelny_strop(
+        [p * (1.0 - faktor) for p in profil_kw], vykon_kw, kapacita_kwh, interval_h, ucinnost_rt
+    )
+    strop_plus = min_udrzitelny_strop(
+        [p * (1.0 + faktor) for p in profil_kw], vykon_kw, kapacita_kwh, interval_h, ucinnost_rt
+    )
+    strop_s_rezervou = strop_kw * (1.0 + max(0.0, rezerva_rk_procenta) / 100.0)
+    return {
+        "procenta": procenta,
+        "strop_minus_kw": round(strop_minus, 2),
+        "strop_plus_kw": round(strop_plus, 2),
+        "strop_s_rezervou_kw": round(strop_s_rezervou, 2),
+        "rezerva_pokryje_horni_scenar": strop_plus <= strop_s_rezervou + _BINARNI_TOLERANCE_KW,
+    }
+
+
 def graf_maxima(
     profil_kw: list[float],
     mesice: list[int],

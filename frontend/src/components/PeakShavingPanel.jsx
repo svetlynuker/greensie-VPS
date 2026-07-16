@@ -437,6 +437,17 @@ export default function PeakShavingPanel({ nabidka }) {
                 </>
               )}
 
+              {vysledek.citlivost_stropu && (
+                <div style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 14px" }}>
+                  <b>Citlivost návrhu (PS-10):</b> při profilu ±{vysledek.citlivost_stropu.procenta} %
+                  by udržitelný strop byl {kw(vysledek.citlivost_stropu.strop_minus_kw)} až{" "}
+                  {kw(vysledek.citlivost_stropu.strop_plus_kw)}.{" "}
+                  {vysledek.citlivost_stropu.rezerva_pokryje_horni_scenar
+                    ? `Rezerva RK (${kw(vysledek.citlivost_stropu.strop_s_rezervou_kw)}) horní scénář pokryje.`
+                    : `Rezerva RK (${kw(vysledek.citlivost_stropu.strop_s_rezervou_kw)}) horní scénář nepokryje – při silnějším roce hrozí měsíční dokupy/pokuty.`}
+                </div>
+              )}
+
               {vysledek.varianty?.length > 1 && (
                 <>
                   <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Srovnání variant</h4>

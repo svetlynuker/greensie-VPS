@@ -1163,6 +1163,17 @@ def spocti_peak_shaving(
         graf["rp_soucasna_kw"] = round(vstup.rezervovana_kapacita_kw, 2)
         graf["rp_nova_kw"] = round(d.nova_rezervovana_kapacita_kw, 2)
         popis_json["graf"] = graf
+        # Citlivost stropu na meziroční variabilitu (audit PS-10) – jen pro
+        # doporučenou variantu (dvě další celoprofilové simulace).
+        popis_json["citlivost_stropu"] = peak_shaving.citlivost_stropu(
+            profil_kw,
+            d.celkovy_vykon_kw,
+            d.vyuzitelna_kapacita_kwh,
+            d.strop_kw,
+            d.rezerva_rk_procenta,
+            interval_h,
+            d.ucinnost_rt,
+        )
 
     reseni = NavrhovaneReseni(
         nabidka_id=nabidka_id,

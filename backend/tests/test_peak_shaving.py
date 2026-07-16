@@ -378,6 +378,31 @@ class TestNpvBaterie:
         assert cf == [100.0, 100.0, 100.0]
 
 
+# ------------------------------------------------ PS-10: citlivost stropu
+class TestCitlivostStropu:
+    # Špička 350 kW nad základem 200, baterie výkonově omezená (80 kW).
+    PROFIL = ([200.0] * 8 + [350.0] * 4 + [200.0] * 8) * 12
+
+    def test_strop_roste_s_profilem(self):
+        strop = ps.min_udrzitelny_strop(self.PROFIL, 80.0, 500.0)
+        c = ps.citlivost_stropu(self.PROFIL, 80.0, 500.0, strop, rezerva_rk_procenta=5.0)
+        assert c["strop_minus_kw"] < strop < c["strop_plus_kw"]
+        assert c["procenta"] == 5.0
+
+    def test_vykonove_omezena_baterie_roste_rychleji_nez_profil(self):
+        # Výkon baterie se s rokem neškáluje: strop = max − výkon → při
+        # špičkách +5 % roste strop o VÍC než 5 % → rezerva 5 % nestačí.
+        strop = ps.min_udrzitelny_strop(self.PROFIL, 80.0, 500.0)
+        c = ps.citlivost_stropu(self.PROFIL, 80.0, 500.0, strop, rezerva_rk_procenta=5.0)
+        assert c["strop_plus_kw"] > strop * 1.05
+        assert c["rezerva_pokryje_horni_scenar"] is False
+
+    def test_dostatecna_rezerva_horni_scenar_pokryje(self):
+        strop = ps.min_udrzitelny_strop(self.PROFIL, 80.0, 500.0)
+        c = ps.citlivost_stropu(self.PROFIL, 80.0, 500.0, strop, rezerva_rk_procenta=15.0)
+        assert c["rezerva_pokryje_horni_scenar"] is True
+
+
 # ------------------------------------------ PS-4: rezervovaný příkon (2027)
 class TestRezervovanyPrikon2027:
     def _varianta(self, rezervovany_prikon_kw=None, uvazovat_snizeni_rp=False):
