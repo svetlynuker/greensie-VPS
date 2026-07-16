@@ -140,6 +140,15 @@ u investora zmínit registrační povinnost u celní správy (výrobna > 30 kW).
 
 ## PPA-6 ⚠️ P1 — Ekonomika investora: defaulty přikrášlují (O&M 0, diskont 5 %, bez výměny střídače)
 
+> ✅ **Vyřešeno 16. 7. 2026** — commit `fix(ppa): defaulty ekonomiky investora + flag záporného NPV (PPA-6, PPA-8)`
+> na větvi `bughunt-opravy-p0`. Defaulty (rozhodnuto): O&M 350 Kč/kWp/rok,
+> diskont 7,5 %; volitelná výměna střídače (`ppa_vymena_stridace_rok/_kc_kwp`,
+> default vypnuto) v cash flow; nákladové položky viditelné v tabulce let.
+> Eskalace O&M inflací neimplementována (nice-to-have). POZOR: na produkci
+> s už uloženými parametry je třeba nové hodnoty nastavit v adminu (nová verze
+> nastavení) — defaulty platí, jen když klíč chybí.
+> Testy: `test_ppa_fve.py::TestEkonomikaInvestora`.
+
 **Kde:** manažerské defaulty (`ppa_oam_kc_kwp_rok` 0, `ppa_diskontni_sazba` 0,05);
 `spocti_ppa()` nemá jednorázové náklady v průběhu kontraktu.
 
@@ -170,6 +179,13 @@ na další OPM klienta (fáze 2/3).
 ---
 
 ## PPA-8 ℹ️ P2 — Prezentace: záporné NPV bez varování, chybí sanity-check PPA ceny
+
+> ✅ **Vyřešeno 16. 7. 2026** — commit `fix(ppa): defaulty ekonomiky investora + flag záporného NPV (PPA-6, PPA-8)`
+> na větvi `bughunt-opravy-p0`. `doporuceno = npv > 0` ve výstupu + FE hláška;
+> sanity-check PPA ceny (pásmo 1 600–2 600 Kč/MWh; PPA ≥ vyhnutelná cena →
+> varování); stálé upozornění na riziko poklesu spotřeby (take-or-pay).
+> Citlivostní parametr „pokles spotřeby %/rok" neimplementován (volitelné,
+> fáze 2). Testy: `test_ppa_fve.py::TestEkonomikaInvestora`.
 
 **Kde:** `routes.py` (žádný flag), `PpaPanel.jsx` (NPV se jen zobrazí).
 

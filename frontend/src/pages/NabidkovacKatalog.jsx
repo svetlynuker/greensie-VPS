@@ -84,8 +84,11 @@ const PPA_POLE = [
   { klic: "ppa_index_prebytek_rocni", label: "Index ceny přebytku (%/rok)" },
   { klic: "ppa_degradace_rocni", label: "Degradace panelů (%/rok, např. 0.005)" },
   { klic: "ppa_degradace_rok1", label: "Degradace 1. roku – LID (0.02 = PERC, 0.01 = TOPCon)" },
-  { klic: "ppa_oam_kc_kwp_rok", label: "O&M (Kč/kWp/rok)" },
-  { klic: "ppa_diskontni_sazba", label: "Diskontní sazba NPV/IRR (např. 0.05)" },
+  { klic: "ppa_oam_kc_kwp_rok", label: "O&M (Kč/kWp/rok, default 350)" },
+  { klic: "ppa_diskontni_sazba", label: "Diskontní sazba NPV/IRR (default 0.075)" },
+  // Volitelná jednorázová výměna střídače (PPA-6): rok 0 = vypnuto.
+  { klic: "ppa_vymena_stridace_rok", label: "Výměna střídače – rok kontraktu (0 = vypnuto)" },
+  { klic: "ppa_vymena_stridace_kc_kwp", label: "Výměna střídače – cena (Kč/kWp)" },
 ];
 
 function num(v) {

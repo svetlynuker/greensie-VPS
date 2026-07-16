@@ -235,3 +235,46 @@ class TestRozkladCenyDodavatele:
         r = ppa.spocti_ppa(vstup, self.CASY, self.SPOTREBA)
         assert r["vyhnutelna_cena_rok1_kc_mwh"] == pytest.approx(3360.0)
         assert r["roky"][0]["cena_dodavatel_kc_mwh"] == pytest.approx(3360.0)
+
+
+# ---------------------------------- PPA-6/PPA-8: ekonomika investora + flag
+class TestEkonomikaInvestora:
+    CASY = den_casy(2025, 7, 15)
+    SPOTREBA = [50.0] * 96
+
+    def test_defaulty_dle_rozhodnuti(self):
+        assert ppa.VYCHOZI_OAM_KC_KWP_ROK == 350.0
+        assert ppa.VYCHOZI_DISKONTNI_SAZBA == 0.075
+
+    def test_oam_snizuje_cf_investora(self):
+        bez = ppa.spocti_ppa(vstup_ppa(oam_kc_kwp_rok=0.0), self.CASY, self.SPOTREBA)
+        s_oam = ppa.spocti_ppa(vstup_ppa(oam_kc_kwp_rok=350.0), self.CASY, self.SPOTREBA)
+        assert s_oam["roky"][0]["naklad_oam_kc"] == pytest.approx(350.0 * 100.0)
+        assert s_oam["roky"][0]["cf_investor_kc"] == pytest.approx(
+            bez["roky"][0]["cf_investor_kc"] - 35_000.0, abs=0.01
+        )
+
+    def test_vymena_stridace_jen_v_danem_roce(self):
+        vstup = vstup_ppa(vymena_stridace_rok=2, vymena_stridace_kc_kwp=1000.0)
+        r = ppa.spocti_ppa(vstup, self.CASY, self.SPOTREBA)
+        assert r["roky"][0]["naklad_vymena_stridace_kc"] == 0.0
+        assert r["roky"][1]["naklad_vymena_stridace_kc"] == pytest.approx(100_000.0)
+        assert r["roky"][2]["naklad_vymena_stridace_kc"] == 0.0
+        assert r["vymena_stridace"] == {"rok": 2, "kc_kwp": 1000.0}
+        bez = ppa.spocti_ppa(vstup_ppa(), self.CASY, self.SPOTREBA)
+        assert r["roky"][1]["cf_investor_kc"] == pytest.approx(
+            bez["roky"][1]["cf_investor_kc"] - 100_000.0, abs=0.01
+        )
+
+    def test_vypnuta_vymena_stridace_nic_nemeni(self):
+        r = ppa.spocti_ppa(vstup_ppa(), self.CASY, self.SPOTREBA)
+        assert r["vymena_stridace"] is None
+        assert all(x["naklad_vymena_stridace_kc"] == 0.0 for x in r["roky"])
+
+    def test_doporuceno_dle_znamenka_npv(self):
+        # Malý CAPEX → kladné NPV → doporučeno.
+        zisk = ppa.spocti_ppa(vstup_ppa(capex_kc=1000.0), self.CASY, self.SPOTREBA)
+        assert zisk["npv_kc"] > 0 and zisk["doporuceno"] is True
+        # Obří CAPEX → záporné NPV → nedoporučeno.
+        ztrata = ppa.spocti_ppa(vstup_ppa(capex_kc=100_000_000.0), self.CASY, self.SPOTREBA)
+        assert ztrata["npv_kc"] < 0 and ztrata["doporuceno"] is False

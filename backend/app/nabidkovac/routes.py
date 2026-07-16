@@ -1199,8 +1199,12 @@ def spocti_ppa(
     nastaveni = db.query(VypoctovaNastaveni).order_by(VypoctovaNastaveni.verze.desc()).first()
     cena_fve_kc_kwp = _ppa_param(nastaveni, "ppa_cena_fve_kc_kwp", ppa_fve.VYCHOZI_CENA_FVE_KC_KWP)
     ostatni_kc_kwp = _ppa_param(nastaveni, "ppa_ostatni_naklady_kc_kwp", 0.0)
-    oam_kc_kwp_rok = _ppa_param(nastaveni, "ppa_oam_kc_kwp_rok", 0.0)
-    diskont = _ppa_param(nastaveni, "ppa_diskontni_sazba", 0.05)
+    # Defaulty ekonomiky investora (audit PPA-6): O&M 350 Kč/kWp/rok,
+    # diskont 7,5 % (dřívější 0/5 % přikrášlovaly výnos).
+    oam_kc_kwp_rok = _ppa_param(nastaveni, "ppa_oam_kc_kwp_rok", ppa_fve.VYCHOZI_OAM_KC_KWP_ROK)
+    diskont = _ppa_param(nastaveni, "ppa_diskontni_sazba", ppa_fve.VYCHOZI_DISKONTNI_SAZBA)
+    vymena_rok = int(_ppa_param(nastaveni, "ppa_vymena_stridace_rok", 0.0))
+    vymena_kc_kwp = _ppa_param(nastaveni, "ppa_vymena_stridace_kc_kwp", 0.0)
     merny_vynos = _ppa_param(nastaveni, "ppa_merny_vynos_kwh_kwp", ppa_fve.VYCHOZI_MERNY_VYNOS_KWH_KWP)
     # Pojistka proti překlepu: měrný výnos FVE v ČR je ~800–1100 kWh/kWp/rok.
     # Mimo rozumný rozsah (např. omylem zadaná 1) by zkreslil návrh velikosti → default.
@@ -1331,6 +1335,8 @@ def spocti_ppa(
         diskontni_sazba=float(diskont),
         merny_vynos_kwh_kwp=float(merny_vynos),
         interval_h=interval_h,
+        vymena_stridace_rok=vymena_rok,
+        vymena_stridace_kc_kwp=float(vymena_kc_kwp),
     )
 
     # Velikost FVE: ruční override, jinak ekonomický sweep (kap. 4.7 – režim
@@ -1376,6 +1382,28 @@ def spocti_ppa(
             "jako dnešní dodávka – v úspoře se proto daň nesrovnává (symetrická). Investor "
             "(Greensie) má registrační povinnost u celní správy."
         )
+
+    # Sanity-checky a doporučení (audit PPA-8).
+    if not (1600.0 <= float(vstup.cena_ppa_kc_mwh) <= 2600.0):
+        upozorneni.append(
+            f"PPA cena {vstup.cena_ppa_kc_mwh:g} Kč/MWh je mimo obvyklé pásmo trhu "
+            "1600–2600 Kč/MWh – zkontroluj zadání."
+        )
+    vyhnutelna_cena = float(vstup.cena_silova_kc_mwh) + float(vyhnutelne_regulovane) + float(poze)
+    if float(vstup.cena_ppa_kc_mwh) >= vyhnutelna_cena:
+        upozorneni.append(
+            f"PPA cena je ≥ vyhnutelné ceně klienta ({vyhnutelna_cena:g} Kč/MWh) – "
+            "klient by na PPA nešetřil nic."
+        )
+    if not vysledek.get("doporuceno", True):
+        upozorneni.append(
+            "PPA se při těchto parametrech investorovi nevyplatí (záporné NPV při "
+            f"diskontu {float(diskont) * 100:g} %)."
+        )
+    upozorneni.append(
+        "Výnos investora je úměrný skutečné samospotřebě klienta – pokles spotřeby během "
+        "kontraktu výnos snižuje (reálné smlouvy to řeší minimálním odběrem / take-or-pay)."
+    )
 
     popis_json = {
         "typ_reseni": "ppa",

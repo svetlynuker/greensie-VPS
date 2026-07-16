@@ -47,6 +47,12 @@ VYCHOZI_DEGRADACE_ROK1 = 0.02
 # ⚠️ Orientační odhad k potvrzení.
 VYCHOZI_CENA_FVE_KC_KWP = 25000.0
 
+# Ekonomika investora – defaulty (audit PPA-6, rozhodnuto 16. 7. 2026):
+# O&M ~1–2 % CAPEX/rok vč. pojištění, revizí a monitoringu; WACC investora
+# 6–9 % → diskont 7,5 %. Dřívější defaulty (O&M 0, diskont 5 %) přikrášlovaly.
+VYCHOZI_OAM_KC_KWP_ROK = 350.0
+VYCHOZI_DISKONTNI_SAZBA = 0.075
+
 # Zeměpisná šířka středu ČR – fallback, když nabídka nemá GPS (kap. 4.1).
 VYCHOZI_LAT = 49.8
 
@@ -505,6 +511,10 @@ class VstupPPA:
     vyhnutelne_regulovane_kc_mwh: float = VYCHOZI_VYHNUTELNE_REGULOVANE_KC_MWH
     index_regulovane_rocni: float = 0.0
     poze_kc_mwh: float = 0.0
+    # Jednorázová výměna střídače v průběhu kontraktu (audit PPA-6):
+    # rok 0 = vypnuto; typicky rok 10–15, ~5–10 % CAPEX (Kč/kWp).
+    vymena_stridace_rok: int = 0
+    vymena_stridace_kc_kwp: float = 0.0
 
 
 def spocti_ppa(
@@ -565,11 +575,17 @@ def spocti_ppa(
         uspora_t = (bil.samospotreba_kwh / 1000.0) * (cena_dod_t - cena_ppa_t)
         uspora_kum += uspora_t
 
-        # Investor: výnos z PPA + volitelně z prodeje přetoku, minus O&M (kap. 4.5).
+        # Investor: výnos z PPA + volitelně z prodeje přetoku, minus O&M
+        # a případná jednorázová výměna střídače (kap. 4.5 + audit PPA-6).
         vynos_ppa = (bil.samospotreba_kwh / 1000.0) * cena_ppa_t
         vynos_pre = (bil.export_kwh / 1000.0) * cena_pre_t if v.prebytek_uctovat else 0.0
         oam = v.oam_kc_kwp_rok * v.kwp
-        cf = vynos_ppa + vynos_pre - oam
+        vymena = (
+            v.vymena_stridace_kc_kwp * v.kwp
+            if (v.vymena_stridace_rok and t == v.vymena_stridace_rok and v.vymena_stridace_kc_kwp > 0)
+            else 0.0
+        )
+        cf = vynos_ppa + vynos_pre - oam - vymena
         cf_rok.append(cf)
 
         roky.append(
@@ -589,6 +605,8 @@ def spocti_ppa(
                 "uspora_klient_kum_kc": round(uspora_kum, 2),
                 "vynos_ppa_kc": round(vynos_ppa, 2),
                 "vynos_prebytek_kc": round(vynos_pre, 2),
+                "naklad_oam_kc": round(oam, 2),
+                "naklad_vymena_stridace_kc": round(vymena, 2),
                 "cf_investor_kc": round(cf, 2),
             }
         )
@@ -650,7 +668,15 @@ def spocti_ppa(
         "navratnost_roky": round(navratnost, 2) if navratnost is not None else None,
         "irr": round(irr, 4) if irr is not None else None,
         "npv_kc": round(npv, 2),
+        # Doporučení investorovi (audit PPA-8): záporné NPV = nevyplatí se.
+        "doporuceno": npv > 0,
         "diskontni_sazba": v.diskontni_sazba,
+        "oam_kc_kwp_rok": round(v.oam_kc_kwp_rok, 2),
+        "vymena_stridace": (
+            {"rok": v.vymena_stridace_rok, "kc_kwp": round(v.vymena_stridace_kc_kwp, 2)}
+            if (v.vymena_stridace_rok and v.vymena_stridace_kc_kwp > 0)
+            else None
+        ),
         "souhrn_klient": {"uspora_kum_kc": round(uspora_kum, 2)},
         "souhrn_investor": {
             "cf_kum_kc": round(kum, 2),

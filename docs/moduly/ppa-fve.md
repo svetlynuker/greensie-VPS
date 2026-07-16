@@ -61,8 +61,10 @@ existující tabulky:
   | `ppa_index_prebytek_rocni` | roční eskalace ceny přebytku | default 0 |
   | `ppa_degradace_rocni` | degradace panelů | default 0,005 |
   | `ppa_degradace_rok1` | LID – degradace 1. roku (PPA-4) | default 0,02 (PERC); TOPCon 0,01 |
-  | `ppa_oam_kc_kwp_rok` | provozní náklady investora | default 0 |
-  | `ppa_diskontni_sazba` | diskont pro NPV/IRR | default 0,05 |
+  | `ppa_oam_kc_kwp_rok` | provozní náklady investora (PPA-6) | default 350 (vč. pojištění, revizí, monitoringu) |
+  | `ppa_diskontni_sazba` | diskont pro NPV/IRR (PPA-6) | default 0,075 (WACC 6–9 %) |
+  | `ppa_vymena_stridace_rok` | rok jednorázové výměny střídače (PPA-6) | default 0 = vypnuto |
+  | `ppa_vymena_stridace_kc_kwp` | cena výměny střídače | default 0 (~5–10 % CAPEX, rok 10–15) |
 
   Spravuje se v adminu (právo `nabidkovac_katalog`); uložení = nová verze (staré zůstávají).
 
@@ -144,14 +146,20 @@ Investor:
 ```
 CAPEX
 výnos_t = (samospotřeba_t/1000)·cena_ppa_t  [+ (export_t/1000)·cena_přebytku_t, když se přebytek prodává]
-cf_t    = výnos_t − O&M                        # O&M = ppa_oam_kc_kwp_rok × kWp
+cf_t    = výnos_t − O&M − výměna_střídače_t    # O&M = ppa_oam_kc_kwp_rok × kWp (default 350, PPA-6)
+                                               # výměna střídače jen v roce ppa_vymena_stridace_rok
 cf_kum_t = (Σ cf) − CAPEX
 payback  = nejmenší t s cf_kum_t ≥ 0 (lin. interpolace)
-NPV      = −CAPEX + Σ cf_t/(1+r)^t
+NPV      = −CAPEX + Σ cf_t/(1+r)^t             # r default 0,075 (PPA-6)
 IRR      = r, kde NPV = 0 (bisekce)
+doporuceno = NPV > 0                           # flag pro FE (PPA-8)
 ```
 Prodej přebytku vstupuje **jen do výnosu investora** a jen když je zapnutý; ořezaná energie
-nikdy nevýnosí.
+nikdy nevýnosí. Nákladové položky jsou viditelné v tabulce let (`naklad_oam_kc`,
+`naklad_vymena_stridace_kc`) i ve výstupu (`oam_kc_kwp_rok`, `vymena_stridace`).
+**Sanity-checky (PPA-8):** PPA cena mimo pásmo trhu 1 600–2 600 Kč/MWh → varování;
+PPA cena ≥ vyhnutelná cena klienta → varování „klient nešetří nic“; záporné NPV →
+`doporuceno = false` + hláška; vždy upozornění na riziko poklesu spotřeby (take-or-pay).
 
 ### 3.5 CAPEX – dva režimy (`rezim_capex`)
 - **`cena_kwp`** (default): `CAPEX = kWp × ppa_cena_fve_kc_kwp`.

@@ -257,6 +257,16 @@ export default function PpaPanel({ nabidka }) {
             </div>
           </div>
 
+          {v.doporuceno === false && (
+            <div className="nb-warn" style={{ margin: "0 0 12px" }}>
+              <span>⚠️</span>
+              <span>
+                PPA se při těchto parametrech investorovi nevyplatí (záporné NPV při
+                diskontu {pct(v.diskontni_sazba)}). Zvaž vyšší PPA cenu, delší kontrakt
+                nebo levnější CAPEX.
+              </span>
+            </div>
+          )}
           <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Ekonomika investora (Greensie)</h4>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 14 }}>
             <div className="fm-card" style={{ padding: 14 }}>
