@@ -1134,46 +1134,59 @@ def spocti_peak_shaving(
             "cena_prekroceni_kc_kw_pouzita": round(float(cena_prekroceni), 4),
             "pokuta_odvozena_z_mesicni_rk": pokuta_odvozena,
         },
-        "max_navratnost_roky": max_navratnost,
-        "doporucena": (_varianta_json(vysledek.doporucena) if vysledek.doporucena else None),
-        # 2.–3. nejlepší varianta pro srovnání (kap. 5) – vítěz je [0].
-        "varianty": [_varianta_json(v) for v in vysledek.varianty[:3]],
-        "upozorneni": upozorneni_profilu
-        + list(vysledek.upozorneni)
-        + upozorneni_sazeb
-        + upozorneni_rp,
     }
+
+    # 2.–3. nejlepší varianta pro srovnání (kap. 5) – vítěz je [0]. Každá
+    # varianta nese i vlastní graf a citlivost, aby šel detail překreslit
+    # kliknutím v tabulce srovnání (FE).
+    varianty_json = []
+    for v in vysledek.varianty[:3]:
+        vj = _varianta_json(v)
+        graf = peak_shaving.graf_maxima(
+            profil_kw,
+            mesice,
+            v.celkovy_vykon_kw,
+            v.vyuzitelna_kapacita_kwh,
+            v.strop_kw,
+            interval_h,
+            v.ucinnost_rt,
+        )
+        graf["rp_soucasna_kw"] = round(vstup.rezervovana_kapacita_kw, 2)
+        graf["rp_nova_kw"] = round(v.nova_rezervovana_kapacita_kw, 2)
+        vj["graf"] = graf
+        # Citlivost stropu na meziroční variabilitu (audit PS-10).
+        vj["citlivost_stropu"] = peak_shaving.citlivost_stropu(
+            profil_kw,
+            v.celkovy_vykon_kw,
+            v.vyuzitelna_kapacita_kwh,
+            v.strop_kw,
+            v.rezerva_rk_procenta,
+            interval_h,
+            v.ucinnost_rt,
+        )
+        varianty_json.append(vj)
+
+    popis_json.update(
+        {
+            "max_navratnost_roky": max_navratnost,
+            "doporucena": varianty_json[0] if varianty_json else None,
+            "varianty": varianty_json,
+            "upozorneni": upozorneni_profilu
+            + list(vysledek.upozorneni)
+            + upozorneni_sazeb
+            + upozorneni_rp,
+        }
+    )
     if not parametry_2027:
         popis_json["upozorneni"] = popis_json["upozorneni"] + [
             "Ekonomika roku 2027: čeká se na oficiální sazby ERÚ."
         ]
 
-    # Data pro grafy odběru (bez baterie vs. s baterií) – pro doporučenou variantu.
-    if vysledek.doporucena is not None:
-        d = vysledek.doporucena
-        graf = peak_shaving.graf_maxima(
-            profil_kw,
-            mesice,
-            d.celkovy_vykon_kw,
-            d.vyuzitelna_kapacita_kwh,
-            d.strop_kw,
-            interval_h,
-            d.ucinnost_rt,
-        )
-        graf["rp_soucasna_kw"] = round(vstup.rezervovana_kapacita_kw, 2)
-        graf["rp_nova_kw"] = round(d.nova_rezervovana_kapacita_kw, 2)
-        popis_json["graf"] = graf
-        # Citlivost stropu na meziroční variabilitu (audit PS-10) – jen pro
-        # doporučenou variantu (dvě další celoprofilové simulace).
-        popis_json["citlivost_stropu"] = peak_shaving.citlivost_stropu(
-            profil_kw,
-            d.celkovy_vykon_kw,
-            d.vyuzitelna_kapacita_kwh,
-            d.strop_kw,
-            d.rezerva_rk_procenta,
-            interval_h,
-            d.ucinnost_rt,
-        )
+    # Zpětná kompatibilita FE: graf a citlivost doporučené varianty i na
+    # nejvyšší úrovni (starší uložené výsledky je mají jen tady).
+    if varianty_json:
+        popis_json["graf"] = varianty_json[0]["graf"]
+        popis_json["citlivost_stropu"] = varianty_json[0]["citlivost_stropu"]
 
     reseni = NavrhovaneReseni(
         nabidka_id=nabidka_id,
@@ -1227,18 +1240,10 @@ def _ppa_param(nastaveni, klic: str, default: float) -> float:
     return default
 
 
-def _ppa_varianta_souhrn(r: dict) -> dict:
-    """Kompaktní souhrn jedné velikosti pro srovnání variant (bez těžkých polí)."""
-    return {
-        "kwp": r.get("kwp"),
-        "capex_kc": r.get("capex_kc"),
-        "pokryti_spotreby_fve": r.get("pokryti_spotreby_fve"),
-        "mira_samospotreby": r.get("mira_samospotreby"),
-        "vyroba_rok1_kwh": r.get("vyroba_rok1_kwh"),
-        "navratnost_roky": r.get("navratnost_roky"),
-        "npv_kc": r.get("npv_kc"),
-        "irr": r.get("irr"),
-    }
+# Pozn.: varianty velikostí se do popis_json ukládají KOMPLETNÍ (vč. roků
+# a grafu), aby FE uměl překreslit detail po kliknutí na řádek srovnání.
+# Starší uložené výsledky mají jen kompaktní souhrn – FE to rozlišuje podle
+# přítomnosti pole `roky`.
 
 
 @router.get("/nabidky/{nabidka_id}/ppa/profil-souhrn")
@@ -1463,7 +1468,7 @@ def spocti_ppa(
         vsechny = ppa_fve.vyber_velikost(sablona, casy, spotreba_kwh, kandidati, capex_fn, base1)
         vysledek = vsechny[0]
         metoda_navrhu = "ekonomicky"
-        varianty = [_ppa_varianta_souhrn(r) for r in vsechny[:4]]
+        varianty = vsechny[:4]
     else:
         kwp = float(vstup.instalovany_vykon_kwp)
         capex, rozpad = capex_fn(kwp)

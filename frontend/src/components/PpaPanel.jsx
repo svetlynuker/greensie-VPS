@@ -53,6 +53,8 @@ export default function PpaPanel({ nabidka }) {
   const [indexDod, setIndexDod] = useState("");
 
   const [vysledek, setVysledek] = useState(_posl);
+  // Velikost vybraná kliknutím v tabulce srovnání (null = navržená).
+  const [vybranyKwp, setVybranyKwp] = useState(null);
   const [chyba, setChyba] = useState(null);
   const [zprava, setZprava] = useState(null);
   const [pocita, setPocita] = useState(false);
@@ -107,6 +109,7 @@ export default function PpaPanel({ nabidka }) {
         index_dodavatel_rocni: n(indexDod),
       });
       setVysledek(r.popis_json);
+      setVybranyKwp(null);
     } catch (e) {
       setChyba(e.message);
     } finally {
@@ -114,7 +117,14 @@ export default function PpaPanel({ nabidka }) {
     }
   }
 
-  const v = vysledek?.vysledek;
+  const navrzena = vysledek?.vysledek;
+  const varianty = vysledek?.varianty || [];
+  // Detail velikosti vybrané kliknutím ve srovnání. Starší uložené výsledky
+  // mají u variant jen souhrn (bez `roky`/`graf`) → detail jde zobrazit jen
+  // pro navrženou velikost; nové výpočty nesou plná data všech variant.
+  const vybrana =
+    vybranyKwp != null ? varianty.find((z) => z.kwp === vybranyKwp && z.roky) : null;
+  const v = vybrana || navrzena;
 
   return (
     <div className="fm-card" style={{ padding: 18 }}>
@@ -227,8 +237,12 @@ export default function PpaPanel({ nabidka }) {
       {v && (
         <div style={{ marginTop: 18 }}>
           <h4 style={{ margin: "0 0 8px", fontSize: 13 }}>
-            Navržená FVE: <b>{v.kwp} kWp</b>
-            {vysledek.vstup?.navrzeno_automaticky ? (
+            {vybrana && vybrana.kwp !== navrzena?.kwp ? "Zobrazená FVE" : "Navržená FVE"}: <b>{v.kwp} kWp</b>
+            {vybrana && vybrana.kwp !== navrzena?.kwp ? (
+              <span className="nb-badge" style={{ marginLeft: 8, color: "color-mix(in srgb, var(--st-warn) 72%, var(--ink))" }}>
+                alternativa — návrh je {navrzena?.kwp} kWp
+              </span>
+            ) : vysledek.vstup?.navrzeno_automaticky ? (
               <span className="nb-badge" style={{ marginLeft: 8 }} title="Velikost navrhla appka podle nejlepší ekonomiky (NPV/návratnost)">
                 ekonomický návrh
               </span>
@@ -287,7 +301,7 @@ export default function PpaPanel({ nabidka }) {
             </div>
           </div>
 
-          {(vysledek.varianty || []).length > 1 && (
+          {varianty.length > 1 && (
             <>
               <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Srovnání velikostí (ekonomický výběr)</h4>
               <div className="nb-scroll" style={{ marginBottom: 14 }}>
@@ -296,8 +310,18 @@ export default function PpaPanel({ nabidka }) {
                     <tr><th>Velikost</th><th>Pokrytí spotřeby</th><th>Samospotřeba</th><th>Výroba</th><th>CAPEX</th><th>Návratnost</th><th>NPV</th></tr>
                   </thead>
                   <tbody>
-                    {vysledek.varianty.map((z) => (
-                      <tr key={z.kwp} style={z.kwp === v.kwp ? { fontWeight: 700, background: "color-mix(in srgb, var(--brand) 9%, transparent)" } : undefined}>
+                    {varianty.map((z) => (
+                      <tr
+                        key={z.kwp}
+                        onClick={() => z.roky && setVybranyKwp(z.kwp === navrzena?.kwp ? null : z.kwp)}
+                        title={z.roky ? "Kliknutím zobrazíš detail této velikosti" : "Starší výsledek – detail variant se uloží až s novým výpočtem"}
+                        style={{
+                          cursor: z.roky ? "pointer" : "default",
+                          ...(z.kwp === v.kwp
+                            ? { fontWeight: 700, background: "color-mix(in srgb, var(--brand) 9%, transparent)" }
+                            : {}),
+                        }}
+                      >
                         <td>{z.kwp} kWp{z.kwp === v.kwp ? " ◄" : ""}</td>
                         <td>{pct(z.pokryti_spotreby_fve)}</td>
                         <td>{pct(z.mira_samospotreby)}</td>
@@ -311,7 +335,8 @@ export default function PpaPanel({ nabidka }) {
                 </table>
               </div>
               <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: -8, marginBottom: 14 }}>
-                Vybrána velikost s nejlepší ekonomikou (nejvyšší NPV / nejkratší návratnost). Řádek ◄ = navržená.
+                Navržena velikost s nejlepší ekonomikou (nejvyšší NPV / nejkratší návratnost).
+                <b> Kliknutím na řádek se všechna čísla, grafy i tabulka let překreslí pro danou velikost</b> (řádek ◄ = zobrazená).
               </div>
             </>
           )}

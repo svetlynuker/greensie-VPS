@@ -31,11 +31,18 @@ function fmtDatumCas(s) {
   return m ? `${m[3]}.${m[2]}.${m[1]}` : "—";
 }
 
-function VariantaRadek({ v, hlavni }) {
+function VariantaRadek({ v, vybrana, onVyber }) {
   return (
-    <tr style={hlavni ? { fontWeight: 600 } : undefined}>
+    <tr
+      onClick={onVyber}
+      title="Kliknutím zobrazíš detail této varianty"
+      style={{
+        cursor: "pointer",
+        ...(vybrana ? { fontWeight: 700, background: "color-mix(in srgb, var(--brand) 9%, transparent)" } : {}),
+      }}
+    >
       <td>
-        {v.nazev} × {v.pocet_kusu}
+        {vybrana ? "◄ " : ""}{v.nazev} × {v.pocet_kusu}
         {!v.doporuceno && (
           <span className="nb-badge" style={{ marginLeft: 6, color: "var(--st-crit)" }}>nedoporučeno</span>
         )}
@@ -67,6 +74,8 @@ export default function PeakShavingPanel({ nabidka }) {
   const [zprava, setZprava] = useState(null);
   const [pocita, setPocita] = useState(false);
   const [zpracovavaId, setZpracovavaId] = useState(null);
+  // Varianta vybraná kliknutím ve srovnání (0 = doporučená).
+  const [vybranyIdx, setVybranyIdx] = useState(0);
 
   useEffect(() => {
     sazbySeznam().then(setSazby).catch((e) => setChyba(e.message));
@@ -119,6 +128,7 @@ export default function PeakShavingPanel({ nabidka }) {
         uvazovat_snizeni_rp: snizeniRp,
       });
       setVysledek(r.popis_json);
+      setVybranyIdx(0);
     } catch (e) {
       setChyba(e.message);
     } finally {
@@ -126,7 +136,13 @@ export default function PeakShavingPanel({ nabidka }) {
     }
   }
 
-  const dop = vysledek?.doporucena;
+  // Zobrazená varianta: kliknutím ve srovnání se přepne (0 = doporučená).
+  // Starší uložené výsledky nesou graf/citlivost jen na nejvyšší úrovni
+  // (pro doporučenou) – u alternativ se pak grafy skryjí.
+  const varianty = vysledek?.varianty || [];
+  const dop = varianty[vybranyIdx] || vysledek?.doporucena;
+  const graf = dop?.graf || (vybranyIdx === 0 ? vysledek?.graf : null);
+  const citlivost = dop?.citlivost_stropu || (vybranyIdx === 0 ? vysledek?.citlivost_stropu : null);
 
   return (
     <div className="fm-card" style={{ padding: 18 }}>
@@ -223,7 +239,12 @@ export default function PeakShavingPanel({ nabidka }) {
           {dop ? (
             <>
               <h4 style={{ margin: "0 0 8px", fontSize: 13 }}>
-                Doporučená varianta
+                {vybranyIdx === 0 ? "Doporučená varianta" : "Vybraná varianta"}
+                {vybranyIdx !== 0 && (
+                  <span className="nb-badge" style={{ marginLeft: 8, color: "color-mix(in srgb, var(--st-warn) 72%, var(--ink))" }}>
+                    alternativa — doporučená je {varianty[0]?.nazev} × {varianty[0]?.pocet_kusu}
+                  </span>
+                )}
                 {!dop.doporuceno && (
                   <span className="nb-badge" style={{ marginLeft: 8, color: "var(--st-crit)" }}>
                     nad prahem {vysledek.max_navratnost_roky}&nbsp;let – nedoporučeno
@@ -411,44 +432,49 @@ export default function PeakShavingPanel({ nabidka }) {
                 </p>
               )}
 
-              {vysledek.graf && (
+              {graf && (
                 <>
                   <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Odběr ze sítě – měsíční maxima</h4>
                   <div style={{ marginBottom: 16 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Rok 2026 (držení ročního stropu)</div>
                     <GrafOdberu
-                      mesice={vysledek.graf.mesice}
-                      bezBaterie={vysledek.graf.bez_baterie_kw}
-                      sBaterii={vysledek.graf.s_baterii_2026_kw}
-                      rpSoucasna={vysledek.graf.rp_soucasna_kw}
-                      rpNova={vysledek.graf.rp_nova_kw}
+                      mesice={graf.mesice}
+                      bezBaterie={graf.bez_baterie_kw}
+                      sBaterii={graf.s_baterii_2026_kw}
+                      rpSoucasna={graf.rp_soucasna_kw}
+                      rpNova={graf.rp_nova_kw}
                     />
                   </div>
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Rok 2027 (srážení po měsících)</div>
                     <GrafOdberu
-                      mesice={vysledek.graf.mesice}
-                      bezBaterie={vysledek.graf.bez_baterie_kw}
-                      sBaterii={vysledek.graf.s_baterii_2027_kw}
-                      rpSoucasna={vysledek.graf.rp_soucasna_kw}
-                      rpNova={vysledek.graf.rp_nova_kw}
+                      mesice={graf.mesice}
+                      bezBaterie={graf.bez_baterie_kw}
+                      sBaterii={graf.s_baterii_2027_kw}
+                      rpSoucasna={graf.rp_soucasna_kw}
+                      rpNova={graf.rp_nova_kw}
                     />
                   </div>
                 </>
               )}
-
-              {vysledek.citlivost_stropu && (
+              {!graf && vybranyIdx !== 0 && (
                 <div style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 14px" }}>
-                  <b>Citlivost návrhu (PS-10):</b> při profilu ±{vysledek.citlivost_stropu.procenta} %
-                  by udržitelný strop byl {kw(vysledek.citlivost_stropu.strop_minus_kw)} až{" "}
-                  {kw(vysledek.citlivost_stropu.strop_plus_kw)}.{" "}
-                  {vysledek.citlivost_stropu.rezerva_pokryje_horni_scenar
-                    ? `Rezerva RK (${kw(vysledek.citlivost_stropu.strop_s_rezervou_kw)}) horní scénář pokryje.`
-                    : `Rezerva RK (${kw(vysledek.citlivost_stropu.strop_s_rezervou_kw)}) horní scénář nepokryje – při silnějším roce hrozí měsíční dokupy/pokuty.`}
+                  Grafy pro alternativní varianty se ukládají až od nové verze výpočtu — spusť „Spočítat peak shaving" znovu.
                 </div>
               )}
 
-              {vysledek.varianty?.length > 1 && (
+              {citlivost && (
+                <div style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 14px" }}>
+                  <b>Citlivost návrhu (PS-10):</b> při profilu ±{citlivost.procenta} %
+                  by udržitelný strop byl {kw(citlivost.strop_minus_kw)} až{" "}
+                  {kw(citlivost.strop_plus_kw)}.{" "}
+                  {citlivost.rezerva_pokryje_horni_scenar
+                    ? `Rezerva RK (${kw(citlivost.strop_s_rezervou_kw)}) horní scénář pokryje.`
+                    : `Rezerva RK (${kw(citlivost.strop_s_rezervou_kw)}) horní scénář nepokryje – při silnějším roce hrozí měsíční dokupy/pokuty.`}
+                </div>
+              )}
+
+              {varianty.length > 1 && (
                 <>
                   <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Srovnání variant</h4>
                   <div className="nb-scroll">
@@ -457,11 +483,19 @@ export default function PeakShavingPanel({ nabidka }) {
                         <tr><th>Baterie</th><th>Výkon / kapacita</th><th>Nová rez.</th><th>Úspora/rok</th><th>Cena</th><th>Návratnost</th><th>NPV</th></tr>
                       </thead>
                       <tbody>
-                        {vysledek.varianty.map((v, i) => (
-                          <VariantaRadek key={`${v.baterie_id}-${v.pocet_kusu}`} v={v} hlavni={i === 0} />
+                        {varianty.map((v, i) => (
+                          <VariantaRadek
+                            key={`${v.baterie_id}-${v.pocet_kusu}`}
+                            v={v}
+                            vybrana={i === vybranyIdx}
+                            onVyber={() => setVybranyIdx(i)}
+                          />
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 4 }}>
+                    <b>Kliknutím na řádek se celý detail (čísla, ekonomika, grafy) překreslí pro danou variantu</b> (◄ = zobrazená; první řádek = doporučená dle NPV).
                   </div>
                 </>
               )}

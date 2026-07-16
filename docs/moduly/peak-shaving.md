@@ -302,17 +302,21 @@ Měsíční maxima odběru: `bez_baterie` (naměřené), `s_baterii_2026` (= min
 | `GET /nabidky/{id}/peak-shaving/profil-souhrn` | nabidkovac | počet/rozsah/špička profilu |
 | `POST /nabidky/{id}/peak-shaving/vypocet` | nabidkovac | spustí výpočet, uloží do `navrhovana_reseni` |
 
-**Vstup výpočtu:** `{ distributor, napetova_hladina, rezervovana_kapacita_kw }`.
-**Výstup `popis_json`:** `vstup`, `sazby` (id + příznaky), `max_navratnost_roky`,
-`doporucena` (varianta), `varianty` (top 3), `graf`, `upozorneni`. Každá varianta
-nese `ekonomika_2026`, `ekonomika_2027` (vč. AKU polí) a tři návratnosti.
+**Vstup výpočtu:** `{ distributor, napetova_hladina, rezervovana_kapacita_kw }`
+(+ volitelně `cena_energie_kc_mwh`, `rezervovany_prikon_kw`, `uvazovat_snizeni_rp`).
+**Výstup `popis_json`:** `vstup`, `sazby` (id + příznaky + použitá pokuta),
+`max_navratnost_roky`, `doporucena` (varianta), `varianty` (top 3 — **každá
+s vlastním `graf` a `citlivost_stropu`**, aby šel detail přepínat kliknutím ve
+FE), `graf`/`citlivost_stropu` doporučené i na nejvyšší úrovni (zpětná
+kompatibilita), `upozorneni`. Každá varianta nese `ekonomika_2026` (s rozpadem
+úspory), `ekonomika_2027`, NPV/IRR a návratnosti.
 
 ---
 
 ## 6. Frontend (`frontend/src`)
 
 - **`pages/NabidkovacKatalog.jsx`** (admin, právo `nabidkovac_katalog`): katalog technologií (samostatné sloupce Výkon/Kapacita, správa vlastních sloupců), výpočtová nastavení, **editor sazeb distributorů** (pole dle struktury – stara_2026 / T1,T2,penalizace,U1,U2 pro nova_2027; přepínače „čeká na sazby ERÚ“ a „modelový odhad“).
-- **`components/PeakShavingPanel.jsx`** (OZ, v detailu nabídky typu peak_shaving): načtení profilu, zadání distributora/hladiny/rezervace, spuštění výpočtu, výsledek – ekonomika 2026 a 2027 vedle sebe (popisky „Roční náklad bez / s peak shavingem“), sleva AKU + upozornění, **tabulka tří návratností**, srovnání variant.
+- **`components/PeakShavingPanel.jsx`** (OZ, v detailu nabídky typu peak_shaving): načtení profilu, zadání distributora/hladiny/rezervace (+ RP a snížení RP), spuštění výpočtu, výsledek – KPI s rozpadem úspory a NPV, ekonomika 2026 (fair baseline) a 2027 vedle sebe, návratnosti dle modelů, citlivost stropu, srovnání variant. **Kliknutím na řádek srovnání se celý detail (KPI, ekonomika, grafy, citlivost) překreslí pro danou variantu** (◄ = zobrazená; starší uložené výsledky mají grafy jen pro doporučenou).
 - **`components/GrafOdberu.jsx`**: lehký **SVG graf bez knihovny** (projekt žádnou grafovou nemá; deploy nedělá `npm install`). Sloupce bez/s baterií + čárkované čáry rezervace.
 - **`components/PeakShavingPanel.jsx`** vykresluje dva grafy (2026, 2027).
 - **`api.js`**: helpery `sazby*`, `katalogSloupec*`, `peakShavingVypocet`, `profilZpracuj`, `peakShavingProfilSouhrn`.

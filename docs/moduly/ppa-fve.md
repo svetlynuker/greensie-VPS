@@ -217,8 +217,9 @@ měsíci / s dírami > 2 % → HTTP 422), doplní defaulty z manažerského nast
 ekonomický sweep, nebo počítá ruční velikost.
 
 **Výstup `popis_json`:** `vstup` (vč. `navrzeno_automaticky`, `metoda_navrhu`), `vysledek`
-(kompletní ekonomika + `roky[]` + `graf`), `varianty` (top 4 velikosti pro srovnání),
-`upozorneni`.
+(kompletní ekonomika + `roky[]` + `graf`), `varianty` (top 4 velikosti — **kompletní
+výsledky vč. `roky` a `graf`**, aby šel detail přepínat kliknutím ve FE; starší uložené
+výsledky mají jen kompaktní souhrn), `upozorneni`.
 
 ---
 
@@ -229,6 +230,9 @@ ekonomický sweep, nebo počítá ruční velikost.
   – navržená velikost + zvýrazněné **% pokrytí spotřeby z FVE**, dlaždice payback/IRR/NPV/úspora
   klienta, tabulka **Srovnání velikostí**, měsíční graf, tabulka po letech. **Vstupy se
   předvyplní z posledního výpočtu** → jde libovolně přepočítávat a měnit hodnoty.
+  **Kliknutím na řádek srovnání se celý detail (čísla, graf, tabulka let) překreslí pro
+  danou velikost** (◄ = zobrazená; u starších uložených výsledků bez plných dat variant
+  se detail nepřepíná).
 - **`components/GrafVyrobaSpotreba.jsx`**: lehký **SVG graf bez knihovny** – dvojice sloupců
   na měsíc (spotřeba = samospotřeba + dokup; výroba = samospotřeba + přetok + ořez).
 - **`pages/NabidkaDetail.jsx`**: pro `typ = ppa` renderuje `PpaPanel`.
