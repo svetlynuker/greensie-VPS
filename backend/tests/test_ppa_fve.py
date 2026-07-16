@@ -5,7 +5,7 @@ Modul je bez závislostí na DB/FastAPI – testuje se přímo (inspirace:
 docs/reserze_kalkulator/bughunt/synteticke-testy.md).
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -114,6 +114,17 @@ class TestLetniCas:
         vyroba = ppa.simuluj_vyrobu(casy, 1.0, 49.8, 35, 0)
         spicka = casy[vyroba.index(max(vyroba))]
         assert spicka.hour == 12 and spicka.minute == 0
+
+    def test_tz_aware_casy_z_db_nepadaji(self):
+        # Sloupec spotreba_profil.cas je DateTime(timezone=True) → routes
+        # posílají tz-aware datetimes; porovnání s naive oknem SELČ padalo
+        # na TypeError (500 z /ppa/vypocet).
+        tz = timezone(timedelta(hours=2))
+        casy = [datetime(2025, 7, 15, tzinfo=tz) + timedelta(minutes=15 * i) for i in range(96)]
+        vyroba = ppa.simuluj_vyrobu(casy, 1.0, 49.8, 35, 0)
+        assert sum(vyroba) > 0
+        spicka = casy[vyroba.index(max(vyroba))]
+        assert spicka.hour == 13  # posun SELČ platí i pro aware časy
 
     def test_posun_nemeni_denni_energii(self):
         # Normalizace tvaru dne zachovává energii – posun jen přesouvá v čase.

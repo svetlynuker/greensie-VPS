@@ -153,7 +153,12 @@ def _je_letni_cas(c: datetime) -> bool:
     Profily z portálů distributorů jsou v lokálním čase, takže v létě je
     solární poledne ~13:00, ne 12:00 (audit PPA-3: model bez posunu „vyráběl"
     o hodinu dřív a u odpolední zátěže podstřeloval samospotřebu o ~7 %).
+
+    Časy z DB (`DateTime(timezone=True)`) chodí tz-aware – porovnává se
+    „nástěnný" čas bez tzinfo, stejně jako zbytek simulace čte c.hour/.month.
     """
+    if c.tzinfo is not None:
+        c = c.replace(tzinfo=None)
     zacatek, konec = _okno_letniho_casu(c.year)
     return zacatek <= c < konec
 
