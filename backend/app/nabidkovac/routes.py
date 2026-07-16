@@ -1229,6 +1229,18 @@ def spocti_ppa(
     if degradace_rok1 is None:
         degradace_rok1 = _ppa_param(nastaveni, "ppa_degradace_rok1", ppa_fve.VYCHOZI_DEGRADACE_ROK1)
 
+    # Vyhnutelné regulované složky (audit PPA-5): vstup má přednost, jinak
+    # manažerské nastavení; POZE a eskalace regulovaných jen z nastavení.
+    vyhnutelne_regulovane = vstup.vyhnutelne_regulovane_kc_mwh
+    if vyhnutelne_regulovane is None:
+        vyhnutelne_regulovane = _ppa_param(
+            nastaveni,
+            "ppa_vyhnutelne_regulovane_kc_mwh",
+            ppa_fve.VYCHOZI_VYHNUTELNE_REGULOVANE_KC_MWH,
+        )
+    index_regulovane = _ppa_param(nastaveni, "ppa_index_regulovane_rocni", 0.0)
+    poze = _ppa_param(nastaveni, "ppa_poze_kc_mwh", 0.0)
+
     # Lokalita: GPS z nabídky, fallback střed ČR.
     lat = ppa_fve.VYCHOZI_LAT
     if n.zakaznik_gps_lat is not None:
@@ -1300,8 +1312,11 @@ def spocti_ppa(
         azimut_st=float(vstup.azimut_st),
         cena_ppa_kc_mwh=float(vstup.cena_ppa_kc_mwh),
         index_ppa_rocni=float(index_ppa),
-        cena_dodavatel_kc_mwh=float(vstup.cena_dodavatel_kc_mwh),
+        cena_silova_kc_mwh=float(vstup.cena_silova_kc_mwh),
         index_dodavatel_rocni=float(index_dod),
+        vyhnutelne_regulovane_kc_mwh=float(vyhnutelne_regulovane),
+        index_regulovane_rocni=float(index_regulovane),
+        poze_kc_mwh=float(poze),
         delka_kontraktu_roky=int(vstup.delka_kontraktu_roky),
         degradace_rocni=float(degradace),
         degradace_rok1=float(degradace_rok1),
@@ -1355,6 +1370,12 @@ def spocti_ppa(
             "Velikost vybrána podle ekonomiky bez prodeje přebytku – přebytek se nezapočítává do "
             "výnosu, proto vychází menší FVE. Zapnutím prodeje přebytku se optimum posune výš."
         )
+    if (vysledek.get("kwp") or 0) > 30:
+        upozorneni.append(
+            "Výrobna nad 30 kW: dodávka z PPA podléhá dani z elektřiny (28,30 Kč/MWh) stejně "
+            "jako dnešní dodávka – v úspoře se proto daň nesrovnává (symetrická). Investor "
+            "(Greensie) má registrační povinnost u celní správy."
+        )
 
     popis_json = {
         "typ_reseni": "ppa",
@@ -1366,7 +1387,8 @@ def spocti_ppa(
             "sklon_st": vstup.sklon_st,
             "azimut_st": vstup.azimut_st,
             "cena_ppa_kc_mwh": vstup.cena_ppa_kc_mwh,
-            "cena_dodavatel_kc_mwh": vstup.cena_dodavatel_kc_mwh,
+            "cena_silova_kc_mwh": vstup.cena_silova_kc_mwh,
+            "vyhnutelne_regulovane_kc_mwh": float(vyhnutelne_regulovane),
             "delka_kontraktu_roky": vstup.delka_kontraktu_roky,
             "rezim_capex": vstup.rezim_capex,
             "prebytek_uctovat": vstup.prebytek_uctovat,

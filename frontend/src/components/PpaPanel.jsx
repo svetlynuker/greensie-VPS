@@ -41,7 +41,9 @@ export default function PpaPanel({ nabidka }) {
   const [sklon, setSklon] = useState(_v.sklon_st != null ? s(_v.sklon_st) : "35");
   const [azimut, setAzimut] = useState(_v.azimut_st != null ? s(_v.azimut_st) : "0");
   const [cenaPpa, setCenaPpa] = useState(s(_v.cena_ppa_kc_mwh));
-  const [cenaDod, setCenaDod] = useState(s(_v.cena_dodavatel_kc_mwh));
+  // Silová složka ceny dodavatele (PPA-5); starší výpočty měly klíč cena_dodavatel_kc_mwh.
+  const [cenaSilova, setCenaSilova] = useState(s(_v.cena_silova_kc_mwh ?? _v.cena_dodavatel_kc_mwh));
+  const [regulovane, setRegulovane] = useState(s(_v.vyhnutelne_regulovane_kc_mwh));
   const [delka, setDelka] = useState(_v.delka_kontraktu_roky != null ? s(_v.delka_kontraktu_roky) : "15");
   const [rezimCapex, setRezimCapex] = useState(_v.rezim_capex || "cena_kwp");
   const [prebytekUctovat, setPrebytekUctovat] = useState(!!_v.prebytek_uctovat);
@@ -65,7 +67,7 @@ export default function PpaPanel({ nabidka }) {
     (d) => d.typ === "spotreba_csv" || d.typ === "jiny"
   );
   const profilOk = souhrn && souhrn.pocet > 0;
-  const vstupyOk = n(cenaPpa) > 0 && n(cenaDod) > 0 && n(delka) > 0;
+  const vstupyOk = n(cenaPpa) > 0 && n(cenaSilova) > 0 && n(delka) > 0;
 
   async function nactiProfil(dokId) {
     setZpracovavaId(dokId);
@@ -94,7 +96,8 @@ export default function PpaPanel({ nabidka }) {
         sklon_st: n(sklon) ?? 35,
         azimut_st: n(azimut) ?? 0,
         cena_ppa_kc_mwh: n(cenaPpa),
-        cena_dodavatel_kc_mwh: n(cenaDod),
+        cena_silova_kc_mwh: n(cenaSilova),
+        vyhnutelne_regulovane_kc_mwh: n(regulovane),
         delka_kontraktu_roky: n(delka),
         rezim_capex: rezimCapex,
         prebytek_uctovat: prebytekUctovat,
@@ -169,8 +172,12 @@ export default function PpaPanel({ nabidka }) {
           <input className="nb-pole" value={cenaPpa} onChange={(e) => setCenaPpa(e.target.value)} inputMode="decimal" placeholder="např. 2500" />
         </div>
         <div>
-          <label className="nb-label">Cena dodavatele (Kč/MWh)</label>
-          <input className="nb-pole" value={cenaDod} onChange={(e) => setCenaDod(e.target.value)} inputMode="decimal" placeholder="silová složka, např. 4000" />
+          <label className="nb-label">Silová cena dodavatele (Kč/MWh)</label>
+          <input className="nb-pole" value={cenaSilova} onChange={(e) => setCenaSilova(e.target.value)} inputMode="decimal" placeholder="jen silová složka, např. 3200" />
+        </div>
+        <div>
+          <label className="nb-label">Vyhnutelné regulované (Kč/MWh, volit.)</label>
+          <input className="nb-pole" value={regulovane} onChange={(e) => setRegulovane(e.target.value)} inputMode="decimal" placeholder="prázdné = z nastavení (~260)" />
         </div>
         <div>
           <label className="nb-label">Délka kontraktu (roky)</label>
@@ -240,6 +247,13 @@ export default function PpaPanel({ nabidka }) {
               <div>Samospotřeba: <b>{mwh(v.samospotreba_rok1_kwh)}</b> ({pct(v.mira_samospotreby)} výroby)</div>
               <div>Přetok do sítě: {mwh(v.export_rok1_kwh)}{v.orez_rok1_kwh > 0 ? `, ořez ${mwh(v.orez_rok1_kwh)}` : ""}</div>
               <div>Investice (CAPEX): <b>{kc(v.capex_kc)}</b></div>
+              {v.vyhnutelna_cena_rok1_kc_mwh != null && (
+                <div>
+                  Vyhnutelná cena klienta: <b>{Math.round(v.vyhnutelna_cena_rok1_kc_mwh).toLocaleString("cs-CZ")} Kč/MWh</b>{" "}
+                  (silová {Math.round(v.cena_silova_kc_mwh).toLocaleString("cs-CZ")} + regulované{" "}
+                  {Math.round((v.vyhnutelne_regulovane_kc_mwh || 0) + (v.poze_kc_mwh || 0)).toLocaleString("cs-CZ")})
+                </div>
+              )}
             </div>
           </div>
 
@@ -312,7 +326,7 @@ export default function PpaPanel({ nabidka }) {
                       <th>Výroba</th>
                       <th>Samospotř.</th>
                       <th>Cena PPA</th>
-                      <th>Cena dodav.</th>
+                      <th>Vyhnutelná cena</th>
                       <th>Úspora klienta</th>
                       <th>Kum. úspora</th>
                       <th>CF investora</th>
@@ -340,7 +354,10 @@ export default function PpaPanel({ nabidka }) {
                 </table>
               </div>
               <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 4 }}>
-                Ceny jsou Kč/MWh. Úspora klienta = samospotřeba × (cena dodavatele − PPA cena). CF investora = platby za samospotřebu {v.prebytek_uctovat ? "+ prodej přetoku " : ""}− O&M. Řádek ◄ = rok návratnosti.
+                Ceny jsou Kč/MWh. Úspora klienta = samospotřeba × (vyhnutelná cena − PPA cena);
+                vyhnutelná cena = silová složka + vyhnutelné regulované platby (použití sítí,
+                systémové služby, POZE), daň z elektřiny symetricky mimo. CF investora = platby
+                za samospotřebu {v.prebytek_uctovat ? "+ prodej přetoku " : ""}− O&M. Řádek ◄ = rok návratnosti.
               </div>
             </>
           )}

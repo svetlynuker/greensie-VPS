@@ -322,10 +322,18 @@ baterie) jsou mimo v1.
 
 ### 4.4 Ekonomika klienta po letech
 
+> **Aktualizace (bughunt PPA-5, rozhodnuto 16. 7. 2026):** „cena dodavatele“ je rozložená
+> na **silovou složku** (zadává OZ, eskaluje se `ppa_index_dodavatel_rocni`) a **vyhnutelné
+> regulované složky** (použití sítí + systémové služby + POZE; default 260 Kč/MWh
+> z manažerského nastavení `ppa_vyhnutelne_regulovane_kc_mwh`, eskalace samostatně,
+> default 0). Daň z elektřiny se nesrovnává (symetrická).
+
 Ceny se eskalují geometricky (rok 1 = základ):
 ```
-cena_ppa_t = cena_ppa_1 × (1 + i_ppa)^(t−1)          # Kč/MWh, i_ppa = ppa_index_ceny_rocni
-cena_dod_t = cena_dod_1 × (1 + i_dod)^(t−1)          # Kč/MWh, i_dod = ppa_index_dodavatel_rocni
+cena_ppa_t  = cena_ppa_1 × (1 + i_ppa)^(t−1)         # Kč/MWh, i_ppa = ppa_index_ceny_rocni
+cena_sil_t  = cena_silova_1 × (1 + i_dod)^(t−1)      # Kč/MWh, i_dod = ppa_index_dodavatel_rocni
+cena_reg_t  = (regulované + POZE) × (1 + i_reg)^(t−1)  # Kč/MWh, i_reg = ppa_index_regulovane_rocni
+cena_dod_t  = cena_sil_t + cena_reg_t                 # vyhnutelná cena klienta
 ```
 Roční náklad klienta (energie v kWh → /1000 na MWh):
 ```
@@ -335,8 +343,8 @@ uspora_t     = naklad_bez_t − naklad_s_t
              = (SS_t / 1000) × (cena_dod_t − cena_ppa_t)                  # zjednodušení
 uspora_kumulativni_t = Σ_{k=1..t} uspora_k
 ```
-Úspora klienta = **samospotřebovaná energie × (cena dodavatele − PPA cena)**. Protože PPA cena
-< cena dodavatele, je kladná; dokup `IMP_t` se ruší (klient ho platí tak jako tak). To je
+Úspora klienta = **samospotřebovaná energie × (vyhnutelná cena − PPA cena)**. Protože PPA cena
+< vyhnutelná cena, je kladná; dokup `IMP_t` se ruší (klient ho platí tak jako tak). To je
 jádro nabídky pro klienta.
 
 ⚠️ **Předpoklady k potvrzení:**

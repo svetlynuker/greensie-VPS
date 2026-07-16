@@ -75,7 +75,12 @@ const PPA_POLE = [
   { klic: "ppa_ostatni_naklady_kc_kwp", label: "Ostatní náklady / BOS (Kč/kWp)" },
   { klic: "ppa_merny_vynos_kwh_kwp", label: "Měrný výnos FVE (kWh/kWp/rok)" },
   { klic: "ppa_index_ceny_rocni", label: "Index PPA ceny (%/rok, např. 0.03)" },
-  { klic: "ppa_index_dodavatel_rocni", label: "Index ceny dodavatele (%/rok)" },
+  { klic: "ppa_index_dodavatel_rocni", label: "Index silové ceny dodavatele (%/rok)" },
+  // Rozklad ceny dodavatele (PPA-5): OZ zadává silovou složku, vyhnutelné
+  // regulované platby (použití sítí + systémové služby + POZE) jdou odsud.
+  { klic: "ppa_vyhnutelne_regulovane_kc_mwh", label: "Vyhnutelné regulované složky (Kč/MWh, default 260)" },
+  { klic: "ppa_index_regulovane_rocni", label: "Index regulovaných složek (%/rok, default 0)" },
+  { klic: "ppa_poze_kc_mwh", label: "POZE (Kč/MWh, 2026 = 0)" },
   { klic: "ppa_index_prebytek_rocni", label: "Index ceny přebytku (%/rok)" },
   { klic: "ppa_degradace_rocni", label: "Degradace panelů (%/rok, např. 0.005)" },
   { klic: "ppa_degradace_rok1", label: "Degradace 1. roku – LID (0.02 = PERC, 0.01 = TOPCon)" },

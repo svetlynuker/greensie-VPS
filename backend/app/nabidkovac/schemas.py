@@ -196,7 +196,9 @@ class PpaVstup(BaseModel):
     sklon_st: float = 35.0
     azimut_st: float = 0.0  # 0 = jih, ±90 = V/Z, 180 = sever
     cena_ppa_kc_mwh: float
-    cena_dodavatel_kc_mwh: float
+    # Silová složka ceny dodavatele (audit PPA-5) – vyhnutelné regulované
+    # složky se přičítají zvlášť (default z manažerského nastavení).
+    cena_silova_kc_mwh: float
     delka_kontraktu_roky: int
 
     # Velikost FVE navrhuje appka sama (kap. 4.7). `instalovany_vykon_kwp` je
@@ -210,6 +212,8 @@ class PpaVstup(BaseModel):
     degradace_rocni: Optional[float] = None
     # LID – degradace 1. roku (audit PPA-4); default z nastavení (−2 % PERC).
     degradace_rok1: Optional[float] = None
+    # Vyhnutelné regulované složky Kč/MWh (audit PPA-5); default z nastavení (~260).
+    vyhnutelne_regulovane_kc_mwh: Optional[float] = None
 
     # Náklady na FVE (kap. 3.4) – přepínač + volitelný přetok.
     rezim_capex: RezimCapex = "cena_kwp"

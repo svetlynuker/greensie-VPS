@@ -54,7 +54,10 @@ existující tabulky:
   | `ppa_ostatni_naklady_kc_kwp` | BOS (montáž/konstrukce) pro komponentový CAPEX | default 0 |
   | `ppa_merny_vynos_kwh_kwp` | měrný výnos FVE | default 1055 (PVGIS v5.3, střed ČR — PPA-2); **pojistka 100–2000** |
   | `ppa_index_ceny_rocni` | roční eskalace PPA ceny | default 0,03 |
-  | `ppa_index_dodavatel_rocni` | roční eskalace ceny dodavatele | default = index PPA |
+  | `ppa_index_dodavatel_rocni` | roční eskalace silové ceny dodavatele | default = index PPA |
+  | `ppa_vyhnutelne_regulovane_kc_mwh` | vyhnutelné regulované složky (PPA-5) | default 260 |
+  | `ppa_index_regulovane_rocni` | eskalace regulovaných složek | default 0 |
+  | `ppa_poze_kc_mwh` | POZE | default 0 (2026) |
   | `ppa_index_prebytek_rocni` | roční eskalace ceny přebytku | default 0 |
   | `ppa_degradace_rocni` | degradace panelů | default 0,005 |
   | `ppa_degradace_rok1` | LID – degradace 1. roku (PPA-4) | default 0,02 (PERC); TOPCon 0,01 |
@@ -123,10 +126,20 @@ dokup_i        = max(0, S_i − V_i)
 `P_rez` prázdné/0 = neomezeno. Ořez **neovlivňuje samospotřebu** (ta je lokální).
 
 ### 3.4 Ekonomika po letech (`spocti_ppa`)
-Ceny se eskalují geometricky (rok 1 = základ). Klient:
+Ceny se eskalují geometricky (rok 1 = základ). Klient (rozklad ceny — bughunt PPA-5):
 ```
-úspora_t = (samospotřeba_t / 1000) × (cena_dodavatel_t − cena_ppa_t)   # Kč
+cena_silová_t     = cena_silova_kc_mwh × (1 + index_dodavatel)^(t−1)     # zadává OZ
+cena_regulované_t = (vyhnutelné_regulované + POZE) × (1 + index_regul)^(t−1)  # z nastavení
+vyhnutelná_cena_t = cena_silová_t + cena_regulované_t
+úspora_t = (samospotřeba_t / 1000) × (vyhnutelná_cena_t − cena_ppa_t)   # Kč
 ```
+Samospotřeba za elektroměrem šetří kromě silové elektřiny i variabilní regulované
+platby (použití sítí ~83–106 Kč/MWh dle DSO + systémové služby 164,24 + POZE 0
+pro 2026 → default 260 Kč/MWh v manažerském nastavení). Daň z elektřiny je mimo
+obě strany srovnání (symetrická — PPA dodávka z výrobny > 30 kW jí podléhá také);
+u výroben > 30 kW jde do výstupu upozornění na registrační povinnost investora.
+Výstup nese rozklad (`cena_silova_kc_mwh`, `vyhnutelne_regulovane_kc_mwh`,
+`poze_kc_mwh`, `vyhnutelna_cena_rok1_kc_mwh`, `uspora_zahrnuje`).
 Investor:
 ```
 CAPEX

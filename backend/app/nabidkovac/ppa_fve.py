@@ -50,6 +50,15 @@ VYCHOZI_CENA_FVE_KC_KWP = 25000.0
 # Zeměpisná šířka středu ČR – fallback, když nabídka nemá GPS (kap. 4.1).
 VYCHOZI_LAT = 49.8
 
+# Vyhnutelné regulované složky ceny (audit PPA-5, rozhodnuto 16. 7. 2026):
+# samospotřeba za elektroměrem se kromě silové elektřiny vyhne i variabilním
+# regulovaným platbám – pro VN 2026 (bez DPH): použití sítí ~83–106 Kč/MWh
+# (dle DSO) + systémové služby 164,24 + POZE 0 → ~250–270 Kč/MWh. Default
+# střed pásma; přesná hodnota v manažerském nastavení
+# (`ppa_vyhnutelne_regulovane_kc_mwh`). Daň z elektřiny se nezapočítává
+# (symetrická – PPA dodávka z výrobny > 30 kW jí podléhá také).
+VYCHOZI_VYHNUTELNE_REGULOVANE_KC_MWH = 260.0
+
 # Cílová míra samospotřeby pro automatický návrh velikosti FVE (kap. 4.7).
 # Návrh = největší kWp, u něhož se ještě aspoň tento podíl výroby přímo spotřebuje
 # (= nejlepší pokrytí spotřeby bez velkého plýtvání přebytkem). Laditelné.
@@ -473,7 +482,10 @@ class VstupPPA:
     azimut_st: float
     cena_ppa_kc_mwh: float
     index_ppa_rocni: float
-    cena_dodavatel_kc_mwh: float
+    # Cena dodavatele rozložená (audit PPA-5): silová složka (zadává OZ,
+    # eskaluje se indexem dodavatele) + vyhnutelné regulované složky
+    # (default z manažerského nastavení, eskalace samostatně).
+    cena_silova_kc_mwh: float
     index_dodavatel_rocni: float
     delka_kontraktu_roky: int
     degradace_rocni: float
@@ -489,6 +501,10 @@ class VstupPPA:
     interval_h: float = VYCHOZI_INTERVAL_H
     # LID – pokles výroby už v prvním roce (audit PPA-4).
     degradace_rok1: float = VYCHOZI_DEGRADACE_ROK1
+    # Vyhnutelné regulované složky + POZE (audit PPA-5), Kč/MWh bez DPH.
+    vyhnutelne_regulovane_kc_mwh: float = VYCHOZI_VYHNUTELNE_REGULOVANE_KC_MWH
+    index_regulovane_rocni: float = 0.0
+    poze_kc_mwh: float = 0.0
 
 
 def spocti_ppa(
@@ -536,10 +552,16 @@ def spocti_ppa(
         bil = sparuj(vyroba_t, spotreba_kwh, v.rezervovany_vykon_dodavky_kw, v.interval_h) if t > 1 else bil1
 
         cena_ppa_t = v.cena_ppa_kc_mwh * (1 + v.index_ppa_rocni) ** (t - 1)
-        cena_dod_t = v.cena_dodavatel_kc_mwh * (1 + v.index_dodavatel_rocni) ** (t - 1)
+        cena_silova_t = v.cena_silova_kc_mwh * (1 + v.index_dodavatel_rocni) ** (t - 1)
+        cena_regulovane_t = (v.vyhnutelne_regulovane_kc_mwh + v.poze_kc_mwh) * (
+            1 + v.index_regulovane_rocni
+        ) ** (t - 1)
+        # Vyhnutelná cena klienta = silová + vyhnutelné regulované složky
+        # (audit PPA-5): samospotřeba za elektroměrem šetří obojí.
+        cena_dod_t = cena_silova_t + cena_regulovane_t
         cena_pre_t = v.prebytek_cena_kc_mwh * (1 + v.index_prebytek_rocni) ** (t - 1)
 
-        # Klient: úspora = samospotřeba × (cena dodavatele − PPA cena) (kap. 4.4).
+        # Klient: úspora = samospotřeba × (vyhnutelná cena − PPA cena) (kap. 4.4).
         uspora_t = (bil.samospotreba_kwh / 1000.0) * (cena_dod_t - cena_ppa_t)
         uspora_kum += uspora_t
 
@@ -559,7 +581,10 @@ def spocti_ppa(
                 "orez_kwh": round(bil.orez_kwh, 1),
                 "dokup_kwh": round(bil.dokup_kwh, 1),
                 "cena_ppa_kc_mwh": round(cena_ppa_t, 2),
+                # „Cena dodavatele" = vyhnutelná cena (silová + regulované) –
+                # klíč zachován kvůli starším uloženým výsledkům ve FE.
                 "cena_dodavatel_kc_mwh": round(cena_dod_t, 2),
+                "cena_silova_kc_mwh": round(cena_silova_t, 2),
                 "uspora_klient_kc": round(uspora_t, 2),
                 "uspora_klient_kum_kc": round(uspora_kum, 2),
                 "vynos_ppa_kc": round(vynos_ppa, 2),
@@ -610,6 +635,18 @@ def spocti_ppa(
         "index_dodavatel_rocni": v.index_dodavatel_rocni,
         "degradace_rocni": v.degradace_rocni,
         "degradace_rok1": v.degradace_rok1,
+        # Rozklad vyhnutelné ceny klienta (audit PPA-5) – co srovnání obsahuje.
+        "cena_silova_kc_mwh": round(v.cena_silova_kc_mwh, 2),
+        "vyhnutelne_regulovane_kc_mwh": round(v.vyhnutelne_regulovane_kc_mwh, 2),
+        "poze_kc_mwh": round(v.poze_kc_mwh, 2),
+        "index_regulovane_rocni": v.index_regulovane_rocni,
+        "vyhnutelna_cena_rok1_kc_mwh": round(
+            v.cena_silova_kc_mwh + v.vyhnutelne_regulovane_kc_mwh + v.poze_kc_mwh, 2
+        ),
+        "uspora_zahrnuje": (
+            "silová složka + vyhnutelné regulované platby (použití sítí, systémové "
+            "služby, POZE) − PPA cena; daň z elektřiny symetricky mimo srovnání"
+        ),
         "navratnost_roky": round(navratnost, 2) if navratnost is not None else None,
         "irr": round(irr, 4) if irr is not None else None,
         "npv_kc": round(npv, 2),

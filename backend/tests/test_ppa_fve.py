@@ -136,8 +136,11 @@ def vstup_ppa(**zmeny):
         azimut_st=0,
         cena_ppa_kc_mwh=2500,
         index_ppa_rocni=0.0,
-        cena_dodavatel_kc_mwh=3500,
+        cena_silova_kc_mwh=3500,
         index_dodavatel_rocni=0.0,
+        vyhnutelne_regulovane_kc_mwh=0.0,  # v testech LID izolujeme cenu
+        index_regulovane_rocni=0.0,
+        poze_kc_mwh=0.0,
         delka_kontraktu_roky=3,
         degradace_rocni=0.005,
         capex_kc=2_500_000,
@@ -179,3 +182,56 @@ class TestDegradaceLid:
         r = ppa.spocti_ppa(vstup_ppa(), self.CASY, self.SPOTREBA)
         assert r["vyroba_rok1_kwh"] == pytest.approx(r["roky"][0]["vyroba_kwh"], abs=0.2)
         assert r["degradace_rok1"] == 0.02
+
+
+# ---------------------------------------- PPA-5: rozklad ceny dodavatele
+class TestRozkladCenyDodavatele:
+    """Úspora klienta = SS × (silová + vyhnutelné regulované − PPA cena)."""
+
+    CASY = den_casy(2025, 7, 15)
+    SPOTREBA = [50.0] * 96  # dost vysoká → veškerá výroba je samospotřeba
+
+    def test_default_vyhnutelnych_regulovanych(self):
+        assert ppa.VYCHOZI_VYHNUTELNE_REGULOVANE_KC_MWH == 260.0
+        v = vstup_ppa()
+        # helper je explicitně nuluje; čistý VstupPPA má default 260
+        assert v.vyhnutelne_regulovane_kc_mwh == 0.0
+
+    def test_uspora_zahrnuje_regulovane_slozky(self):
+        vstup = vstup_ppa(
+            cena_silova_kc_mwh=3000.0,
+            vyhnutelne_regulovane_kc_mwh=260.0,
+            cena_ppa_kc_mwh=2500.0,
+            delka_kontraktu_roky=1,
+            degradace_rok1=0.0,
+        )
+        r = ppa.spocti_ppa(vstup, self.CASY, self.SPOTREBA)
+        ss_mwh = r["samospotreba_rok1_kwh"] / 1000.0
+        # marže klienta = 3000 + 260 − 2500 = 760 Kč/MWh
+        assert r["roky"][0]["uspora_klient_kc"] == pytest.approx(ss_mwh * 760.0, rel=1e-4)
+        assert r["vyhnutelna_cena_rok1_kc_mwh"] == pytest.approx(3260.0)
+        assert r["roky"][0]["cena_dodavatel_kc_mwh"] == pytest.approx(3260.0)
+        assert r["roky"][0]["cena_silova_kc_mwh"] == pytest.approx(3000.0)
+
+    def test_eskalace_silove_a_regulovanych_zvlast(self):
+        vstup = vstup_ppa(
+            cena_silova_kc_mwh=3000.0,
+            index_dodavatel_rocni=0.03,
+            vyhnutelne_regulovane_kc_mwh=260.0,
+            index_regulovane_rocni=0.0,
+            delka_kontraktu_roky=2,
+        )
+        r = ppa.spocti_ppa(vstup, self.CASY, self.SPOTREBA)
+        # rok 2: eskaluje jen silová, regulované zůstávají
+        assert r["roky"][1]["cena_dodavatel_kc_mwh"] == pytest.approx(3000.0 * 1.03 + 260.0, abs=0.01)
+
+    def test_poze_se_pricita_k_regulovanym(self):
+        vstup = vstup_ppa(
+            cena_silova_kc_mwh=3000.0,
+            vyhnutelne_regulovane_kc_mwh=260.0,
+            poze_kc_mwh=100.0,
+            delka_kontraktu_roky=1,
+        )
+        r = ppa.spocti_ppa(vstup, self.CASY, self.SPOTREBA)
+        assert r["vyhnutelna_cena_rok1_kc_mwh"] == pytest.approx(3360.0)
+        assert r["roky"][0]["cena_dodavatel_kc_mwh"] == pytest.approx(3360.0)
