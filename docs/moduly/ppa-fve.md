@@ -169,10 +169,12 @@ Měsíční agregáty rok 1: spotřeba, výroba, samospotřeba, přetok, ořez, 
 override), `max_kwp`, `rezim_capex`, `prebytek_uctovat`, `prebytek_cena_kc_mwh`,
 `rezervovany_vykon_dodavky_kw`, `index_ppa_rocni`, `index_dodavatel_rocni`, `degradace_rocni`.
 
-Route: načte profil, doplní defaulty z manažerského nastavení (`_ppa_param`), **ošetří
-nereálný měrný výnos** (mimo 100–2000 → default 1000 + upozornění), určí lokalitu (GPS nabídky,
-fallback 49,8°), sestaví `capex_fn(kwp)` a šablonu vstupu, a buď spustí ekonomický sweep, nebo
-počítá ruční velikost.
+Route: načte profil, **zvaliduje pokrytí roku** (`profil_pokryti.py`, bughunt SP-1: profil
+delší než rok se ořízne na posledních 12 celých měsíců; kratší než ~350 dní / s chybějícími
+měsíci / s dírami > 2 % → HTTP 422), doplní defaulty z manažerského nastavení (`_ppa_param`),
+**ošetří nereálný měrný výnos** (mimo 100–2000 → default 1000 + upozornění), určí lokalitu
+(GPS nabídky, fallback 49,8°), sestaví `capex_fn(kwp)` a šablonu vstupu, a buď spustí
+ekonomický sweep, nebo počítá ruční velikost.
 
 **Výstup `popis_json`:** `vstup` (vč. `navrzeno_automaticky`, `metoda_navrhu`), `vysledek`
 (kompletní ekonomika + `roky[]` + `graf`), `varianty` (top 4 velikosti pro srovnání),

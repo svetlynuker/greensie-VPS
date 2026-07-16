@@ -132,6 +132,18 @@ dynamicky. Výstup: seznam `(čas, kW)` → `spotreba_profil` (bulk insert,
 idempotentně). Interval se odvodí z časových značek (fallback 0,25 h).
 Knihovny: `xlrd`, `openpyxl` (v `requirements.txt`).
 
+### 4.1b Validace pokrytí roku — `app/nabidkovac/profil_pokryti.py` (bughunt SP-1)
+Před výpočtem (peak shaving i PPA) se profil zkontroluje a případně ořízne:
+- **delší než rok** (nebo >12 kombinací rok×měsíc) → automaticky se použije
+  posledních **12 celých kalendářních měsíců** (upozornění ve výstupu),
+- **nepoužitelný jako roční** → HTTP 422 s vysvětlením: rozsah < 350 dní,
+  chybějící kalendářní měsíce, překrývající se okrajové měsíce, díry > 2 %
+  intervalů (z rozsahu časů × granularita).
+
+Bez toho půlroční profil tiše vyráběl „roční“ ekonomiku (poloviční úspory
+proti plnému CAPEXu) a 13měsíční profil rozpouštěl lednovou výrobu do 62 dnů
+(bughunt testy T2/T3).
+
 ### 4.2 Simulace baterie (kap. 4.2)
 Projezd profilu po 15min intervalech pro daný **strop `T`**:
 - **odběr > T:** baterie dodá `min(odběr − T, výkon, dostupná_energie)`. Když nestačí, strop `T` je **neudržitelný**.

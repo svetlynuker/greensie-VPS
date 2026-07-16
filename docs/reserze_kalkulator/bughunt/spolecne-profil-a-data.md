@@ -8,6 +8,14 @@
 
 ## SP-1 ⛔ P0 — Žádná kontrola pokrytí roku: neúplný profil tiše vyrábí nesmyslnou „roční“ ekonomiku
 
+> ✅ **Vyřešeno 16. 7. 2026** — commit `fix(nabidkovac): validace pokrytí roku v profilu (SP-1)`
+> na větvi `bughunt-opravy-p0`. Nový modul `profil_pokryti.py`: profil delší než
+> rok se ořízne na posledních 12 celých měsíců (s upozorněním ve výstupu);
+> jinak tvrdá 422 při rozsahu < 350 dní, chybějících měsících, > 12 kombinacích
+> rok×měsíc nebo dírách > 2 %. Zapojeno do obou výpočetních rout (PS i PPA).
+> Manažerský přepínač „povolit s varováním“ zatím neimplementován (lze doplnit,
+> až bude reálná potřeba). Testy: `backend/tests/test_profil_pokryti.py`.
+
 **Kde:** `routes.py` — `spocti_peak_shaving()` i `spocti_ppa()` berou z DB všechno, co
 tam je; `ppa_fve.spocti_ppa()` označí `sum(spotreba_kwh)` jako `rocni_spotreba_kwh`;
 `peak_shaving.vychozi_rocni_naklad_2026()` sčítá pokuty jen přes měsíce přítomné v profilu.

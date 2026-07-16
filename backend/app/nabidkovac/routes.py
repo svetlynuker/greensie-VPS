@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import User
 from app.database import get_db
-from app.nabidkovac import peak_shaving, ppa_fve, profil_import, soubory
+from app.nabidkovac import peak_shaving, ppa_fve, profil_import, profil_pokryti, soubory
 from app.nabidkovac.models import (
     DISTRIBUTORI,
     NAPETOVE_HLADINY,
@@ -813,6 +813,29 @@ def _interval_h_z_profilu(casy: list[datetime]) -> float:
     return peak_shaving.VYCHOZI_INTERVAL_H
 
 
+def _zvaliduj_a_orizni_profil(
+    casy: list[datetime], hodnoty: list[float], interval_h: float
+) -> tuple[list[datetime], list[float], list[str]]:
+    """Ochrana ročních výpočtů před neúplným/přesahujícím profilem (SP-1).
+
+    Profil delší než rok ořízne na posledních 12 celých měsíců (s upozorněním
+    do výstupu); profil, který ani potom není použitelný jako roční (málo dní,
+    chybějící měsíce, díry > 2 %), shodí na HTTP 422 – radši žádné číslo než
+    sebejistě špatná „roční“ ekonomika (bughunt testy T2/T3).
+    """
+    casy, hodnoty, orezano = profil_pokryti.orizni_na_posledni_rok(casy, hodnoty, interval_h)
+    ok, duvod = profil_pokryti.zkontroluj_pokryti(casy, interval_h)
+    if not ok:
+        raise HTTPException(status_code=422, detail=f"Profil spotřeby nelze použít: {duvod}")
+    upozorneni: list[str] = []
+    if orezano:
+        upozorneni.append(
+            "Profil byl delší než rok – pro výpočet se použilo posledních 12 celých "
+            f"měsíců ({min(casy).strftime('%m/%Y')}–{max(casy).strftime('%m/%Y')})."
+        )
+    return casy, hodnoty, upozorneni
+
+
 def _varianta_json(v: peak_shaving.Varianta) -> dict:
     return {
         "baterie_id": v.baterie_id,
@@ -878,9 +901,14 @@ def spocti_peak_shaving(
                 "CSV se řeší samostatně – bez profilu nejde peak shaving počítat."
             ),
         )
+    casy_profilu = [r.cas for r in radky]
     profil_kw = [float(r.hodnota_kw) for r in radky]
-    mesice = [r.cas.month for r in radky]
-    interval_h = _interval_h_z_profilu([r.cas for r in radky])
+    interval_h = _interval_h_z_profilu(casy_profilu)
+    # Validace pokrytí roku + případné oříznutí na posledních 12 měsíců (SP-1).
+    casy_profilu, profil_kw, upozorneni_profilu = _zvaliduj_a_orizni_profil(
+        casy_profilu, profil_kw, interval_h
+    )
+    mesice = [c.month for c in casy_profilu]
 
     # 2) sazby (stara_2026 povinná pro výběr; nova_2027 volitelná – jen info)
     sazba_2026 = _najdi_sazbu(db, vstup.distributor, vstup.napetova_hladina, "stara_2026", 2026)
@@ -1012,7 +1040,7 @@ def spocti_peak_shaving(
         "doporucena": (_varianta_json(vysledek.doporucena) if vysledek.doporucena else None),
         # 2.–3. nejlepší varianta pro srovnání (kap. 5) – vítěz je [0].
         "varianty": [_varianta_json(v) for v in vysledek.varianty[:3]],
-        "upozorneni": list(vysledek.upozorneni) + upozorneni_sazeb,
+        "upozorneni": upozorneni_profilu + list(vysledek.upozorneni) + upozorneni_sazeb,
     }
     if not parametry_2027:
         popis_json["upozorneni"] = popis_json["upozorneni"] + [
@@ -1154,7 +1182,9 @@ def spocti_ppa(
             ),
         )
 
-    upozorneni: list[str] = []
+    # Validace pokrytí roku + případné oříznutí na posledních 12 měsíců (SP-1) –
+    # bez ní by se půlroční data prohlásila za „roční spotřebu“ (bughunt T2/T3).
+    casy, spotreba_kwh, upozorneni = _zvaliduj_a_orizni_profil(casy, spotreba_kwh, interval_h)
 
     # Manažerské nastavení (defaulty PPA) – aktuální verze.
     nastaveni = db.query(VypoctovaNastaveni).order_by(VypoctovaNastaveni.verze.desc()).first()
