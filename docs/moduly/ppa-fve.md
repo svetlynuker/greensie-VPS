@@ -131,8 +131,11 @@ nikdy nevýnosí.
   `kWp × ppa_ostatni_naklady_kc_kwp`. Rozpad je ve výstupu.
 
 ### 3.6 Návrh velikosti = ekonomický výběr (`kandidatni_velikosti` + `vyber_velikost`)
-1. Vygeneruje řadu velikostí (rovnoměrný krok od malé FVE po `3× roční spotřeba`, příp.
-   omezeno `max_kwp`; ~30 kandidátů).
+1. Vygeneruje řadu velikostí (rovnoměrný krok od malé FVE po `3× roční spotřeba`,
+   min. 5 kWp rozsah sweepu; ~30 kandidátů). **Limit `max_kwp` je tvrdý a uplatní
+   se až nakonec** — žádný kandidát ho nepřekročí (oprava bughunt PPA-1: dřívější
+   pořadí operací vracelo pro `max_kwp < 5` kandidáty nad limit střechy);
+   pro `max_kwp < 1` se vrací aspoň `[1]`.
 2. Pro každou spočítá kompletní ekonomiku (CAPEX per velikost + `spocti_ppa`).
 3. Vybere **nejvyšší NPV**, sekundárně **nejkratší návratnost**; vrací i 2.–3. variantu.
 

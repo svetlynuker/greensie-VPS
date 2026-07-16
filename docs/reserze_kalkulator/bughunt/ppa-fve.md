@@ -8,6 +8,11 @@
 
 ## PPA-1 🐞 P0 — Sweep velikostí překračuje limit střechy `max_kwp` < 5 kWp
 
+> ✅ **Vyřešeno 16. 7. 2026** — commit `fix(ppa): sweep velikostí nepřekračuje max_kwp (PPA-1)`
+> na větvi `bughunt-opravy-p0`. `max(cap, 5.0)` se aplikuje před `min(cap, max_kwp)`
+> (limit střechy je tvrdý); pro `max_kwp < 1` se vrací aspoň `[1]`.
+> Testy: `test_ppa_fve.py::TestKandidatniVelikosti`.
+
 **Kde:** `kandidatni_velikosti()` — `cap = max(cap, 5.0)` se aplikuje **až po**
 `cap = min(cap, max_kwp)`.
 

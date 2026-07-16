@@ -584,19 +584,26 @@ def kandidatni_velikosti(
 ) -> list[int]:
     """Řada kandidátních velikostí (kWp) pro ekonomický sweep (kap. 4.7).
 
-    Horní mez = `_MAX_POMER_VYROBA_SPOTREBA`× roční spotřeby (příp. `max_kwp`).
-    Rovnoměrný krok, zaokrouhleno na celé kWp, unikátní, min. 1 kWp.
+    Horní mez = `_MAX_POMER_VYROBA_SPOTREBA`× roční spotřeby, minimálně 5 kWp
+    (ať má sweep co zkoušet i u malé spotřeby); limit střechy/připojení
+    `max_kwp` se uplatní až NAKONEC a je tvrdý – žádný kandidát ho nesmí
+    překročit (audit 16. 7. 2026, PPA-1: dřívější pořadí `min` → `max`
+    vracelo pro max_kwp < 5 kandidáty nad limit střechy). Rovnoměrný krok,
+    zaokrouhleno na celé kWp, unikátní, min. 1 kWp (i pro max_kwp < 1).
     """
     prod_per_kwp = sum(base_vyroba_1kwp)
     e_spotreba = sum(spotreba_kwh)
     if prod_per_kwp <= 0 or e_spotreba <= 0:
         return []
     cap = _MAX_POMER_VYROBA_SPOTREBA * e_spotreba / prod_per_kwp
+    cap = max(cap, 5.0)
     if max_kwp and max_kwp > 0:
         cap = min(cap, max_kwp)
-    cap = max(cap, 5.0)
     krok = max(1, round(cap / pocet))
-    return sorted({k for k in range(krok, int(cap) + 1, krok) if k >= 1})
+    kandidati = sorted({k for k in range(krok, int(cap) + 1, krok) if k >= 1})
+    # Limit menší než 1 kWp: zaokrouhlení na celé kWp nic menšího nenabízí –
+    # vrať aspoň nejmenší smysluplnou velikost 1 kWp.
+    return kandidati or [1]
 
 
 def vyber_velikost(
