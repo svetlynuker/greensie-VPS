@@ -416,6 +416,13 @@ def ekonomika_2027(
       celý rok), M = měsíční maximum PO baterii, sražené co nejhlouběji v každém
       měsíci (kap. 4.6 „srážej co to dá“). RP se přes rok nemění – mění se jen M.
 
+    Rezervovaný příkon (audit PS-4): RP je hodnota ZE SMLOUVY O PŘIPOJENÍ
+    (dlouhodobá, typicky ≥ RK; v lednu 2027 se převezme ze smlouvy) – volající
+    dosazuje za `rezervovana_kapacita_kw` skutečný RP (nebo RK jako fallback)
+    a za `nova_rezervovana_kapacita_kw` RP scénáře s PS: bez snížení smlouvy
+    STEJNÝ RP (přínos baterie je pak jen na složce „maximální odebraný výkon"
+    – poctivý default), se snížením novou RK.
+
     Sleva „Koeficient AKU" se NEuplatňuje – dle definice ERÚ vychází pro
     peak-shavingovou baterii uvnitř odběru (bez exportu do soustavy) K = 0
     (audit 16. 7. 2026, PS-3). Jediný model 2027 = dřívější „konzervativní".
@@ -457,8 +464,11 @@ def ekonomika_2027(
         "novy_rocni_naklad": novy + naklad_ztrat,
         "naklad_ztrat_baterie": naklad_ztrat,
         "rocni_uspora": soucasny - novy - naklad_ztrat,
-        # RP je jedna roční hodnota (nemění se po měsících) – shodná s novou
-        # rezervovanou kapacitou z roku 2026.
+        # RP obou scénářů (audit PS-4): hodnota ze smlouvy o připojení
+        # (příp. fallback RK) a RP scénáře s PS (bez/se snížením smlouvy).
+        "rp_soucasny_kw": rezervovana_kapacita_kw,
+        "rp_novy_kw": nova_rezervovana_kapacita_kw,
+        # Zpětná kompatibilita FE: RP použitý ve scénáři s PS.
         "rezervovana_kapacita_kw": nova_rezervovana_kapacita_kw,
         "pocet_mesicu_t1": poc_t1,
         "pocet_mesicu_t2": poc_t2,
@@ -576,8 +586,10 @@ def spocti_variantu(
     je_modelovy_2027: bool = True,
     cena_energie_kc_mwh: float = VYCHOZI_CENA_ENERGIE_KC_MWH,
     rezerva_rk_procenta: float = VYCHOZI_REZERVA_RK_PROCENTA,
+    rezervovany_prikon_kw: float | None = None,
+    uvazovat_snizeni_rp: bool = False,
 ) -> Varianta:
-    """Spočítá jednu variantu (produkt × počet kusů): kap. 4.2–4.6 + PS-5/PS-6."""
+    """Spočítá jednu variantu (produkt × počet kusů): kap. 4.2–4.6 + PS-4/5/6."""
     vykon = baterie.vykon_kw * pocet_kusu
     kapacita = baterie.kapacita_kwh * pocet_kusu
     # Simulace jede na využitelné kapacitě (SOC okno 10–95 %) a se ztrátami
@@ -605,13 +617,17 @@ def spocti_variantu(
     )
     navratnost = _navratnost(cena, ek.rocni_uspora)
 
-    # Rok 2027: RP zůstává roční (nová RK vč. rezervy), ale měsíční maxima M
-    # se sráží co nejhlouběji v každém měsíci (kap. 4.6).
+    # Rok 2027 (audit PS-4): baseline RP = hodnota ze smlouvy o připojení
+    # (fallback = současná RK); scénář s PS drží STEJNÝ RP (přínos jen na
+    # složce „maximální odebraný výkon"), snížení RP jen na explicitní přání –
+    # je to jednosměrná změna smlouvy o připojení.
+    rp_soucasny = rezervovany_prikon_kw if rezervovany_prikon_kw else rezervovana_kapacita_kw
+    rp_novy = nova_rk if uvazovat_snizeni_rp else rp_soucasny
     ek_2027 = ekonomika_2027(
         profil_kw,
         mesice,
-        rezervovana_kapacita_kw,
-        nova_rk,
+        rp_soucasny,
+        rp_novy,
         vykon,
         kapacita_uzitecna,
         parametry_2027,
@@ -664,6 +680,8 @@ def vyber_reseni(
     je_modelovy_2027: bool = True,
     cena_energie_kc_mwh: float = VYCHOZI_CENA_ENERGIE_KC_MWH,
     rezerva_rk_procenta: float = VYCHOZI_REZERVA_RK_PROCENTA,
+    rezervovany_prikon_kw: float | None = None,
+    uvazovat_snizeni_rp: bool = False,
 ) -> VysledekPeakShaving:
     """Kap. 4.5: projede všechny produkty × počty kusů a vybere nejrychlejší návratnost.
 
@@ -699,6 +717,8 @@ def vyber_reseni(
                 je_modelovy_2027,
                 cena_energie_kc_mwh,
                 rezerva_rk_procenta,
+                rezervovany_prikon_kw,
+                uvazovat_snizeni_rp,
             )
             if nejlepsi is None or v._radici_klic() < nejlepsi._radici_klic():
                 nejlepsi = v

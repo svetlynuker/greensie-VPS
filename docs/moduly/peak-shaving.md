@@ -203,9 +203,14 @@ roční_náklad_2027 = Σ přes 12 měsíců
 ```
 kde `M` = naměřené měsíční maximum, `RP` = rezervovaný příkon.
 
-**Dva scénáře (RP je vždy JEDNA roční hodnota – rezervaci na síti nelze měnit po měsících):**
-- **Bez peak shavingu:** `RP` = aktuální sjednaná, `M` = naměřené měsíční maximum z profilu.
-- **S peak shavingem:** `RP` = nová (min. udržitelný strop pro celý rok), `M` = **měsíční maximum po baterii sražené co nejhlouběji v každém měsíci** (kap. 4.6 „srážej co to dá“ – per měsíc se hledá nejnižší udržitelný strop; mění se jen `M`, ne `RP`).
+**Rezervovaný příkon (bughunt PS-4):** RP je hodnota **ze smlouvy o připojení**
+(dlouhodobá, typicky ≥ RK; v lednu 2027 se převezme ze smlouvy) — není to roční
+produkt jako RK. OZ ho může zadat (nepovinné pole); bez něj se použije současná
+RK s upozorněním, že skutečný RP bývá vyšší.
+
+**Dva scénáře:**
+- **Bez peak shavingu:** `RP` = zadaný rezervovaný příkon (fallback současná RK), `M` = naměřené měsíční maximum z profilu.
+- **S peak shavingem:** `RP` = **stejný** (bez změny smlouvy — přínos baterie je jen na složce „maximální odebraný výkon“, poctivý default); s přepínačem „uvažovat snížení RP“ se dosadí nová RK (jednosměrné rozhodnutí, zpětné navýšení je zpoplatněno dle přílohy 2 vyhlášky č. 16/2016 Sb.). `M` = **měsíční maximum po baterii sražené co nejhlouběji v každém měsíci** (kap. 4.6 „srážej co to dá“).
 
 > **Klíčová oprava během vývoje:** původně (dle promptu) baterie 2027 srážela jen na jeden roční strop → v letních měsících nedělala nic a úspora vycházela nízká. Přepnuto na per-měsíční srážení `M` dle metodiky 4.6 → úspora 2027 výrazně vyšší. Rezervovaná kapacita zůstává jedna roční hodnota.
 

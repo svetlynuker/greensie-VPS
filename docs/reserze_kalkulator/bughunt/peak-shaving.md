@@ -116,6 +116,15 @@ nemá nárok.
 
 ## PS-4 ⚠️ P1 — Model 2027: RP není rezervovaná kapacita (chybí vstup)
 
+> ✅ **Vyřešeno 16. 7. 2026** — commit `fix(peak-shaving): rezervovaný příkon jako vstup modelu 2027 (PS-4)`
+> na větvi `bughunt-opravy-p0`. Nepovinný vstup `rezervovany_prikon_kw`
+> (rozhodnuto: OZ ho mívá ze smlouvy o připojení; prázdné → fallback současná
+> RK s upozorněním) + přepínač `uvazovat_snizeni_rp` (default vypnuto,
+> s varováním o jednosměrnosti). Bez snížení RP je přínos baterie 2027 jen na
+> složce „maximální odebraný výkon“. Kontrola jednosložkové ceny (RP < 600
+> h/rok) neimplementována (doplňkové, P3).
+> Testy: `test_peak_shaving.py::TestRezervovanyPrikon2027`.
+
 **Kde:** `routes.py` → `ekonomika_2027()` — jako RP se dosazuje `vstup.rezervovana_kapacita_kw`;
 scénář „s PS“ používá RP = nový roční strop.
 

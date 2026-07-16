@@ -223,3 +223,50 @@ class TestRezervaRk:
         bez = self._varianta(0.0)
         s_rezervou = self._varianta(5.0)
         assert s_rezervou.rocni_uspora_2026 < bez.rocni_uspora_2026
+
+
+# ------------------------------------------ PS-4: rezervovaný příkon (2027)
+class TestRezervovanyPrikon2027:
+    def _varianta(self, rezervovany_prikon_kw=None, uvazovat_snizeni_rp=False):
+        baterie = ps.Baterie(
+            id=1, nazev="B", vykon_kw=60.0, kapacita_kwh=1000.0, cena_kc=1_000_000.0, ucinnost_rt=1.0
+        )
+        return ps.spocti_variantu(
+            baterie,
+            1,
+            PROFIL_2M,
+            MESICE_2M,
+            250.0,
+            3030.78,
+            ps.pokuta_prekroceni_rk_kc_kw(281.823),
+            5.0,
+            parametry_2027=P2027_CEZ_VN,
+            cena_energie_kc_mwh=0.0,
+            rezerva_rk_procenta=0.0,
+            rezervovany_prikon_kw=rezervovany_prikon_kw,
+            uvazovat_snizeni_rp=uvazovat_snizeni_rp,
+        )
+
+    def test_fallback_na_soucasnou_rk(self):
+        v = self._varianta(rezervovany_prikon_kw=None)
+        assert v.ekonomika_2027["rp_soucasny_kw"] == 250.0
+
+    def test_zadany_rp_se_pouzije_v_obou_scenarich(self):
+        v = self._varianta(rezervovany_prikon_kw=320.0)
+        assert v.ekonomika_2027["rp_soucasny_kw"] == 320.0
+        # bez snížení smlouvy zůstává RP i ve scénáři s PS (poctivý default)
+        assert v.ekonomika_2027["rp_novy_kw"] == 320.0
+
+    def test_snizeni_rp_na_novou_rk(self):
+        v = self._varianta(rezervovany_prikon_kw=320.0, uvazovat_snizeni_rp=True)
+        assert v.ekonomika_2027["rp_novy_kw"] == pytest.approx(v.nova_rezervovana_kapacita_kw)
+        # snížení RP zlevňuje kapacitní složku → vyšší úspora 2027
+        bez_snizeni = self._varianta(rezervovany_prikon_kw=320.0)
+        assert v.ekonomika_2027["rocni_uspora"] > bez_snizeni.ekonomika_2027["rocni_uspora"]
+
+    def test_bez_snizeni_je_prinos_jen_na_slozce_maxima(self):
+        v = self._varianta(rezervovany_prikon_kw=320.0)
+        ek = v.ekonomika_2027
+        # RP stejné v obou scénářích → úspora vzniká jen sražením měsíčních maxim
+        assert ek["rp_soucasny_kw"] == ek["rp_novy_kw"]
+        assert ek["rocni_uspora"] > 0

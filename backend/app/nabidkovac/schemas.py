@@ -182,6 +182,12 @@ class PeakShavingVstup(BaseModel):
     # Cena energie pro ocenění ztrát baterie, Kč/MWh bez DPH (audit PS-5);
     # prázdné = manažerské nastavení `ps_cena_energie_kc_mwh` (default 3000).
     cena_energie_kc_mwh: Optional[float] = None
+    # Rezervovaný příkon ze smlouvy o připojení – pro model 2027 (audit PS-4).
+    # Prázdné = fallback na současnou RK (s upozorněním ve výstupu).
+    rezervovany_prikon_kw: Optional[float] = None
+    # Uvažovat snížení RP na novou RK v modelu 2027 (jednosměrné rozhodnutí –
+    # zpětné navýšení je zpoplatněno dle přílohy 2 vyhlášky č. 16/2016 Sb.).
+    uvazovat_snizeni_rp: bool = False
 
 
 # ---- PPA pro FVE výpočet (METODIKA-ppa-fve.md, kap. 2/4) ----

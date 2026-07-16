@@ -1051,7 +1051,27 @@ def spocti_peak_shaving(
         je_modelovy_2027=je_modelovy_2027,
         cena_energie_kc_mwh=float(cena_energie),
         rezerva_rk_procenta=float(rezerva_rk),
+        rezervovany_prikon_kw=(
+            float(vstup.rezervovany_prikon_kw) if vstup.rezervovany_prikon_kw else None
+        ),
+        uvazovat_snizeni_rp=bool(vstup.uvazovat_snizeni_rp),
     )
+
+    # Upozornění k modelu 2027 (audit PS-4).
+    upozorneni_rp: list[str] = []
+    if parametry_2027:
+        if not vstup.rezervovany_prikon_kw:
+            upozorneni_rp.append(
+                "Rezervovaný příkon ze smlouvy o připojení nebyl zadán – model 2027 "
+                "používá současnou rezervovanou kapacitu. Skutečný RP bývá vyšší, "
+                "náklad 2027 tak může být podhodnocený."
+            )
+        if vstup.uvazovat_snizeni_rp:
+            upozorneni_rp.append(
+                "Model 2027 předpokládá snížení rezervovaného příkonu na novou RK – "
+                "jde o jednosměrnou změnu smlouvy o připojení (zpětné navýšení je "
+                "zpoplatněno dle přílohy 2 vyhlášky č. 16/2016 Sb.)."
+            )
 
     popis_json = {
         "typ_reseni": "peak_shaving",
@@ -1060,6 +1080,8 @@ def spocti_peak_shaving(
             "napetova_hladina": vstup.napetova_hladina,
             "rezervovana_kapacita_kw": vstup.rezervovana_kapacita_kw,
             "cena_energie_kc_mwh": float(cena_energie),
+            "rezervovany_prikon_kw": vstup.rezervovany_prikon_kw,
+            "uvazovat_snizeni_rp": bool(vstup.uvazovat_snizeni_rp),
             "interval_h": interval_h,
             "poctu_intervalu": len(profil_kw),
         },
@@ -1076,7 +1098,10 @@ def spocti_peak_shaving(
         "doporucena": (_varianta_json(vysledek.doporucena) if vysledek.doporucena else None),
         # 2.–3. nejlepší varianta pro srovnání (kap. 5) – vítěz je [0].
         "varianty": [_varianta_json(v) for v in vysledek.varianty[:3]],
-        "upozorneni": upozorneni_profilu + list(vysledek.upozorneni) + upozorneni_sazeb,
+        "upozorneni": upozorneni_profilu
+        + list(vysledek.upozorneni)
+        + upozorneni_sazeb
+        + upozorneni_rp,
     }
     if not parametry_2027:
         popis_json["upozorneni"] = popis_json["upozorneni"] + [

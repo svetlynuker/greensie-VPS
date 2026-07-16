@@ -55,6 +55,9 @@ export default function PeakShavingPanel({ nabidka }) {
   const [distributor, setDistributor] = useState("cez");
   const [hladina, setHladina] = useState("vn");
   const [rezKap, setRezKap] = useState("");
+  // Rezervovaný příkon ze smlouvy o připojení – pro model 2027 (PS-4).
+  const [rezPrikon, setRezPrikon] = useState("");
+  const [snizeniRp, setSnizeniRp] = useState(false);
   const [vysledek, setVysledek] = useState(() => {
     const rr = (nabidka.reseni || []).filter((x) => x.typ_reseni === "peak_shaving");
     return rr.length ? rr[rr.length - 1].popis_json : null;
@@ -106,10 +109,13 @@ export default function PeakShavingPanel({ nabidka }) {
     setChyba(null);
     setZprava(null);
     try {
+      const prikon = Number(String(rezPrikon).replace(",", "."));
       const r = await peakShavingVypocet(nabidka.id, {
         distributor,
         napetova_hladina: hladina,
         rezervovana_kapacita_kw: Number(String(rezKap).replace(",", ".")),
+        rezervovany_prikon_kw: rezPrikon.trim() === "" || !(prikon > 0) ? null : prikon,
+        uvazovat_snizeni_rp: snizeniRp,
       });
       setVysledek(r.popis_json);
     } catch (e) {
@@ -180,7 +186,16 @@ export default function PeakShavingPanel({ nabidka }) {
           <label className="nb-label">Sjednaná rezervovaná kapacita (kW)</label>
           <input className="nb-pole" value={rezKap} onChange={(e) => setRezKap(e.target.value)} inputMode="decimal" placeholder="z faktury, např. 150" />
         </div>
+        <div>
+          <label className="nb-label">Rezervovaný příkon (kW, volit.)</label>
+          <input className="nb-pole" value={rezPrikon} onChange={(e) => setRezPrikon(e.target.value)} inputMode="decimal" placeholder="ze smlouvy o připojení; pro model 2027" />
+        </div>
       </div>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 8 }}>
+        <input type="checkbox" checked={snizeniRp} onChange={(e) => setSnizeniRp(e.target.checked)} />
+        V modelu 2027 uvažovat snížení rezervovaného příkonu na novou kapacitu
+        <span style={{ fontSize: 11, color: "var(--fm-muted)" }}>(jednosměrná změna smlouvy o připojení)</span>
+      </label>
       {sazby && !sazbaOk && (
         <div className="nb-warn" style={{ margin: "0 0 12px" }}>
           <span>⚠️</span>
@@ -306,6 +321,17 @@ export default function PeakShavingPanel({ nabidka }) {
                           )}
                           <tr><td><b>Roční úspora</b></td><td><b>{kc(dop.ekonomika_2027.rocni_uspora_bez_aku ?? dop.ekonomika_2027.rocni_uspora)}</b></td></tr>
                           <tr><td>Měsíců na tarifu T1 / T2</td><td>{dop.ekonomika_2027.pocet_mesicu_t1} / {dop.ekonomika_2027.pocet_mesicu_t2}</td></tr>
+                          {dop.ekonomika_2027.rp_soucasny_kw != null && (
+                            <tr>
+                              <td>Rezervovaný příkon (RP)</td>
+                              <td>
+                                {kw(dop.ekonomika_2027.rp_soucasny_kw)}
+                                {dop.ekonomika_2027.rp_novy_kw !== dop.ekonomika_2027.rp_soucasny_kw
+                                  ? ` → ${kw(dop.ekonomika_2027.rp_novy_kw)} (snížení)`
+                                  : " (beze změny smlouvy)"}
+                              </td>
+                            </tr>
+                          )}
                         </tbody>
                       </table>
                       <div style={{ fontSize: 11, color: "color-mix(in srgb, var(--st-warn) 72%, var(--ink))", marginTop: 6 }}>
