@@ -240,21 +240,77 @@ def _mesicni_maxima(profil_kw: list[float], mesice: list[int]) -> dict[int, floa
     return out
 
 
+# ------------------------------------- optimalizace RK bez baterie (PS-7)
+@dataclass
+class OptimalizaceRk:
+    """Nejlevnější kombinace roční + měsíční RK pro daná měsíční maxima."""
+
+    rocni_rk_kw: float
+    naklad_kc: float
+    dokupy_kw: dict[int, float]  # měsíc → dokoupená měsíční RK (kW)
+
+
+def optimalizuj_rk(
+    mesicni_maxima: dict[int, float],
+    cena_rezervace_kc_kw_rok: float,
+    cena_mesicni_rk_kc_kw_mesic: float,
+) -> OptimalizaceRk:
+    """Fair baseline (audit PS-7): optimální RK bez investice do baterie.
+
+    ERÚ umožňuje kombinovat roční a měsíční RK (bod 4.18–4.21 výměru).
+    Měsíční dokup stojí 1× měsíční sazbu, pokuta za překročení 1,5× → v optimu
+    se překročení vždy pokryje měsíční RK a žádné pokuty se neplatí. Náklad
+    `C(R) = R × roční_sazba + Σ_m max(0, M_m − R) × měsíční_sazba` je po
+    částech lineární v R → optimum leží v některém měsíčním maximu (nebo 0);
+    stačí projít unikátní maxima (grid-search dle auditu).
+    """
+    if not mesicni_maxima:
+        return OptimalizaceRk(rocni_rk_kw=0.0, naklad_kc=0.0, dokupy_kw={})
+
+    def naklad(r: float) -> float:
+        dokupy = sum(max(0.0, m - r) for m in mesicni_maxima.values())
+        return r * cena_rezervace_kc_kw_rok + dokupy * cena_mesicni_rk_kc_kw_mesic
+
+    kandidati = sorted({0.0, *mesicni_maxima.values()})
+    nejlepsi_r = min(kandidati, key=naklad)
+    dokupy = {
+        m: round(max(0.0, maximum - nejlepsi_r), 2)
+        for m, maximum in mesicni_maxima.items()
+        if maximum - nejlepsi_r > 1e-9
+    }
+    return OptimalizaceRk(
+        rocni_rk_kw=nejlepsi_r, naklad_kc=naklad(nejlepsi_r), dokupy_kw=dokupy
+    )
+
+
 # ----------------------------------------------------- ekonomika roku 2026
 @dataclass
 class Ekonomika2026:
-    """Roční náklady/úspora pro tarif `stara_2026` (kap. 4.1–4.4).
+    """Roční náklady/úspora pro tarif `stara_2026` (kap. 4.1–4.4 + PS-5/6/7).
 
-    `naklad_ztrat_baterie` = cena energie ztracené cyklováním (audit PS-5);
-    snižuje roční úsporu, na rezervaci nemá vliv.
+    Fair baseline (audit PS-7): úspora se rozpadá na „úsporu bez investice“
+    (jen optimalizace RK proti dnešní, často předimenzované RK) a „přínos
+    baterie“ (proti optimalizované RK). `naklad_ztrat_baterie` (PS-5) snižuje
+    přínos baterie. Rezerva RK (PS-6) je promítnutá v obou optimalizacích
+    (cílová maxima × (1 + rezerva)).
     """
 
+    # Dnešní stav (RK zadaná OZ, pokuty za překročení dle profilu).
     soucasny_naklad_rezervace: float
     soucasny_naklad_prekroceni: float
     soucasny_naklad_celkem: float
+    # Fair baseline: optimální kombinace roční + měsíční RK bez baterie.
+    naklad_optimalni_bez_baterie: float
+    optimalni_rk_bez_baterie_kw: float
+    dokupy_bez_baterie_pocet_mesicu: int
+    uspora_bez_investice: float
+    # S baterií: optimální kombinace RK nad maximy sraženými na strop.
     novy_naklad_rezervace: float
-    nova_rezervovana_kapacita_kw: float
+    nova_rezervovana_kapacita_kw: float  # roční složka kombinace s baterií
+    dokupy_s_baterii_pocet_mesicu: int
     naklad_ztrat_baterie: float
+    prinos_baterie: float
+    # Celková úspora vs. dnešní stav (= úspora bez investice + přínos baterie).
     rocni_uspora: float
 
 
@@ -285,14 +341,22 @@ def ekonomika_2026(
     rezervovana_kapacita_kw: float,
     cena_rezervace_kc_kw_rok: float,
     cena_prekroceni_kc_kw: float,
-    nova_rezervovana_kapacita_kw: float,
+    strop_kw: float,
+    cena_mesicni_rk_kc_kw_mesic: float | None = None,
+    rezerva_rk_procenta: float = 0.0,
     naklad_ztrat_baterie: float = 0.0,
 ) -> Ekonomika2026:
-    """Složí výchozí náklad (4.1) a náklad po baterii (4.4) do jedné struktury.
+    """Ekonomika 2026 s fair baseline (kap. 4.1–4.4 + audit PS-7).
 
-    Po baterii je díky kap. 4.3 překročení nulové → nový náklad = rezervace
-    na navrhované kapacitě + cena ztrát cyklování baterie (audit PS-5,
-    počítá ji volající z celoroční simulace).
+    1. Dnešní stav: RK zadaná OZ + pokuty za překročení (kap. 4.1).
+    2. Fair baseline: optimální kombinace roční + měsíční RK nad historickými
+       maximy (bez investice) → „úspora hned bez investice“.
+    3. S baterií: tentýž optimalizátor nad maximy sraženými na strop baterie
+       → „přínos baterie“ = baseline − náklad s baterií − ztráty cyklování.
+
+    Rezerva RK (PS-6) navyšuje cílová maxima obou optimalizací (strop je
+    z jednoho historického roku). Chybí-li měsíční sazba RK, odvodí se
+    z pokuty (pokuta = 1,5× měsíční RK dle bodu 4.24).
     """
     rez, prekr = vychozi_rocni_naklad_2026(
         profil_kw,
@@ -302,15 +366,40 @@ def ekonomika_2026(
         cena_prekroceni_kc_kw,
     )
     soucasny_celkem = rez + prekr
-    novy = nova_rezervovana_kapacita_kw * cena_rezervace_kc_kw_rok
+
+    if cena_mesicni_rk_kc_kw_mesic is None:
+        cena_mesicni_rk_kc_kw_mesic = cena_prekroceni_kc_kw / NASOBEK_POKUTY_PREKROCENI_RK
+
+    faktor_rezervy = 1.0 + max(0.0, rezerva_rk_procenta) / 100.0
+    raw = _mesicni_maxima(profil_kw, mesice)
+
+    opt_bez = optimalizuj_rk(
+        {m: maximum * faktor_rezervy for m, maximum in raw.items()},
+        cena_rezervace_kc_kw_rok,
+        cena_mesicni_rk_kc_kw_mesic,
+    )
+    opt_s = optimalizuj_rk(
+        {m: min(maximum, strop_kw) * faktor_rezervy for m, maximum in raw.items()},
+        cena_rezervace_kc_kw_rok,
+        cena_mesicni_rk_kc_kw_mesic,
+    )
+
+    uspora_bez_investice = soucasny_celkem - opt_bez.naklad_kc
+    prinos_baterie = opt_bez.naklad_kc - opt_s.naklad_kc - naklad_ztrat_baterie
     return Ekonomika2026(
         soucasny_naklad_rezervace=rez,
         soucasny_naklad_prekroceni=prekr,
         soucasny_naklad_celkem=soucasny_celkem,
-        novy_naklad_rezervace=novy,
-        nova_rezervovana_kapacita_kw=nova_rezervovana_kapacita_kw,
+        naklad_optimalni_bez_baterie=opt_bez.naklad_kc,
+        optimalni_rk_bez_baterie_kw=opt_bez.rocni_rk_kw,
+        dokupy_bez_baterie_pocet_mesicu=len(opt_bez.dokupy_kw),
+        uspora_bez_investice=uspora_bez_investice,
+        novy_naklad_rezervace=opt_s.naklad_kc,
+        nova_rezervovana_kapacita_kw=opt_s.rocni_rk_kw,
+        dokupy_s_baterii_pocet_mesicu=len(opt_s.dokupy_kw),
         naklad_ztrat_baterie=naklad_ztrat_baterie,
-        rocni_uspora=soucasny_celkem - novy - naklad_ztrat_baterie,
+        prinos_baterie=prinos_baterie,
+        rocni_uspora=uspora_bez_investice + prinos_baterie,
     )
 
 
@@ -536,13 +625,18 @@ class Varianta:
     cena_celkem_kc: float
     # Fyzický strop odběru, který baterie drží (výsledek simulace)…
     strop_kw: float
-    # …a sjednávaná RK = strop × (1 + rezerva) – audit PS-6.
+    # …rezerva nad strop (PS-6) a roční složka optimální kombinace RK
+    # s baterií (PS-7; k ní se v dokupových měsících sjednává měsíční RK).
     rezerva_rk_procenta: float
     nova_rezervovana_kapacita_kw: float
-    rocni_uspora_2026: float
-    navratnost_roky: float | None  # None = úspora ≤ 0 (nekonečná návratnost)
-    # Návratnost podle jednotlivých modelů (kap. 4.5/4.6):
-    navratnost_2026: float | None  # dle úspory 2026 (= navratnost_roky, výběr varianty)
+    # Rozpad úspory 2026 (audit PS-7): bez investice vs. přínos baterie.
+    uspora_bez_investice_2026: float
+    prinos_baterie_2026: float
+    rocni_uspora_2026: float  # celkem vs. dnešní stav
+    navratnost_roky: float | None  # None = přínos ≤ 0 (nekonečná návratnost)
+    # Návratnost podle jednotlivých modelů (kap. 4.5/4.6). Od PS-7 se počítá
+    # z PŘÍNOSU BATERIE (proti optimalizované RK), ne z celkové úspory.
+    navratnost_2026: float | None  # dle přínosu baterie 2026 (výběr varianty)
     navratnost_2027: float | None  # dle úspory 2027 (jediný model, bez slevy AKU – PS-3)
     ekonomika_2026: dict
     ekonomika_2027: dict
@@ -588,8 +682,9 @@ def spocti_variantu(
     rezerva_rk_procenta: float = VYCHOZI_REZERVA_RK_PROCENTA,
     rezervovany_prikon_kw: float | None = None,
     uvazovat_snizeni_rp: bool = False,
+    cena_mesicni_rk_kc_kw_mesic: float | None = None,
 ) -> Varianta:
-    """Spočítá jednu variantu (produkt × počet kusů): kap. 4.2–4.6 + PS-4/5/6."""
+    """Spočítá jednu variantu (produkt × počet kusů): kap. 4.2–4.6 + PS-4/5/6/7."""
     vykon = baterie.vykon_kw * pocet_kusu
     kapacita = baterie.kapacita_kwh * pocet_kusu
     # Simulace jede na využitelné kapacitě (SOC okno 10–95 %) a se ztrátami
@@ -599,9 +694,6 @@ def spocti_variantu(
     cena = baterie.cena_kc * pocet_kusu
 
     novy_strop = min_udrzitelny_strop(profil_kw, vykon, kapacita_uzitecna, interval_h, ucinnost)
-    # Sjednávaná RK = strop + rezerva (audit PS-6): strop platí pro jeden
-    # historický rok, rezerva kryje meziroční variabilitu a výpadky baterie.
-    nova_rk = novy_strop * (1.0 + max(0.0, rezerva_rk_procenta) / 100.0)
     nabito_2026, _ = energie_pri_stropu(
         profil_kw, novy_strop, vykon, kapacita_uzitecna, interval_h, ucinnost_rt=ucinnost
     )
@@ -612,17 +704,24 @@ def spocti_variantu(
         rezervovana_kapacita_kw,
         cena_rezervace_kc_kw_rok,
         cena_prekroceni_kc_kw,
-        nova_rk,
+        novy_strop,
+        cena_mesicni_rk_kc_kw_mesic=cena_mesicni_rk_kc_kw_mesic,
+        rezerva_rk_procenta=rezerva_rk_procenta,
         naklad_ztrat_baterie=ztraty_2026,
     )
-    navratnost = _navratnost(cena, ek.rocni_uspora)
+    # Výběr varianty i doporučení řídí PŘÍNOS BATERIE proti optimalizované RK
+    # (fair baseline, rozhodnuto 16. 7. 2026) – úspora z pouhého snížení RK
+    # se bateriím nepřipisuje.
+    navratnost = _navratnost(cena, ek.prinos_baterie)
 
     # Rok 2027 (audit PS-4): baseline RP = hodnota ze smlouvy o připojení
     # (fallback = současná RK); scénář s PS drží STEJNÝ RP (přínos jen na
     # složce „maximální odebraný výkon"), snížení RP jen na explicitní přání –
-    # je to jednosměrná změna smlouvy o připojení.
+    # je to jednosměrná změna smlouvy o připojení. Cíl snížení = fyzický strop
+    # + rezerva (v NTS neexistují měsíční dokupy RK).
+    strop_s_rezervou = novy_strop * (1.0 + max(0.0, rezerva_rk_procenta) / 100.0)
     rp_soucasny = rezervovany_prikon_kw if rezervovany_prikon_kw else rezervovana_kapacita_kw
-    rp_novy = nova_rk if uvazovat_snizeni_rp else rp_soucasny
+    rp_novy = strop_s_rezervou if uvazovat_snizeni_rp else rp_soucasny
     ek_2027 = ekonomika_2027(
         profil_kw,
         mesice,
@@ -655,7 +754,9 @@ def spocti_variantu(
         cena_celkem_kc=cena,
         strop_kw=novy_strop,
         rezerva_rk_procenta=max(0.0, rezerva_rk_procenta),
-        nova_rezervovana_kapacita_kw=nova_rk,
+        nova_rezervovana_kapacita_kw=ek.nova_rezervovana_kapacita_kw,
+        uspora_bez_investice_2026=ek.uspora_bez_investice,
+        prinos_baterie_2026=ek.prinos_baterie,
         rocni_uspora_2026=ek.rocni_uspora,
         navratnost_roky=navratnost,
         navratnost_2026=navratnost,
@@ -682,6 +783,7 @@ def vyber_reseni(
     rezerva_rk_procenta: float = VYCHOZI_REZERVA_RK_PROCENTA,
     rezervovany_prikon_kw: float | None = None,
     uvazovat_snizeni_rp: bool = False,
+    cena_mesicni_rk_kc_kw_mesic: float | None = None,
 ) -> VysledekPeakShaving:
     """Kap. 4.5: projede všechny produkty × počty kusů a vybere nejrychlejší návratnost.
 
@@ -719,6 +821,7 @@ def vyber_reseni(
                 rezerva_rk_procenta,
                 rezervovany_prikon_kw,
                 uvazovat_snizeni_rp,
+                cena_mesicni_rk_kc_kw_mesic,
             )
             if nejlepsi is None or v._radici_klic() < nejlepsi._radici_klic():
                 nejlepsi = v

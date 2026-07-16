@@ -856,10 +856,13 @@ def _varianta_json(v: peak_shaving.Varianta) -> dict:
         "vyuzitelna_kapacita_kwh": round(v.vyuzitelna_kapacita_kwh, 3),
         "ucinnost_rt": round(v.ucinnost_rt, 4),
         "cena_celkem_kc": round(v.cena_celkem_kc, 2),
-        # Fyzický strop simulace vs. sjednávaná RK se rezervou (PS-6).
+        # Fyzický strop simulace vs. roční složka optimální RK (PS-6/PS-7).
         "strop_kw": round(v.strop_kw, 2),
         "rezerva_rk_procenta": round(v.rezerva_rk_procenta, 2),
         "nova_rezervovana_kapacita_kw": round(v.nova_rezervovana_kapacita_kw, 2),
+        # Rozpad úspory (PS-7): audit RK zdarma + přínos baterie.
+        "uspora_bez_investice_2026_kc": round(v.uspora_bez_investice_2026, 2),
+        "prinos_baterie_2026_kc": round(v.prinos_baterie_2026, 2),
         "rocni_uspora_2026_kc": round(v.rocni_uspora_2026, 2),
         "navratnost_roky": (round(v.navratnost_roky, 2) if v.navratnost_roky is not None else None),
         # Návratnost podle modelů (2026 / 2027 – jediný model bez slevy AKU, PS-3).
@@ -1055,6 +1058,9 @@ def spocti_peak_shaving(
             float(vstup.rezervovany_prikon_kw) if vstup.rezervovany_prikon_kw else None
         ),
         uvazovat_snizeni_rp=bool(vstup.uvazovat_snizeni_rp),
+        cena_mesicni_rk_kc_kw_mesic=(
+            float(cena_mesicni_rk) if cena_mesicni_rk is not None else None
+        ),
     )
 
     # Upozornění k modelu 2027 (audit PS-4).
@@ -1072,6 +1078,12 @@ def spocti_peak_shaving(
                 "jde o jednosměrnou změnu smlouvy o připojení (zpětné navýšení je "
                 "zpoplatněno dle přílohy 2 vyhlášky č. 16/2016 Sb.)."
             )
+    if vysledek.doporucena is not None and vysledek.doporucena.uspora_bez_investice_2026 > 0:
+        upozorneni_rp.append(
+            "Úspora bez investice předpokládá úpravu sjednané RK: roční RK lze snížit "
+            "až po 12 měsících od poslední změny, měsíční RK se sjednává do posledního "
+            "pracovního dne předchozího měsíce (body 4.18–4.21 výměru)."
+        )
 
     popis_json = {
         "typ_reseni": "peak_shaving",

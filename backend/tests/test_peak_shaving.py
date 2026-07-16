@@ -201,28 +201,111 @@ class TestRezervaRk:
             5.0,
             cena_energie_kc_mwh=0.0,
             rezerva_rk_procenta=rezerva,
+            cena_mesicni_rk_kc_kw_mesic=281.823,
         )
 
     def test_default_rezervy_je_5_procent(self):
         assert ps.VYCHOZI_REZERVA_RK_PROCENTA == 5.0
 
-    def test_sjednana_rk_je_strop_plus_rezerva(self):
-        v = self._varianta(5.0)
-        assert v.nova_rezervovana_kapacita_kw == pytest.approx(v.strop_kw * 1.05)
-        assert v.rezerva_rk_procenta == 5.0
-        # ekonomika platí za sjednanou RK (vč. rezervy), ne za holý strop
-        assert v.ekonomika_2026["novy_naklad_rezervace"] == pytest.approx(
-            v.nova_rezervovana_kapacita_kw * 3030.78
+    def test_rezerva_zdrazuje_cilovou_rezervaci(self):
+        # Rezerva navyšuje cílová maxima obou optimalizací (PS-6 × PS-7).
+        bez = self._varianta(0.0)
+        s_rezervou = self._varianta(5.0)
+        assert s_rezervou.ekonomika_2026["novy_naklad_rezervace"] == pytest.approx(
+            bez.ekonomika_2026["novy_naklad_rezervace"] * 1.05, rel=1e-6
         )
-
-    def test_nulova_rezerva_odpovida_puvodnimu_chovani(self):
-        v = self._varianta(0.0)
-        assert v.nova_rezervovana_kapacita_kw == pytest.approx(v.strop_kw)
+        assert s_rezervou.rezerva_rk_procenta == 5.0
 
     def test_rezerva_snizuje_usporu(self):
         bez = self._varianta(0.0)
         s_rezervou = self._varianta(5.0)
         assert s_rezervou.rocni_uspora_2026 < bez.rocni_uspora_2026
+
+
+# ------------------------------------------------------ PS-7: fair baseline
+class TestFairBaseline:
+    # T5 tvar: základ 300 kW, leden 400, únor 380 (měsíční maxima).
+    MAXIMA_T5 = {1: 400.0, 2: 380.0, **{m: 300.0 for m in range(3, 13)}}
+    CENA_ROCNI = 3030.78
+    CENA_MESICNI = 281.823
+
+    def test_optimum_kombinace_je_v_medianu_maxim(self):
+        opt = ps.optimalizuj_rk(self.MAXIMA_T5, self.CENA_ROCNI, self.CENA_MESICNI)
+        # dokup (1×) je levnější než držet roční RK na špičce → R* = 300
+        assert opt.rocni_rk_kw == 300.0
+        ocekavany = 300.0 * self.CENA_ROCNI + (100.0 + 80.0) * self.CENA_MESICNI
+        assert opt.naklad_kc == pytest.approx(ocekavany)
+        assert opt.dokupy_kw == {1: 100.0, 2: 80.0}
+
+    def test_optimum_nikdy_neplati_pokuty(self):
+        # náklad optimální kombinace ≤ čistě roční RK na celoročním maximu
+        opt = ps.optimalizuj_rk(self.MAXIMA_T5, self.CENA_ROCNI, self.CENA_MESICNI)
+        assert opt.naklad_kc <= 400.0 * self.CENA_ROCNI
+
+    def test_plochy_profil_bez_dokupu(self):
+        maxima = {m: 250.0 for m in range(1, 13)}
+        opt = ps.optimalizuj_rk(maxima, self.CENA_ROCNI, self.CENA_MESICNI)
+        assert opt.rocni_rk_kw == 250.0
+        assert opt.dokupy_kw == {}
+
+    def test_ekonomika_2026_rozpad_uspory(self):
+        # Profil dle T5 (15min konstantní bloky po měsících stačí pro maxima).
+        profil, mesice = [], []
+        for m, maximum in sorted(self.MAXIMA_T5.items()):
+            profil += [200.0, maximum]  # v každém měsíci základ + špička
+            mesice += [m, m]
+        ek = ps.ekonomika_2026(
+            profil,
+            mesice,
+            rezervovana_kapacita_kw=400.0,
+            cena_rezervace_kc_kw_rok=self.CENA_ROCNI,
+            cena_prekroceni_kc_kw=ps.pokuta_prekroceni_rk_kc_kw(self.CENA_MESICNI),
+            strop_kw=300.0,
+            cena_mesicni_rk_kc_kw_mesic=self.CENA_MESICNI,
+            rezerva_rk_procenta=0.0,
+            naklad_ztrat_baterie=1000.0,
+        )
+        # dnešní stav: RK 400, žádné překročení → jen rezervace
+        assert ek.soucasny_naklad_celkem == pytest.approx(400.0 * self.CENA_ROCNI)
+        # fair baseline: R*=300 + dokupy 100/80
+        assert ek.optimalni_rk_bez_baterie_kw == 300.0
+        assert ek.uspora_bez_investice == pytest.approx(
+            400.0 * self.CENA_ROCNI - (300.0 * self.CENA_ROCNI + 180.0 * self.CENA_MESICNI)
+        )
+        # s baterií (strop 300): maxima všude 300 → čistá roční RK 300
+        assert ek.novy_naklad_rezervace == pytest.approx(300.0 * self.CENA_ROCNI)
+        assert ek.dokupy_s_baterii_pocet_mesicu == 0
+        # přínos baterie = dokupy, které baterie ušetří, minus ztráty
+        assert ek.prinos_baterie == pytest.approx(180.0 * self.CENA_MESICNI - 1000.0)
+        # konzistence rozpadu
+        assert ek.rocni_uspora == pytest.approx(ek.uspora_bez_investice + ek.prinos_baterie)
+
+    def test_navratnost_varianty_je_z_prinosu_baterie(self):
+        profil, mesice = [], []
+        for m, maximum in sorted(self.MAXIMA_T5.items()):
+            profil += [200.0] * 6 + [maximum] + [200.0] * 5
+            mesice += [m] * 12
+        baterie = ps.Baterie(
+            id=1, nazev="B", vykon_kw=150.0, kapacita_kwh=400.0, cena_kc=2_000_000.0, ucinnost_rt=1.0
+        )
+        v = ps.spocti_variantu(
+            baterie,
+            1,
+            profil,
+            mesice,
+            400.0,
+            self.CENA_ROCNI,
+            ps.pokuta_prekroceni_rk_kc_kw(self.CENA_MESICNI),
+            5.0,
+            cena_energie_kc_mwh=0.0,
+            rezerva_rk_procenta=0.0,
+            cena_mesicni_rk_kc_kw_mesic=self.CENA_MESICNI,
+        )
+        assert v.prinos_baterie_2026 > 0
+        assert v.navratnost_roky == pytest.approx(v.cena_celkem_kc / v.prinos_baterie_2026)
+        assert v.rocni_uspora_2026 == pytest.approx(
+            v.uspora_bez_investice_2026 + v.prinos_baterie_2026
+        )
 
 
 # ------------------------------------------ PS-4: rezervovaný příkon (2027)
@@ -259,7 +342,9 @@ class TestRezervovanyPrikon2027:
 
     def test_snizeni_rp_na_novou_rk(self):
         v = self._varianta(rezervovany_prikon_kw=320.0, uvazovat_snizeni_rp=True)
-        assert v.ekonomika_2027["rp_novy_kw"] == pytest.approx(v.nova_rezervovana_kapacita_kw)
+        # Cíl snížení RP = fyzický strop + rezerva (zde 0 %) – v NTS neexistují
+        # měsíční dokupy RK, roční složka kombinace 2026 se nepoužívá.
+        assert v.ekonomika_2027["rp_novy_kw"] == pytest.approx(v.strop_kw)
         # snížení RP zlevňuje kapacitní složku → vyšší úspora 2027
         bez_snizeni = self._varianta(rezervovany_prikon_kw=320.0)
         assert v.ekonomika_2027["rocni_uspora"] > bez_snizeni.ekonomika_2027["rocni_uspora"]

@@ -177,18 +177,34 @@ parametr `ps_rezerva_rk_procenta`) kryje meziroční variabilitu profilu,
 servis/výpadek baterie a o chlup jinou zimu. Ekonomika platí za sjednanou RK,
 graf ukazuje strop (sražená maxima) i RK (čára rezervace).
 
-### 4.4 Ekonomika 2026 (`stara_2026`, kap. 4.1–4.4)
+### 4.4 Ekonomika 2026 s fair baseline (`stara_2026`, kap. 4.1–4.4 + bughunt PS-7)
 ```
 pokuta_kc_kw           = 1,5 × cena_mesicni_rk_kc_kw_mesic          (bod 4.24 výměru, PS-2)
-náklad_rezervace_před  = aktuální_RP × cena_rezervovana_kapacita_kc_kw_rok
-náklad_překročení_před = Σ_měsíce max(0, měsíční_max − aktuální_RP) × pokuta_kc_kw
+náklad_rezervace_před  = aktuální_RK × cena_rezervovana_kapacita_kc_kw_rok
+náklad_překročení_před = Σ_měsíce max(0, měsíční_max − aktuální_RK) × pokuta_kc_kw
 současný_náklad        = náklad_rezervace_před + náklad_překročení_před
 
-nový_náklad            = T × cena_rezervovana_kapacita_kc_kw_rok    (po baterii je překročení 0)
-roční_úspora_2026      = současný_náklad − nový_náklad
+# Fair baseline (PS-7): optimální KOMBINACE roční + měsíční RK bez baterie.
+# Měsíční dokup (1× měsíční sazba) je vždy levnější než pokuta (1,5×) →
+# v optimu se pokuty neplatí. C(R) je po částech lineární → grid-search
+# přes unikátní měsíční maxima (cílová maxima × (1 + rezerva RK)).
+C(R) = R × roční_sazba + Σ_m max(0, M_m − R) × měsíční_sazba
+náklad_optimální_bez_baterie = min_R C(R)          nad historickými maximy
+úspora_bez_investice = současný_náklad − náklad_optimální_bez_baterie
+
+# S baterií: tentýž optimalizátor nad maximy sraženými na strop baterie.
+náklad_s_baterií = min_R C(R)                      nad min(M_m, strop) × (1+rezerva)
+přínos_baterie   = náklad_optimální_bez_baterie − náklad_s_baterií − ztráty_cyklování
+roční_úspora_2026 = úspora_bez_investice + přínos_baterie
 ```
-Použitá sazba pokuty se pro dohledatelnost ukládá do výstupu
-(`sazby.cena_prekroceni_kc_kw_pouzita` + `pokuta_odvozena_z_mesicni_rk`).
+**Návratnost baterie i výběr varianty se počítá z PŘÍNOSU BATERIE** (rozhodnuto
+16. 7. 2026) — úspora z pouhého snížení RK je prodejní artefakt „audit RK
+zdarma“ a klient ji získá bez investice. `nova_rezervovana_kapacita_kw` je
+roční složka kombinace s baterií (+ případné měsíční dokupy, počty ve
+výstupu). Použitá sazba pokuty se pro dohledatelnost ukládá do výstupu
+(`sazby.cena_prekroceni_kc_kw_pouzita` + `pokuta_odvozena_z_mesicni_rk`);
+do upozornění jde poznámka o pravidlech změn RK (snížení roční RK až po 12
+měsících, měsíční RK do konce předchozího měsíce).
 
 ### 4.5 Ekonomika 2027 (`nova_2027`, kap. 4.6 + 4.8)
 Dvousložkový tarif, každý měsíc se ex post použije **levnější** z T1/T2.

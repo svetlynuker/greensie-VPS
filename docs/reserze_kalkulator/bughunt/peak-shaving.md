@@ -200,6 +200,16 @@ Volitelně percentilový režim (strop drží 95.–99. percentil dní, zbytek o
 
 ## PS-7 ⚠️ P2 — Atribuce úspory: baseline je současná (často předimenzovaná) RK (rozhodnuto: přidat fair baseline)
 
+> ✅ **Vyřešeno 16. 7. 2026** — commit `fix(peak-shaving): fair baseline – optimalizace RK a rozpad úspory (PS-7)`
+> na větvi `bughunt-opravy-p0`. `optimalizuj_rk()`: nejlevnější kombinace
+> roční + měsíční RK (dokup 1× je vždy levnější než pokuta 1,5× → v optimu bez
+> pokut; grid-search přes unikátní maxima). Spouští se nad historickými maximy
+> (úspora bez investice) i nad maximy sraženými na strop (náklad s baterií);
+> **návratnost baterie = cena / přínos baterie**. UI: rozpad úspory
+> (rozhodnuto) — „úspora hned bez investice“ + „přínos baterie“ v KPI i kartě
+> 2026. Rezerva RK (PS-6) navyšuje cílová maxima obou optimalizací.
+> Testy: `test_peak_shaving.py::TestFairBaseline`.
+
 **Kde:** `ekonomika_2026()` — `soucasny_naklad` z `vstup.rezervovana_kapacita_kw`.
 
 **Co je špatně:** část „úspory baterie“ jde získat zadarmo administrativním snížením RK.

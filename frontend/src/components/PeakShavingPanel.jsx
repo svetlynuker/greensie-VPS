@@ -234,19 +234,27 @@ export default function PeakShavingPanel({ nabidka }) {
                 <div className="gs-kpi accent">
                   <div className="gs-kpi-label">Roční úspora (2026)</div>
                   <div className="gs-kpi-value">{kc(dop.rocni_uspora_2026_kc)}</div>
-                  <div className="gs-kpi-sub">bez DPH</div>
+                  <div className="gs-kpi-sub">
+                    {dop.uspora_bez_investice_2026_kc != null
+                      ? `z toho bez investice ${kc(dop.uspora_bez_investice_2026_kc)}`
+                      : "bez DPH"}
+                  </div>
                 </div>
                 <div className="gs-kpi">
                   <div className="gs-kpi-label">Návratnost (2026)</div>
                   <div className="gs-kpi-value">{roky(dop.navratnost_2026 ?? dop.navratnost_roky)}</div>
-                  <div className="gs-kpi-sub">práh doporučení {vysledek.max_navratnost_roky} let</div>
+                  <div className="gs-kpi-sub">
+                    {dop.prinos_baterie_2026_kc != null
+                      ? `z přínosu baterie · práh ${vysledek.max_navratnost_roky} let`
+                      : `práh doporučení ${vysledek.max_navratnost_roky} let`}
+                  </div>
                 </div>
                 <div className="gs-kpi">
                   <div className="gs-kpi-label">Nová rez. kapacita</div>
                   <div className="gs-kpi-value">{kw(dop.nova_rezervovana_kapacita_kw)}</div>
                   <div className="gs-kpi-sub">
                     {dop.strop_kw != null
-                      ? `strop baterie ${kw(dop.strop_kw)} + rezerva ${dop.rezerva_rk_procenta ?? 0} %`
+                      ? `roční RK; strop baterie ${kw(dop.strop_kw)}, rezerva ${dop.rezerva_rk_procenta ?? 0} %`
                       : "sjednaný příkon po instalaci"}
                   </div>
                 </div>
@@ -283,18 +291,56 @@ export default function PeakShavingPanel({ nabidka }) {
                 {/* Rok 2026 */}
                 <div className="fm-card" style={{ padding: 14 }}>
                   <div style={{ fontWeight: 600, marginBottom: 8 }}>Rok 2026</div>
-                  <table className="nb-table">
-                    <tbody>
-                      <tr><td>Roční náklad bez peak shavingu</td><td>{kc(dop.ekonomika_2026?.soucasny_naklad_celkem)}</td></tr>
-                      <tr><td>Roční náklad s peak shavingem</td><td>{kc(dop.ekonomika_2026?.novy_naklad_rezervace)}</td></tr>
-                      {dop.ekonomika_2026?.naklad_ztrat_baterie > 0 && (
-                        <tr><td>− ztráty baterie (cyklování)</td><td>{kc(dop.ekonomika_2026.naklad_ztrat_baterie)}</td></tr>
-                      )}
-                      <tr><td><b>Roční úspora</b></td><td><b>{kc(dop.ekonomika_2026?.rocni_uspora)}</b></td></tr>
-                    </tbody>
-                  </table>
+                  {dop.ekonomika_2026?.uspora_bez_investice != null ? (
+                    /* Rozpad úspory (PS-7): audit RK zdarma + přínos baterie. */
+                    <table className="nb-table">
+                      <tbody>
+                        <tr><td>Roční náklad dnes (RK {kw(vysledek.vstup?.rezervovana_kapacita_kw)})</td><td>{kc(dop.ekonomika_2026.soucasny_naklad_celkem)}</td></tr>
+                        <tr>
+                          <td>Optimalizace RK bez baterie</td>
+                          <td>
+                            {kc(dop.ekonomika_2026.naklad_optimalni_bez_baterie)}
+                            <span style={{ fontSize: 11, color: "var(--fm-muted)" }}>
+                              {" "}(roční RK {kw(dop.ekonomika_2026.optimalni_rk_bez_baterie_kw)}
+                              {dop.ekonomika_2026.dokupy_bez_baterie_pocet_mesicu > 0
+                                ? ` + měsíční RK v ${dop.ekonomika_2026.dokupy_bez_baterie_pocet_mesicu} měs.`
+                                : ""})
+                            </span>
+                          </td>
+                        </tr>
+                        <tr><td><b>Úspora hned bez investice</b></td><td><b>{kc(dop.ekonomika_2026.uspora_bez_investice)}</b></td></tr>
+                        <tr>
+                          <td>Náklad s baterií</td>
+                          <td>
+                            {kc(dop.ekonomika_2026.novy_naklad_rezervace)}
+                            {dop.ekonomika_2026.naklad_ztrat_baterie > 0 && (
+                              <span style={{ fontSize: 11, color: "var(--fm-muted)" }}>
+                                {" "}+ ztráty {kc(dop.ekonomika_2026.naklad_ztrat_baterie)}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                        <tr><td><b>Přínos baterie</b></td><td><b>{kc(dop.ekonomika_2026.prinos_baterie)}</b></td></tr>
+                        <tr><td><b>Celková roční úspora</b></td><td><b>{kc(dop.ekonomika_2026.rocni_uspora)}</b></td></tr>
+                      </tbody>
+                    </table>
+                  ) : (
+                    /* Starší uložené výsledky (před PS-7). */
+                    <table className="nb-table">
+                      <tbody>
+                        <tr><td>Roční náklad bez peak shavingu</td><td>{kc(dop.ekonomika_2026?.soucasny_naklad_celkem)}</td></tr>
+                        <tr><td>Roční náklad s peak shavingem</td><td>{kc(dop.ekonomika_2026?.novy_naklad_rezervace)}</td></tr>
+                        {dop.ekonomika_2026?.naklad_ztrat_baterie > 0 && (
+                          <tr><td>− ztráty baterie (cyklování)</td><td>{kc(dop.ekonomika_2026.naklad_ztrat_baterie)}</td></tr>
+                        )}
+                        <tr><td><b>Roční úspora</b></td><td><b>{kc(dop.ekonomika_2026?.rocni_uspora)}</b></td></tr>
+                      </tbody>
+                    </table>
+                  )}
                   <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 6 }}>
-                    Rezervovaná kapacita + pokuty za překročení; úspora po odečtu ztrát baterie.
+                    Návratnost baterie se počítá z jejího přínosu proti optimalizované RK
+                    (kombinace roční + měsíční RK) — úsporu z pouhého snížení RK klient
+                    získá i bez investice.
                   </div>
                 </div>
 
