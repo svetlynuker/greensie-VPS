@@ -8,6 +8,13 @@
 
 ## PS-1 ⛔ P0 — Sazby 2026 v seedu jsou hodnoty roku 2025 (a VVN chybí zbytečně)
 
+> ✅ **Vyřešeno 16. 7. 2026** — commit `fix(peak-shaving): sazby RK 2026 dle CV 13/2025 + EG.D a PRE (PS-1)`
+> na větvi `bughunt-opravy-p0`. Seed nese všech 6 kombinací DSO × hladina (roční
+> i měsíční RK dle ERV 17/2025) + nova_2027 pro EG.D/PRE z informativního CV;
+> `_BACKFILL_OPRAVY` cíleně přepíše 2 847,72 → 3 030,78 a doplní VVN 1 409,18
+> (jen přesnou shodu s chybnou hodnotou, ruční úpravy admina nechává).
+> Testy: `backend/tests/test_seed_sazby.py`. Mechanismus pokut řeší PS-2.
+
 **Kde:** `seed.py` (`_REZERVACE_CEZ_VN_ROK = 237.31 × 12`, VVN `None`).
 
 **Co je špatně:** 237,31 Kč/kW/měs je cena z cenového rozhodnutí ERÚ č. 11/2024 **pro rok

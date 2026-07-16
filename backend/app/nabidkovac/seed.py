@@ -1,22 +1,29 @@
 """Naplnění tabulky `sazby_distributoru` výchozími daty (METODIKA kap. 3.1, 6–7).
 
-Naostro jedeme zatím JEN s ČEZ Distribuce:
-- `stara_2026` (VN + VVN) – ostrá čísla pro rok 2026 (kap. 6 bod 5),
-- `nova_2027` (VN + VVN) – MODELOVÝ odhad pro rok 2027 (`je_modelovy_odhad`),
-  závazné ceny ERÚ vyjdou až ~11/2026 (PROMPT 2027).
-EG.D a PRE se do tabulky NEvkládají – doplní se přes admin, až budou čísla
-ověřená.
+Zdroje čísel (audit 16. 7. 2026, docs/reserze_kalkulator/eru-sazby-2026-a-nts-2027.md):
+- `stara_2026` – finální cenový výměr ERÚ č. 13/2025 (ERV 17/2025), bod 4.18.
+  Výměr platí pro všechny tři RDS → seedují se ČEZ, EG.D i PRE (VN + VVN).
+- `nova_2027` – MODELOVÝ odhad (`je_modelovy_odhad`) z INFORMATIVNÍHO cenového
+  výměru ERÚ k nové tarifní struktuře (publikován 5/2026, „jako by NTS platila
+  už 2026“). Závazné ceny pro 2027 vyjdou ~11/2026 (pak nový řádek s novým
+  `platne_od`, ne přepis modelového).
 
 Seed je idempotentní: běží při startu appky a vloží řádek jen tehdy, když
 stejná kombinace (distributor, hladina, struktura, platne_od) ještě není –
-takže ruční úpravy přes admin nikdy nepřepíše.
+ruční úpravy přes admin tedy nikdy nepřepíše. Nad rámec vkládání navíc:
+- doplní do existujících řádků chybějící klíče z `_BACKFILL_KLICE`
+  (jen hodnoty, které jsou None/chybí – vyplněné nikdy nepřepisuje),
+- opraví přesně známé chybné hodnoty z dřívějších seedů (`_BACKFILL_OPRAVY`):
+  přepíše se jen hodnota, která se PŘESNĚ rovná známé chybné, s dovětkem
+  o zdroji do poznámky – cokoli ručně upraveného adminem zůstává nedotčené.
 
-POZOR na jednotky: zdrojová čísla v dokumentu jsou v Kč/kW/MĚSÍC, ale klíč
+POZOR na jednotky: výměr uvádí ceny v Kč/kW/MĚSÍC (resp. Kč/MW/měsíc), ale klíč
 `cena_rezervovana_kapacita_kc_kw_rok` je ROČNÍ sazba (kap. 4.1 násobí
-rezervovanou kapacitu tímto číslem jednou = roční náklad). Rezervovanou
-kapacitu proto ukládáme přepočtenou na rok (× 12). Pokuta za překročení se
-naopak účtuje po měsících (kap. 4.1 sečte přes 12 měsíců), takže se ukládá
-tak, jak je v dokumentu (Kč/kW za měsíc překročení).
+rezervovanou kapacitu tímto číslem jednou = roční náklad) → ukládá se ×12
+z měsíční ceny za ROČNÍ rezervovanou kapacitu. Klíč `cena_mesicni_rk_kc_kw_mesic`
+je měsíční cena za MĚSÍČNÍ rezervovanou kapacitu (jiný produkt, dražší) –
+potřebná pro pokutu za překročení (1,5× dle bodu 4.24 výměru) a pro
+optimalizaci kombinace roční + měsíční RK.
 """
 
 from datetime import date
@@ -25,113 +32,198 @@ from sqlalchemy.orm import Session
 
 from app.nabidkovac.models import SazbaDistributoru
 
-# Platnost pro celý rok 2026 (ČEZ ceník služeb s platností od 1. 2. 2026).
+# Platnost pro celý rok 2026 (CV č. 13/2025 platí od 1. 1. 2026).
 _PLATNE_OD_2026 = date(2026, 1, 1)
 _PLATNE_DO_2026 = date(2026, 12, 31)
 
-# Nová tarifní struktura ERÚ platí od 1. 1. 2027 (PROMPT 2027).
+# Nová tarifní struktura ERÚ platí od 1. 1. 2027.
 _PLATNE_OD_2027 = date(2027, 1, 1)
 
-# Pokuta za překročení – jednotná regulovaná sazba ERÚ (kap. 3.1), Kč/kW/měsíc.
+_ZDROJ_2026 = "CV ERÚ č. 13/2025 (ERV 17/2025), bod 4.18"
+_ZDROJ_2027 = "informativní CV ERÚ k NTS (5/2026)"
+
+# Pokuta za překročení – POZOR: tyto hodnoty jsou dle bodu 4.38 výměru ceny za
+# překročení rezervovaného VÝKONU (dodávka do sítě), ne kapacity. Pro odběr
+# platí bod 4.24 (1,5× měsíční cena měsíční RK) – přepracovává PS-2 auditu.
 _POKUTA_VN = 1108.0
 _POKUTA_VVN = 521.0
 
-# ČEZ rezervovaná kapacita VN: 237,31 Kč/kW/měsíc (potvrzeno) → ročně × 12.
-_REZERVACE_CEZ_VN_ROK = round(237.31 * 12, 2)  # = 2847.72
+# Ceny za rezervovanou kapacitu 2026, Kč/kW/měsíc, bez DPH (zdroj: _ZDROJ_2026).
+# `rocni` = měsíční cena za ROČNÍ RK, `mesicni` = měsíční cena za MĚSÍČNÍ RK.
+_RK_2026 = {
+    ("cez", "vn"): {"rocni": 252.565, "mesicni": 281.823},
+    ("cez", "vvn"): {"rocni": 117.432, "mesicni": 131.036},
+    ("egd", "vn"): {"rocni": 230.551, "mesicni": 254.260},
+    ("egd", "vvn"): {"rocni": 110.826, "mesicni": 122.223},
+    ("pre", "vn"): {"rocni": 271.093, "mesicni": 299.351},
+    ("pre", "vvn"): {"rocni": 129.580, "mesicni": 143.087},
+}
 
-_SEED_CEZ = [
-    {
-        "distributor": "cez",
-        "napetova_hladina": "vn",
+# NTS 2027, Kč/kW/měsíc, bez DPH (zdroj: _ZDROJ_2027, body 4.2/4.3).
+# t1/t2 = dvojice (kapacita = cena za RP, spicka = cena za max. odebraný výkon);
+# `prekroceni` = pevná cena za překročení rezervovaného příkonu.
+_NTS_2027 = {
+    ("cez", "vn"): {"t1_kap": 190.133, "t1_sp": 19.013, "t2_kap": 22.743, "t2_sp": 227.429, "prekroceni": 761.0},
+    ("cez", "vvn"): {"t1_kap": 96.862, "t1_sp": 9.686, "t2_kap": 11.586, "t2_sp": 115.862, "prekroceni": 387.0},
+    ("egd", "vn"): {"t1_kap": 181.386, "t1_sp": 18.139, "t2_kap": 21.697, "t2_sp": 216.967, "prekroceni": 726.0},
+    ("egd", "vvn"): {"t1_kap": 87.770, "t1_sp": 8.777, "t2_kap": 10.499, "t2_sp": 104.987, "prekroceni": 351.0},
+    ("pre", "vn"): {"t1_kap": 196.298, "t1_sp": 19.630, "t2_kap": 23.480, "t2_sp": 234.804, "prekroceni": 785.0},
+    ("pre", "vvn"): {"t1_kap": 109.073, "t1_sp": 10.907, "t2_kap": 13.047, "t2_sp": 130.470, "prekroceni": 436.0},
+}
+
+# Prahy koeficientu AKU (část 24 informativního CV; jednotné pro všechny RDS).
+# Předběžné hodnoty – konečná podoba projde veřejnou konzultací ERÚ 10/2026.
+_AKU_PRAHY = {"vn": (0.60, 0.75), "vvn": (0.60, 0.70)}
+
+_NAZVY_DSO = {"cez": "ČEZ", "egd": "EG.D", "pre": "PRE"}
+
+
+def _cz(cislo: float) -> str:
+    """Číslo do české poznámky (desetinná čárka)."""
+    return f"{cislo:g}".replace(".", ",")
+
+
+def _rocni_sazba_rk(mesicni_cena_rocni_rk: float) -> float:
+    """Kč/kW/měsíc (roční RK) → Kč/kW/rok (kap. 4.1 násobí jednou za rok)."""
+    return round(mesicni_cena_rocni_rk * 12, 2)
+
+
+def _radek_2026(distributor: str, hladina: str) -> dict:
+    rk = _RK_2026[(distributor, hladina)]
+    return {
+        "distributor": distributor,
+        "napetova_hladina": hladina,
         "struktura_tarifu": "stara_2026",
         "parametry": {
-            "cena_rezervovana_kapacita_kc_kw_rok": _REZERVACE_CEZ_VN_ROK,
-            "cena_prekroceni_kc_kw": _POKUTA_VN,
+            "cena_rezervovana_kapacita_kc_kw_rok": _rocni_sazba_rk(rk["rocni"]),
+            "cena_mesicni_rk_kc_kw_mesic": rk["mesicni"],
+            "cena_prekroceni_kc_kw": _POKUTA_VN if hladina == "vn" else _POKUTA_VVN,
         },
         "platne_od": _PLATNE_OD_2026,
         "platne_do": _PLATNE_DO_2026,
         "poznamka": (
-            "ČEZ 2026, bez DPH. Rezervovaná kapacita 237,31 Kč/kW/měsíc "
-            "(potvrzeno, ceník ČEZ od 1. 2. 2026) přepočteno na rok × 12. "
-            "Pokuta 1108 Kč/kW/měsíc (regulovaná ERÚ)."
+            f"{_NAZVY_DSO[distributor]} {hladina.upper()} 2026, bez DPH ({_ZDROJ_2026}): "
+            f"roční RK {_cz(rk['rocni'])} Kč/kW/měs (= {_cz(_rocni_sazba_rk(rk['rocni']))} Kč/kW/rok), "
+            f"měsíční RK {_cz(rk['mesicni'])} Kč/kW/měs."
         ),
-    },
-    {
-        # VVN: pokuta je regulovaná (známe ji), ale rezervovanou kapacitu ČEZ
-        # VVN se nepodařilo dohledat (kap. 3.1) → necháváme NULL na doplnění.
-        "distributor": "cez",
-        "napetova_hladina": "vvn",
-        "struktura_tarifu": "stara_2026",
+    }
+
+
+def _radek_2027(distributor: str, hladina: str) -> dict:
+    nts = _NTS_2027[(distributor, hladina)]
+    u1, u2 = _AKU_PRAHY[hladina]
+    return {
+        "distributor": distributor,
+        "napetova_hladina": hladina,
+        "struktura_tarifu": "nova_2027",
         "parametry": {
-            "cena_rezervovana_kapacita_kc_kw_rok": None,
-            "cena_prekroceni_kc_kw": _POKUTA_VVN,
+            "t1_kapacita_kc_kw_mesic": nts["t1_kap"],
+            "t1_spicka_kc_kw_mesic": nts["t1_sp"],
+            "t2_kapacita_kc_kw_mesic": nts["t2_kap"],
+            "t2_spicka_kc_kw_mesic": nts["t2_sp"],
+            "sazba_prekroceni_kc_kw_mesic": nts["prekroceni"],
+            "u1_ucinnost": u1,
+            "u2_ucinnost": u2,
         },
-        "platne_od": _PLATNE_OD_2026,
-        "platne_do": _PLATNE_DO_2026,
+        "platne_od": _PLATNE_OD_2027,
+        "platne_do": None,
+        "je_modelovy_odhad": True,
         "poznamka": (
-            "ČEZ 2026, bez DPH. Pokuta 521 Kč/kW/měsíc (regulovaná ERÚ). "
-            "Rezervovaná kapacita ČEZ VVN NEDOHLEDÁNO – doplní admin."
+            f"{_NAZVY_DSO[distributor]} {hladina.upper()} 2027 – MODELOVÝ ODHAD "
+            f"({_ZDROJ_2027}), závazné ceny ERÚ vyjdou ~11/2026."
         ),
-    },
-    # --- nová struktura 2027 (dvousložkový tarif ERÚ) – MODELOVÝ ODHAD -------
-    # Čísla nejsou finální, závazné cenové rozhodnutí ERÚ vyjde v listopadu 2026
-    # (PROMPT 2027). Vše bez DPH, Kč/kW/měsíc. Penalizace = 4× T1 kapacita.
-    {
-        "distributor": "cez",
-        "napetova_hladina": "vn",
-        "struktura_tarifu": "nova_2027",
-        "parametry": {
-            "t1_kapacita_kc_kw_mesic": 190.133,
-            "t1_spicka_kc_kw_mesic": 19.013,
-            "t2_kapacita_kc_kw_mesic": 22.743,
-            "t2_spicka_kc_kw_mesic": 227.429,
-            "sazba_prekroceni_kc_kw_mesic": 761.0,
-            # Prahy účinnosti pro Koeficient AKU (kap. 4.8), VN.
-            "u1_ucinnost": 0.60,
-            "u2_ucinnost": 0.75,
-        },
-        "platne_od": _PLATNE_OD_2027,
-        "platne_do": None,
-        "je_modelovy_odhad": True,
-        "poznamka": "ČEZ 2027 VN – MODELOVÝ ODHAD (ne finální ceny ERÚ, rozhodnutí ~11/2026).",
-    },
-    {
-        "distributor": "cez",
-        "napetova_hladina": "vvn",
-        "struktura_tarifu": "nova_2027",
-        "parametry": {
-            "t1_kapacita_kc_kw_mesic": 96.862,
-            "t1_spicka_kc_kw_mesic": 9.686,
-            "t2_kapacita_kc_kw_mesic": 11.586,
-            "t2_spicka_kc_kw_mesic": 115.862,
-            "sazba_prekroceni_kc_kw_mesic": 387.0,
-            # Prahy účinnosti pro Koeficient AKU (kap. 4.8), VVN (U2 = 0,70).
-            "u1_ucinnost": 0.60,
-            "u2_ucinnost": 0.70,
-        },
-        "platne_od": _PLATNE_OD_2027,
-        "platne_do": None,
-        "je_modelovy_odhad": True,
-        "poznamka": "ČEZ 2027 VVN – MODELOVÝ ODHAD (ne finální ceny ERÚ, rozhodnutí ~11/2026).",
-    },
+    }
+
+
+_SEED_SAZBY = [_radek_2026(d, h) for (d, h) in sorted(_RK_2026)] + [
+    _radek_2027(d, h) for (d, h) in sorted(_NTS_2027)
 ]
 
 
-# Klíče, které se do už existujících řádků smí doplnit (ne přepsat) – nově
-# přidané prahy Koeficientu AKU (kap. 4.8). Ceny (T1/T2) nikdy nepřepisujeme,
-# ať se neztratí případná ruční úprava přes admin.
-_BACKFILL_KLICE = ("u1_ucinnost", "u2_ucinnost")
+# Klíče, které se do už existujících řádků smí DOPLNIT, když chybí/jsou None
+# (vyplněné hodnoty se nikdy nepřepisují – neztratí se ruční úprava z adminu):
+# prahy AKU (kap. 4.8) a měsíční cena RK (audit PS-1/PS-2).
+_BACKFILL_KLICE = ("u1_ucinnost", "u2_ucinnost", "cena_mesicni_rk_kc_kw_mesic")
+
+# Cílené opravy přesně známých chybných hodnot z dřívějších seedů
+# (audit 16. 7. 2026, bughunt PS-1/PS-2). Přepíše se JEN hodnota, která se
+# přesně rovná `chybna` – ruční úpravy přes admin zůstávají nedotčené.
+# `chybna=None` znamená doplnění dosud nedohledané (NULL) hodnoty.
+_BACKFILL_OPRAVY = (
+    {
+        "distributor": "cez",
+        "napetova_hladina": "vn",
+        "struktura_tarifu": "stara_2026",
+        "platne_od": _PLATNE_OD_2026,
+        "klic": "cena_rezervovana_kapacita_kc_kw_rok",
+        "chybna": 2847.72,  # 237,31 × 12 = sazba roku 2025 (CV č. 11/2024)
+        "spravna": 3030.78,  # 252,565 × 12 dle CV č. 13/2025
+        "poznamka_dodatek": (
+            "OPRAVA (audit 16. 7. 2026): 2847,72 Kč/kW/rok byla sazba 2025; "
+            "pro 2026 platí 3030,78 Kč/kW/rok dle CV č. 13/2025 (ERV 17/2025)."
+        ),
+    },
+    {
+        "distributor": "cez",
+        "napetova_hladina": "vvn",
+        "struktura_tarifu": "stara_2026",
+        "platne_od": _PLATNE_OD_2026,
+        "klic": "cena_rezervovana_kapacita_kc_kw_rok",
+        "chybna": None,  # v původním seedu „nedohledáno“
+        "spravna": 1409.18,  # 117,432 × 12 dle CV č. 13/2025
+        "poznamka_dodatek": (
+            "DOPLNĚNO (audit 16. 7. 2026): roční RK VVN 117,432 Kč/kW/měs "
+            "= 1409,18 Kč/kW/rok dle CV č. 13/2025 (ERV 17/2025)."
+        ),
+    },
+)
+
+
+def doplneni_chybejicich(parametry: dict, seed_parametry: dict) -> tuple[dict, bool]:
+    """Doplní do parametrů klíče z `_BACKFILL_KLICE`, které chybí / jsou None.
+
+    Vrací (nové parametry, došlo-li ke změně). Vyplněné hodnoty nechává být –
+    idempotentní a bezpečné vůči ručním úpravám přes admin.
+    """
+    out = dict(parametry)
+    zmena = False
+    for k in _BACKFILL_KLICE:
+        if out.get(k) is None and seed_parametry.get(k) is not None:
+            out[k] = seed_parametry[k]
+            zmena = True
+    return out, zmena
+
+
+def aplikuj_opravu(parametry: dict, poznamka: str, oprava: dict) -> tuple[dict, str, bool]:
+    """Aplikuje jednu cílenou opravu z `_BACKFILL_OPRAVY` na (parametry, poznámku).
+
+    Přepíše jen hodnotu PŘESNĚ rovnou známé chybné (`oprava["chybna"]`); cokoli
+    jiného (ruční úprava adminem, už opravená hodnota) nechává být. Dovětek do
+    poznámky se přidá jen jednou. Vrací (parametry, poznámka, došlo-li ke změně).
+    """
+    aktualni = parametry.get(oprava["klic"])
+    if aktualni != oprava["chybna"] or aktualni == oprava["spravna"]:
+        return parametry, poznamka, False
+    out = dict(parametry)
+    out[oprava["klic"]] = oprava["spravna"]
+    nova_poznamka = poznamka or ""
+    dodatek = oprava.get("poznamka_dodatek") or ""
+    if dodatek and dodatek not in nova_poznamka:
+        nova_poznamka = (nova_poznamka.rstrip() + " " + dodatek).strip()
+    return out, nova_poznamka, True
 
 
 def seed_sazby(db: Session) -> int:
-    """Idempotentně vloží výchozí sazby ČEZ a doplní chybějící prahy AKU.
+    """Idempotentně vloží výchozí sazby a ošetří existující řádky.
 
-    Vrací počet nově vložených řádků. U existujících `nova_2027` řádků jen
-    dorovná chybějící klíče z `_BACKFILL_KLICE` (nepřepisuje už vyplněné hodnoty).
+    Vrací počet nově vložených řádků. U existujících řádků:
+    1. doplní chybějící klíče z `_BACKFILL_KLICE` (nepřepisuje vyplněné),
+    2. aplikuje cílené opravy `_BACKFILL_OPRAVY` (přepíše jen přesně známé
+       chybné hodnoty, s dovětkem o zdroji do poznámky).
     """
     vlozeno = 0
     zmeneno = False
-    for r in _SEED_CEZ:
+    for r in _SEED_SAZBY:
         existujici = (
             db.query(SazbaDistributoru)
             .filter(
@@ -143,20 +235,34 @@ def seed_sazby(db: Session) -> int:
             .first()
         )
         if existujici is not None:
-            # Backfill chybějících prahů AKU do už existujícího řádku.
             if isinstance(existujici.parametry, dict) and isinstance(r.get("parametry"), dict):
-                p = dict(existujici.parametry)
-                doplneno = False
-                for k in _BACKFILL_KLICE:
-                    if p.get(k) is None and r["parametry"].get(k) is not None:
-                        p[k] = r["parametry"][k]
-                        doplneno = True
+                p, doplneno = doplneni_chybejicich(existujici.parametry, r["parametry"])
                 if doplneno:
                     existujici.parametry = p  # reassign kvůli detekci změny JSONB
                     zmeneno = True
             continue
         db.add(SazbaDistributoru(**r))
         vlozeno += 1
+
+    for o in _BACKFILL_OPRAVY:
+        radek = (
+            db.query(SazbaDistributoru)
+            .filter(
+                SazbaDistributoru.distributor == o["distributor"],
+                SazbaDistributoru.napetova_hladina == o["napetova_hladina"],
+                SazbaDistributoru.struktura_tarifu == o["struktura_tarifu"],
+                SazbaDistributoru.platne_od == o["platne_od"],
+            )
+            .first()
+        )
+        if radek is None or not isinstance(radek.parametry, dict):
+            continue
+        p, poznamka, zmena = aplikuj_opravu(radek.parametry, radek.poznamka or "", o)
+        if zmena:
+            radek.parametry = p
+            radek.poznamka = poznamka
+            zmeneno = True
+
     if vlozeno or zmeneno:
         db.commit()
     return vlozeno

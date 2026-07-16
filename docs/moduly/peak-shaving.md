@@ -4,8 +4,9 @@ Souhrn celé práce na peak shaving kalkulátoru v Nabídkovači appky Greensie.
 Navazuje na `docs/METODIKA-peak-shaving.md` a promptové zadání
 (`PROMPT-peak-shaving-2027.md`, `PROMPT-peak-shaving-aku-a-grafy.md`).
 
-**Rozsah:** peak shaving jen pro **VN/VVN** (NN appka nenabízí). Zatím naostro
-jen **ČEZ Distribuce**. Všechny ceny **bez DPH**. Výpočet je čistě
+**Rozsah:** peak shaving jen pro **VN/VVN** (NN appka nenabízí). Naostro
+**ČEZ, EG.D i PRE** (sazby 2026 všech tří RDS z CV ERÚ č. 13/2025 — audit
+16. 7. 2026, bughunt PS-1). Všechny ceny **bez DPH**. Výpočet je čistě
 deterministický (žádní AI agenti za běhu).
 
 Stav: nasazeno na produkci (`https://167-235-254-188.sslip.io`), poslední krok
@@ -65,29 +66,50 @@ Unikátní klíč: `(distributor, napetova_hladina, struktura_tarifu, platne_od)
 
 ---
 
-## 3. Naseedovaná data (jen ČEZ Distribuce) — `app/nabidkovac/seed.py`
+## 3. Naseedovaná data (ČEZ + EG.D + PRE) — `app/nabidkovac/seed.py`
 
-Vše bez DPH. Seed je idempotentní; do už existujících `nova_2027` řádků navíc
-dorovnává chybějící prahy AKU (`u1_ucinnost`, `u2_ucinnost`) bez přepsání cen.
+Vše bez DPH. Zdroj 2026: **finální CV ERÚ č. 13/2025 (ERV 17/2025), bod 4.18**
+(audit 16. 7. 2026, bughunt PS-1 — původní seed měl ČEZ VN hodnotu roku 2025
+a VVN chybělo). Seed je idempotentní; do už existujících řádků navíc:
+- doplní chybějící klíče (`u1_ucinnost`, `u2_ucinnost`,
+  `cena_mesicni_rk_kc_kw_mesic`) bez přepsání vyplněných hodnot,
+- cíleně opraví přesně známé chybné hodnoty z dřívějších seedů
+  (`_BACKFILL_OPRAVY`: ČEZ VN 2 847,72 → 3 030,78; ČEZ VVN `null` → 1 409,18)
+  s dovětkem o zdroji do poznámky — ruční úpravy adminem nikdy nepřepíše.
 
-### 3.1 `stara_2026` (ostrá čísla)
-| Hladina | `cena_rezervovana_kapacita_kc_kw_rok` | `cena_prekroceni_kc_kw` |
-|---|---|---|
-| **VN** | **2 847,72** (= 237,31 Kč/kW/měsíc × 12) | **1 108** Kč/kW/měsíc |
-| **VVN** | `null` (nedohledáno) | **521** Kč/kW/měsíc |
+### 3.1 `stara_2026` (ostrá čísla, platnost 2026-01-01 – 2026-12-31)
+| DSO | Hladina | roční RK [Kč/kW/rok] | `cena_mesicni_rk_kc_kw_mesic` | `cena_prekroceni_kc_kw` |
+|---|---|---|---|---|
+| ČEZ | VN | **3 030,78** (= 252,565 × 12) | 281,823 | 1 108 |
+| ČEZ | VVN | **1 409,18** (= 117,432 × 12) | 131,036 | 521 |
+| EG.D | VN | 2 766,61 (= 230,551 × 12) | 254,260 | 1 108 |
+| EG.D | VVN | 1 329,91 (= 110,826 × 12) | 122,223 | 521 |
+| PRE | VN | 3 253,12 (= 271,093 × 12) | 299,351 | 1 108 |
+| PRE | VVN | 1 554,96 (= 129,580 × 12) | 143,087 | 521 |
 
-Platnost 2026-01-01 – 2026-12-31. Pokuta je regulovaná sazba ERÚ (jednotná).
-> **Pozn. k jednotce:** rezervovaná kapacita se v dokumentu uvádí v Kč/kW/**měsíc**, ale klíč je `*_kc_kw_rok` (roční) a vzorec kap. 4.1 násobí jednou → ukládá se ročně (×12). VVN rezervace pro ČEZ nedohledána – doplní se přes admin.
+> **Pozn. k jednotce:** výměr uvádí Kč/kW/**měsíc**; klíč `*_kc_kw_rok` je roční
+> sazba (vzorec kap. 4.1 násobí jednou) → ukládá se ×12 z měsíční ceny za
+> **roční** RK. `cena_mesicni_rk_kc_kw_mesic` je cena jiného produktu —
+> **měsíční** RK (potřeba pro pokuty dle bodu 4.24 a kombinaci roční+měsíční RK).
+> **Pozn. k pokutě:** hodnoty 1 108/521 jsou ceny za překročení rezervovaného
+> **výkonu** (dodávka do sítě, bod 4.38) — mechanismus pokut za překročení RK
+> přepracovává bughunt PS-2 (1,5× měsíční cena měsíční RK).
 
 ### 3.2 `nova_2027` (MODELOVÝ ODHAD, `je_modelovy_odhad = true`, platné od 2027-01-01)
-Čísla nejsou finální – závazné cenové rozhodnutí ERÚ ~11/2026.
+Čísla z **informativního CV ERÚ k NTS (5/2026)** — nejsou finální, závazný
+výměr pro 2027 vyjde ~11/2026 (pak se založí nový řádek s novým `platne_od`).
 
-| Hladina | T1 kapacita | T1 špička | T2 kapacita | T2 špička | penalizace | U1 | U2 |
-|---|---|---|---|---|---|---|---|
-| **VN** | 190,133 | 19,013 | 22,743 | 227,429 | 761 | 0,60 | 0,75 |
-| **VVN** | 96,862 | 9,686 | 11,586 | 115,862 | 387 | 0,60 | 0,70 |
+| DSO | Hladina | T1 kapacita | T1 špička | T2 kapacita | T2 špička | překročení RP | U1 | U2 |
+|---|---|---|---|---|---|---|---|---|
+| ČEZ | VN | 190,133 | 19,013 | 22,743 | 227,429 | 761 | 0,60 | 0,75 |
+| ČEZ | VVN | 96,862 | 9,686 | 11,586 | 115,862 | 387 | 0,60 | 0,70 |
+| EG.D | VN | 181,386 | 18,139 | 21,697 | 216,967 | 726 | 0,60 | 0,75 |
+| EG.D | VVN | 87,770 | 8,777 | 10,499 | 104,987 | 351 | 0,60 | 0,70 |
+| PRE | VN | 196,298 | 19,630 | 23,480 | 234,804 | 785 | 0,60 | 0,75 |
+| PRE | VVN | 109,073 | 10,907 | 13,047 | 130,470 | 436 | 0,60 | 0,70 |
 
-Vše Kč/kW/měsíc. Penalizace za překročení RP = 4× T1 kapacita.
+Vše Kč/kW/měsíc. Cena za překročení RP je v NTS pevná hodnota přímo z výměru
+(už ne odvozovaná 4× T1). Prahy U1/U2 jsou předběžné (VKP ERÚ 10/2026).
 
 ---
 
@@ -227,9 +249,9 @@ nese `ekonomika_2026`, `ekonomika_2027` (vč. AKU polí) a tři návratnosti.
 
 1. **Definice účinnosti pro Koeficient AKU** (kap. 4.8) – nepotvrzeno, zda pro peak-shaving baterii bez exportu stačí interní cyklování. V bezztrátovém v1 → účinnost ≈ 1 → plná sleva. Ověřit s manuálem ERÚ.
 2. **Sazby 2027** – modelový odhad, ne finální ceny ERÚ (rozhodnutí ~11/2026). Označeno `je_modelovy_odhad`.
-3. **EG.D a PRE** – sazby nedoplněny (jen ČEZ). Doplní se přes admin.
-4. **ČEZ VVN rezervovaná kapacita 2026** – nedohledáno (`null`), doplní admin.
-5. **Jednotka rezervace 2026** – uložena ročně (237,31 × 12); ověřit očekávanou jednotku v admin poli.
+3. ~~**EG.D a PRE** – sazby nedoplněny~~ → doplněno seedem z CV 13/2025 (bughunt PS-1, 16. 7. 2026).
+4. ~~**ČEZ VVN rezervovaná kapacita 2026** – nedohledáno~~ → doplněno (117,432 Kč/kW/měs, bughunt PS-1).
+5. **Jednotka rezervace 2026** – uložena ročně (252,565 × 12 = 3 030,78 pro ČEZ VN); ověřit očekávanou jednotku v admin poli.
 6. **Počáteční nabití baterie** v simulaci = plná (zjednodušení v1).
 7. **15min detail měsíce v grafu** – ponecháno jako „later“.
 8. Od 2028 podmínka slevy: negarantovaný (flexibilní) rezervovaný příkon – zatím mimo scope.

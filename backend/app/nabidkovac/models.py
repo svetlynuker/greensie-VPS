@@ -55,8 +55,8 @@ VYCHOZI_STAV_ZPRACOVANI = "nahrano"
 
 # ---- Peak shaving: sazby distributorů (METODIKA-peak-shaving.md, kap. 3.1) ----
 
-# Distributoři, se kterými appka počítá. Naostro jede zatím jen "cez"
-# (kap. 6 bod 5), "egd"/"pre" se doplní přes admin, až budou čísla ověřená.
+# Distributoři, se kterými appka počítá. Sazby 2026 všech tří RDS jsou
+# seedované z CV ERÚ č. 13/2025 (audit 16. 7. 2026, bughunt PS-1).
 DISTRIBUTORI = ("cez", "egd", "pre")
 
 # Peak shaving řešíme jen pro VN a VVN, NN appka nenabízí (kap. 1 / kap. 6 bod 4).
