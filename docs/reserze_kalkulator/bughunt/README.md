@@ -44,18 +44,47 @@ PVGIS API za runtime, jednosložková NTS cena pro < 600 h/rok.
 
 ## Rozhodnutí (Daniel, 16. 7. 2026)
 
-- **Zatím se nic neimplementuje** — tento adresář slouží jako podklad, opravy proběhnou
-  samostatně.
-- Až se bude implementovat, je rozhodnuto:
-  1. **Koeficient AKU přepsat dle ERÚ** (optimistická větev pro baterie uvnitř odběru zmizí).
-  2. **Fair baseline u peak shavingu přidat** (optimalizovaná roční + měsíční RK bez
-     baterie + výstup „úspora bez investice“).
-  3. **„Cenu dodavatele“ v PPA rozložit** na silovou složku + vyhnutelné regulované složky
-     (default ~250–270 Kč/MWh z manažerského nastavení).
+1. **Koeficient AKU přepsat dle ERÚ** (optimistická větev pro baterie uvnitř odběru zmizí).
+2. **Fair baseline u peak shavingu přidat** (optimalizovaná roční + měsíční RK bez
+   baterie + výstup „úspora bez investice“); UI = rozpad úspory.
+3. **„Cenu dodavatele“ v PPA rozložit** na silovou složku + vyhnutelné regulované složky
+   (default 260 Kč/MWh z manažerského nastavení).
+4. **Defaulty ekonomiky:** PPA LID −2 % (PERC), O&M 350 Kč/kWp/rok, diskont 7,5 %;
+   PS účinnost RT 0,88, rezerva RK 5 %, O&M 2 % CAPEX/rok, diskont 8 %, horizont NPV
+   10 let, degradace úspor 1,5 %/rok.
+5. **Rezervovaný příkon:** přidat nepovinné pole (OZ ho mívá ze smlouvy o připojení)
+   + přepínač snížení RP (default vypnuto).
 
-**Otevřené (nerozhodnuté):** defaulty ekonomiky (O&M, diskont, LID, rezerva RK — návrhy
-v nálezech), zda má OZ k dispozici rezervovaný příkon ze smlouvy o připojení (nový vstup
-pro model 2027), pořadí implementace.
+## ✅ Stav implementace (16. 7. 2026, větev `bughunt-opravy-p0`)
+
+**Všechny nálezy P0–P2 vyřešeny** (PS-1…PS-10, PPA-1…PPA-6+PPA-8, SP-1, SP-2) —
+detail s odkazy na commity u jednotlivých nálezů. Testy: `backend/tests/`
+(104 pytest testů). **P3 zůstává neimplementováno** (spotová arbitráž, kombinace
+PPA+baterie, EDC sdílení, PVGIS API za runtime, jednosložková NTS cena, PPA-7
+validace ceny přebytku, PPA-9 CAPEX pásma, SP-3 medián intervalu, SP-4 Status sloupec).
+
+### Nasazení na produkci — checklist
+
+1. **Sazby (automaticky):** seed při startu backendu doplní EG.D/PRE (2026 i NTS 2027)
+   a cíleně opraví ČEZ řádky (`_BACKFILL_OPRAVY`: RK 2 847,72 → 3 030,78; VVN null →
+   1 409,18; odstranění pokut 1108/521; doplnění měsíční RK). Ruční úpravy admina
+   se nikdy nepřepisují — po deployi zkontrolovat v adminu poznámky „OPRAVA (audit
+   16. 7. 2026)“.
+2. **Migrace (automaticky):** `_lehka_migrace()` smaže duplicitní řádky profilů
+   („poslední vyhrává“ = vyšší id) a založí unique index `(nabidka_id, cas)`.
+3. **Manažerské nastavení (RUČNĚ v adminu):** nové defaulty platí, jen když klíč
+   v `vypoctova_nastaveni.parametry` chybí. Pokud jsou na produkci uložené staré
+   hodnoty, v adminu (Katalog a výpočty) vyprázdnit/nastavit: `ppa_oam_kc_kwp_rok`
+   (350), `ppa_diskontni_sazba` (0.075), nové klíče se doplní samy defaulty —
+   `ppa_degradace_rok1` (0.02), `ppa_vyhnutelne_regulovane_kc_mwh` (260),
+   `ppa_index_regulovane_rocni` (0), `ppa_poze_kc_mwh` (0), `ppa_vymena_stridace_*`
+   (vypnuto), `ps_cena_energie_kc_mwh` (3000), `ps_rezerva_rk_procenta` (5),
+   `ps_diskontni_sazba` (0.08), `ps_horizont_npv_roky` (10),
+   `ps_oam_procenta_capex_rok` (2), `ps_degradace_uspor_procenta_rok` (1.5).
+4. **Katalog baterií (RUČNĚ):** doplnit `ucinnost` (AC-AC round-trip, např. 0,88)
+   u bateriových produktů — bez ní platí default 0,88.
+5. Před nasazením zkontrolovat změnový výměr **CV 3/2026** (19. 6. 2026) na
+   https://eru.gov.cz/cenove-vymery (rešerše ho nedohledala, RK by se týkat neměl).
 
 ## Kalendář
 
