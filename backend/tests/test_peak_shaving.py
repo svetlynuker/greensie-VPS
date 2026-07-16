@@ -182,3 +182,44 @@ class TestZtratyBaterie:
         nabito, vybito = ps.energie_pri_stropu(profil, strop, 50.0, 100.0, ucinnost_rt=1.0)
         assert nabito >= 0 and vybito >= 0
         assert ps.naklad_ztrat_baterie_kc(nabito, 1.0, 3000.0) == 0.0
+
+
+# --------------------------------------------------------- PS-6: rezerva RK
+class TestRezervaRk:
+    def _varianta(self, rezerva):
+        baterie = ps.Baterie(
+            id=1, nazev="B", vykon_kw=60.0, kapacita_kwh=1000.0, cena_kc=1_000_000.0, ucinnost_rt=1.0
+        )
+        return ps.spocti_variantu(
+            baterie,
+            1,
+            PROFIL_2M,
+            MESICE_2M,
+            250.0,
+            3030.78,
+            ps.pokuta_prekroceni_rk_kc_kw(281.823),
+            5.0,
+            cena_energie_kc_mwh=0.0,
+            rezerva_rk_procenta=rezerva,
+        )
+
+    def test_default_rezervy_je_5_procent(self):
+        assert ps.VYCHOZI_REZERVA_RK_PROCENTA == 5.0
+
+    def test_sjednana_rk_je_strop_plus_rezerva(self):
+        v = self._varianta(5.0)
+        assert v.nova_rezervovana_kapacita_kw == pytest.approx(v.strop_kw * 1.05)
+        assert v.rezerva_rk_procenta == 5.0
+        # ekonomika platí za sjednanou RK (vč. rezervy), ne za holý strop
+        assert v.ekonomika_2026["novy_naklad_rezervace"] == pytest.approx(
+            v.nova_rezervovana_kapacita_kw * 3030.78
+        )
+
+    def test_nulova_rezerva_odpovida_puvodnimu_chovani(self):
+        v = self._varianta(0.0)
+        assert v.nova_rezervovana_kapacita_kw == pytest.approx(v.strop_kw)
+
+    def test_rezerva_snizuje_usporu(self):
+        bez = self._varianta(0.0)
+        s_rezervou = self._varianta(5.0)
+        assert s_rezervou.rocni_uspora_2026 < bez.rocni_uspora_2026

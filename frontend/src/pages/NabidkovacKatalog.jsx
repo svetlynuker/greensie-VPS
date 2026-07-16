@@ -96,6 +96,8 @@ const PS_POLE = [
   { klic: "max_navratnost_roky_peak_shaving", label: "Práh doporučení – max. návratnost (roky, default 5)" },
   // Ocenění ztrát baterie (PS-5): silová + variabilní distribuce, bez DPH.
   { klic: "ps_cena_energie_kc_mwh", label: "Cena energie pro ztráty baterie (Kč/MWh, default 3000)" },
+  // Rezerva sjednané RK nad nalezený strop (PS-6).
+  { klic: "ps_rezerva_rk_procenta", label: "Rezerva RK nad strop (%, default 5)" },
 ];
 
 function num(v) {

@@ -856,6 +856,9 @@ def _varianta_json(v: peak_shaving.Varianta) -> dict:
         "vyuzitelna_kapacita_kwh": round(v.vyuzitelna_kapacita_kwh, 3),
         "ucinnost_rt": round(v.ucinnost_rt, 4),
         "cena_celkem_kc": round(v.cena_celkem_kc, 2),
+        # Fyzický strop simulace vs. sjednávaná RK se rezervou (PS-6).
+        "strop_kw": round(v.strop_kw, 2),
+        "rezerva_rk_procenta": round(v.rezerva_rk_procenta, 2),
         "nova_rezervovana_kapacita_kw": round(v.nova_rezervovana_kapacita_kw, 2),
         "rocni_uspora_2026_kc": round(v.rocni_uspora_2026, 2),
         "navratnost_roky": (round(v.navratnost_roky, 2) if v.navratnost_roky is not None else None),
@@ -1027,6 +1030,13 @@ def spocti_peak_shaving(
     if cena_energie is None:
         cena_energie = peak_shaving.VYCHOZI_CENA_ENERGIE_KC_MWH
 
+    # Rezerva sjednané RK nad nalezený strop (audit PS-6), default 5 %.
+    rezerva_rk = None
+    if aktualni_nastaveni is not None and aktualni_nastaveni.parametry:
+        rezerva_rk = aktualni_nastaveni.parametry.get("ps_rezerva_rk_procenta")
+    if rezerva_rk is None:
+        rezerva_rk = peak_shaving.VYCHOZI_REZERVA_RK_PROCENTA
+
     # 4) výpočet (kap. 4.2–4.6)
     vysledek = peak_shaving.vyber_reseni(
         baterie_katalog=baterie,
@@ -1040,6 +1050,7 @@ def spocti_peak_shaving(
         parametry_2027=parametry_2027,
         je_modelovy_2027=je_modelovy_2027,
         cena_energie_kc_mwh=float(cena_energie),
+        rezerva_rk_procenta=float(rezerva_rk),
     )
 
     popis_json = {
@@ -1080,7 +1091,7 @@ def spocti_peak_shaving(
             mesice,
             d.celkovy_vykon_kw,
             d.vyuzitelna_kapacita_kwh,
-            d.nova_rezervovana_kapacita_kw,
+            d.strop_kw,
             interval_h,
             d.ucinnost_rt,
         )

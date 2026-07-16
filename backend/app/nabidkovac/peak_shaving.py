@@ -41,6 +41,12 @@ PODIL_VYUZITELNE_KAPACITY = 0.85
 # distribuce), Kč/MWh bez DPH; manažerský parametr `ps_cena_energie_kc_mwh`.
 VYCHOZI_CENA_ENERGIE_KC_MWH = 3000.0
 
+# Rezerva sjednané RK nad nalezený strop (audit PS-6, rozhodnuto 16. 7. 2026):
+# strop je nalezen s dokonalou znalostí jednoho historického roku – meziroční
+# variabilita, servis baterie nebo jiná zima znamenají překročení. Praxe
+# 5–15 %; default 5 % (manažerský parametr `ps_rezerva_rk_procenta`).
+VYCHOZI_REZERVA_RK_PROCENTA = 5.0
+
 # Výchozí práh nedoporučené návratnosti (kap. 4.5, bod 3 v kap. 6). Reálně se
 # bere z vypoctova_nastaveni.parametry["max_navratnost_roky_peak_shaving"],
 # tohle je fallback, když parametr chybí.
@@ -518,6 +524,10 @@ class Varianta:
     vyuzitelna_kapacita_kwh: float
     ucinnost_rt: float
     cena_celkem_kc: float
+    # Fyzický strop odběru, který baterie drží (výsledek simulace)…
+    strop_kw: float
+    # …a sjednávaná RK = strop × (1 + rezerva) – audit PS-6.
+    rezerva_rk_procenta: float
     nova_rezervovana_kapacita_kw: float
     rocni_uspora_2026: float
     navratnost_roky: float | None  # None = úspora ≤ 0 (nekonečná návratnost)
@@ -565,8 +575,9 @@ def spocti_variantu(
     parametry_2027: dict | None = None,
     je_modelovy_2027: bool = True,
     cena_energie_kc_mwh: float = VYCHOZI_CENA_ENERGIE_KC_MWH,
+    rezerva_rk_procenta: float = VYCHOZI_REZERVA_RK_PROCENTA,
 ) -> Varianta:
-    """Spočítá jednu variantu (produkt × počet kusů): kap. 4.2–4.6 + ztráty PS-5."""
+    """Spočítá jednu variantu (produkt × počet kusů): kap. 4.2–4.6 + PS-5/PS-6."""
     vykon = baterie.vykon_kw * pocet_kusu
     kapacita = baterie.kapacita_kwh * pocet_kusu
     # Simulace jede na využitelné kapacitě (SOC okno 10–95 %) a se ztrátami
@@ -576,6 +587,9 @@ def spocti_variantu(
     cena = baterie.cena_kc * pocet_kusu
 
     novy_strop = min_udrzitelny_strop(profil_kw, vykon, kapacita_uzitecna, interval_h, ucinnost)
+    # Sjednávaná RK = strop + rezerva (audit PS-6): strop platí pro jeden
+    # historický rok, rezerva kryje meziroční variabilitu a výpadky baterie.
+    nova_rk = novy_strop * (1.0 + max(0.0, rezerva_rk_procenta) / 100.0)
     nabito_2026, _ = energie_pri_stropu(
         profil_kw, novy_strop, vykon, kapacita_uzitecna, interval_h, ucinnost_rt=ucinnost
     )
@@ -586,18 +600,18 @@ def spocti_variantu(
         rezervovana_kapacita_kw,
         cena_rezervace_kc_kw_rok,
         cena_prekroceni_kc_kw,
-        novy_strop,
+        nova_rk,
         naklad_ztrat_baterie=ztraty_2026,
     )
     navratnost = _navratnost(cena, ek.rocni_uspora)
 
-    # Rok 2027: RP zůstává roční (novy_strop = min. udržitelný strop pro celý rok),
-    # ale měsíční maxima M se sráží co nejhlouběji v každém měsíci (kap. 4.6).
+    # Rok 2027: RP zůstává roční (nová RK vč. rezervy), ale měsíční maxima M
+    # se sráží co nejhlouběji v každém měsíci (kap. 4.6).
     ek_2027 = ekonomika_2027(
         profil_kw,
         mesice,
         rezervovana_kapacita_kw,
-        novy_strop,
+        nova_rk,
         vykon,
         kapacita_uzitecna,
         parametry_2027,
@@ -623,7 +637,9 @@ def spocti_variantu(
         vyuzitelna_kapacita_kwh=kapacita_uzitecna,
         ucinnost_rt=ucinnost,
         cena_celkem_kc=cena,
-        nova_rezervovana_kapacita_kw=novy_strop,
+        strop_kw=novy_strop,
+        rezerva_rk_procenta=max(0.0, rezerva_rk_procenta),
+        nova_rezervovana_kapacita_kw=nova_rk,
         rocni_uspora_2026=ek.rocni_uspora,
         navratnost_roky=navratnost,
         navratnost_2026=navratnost,
@@ -647,6 +663,7 @@ def vyber_reseni(
     parametry_2027: dict | None = None,
     je_modelovy_2027: bool = True,
     cena_energie_kc_mwh: float = VYCHOZI_CENA_ENERGIE_KC_MWH,
+    rezerva_rk_procenta: float = VYCHOZI_REZERVA_RK_PROCENTA,
 ) -> VysledekPeakShaving:
     """Kap. 4.5: projede všechny produkty × počty kusů a vybere nejrychlejší návratnost.
 
@@ -681,6 +698,7 @@ def vyber_reseni(
                 parametry_2027,
                 je_modelovy_2027,
                 cena_energie_kc_mwh,
+                rezerva_rk_procenta,
             )
             if nejlepsi is None or v._radici_klic() < nejlepsi._radici_klic():
                 nejlepsi = v

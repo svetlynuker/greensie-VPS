@@ -229,7 +229,11 @@ export default function PeakShavingPanel({ nabidka }) {
                 <div className="gs-kpi">
                   <div className="gs-kpi-label">Nová rez. kapacita</div>
                   <div className="gs-kpi-value">{kw(dop.nova_rezervovana_kapacita_kw)}</div>
-                  <div className="gs-kpi-sub">sjednaný příkon po instalaci</div>
+                  <div className="gs-kpi-sub">
+                    {dop.strop_kw != null
+                      ? `strop baterie ${kw(dop.strop_kw)} + rezerva ${dop.rezerva_rk_procenta ?? 0} %`
+                      : "sjednaný příkon po instalaci"}
+                  </div>
                 </div>
                 <div className="gs-kpi">
                   <div className="gs-kpi-label">Baterie</div>

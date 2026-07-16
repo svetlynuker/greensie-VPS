@@ -168,6 +168,13 @@ deratingu (×0,8) navíc baterie v druhé polovině životnosti nalezený strop 
 
 ## PS-6 ⚠️ P1 — Nová RK = přesně nalezené minimum, bez rezervy
 
+> ✅ **Vyřešeno 16. 7. 2026** — commit `fix(peak-shaving): rezerva sjednané RK nad nalezený strop (PS-6)`
+> na větvi `bughunt-opravy-p0`. `RK_sjednaná = strop × (1 + rezerva)`, default
+> 5 % (rozhodnuto; `ps_rezerva_rk_procenta` v manažerském nastavení). Varianta
+> nese `strop_kw` i `nova_rezervovana_kapacita_kw`; ekonomika platí RK vč.
+> rezervy, FE ukazuje rozpad (strop + rezerva). Percentilový režim
+> neimplementován (volitelné). Testy: `test_peak_shaving.py::TestRezervaRk`.
+
 **Kde:** `min_udrzitelny_strop()` → `nova_rezervovana_kapacita_kw` bez úprav.
 
 **Co je špatně:** strop je nalezen s dokonalou znalostí jednoho historického roku.

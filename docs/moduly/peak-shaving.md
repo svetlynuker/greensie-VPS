@@ -166,10 +166,16 @@ ocenění ztrát). **Cena ztrát cyklování** = `nabito × (1 − RT) × cena e
 u výpočtu) — snižuje roční úsporu 2026 i 2027 (v roce 2027 z měsíčních
 simulací; srážení po měsících cykluje víc energie).
 
-### 4.3 Minimální udržitelná rezervovaná kapacita (kap. 4.3)
+### 4.3 Minimální udržitelný strop a sjednávaná RK (kap. 4.3 + bughunt PS-6)
 Binární hledání nejnižšího `T` v `[0, roční_maximum]`, při kterém simulace
 projde celý rok bez překročení. Udržitelnost je monotónní v `T`. Výsledek =
-**navrhovaná nová rezervovaná kapacita**.
+**fyzický strop** (`strop_kw`), který baterie drží.
+
+**Sjednávaná RK = strop × (1 + rezerva)** — strop je nalezen s dokonalou
+znalostí jednoho historického roku; rezerva (default **5 %**, manažerský
+parametr `ps_rezerva_rk_procenta`) kryje meziroční variabilitu profilu,
+servis/výpadek baterie a o chlup jinou zimu. Ekonomika platí za sjednanou RK,
+graf ukazuje strop (sražená maxima) i RK (čára rezervace).
 
 ### 4.4 Ekonomika 2026 (`stara_2026`, kap. 4.1–4.4)
 ```
