@@ -72,11 +72,13 @@ function parseRange(text, druh) {
   return { od: n, do: n };
 }
 
+// Barvy přes tokeny --st-* (global.css) — legenda tak vždy ukazuje totéž,
+// co buňky, i v tmavém režimu a při kompenzaci červeno-zelené vady.
 const LEGENDA = [
-  { druh: "green", barva: "#2f9e44", popis: "v termínu", prefixOd: "zelena_od", prefixDo: "zelena_do" },
-  { druh: "yellow", barva: "#e6b800", popis: "blíží se", prefixOd: "zluta_od", prefixDo: "zluta_do" },
-  { druh: "orange", barva: "#e8850c", popis: "po termínu", prefixOd: "oranzova_od", prefixDo: "oranzova_do" },
-  { druh: "red", barva: "#e03131", popis: "hodně po", prefixOd: "cervena_od", prefixDo: "cervena_do" },
+  { druh: "green", barva: "var(--st-good)", popis: "v termínu", prefixOd: "zelena_od", prefixDo: "zelena_do" },
+  { druh: "yellow", barva: "var(--st-warn)", popis: "blíží se", prefixOd: "zluta_od", prefixDo: "zluta_do" },
+  { druh: "orange", barva: "var(--st-serious)", popis: "po termínu", prefixOd: "oranzova_od", prefixDo: "oranzova_do" },
+  { druh: "red", barva: "var(--st-crit)", popis: "hodně po", prefixOd: "cervena_od", prefixDo: "cervena_do" },
 ];
 
 function bunkaKlic(projektId, sloupecId) {
@@ -222,7 +224,7 @@ export default function PrehledProjektu() {
   if (chyba) {
     return (
       <Layout uzivatel={uzivatel}>
-        <div style={{ padding: 24, color: "#c92a2a" }}>Chyba: {chyba}</div>
+        <div style={{ padding: 24, color: "var(--st-crit)" }}>Chyba: {chyba}</div>
       </Layout>
     );
   }

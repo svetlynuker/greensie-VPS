@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { getTheme, toggleTheme } from "../theme";
 import { getToken, ulozNastaveni } from "../api";
+import Ikona from "./Ikona";
 
 export default function ThemeToggle() {
   const [theme, setThemeState] = useState(getTheme());
@@ -15,11 +16,11 @@ export default function ThemeToggle() {
 
   return (
     <button
-      className="fm-btn"
+      className="gs-icon-btn"
       onClick={prepnout}
-      title="Přepnout světlý / tmavý režim"
+      title={tmavy ? "Přepnout na světlý režim" : "Přepnout na tmavý režim"}
     >
-      {tmavy ? "☀ Světlý režim" : "🌙 Tmavý režim"}
+      <Ikona jmeno={tmavy ? "slunce" : "mesic"} />
     </button>
   );
 }

@@ -85,7 +85,7 @@ export default function PrehledFinanci() {
   if (chyba) {
     return (
       <Layout uzivatel={uzivatel}>
-        <div style={{ padding: 24, color: "#c92a2a" }}>Chyba: {chyba}</div>
+        <div style={{ padding: 24, color: "var(--st-crit)" }}>Chyba: {chyba}</div>
       </Layout>
     );
   }

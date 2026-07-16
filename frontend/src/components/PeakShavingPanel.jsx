@@ -37,7 +37,7 @@ function VariantaRadek({ v, hlavni }) {
       <td>
         {v.nazev} × {v.pocet_kusu}
         {!v.doporuceno && (
-          <span className="nb-badge" style={{ marginLeft: 6, color: "#c92a2a" }}>nedoporučeno</span>
+          <span className="nb-badge" style={{ marginLeft: 6, color: "var(--st-crit)" }}>nedoporučeno</span>
         )}
       </td>
       <td>{kw(v.celkovy_vykon_kw)} / {v.celkova_kapacita_kwh?.toLocaleString("cs-CZ")} kWh</td>
@@ -196,7 +196,7 @@ export default function PeakShavingPanel({ nabidka }) {
         {pocita ? "Počítám…" : "Spočítat peak shaving"}
       </button>
       {zprava && <div style={{ color: "var(--fm-brand-dk)", fontSize: 13, marginTop: 10 }}>{zprava}</div>}
-      {chyba && <div style={{ color: "#c92a2a", fontSize: 13, marginTop: 10 }}>{chyba}</div>}
+      {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13, marginTop: 10 }}>{chyba}</div>}
 
       {/* 3) Výsledek */}
       {vysledek && (
@@ -206,23 +206,41 @@ export default function PeakShavingPanel({ nabidka }) {
               <h4 style={{ margin: "0 0 8px", fontSize: 13 }}>
                 Doporučená varianta
                 {!dop.doporuceno && (
-                  <span className="nb-badge" style={{ marginLeft: 8, color: "#c92a2a" }}>
+                  <span className="nb-badge" style={{ marginLeft: 8, color: "var(--st-crit)" }}>
                     nad prahem {vysledek.max_navratnost_roky}&nbsp;let – nedoporučeno
                   </span>
                 )}
               </h4>
-              <div className="fm-card" style={{ padding: 14, marginBottom: 14, background: "var(--fm-bg, #fafafa)" }}>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
-                  {dop.nazev} × {dop.pocet_kusu}
+              {/* KPI přehled doporučené varianty — hlavní čísla na první pohled */}
+              <div className="gs-kpis" style={{ marginBottom: 12 }}>
+                <div className="gs-kpi accent">
+                  <div className="gs-kpi-label">Roční úspora (2026)</div>
+                  <div className="gs-kpi-value">{kc(dop.rocni_uspora_2026_kc)}</div>
+                  <div className="gs-kpi-sub">bez DPH</div>
                 </div>
-                <div style={{ fontSize: 13, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 6 }}>
-                  <div>Baterie: {kw(dop.celkovy_vykon_kw)} / {dop.celkova_kapacita_kwh?.toLocaleString("cs-CZ")} kWh</div>
-                  <div>Cena baterie: {kc(dop.cena_celkem_kc)}</div>
-                  <div>Nová rez. kapacita: {kw(dop.nova_rezervovana_kapacita_kw)}</div>
-                  <div>Roční úspora (2026): <b>{kc(dop.rocni_uspora_2026_kc)}</b></div>
+                <div className="gs-kpi">
+                  <div className="gs-kpi-label">Návratnost (2026)</div>
+                  <div className="gs-kpi-value">{roky(dop.navratnost_2026 ?? dop.navratnost_roky)}</div>
+                  <div className="gs-kpi-sub">práh doporučení {vysledek.max_navratnost_roky} let</div>
                 </div>
+                <div className="gs-kpi">
+                  <div className="gs-kpi-label">Nová rez. kapacita</div>
+                  <div className="gs-kpi-value">{kw(dop.nova_rezervovana_kapacita_kw)}</div>
+                  <div className="gs-kpi-sub">sjednaný příkon po instalaci</div>
+                </div>
+                <div className="gs-kpi">
+                  <div className="gs-kpi-label">Baterie</div>
+                  <div className="gs-kpi-value" style={{ fontSize: 18 }}>
+                    {dop.nazev} × {dop.pocet_kusu}
+                  </div>
+                  <div className="gs-kpi-sub">
+                    {kw(dop.celkovy_vykon_kw)} / {dop.celkova_kapacita_kwh?.toLocaleString("cs-CZ")} kWh · {kc(dop.cena_celkem_kc)}
+                  </div>
+                </div>
+              </div>
 
-                <div style={{ marginTop: 12 }}>
+              <div className="fm-card" style={{ padding: 14, marginBottom: 14 }}>
+                <div style={{ marginTop: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Návratnost investice dle modelu</div>
                   <table className="nb-table">
                     <tbody>
@@ -231,7 +249,7 @@ export default function PeakShavingPanel({ nabidka }) {
                       <tr><td>Model 2027 – konzervativní (bez AKU)</td><td>{roky(dop.navratnost_2027_konzerv)}</td></tr>
                     </tbody>
                   </table>
-                  <div style={{ fontSize: 11, color: "#b8860b", marginTop: 4 }}>
+                  <div style={{ fontSize: 11, color: "color-mix(in srgb, var(--st-warn) 72%, var(--ink))", marginTop: 4 }}>
                     Výběr varianty se řídí modelem 2026. Hodnoty 2027 jsou modelový odhad; optimistická varianta zahrnuje nepotvrzenou slevu AKU.
                   </div>
                 </div>
@@ -259,7 +277,7 @@ export default function PeakShavingPanel({ nabidka }) {
                   <div style={{ fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     Rok 2027
                     {dop.ekonomika_2027?.je_modelovy_odhad && (
-                      <span className="nb-badge" style={{ color: "#b8860b" }} title="Nezávazný odhad, ne finální cena ERÚ">
+                      <span className="nb-badge" style={{ color: "color-mix(in srgb, var(--st-warn) 72%, var(--ink))" }} title="Nezávazný odhad, ne finální cena ERÚ">
                         ⚠ modelový odhad
                       </span>
                     )}
@@ -277,11 +295,11 @@ export default function PeakShavingPanel({ nabidka }) {
                           )}
                         </tbody>
                       </table>
-                      <div style={{ fontSize: 11, color: "#b8860b", marginTop: 6 }}>
+                      <div style={{ fontSize: 11, color: "color-mix(in srgb, var(--st-warn) 72%, var(--ink))", marginTop: 6 }}>
                         Modelový odhad, ne finální cena ERÚ (závazné rozhodnutí ~11/2026).
                       </div>
                       {dop.ekonomika_2027.predpoklad_aku_neoverovany && (
-                        <div style={{ fontSize: 11, color: "#c92a2a", marginTop: 4 }}>
+                        <div style={{ fontSize: 11, color: "var(--st-crit)", marginTop: 4 }}>
                           ⚠ Zahrnuje nepotvrzený předpoklad slevy pro baterie (Koeficient AKU) – k ověření s manuálem ERÚ.
                         </div>
                       )}

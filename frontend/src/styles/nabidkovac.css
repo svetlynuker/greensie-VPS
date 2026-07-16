@@ -54,8 +54,22 @@
   flex-direction: column;
   gap: 6px;
 }
+.nb-tile {
+  box-shadow: var(--shadow-1);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
 .nb-tile:hover {
-  border-color: var(--fm-brand);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-2);
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--line));
+}
+@media (prefers-reduced-motion: reduce) {
+  .nb-tile {
+    transition: none;
+  }
+  .nb-tile:hover {
+    transform: none;
+  }
 }
 .nb-tile .nb-tile-nazev {
   font-size: 16px;
@@ -66,24 +80,19 @@
   color: var(--fm-muted);
 }
 
-/* Upozornění, že výpočet zatím neběží */
+/* Upozornění, že výpočet zatím neběží — stavové tokeny (light/dark/CVD samy) */
 .nb-warn {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #fff4e6;
-  border: 1px solid #ffd8a8;
-  color: #a15c07;
-  border-radius: 10px;
+  background: var(--st-warn-w);
+  border: 1px solid color-mix(in srgb, var(--st-warn) 35%, transparent);
+  color: color-mix(in srgb, var(--st-warn) 72%, var(--ink));
+  border-radius: var(--radius-sm);
   padding: 10px 14px;
   font-size: 13px;
   font-weight: 600;
   margin: 14px 0;
-}
-:root[data-theme="dark"] .nb-warn {
-  background: #3a2a12;
-  border-color: #6b4a1a;
-  color: #ffd8a8;
 }
 
 /* Tabulky (seznam nabídek, katalog) */
@@ -114,8 +123,9 @@
 .nb-scroll {
   overflow-x: auto;
   border: 1px solid var(--fm-line);
-  border-radius: 12px;
+  border-radius: var(--radius);
   background: var(--fm-card);
+  box-shadow: var(--shadow-1);
 }
 
 .nb-badge {
@@ -190,10 +200,7 @@
   font-size: 13px;
 }
 .nb-doc-wait {
-  color: #a15c07;
+  color: color-mix(in srgb, var(--st-warn) 72%, var(--ink));
   font-size: 12px;
   font-weight: 600;
-}
-:root[data-theme="dark"] .nb-doc-wait {
-  color: #ffd8a8;
 }

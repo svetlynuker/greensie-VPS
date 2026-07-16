@@ -100,7 +100,7 @@ export default function DokumentUpload({ nabidkaId, dokumenty, onZmena }) {
         <div style={{ fontSize: 11, marginTop: 4 }}>Povoleno: {aktualniTyp?.pripony} · max 25 MB</div>
       </div>
 
-      {chyba && <div style={{ color: "#c92a2a", fontSize: 13, marginTop: 8 }}>{chyba}</div>}
+      {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13, marginTop: 8 }}>{chyba}</div>}
 
       <div style={{ marginTop: 12 }}>
         {(dokumenty || []).length === 0 && (
@@ -112,7 +112,7 @@ export default function DokumentUpload({ nabidkaId, dokumenty, onZmena }) {
             <span style={{ color: "var(--fm-muted)" }}>{fmtVelikost(d.velikost_bajtu)}</span>
             <span className="nb-doc-wait">{STAV_DOKUMENTU[d.stav_zpracovani] || d.stav_zpracovani}</span>
             <span style={{ flex: 1 }} />
-            <button className="fm-btn" style={{ padding: "4px 10px", color: "#c92a2a" }} onClick={() => smaz(d.id)}>
+            <button className="fm-btn" style={{ padding: "4px 10px", color: "var(--st-crit)" }} onClick={() => smaz(d.id)}>
               Smazat
             </button>
           </div>

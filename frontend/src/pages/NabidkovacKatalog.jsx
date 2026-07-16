@@ -209,7 +209,7 @@ function TechEditor({ tech, sloupce, onSave, onClose }) {
           <input type="checkbox" checked={dostupnost} onChange={(e) => setDostupnost(e.target.checked)} />
           Dostupná v katalogu
         </label>
-        {chyba && <div style={{ color: "#c92a2a", fontSize: 13 }}>{chyba}</div>}
+        {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
           <span style={{ flex: 1 }} />
           <button className="fm-btn" onClick={onClose} disabled={uklada}>Zrušit</button>
@@ -278,7 +278,7 @@ function SloupecEditor({ sloupec, onSave, onClose }) {
             Přejmenování a změna typu se projeví hned; už uložené hodnoty zůstávají.
           </p>
         )}
-        {chyba && <div style={{ color: "#c92a2a", fontSize: 13 }}>{chyba}</div>}
+        {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
           <span style={{ flex: 1 }} />
           <button className="fm-btn" onClick={onClose} disabled={uklada}>Zrušit</button>
@@ -411,7 +411,7 @@ function SazbaEditor({ sazba, onSave, onClose }) {
           <input className="nb-pole" value={poznamka} onChange={(e) => setPoznamka(e.target.value)} />
         </div>
 
-        {chyba && <div style={{ color: "#c92a2a", fontSize: 13 }}>{chyba}</div>}
+        {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
           <span style={{ flex: 1 }} />
           <button className="fm-btn" onClick={onClose} disabled={uklada}>Zrušit</button>
@@ -557,7 +557,7 @@ export default function NabidkovacKatalog() {
   if (chyba) {
     return (
       <Layout uzivatel={me?.uzivatel}>
-        <div style={{ padding: 24, color: "#c92a2a" }}>Chyba: {chyba}</div>
+        <div style={{ padding: 24, color: "var(--st-crit)" }}>Chyba: {chyba}</div>
       </Layout>
     );
   }
@@ -597,7 +597,7 @@ export default function NabidkovacKatalog() {
                 <button
                   onClick={() => smazSloupec(s)}
                   title="Smazat sloupec"
-                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "#c92a2a", fontWeight: 700 }}
+                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--st-crit)", fontWeight: 700 }}
                 >
                   ×
                 </button>
@@ -637,7 +637,7 @@ export default function NabidkovacKatalog() {
                     );
                   })}
                   <td onClick={(e) => e.stopPropagation()}>
-                    <button className="fm-btn" style={{ padding: "4px 10px", color: "#c92a2a" }} onClick={() => smazTech(t)}>Smazat</button>
+                    <button className="fm-btn" style={{ padding: "4px 10px", color: "var(--st-crit)" }} onClick={() => smazTech(t)}>Smazat</button>
                   </td>
                 </tr>
               ))}
@@ -755,7 +755,7 @@ export default function NabidkovacKatalog() {
                     {s.platne_do ? ` – ${String(s.platne_do).slice(0, 10)}` : ""}
                   </td>
                   <td onClick={(e) => e.stopPropagation()}>
-                    <button className="fm-btn" style={{ padding: "4px 10px", color: "#c92a2a" }} onClick={() => smazSazbu(s)}>Smazat</button>
+                    <button className="fm-btn" style={{ padding: "4px 10px", color: "var(--st-crit)" }} onClick={() => smazSazbu(s)}>Smazat</button>
                   </td>
                 </tr>
               ))}

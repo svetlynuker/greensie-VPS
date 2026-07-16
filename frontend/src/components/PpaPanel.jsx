@@ -214,7 +214,7 @@ export default function PpaPanel({ nabidka }) {
         {pocita ? "Počítám…" : "Spočítat PPA"}
       </button>
       {zprava && <div style={{ color: "var(--fm-brand-dk)", fontSize: 13, marginTop: 10 }}>{zprava}</div>}
-      {chyba && <div style={{ color: "#c92a2a", fontSize: 13, marginTop: 10 }}>{chyba}</div>}
+      {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13, marginTop: 10 }}>{chyba}</div>}
 
       {/* 3) Výsledek */}
       {v && (
@@ -231,7 +231,7 @@ export default function PpaPanel({ nabidka }) {
           </h4>
           <div className="fm-card" style={{ padding: 14, marginBottom: 14, background: "var(--fm-bg, #fafafa)" }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-              <span style={{ fontSize: 26, fontWeight: 700, color: "#2f9e44" }}>{pct(v.pokryti_spotreby_fve)}</span>
+              <span style={{ fontSize: 26, fontWeight: 700, color: "var(--brand-strong)" }}>{pct(v.pokryti_spotreby_fve)}</span>
               <span style={{ fontSize: 13 }}>spotřeby klienta pokryje elektřina z FVE (samospotřeba)</span>
             </div>
             <div style={{ fontSize: 13, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 6 }}>
@@ -273,7 +273,7 @@ export default function PpaPanel({ nabidka }) {
                   </thead>
                   <tbody>
                     {vysledek.varianty.map((z) => (
-                      <tr key={z.kwp} style={z.kwp === v.kwp ? { fontWeight: 700, background: "rgba(47,158,68,.08)" } : undefined}>
+                      <tr key={z.kwp} style={z.kwp === v.kwp ? { fontWeight: 700, background: "color-mix(in srgb, var(--brand) 9%, transparent)" } : undefined}>
                         <td>{z.kwp} kWp{z.kwp === v.kwp ? " ◄" : ""}</td>
                         <td>{pct(z.pokryti_spotreby_fve)}</td>
                         <td>{pct(z.mira_samospotreby)}</td>
@@ -323,7 +323,7 @@ export default function PpaPanel({ nabidka }) {
                     {v.roky.map((r) => {
                       const paybackRok = v.navratnost_roky != null && r.rok === Math.ceil(v.navratnost_roky);
                       return (
-                        <tr key={r.rok} style={paybackRok ? { fontWeight: 700, background: "rgba(47,158,68,.08)" } : undefined}>
+                        <tr key={r.rok} style={paybackRok ? { fontWeight: 700, background: "color-mix(in srgb, var(--brand) 9%, transparent)" } : undefined}>
                           <td>{r.rok}{paybackRok ? " ◄" : ""}</td>
                           <td>{mwh(r.vyroba_kwh)}</td>
                           <td>{mwh(r.samospotreba_kwh)}</td>

@@ -60,7 +60,7 @@ export default function PridatDialog({ nadpis, pole, onSave, onClose }) {
             />
           </div>
         ))}
-        {chyba && <div style={{ color: "#c92a2a", fontSize: 13 }}>{chyba}</div>}
+        {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
           <button className="fm-btn" onClick={onClose} disabled={uklada}>
             Zrušit
