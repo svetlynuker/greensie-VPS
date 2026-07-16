@@ -91,6 +91,13 @@ const PPA_POLE = [
   { klic: "ppa_vymena_stridace_kc_kwp", label: "Výměna střídače – cena (Kč/kWp)" },
 ];
 
+// Peak shaving – manažerské parametry (vypoctova_nastaveni.parametry).
+const PS_POLE = [
+  { klic: "max_navratnost_roky_peak_shaving", label: "Práh doporučení – max. návratnost (roky, default 5)" },
+  // Ocenění ztrát baterie (PS-5): silová + variabilní distribuce, bez DPH.
+  { klic: "ps_cena_energie_kc_mwh", label: "Cena energie pro ztráty baterie (Kč/MWh, default 3000)" },
+];
+
 function num(v) {
   return v.trim() === "" ? null : Number(v.replace(",", "."));
 }
@@ -454,6 +461,7 @@ export default function NabidkovacKatalog() {
   const [minRoky, setMinRoky] = useState("");
   const [maxRoky, setMaxRoky] = useState("");
   const [ppaParam, setPpaParam] = useState({});
+  const [psParam, setPsParam] = useState({});
   const [nastavZprava, setNastavZprava] = useState(null);
   const [nastavUklada, setNastavUklada] = useState(false);
 
@@ -474,6 +482,7 @@ export default function NabidkovacKatalog() {
     setMaxRoky(str(akt?.max_delka_kontraktu_roky));
     const p = akt?.parametry || {};
     setPpaParam(Object.fromEntries(PPA_POLE.map((f) => [f.klic, p[f.klic] == null ? "" : String(p[f.klic])])));
+    setPsParam(Object.fromEntries(PS_POLE.map((f) => [f.klic, p[f.klic] == null ? "" : String(p[f.klic])])));
   }
 
   useEffect(() => {
@@ -544,11 +553,11 @@ export default function NabidkovacKatalog() {
     setNastavUklada(true);
     setNastavZprava(null);
     try {
-      // Zachovej existující klíče parametrů (např. max_navratnost_roky_peak_shaving)
-      // a přepiš/doplň jen PPA pole; prázdné pole klíč odebere.
+      // Zachovej existující (neznámé) klíče parametrů a přepiš/doplň jen
+      // PPA + peak shaving pole; prázdné pole klíč odebere.
       const parametry = { ...(nastaveni?.[0]?.parametry || {}) };
-      for (const f of PPA_POLE) {
-        const val = num(ppaParam[f.klic] ?? "");
+      for (const f of [...PPA_POLE, ...PS_POLE]) {
+        const val = num((f.klic in psParam ? psParam : ppaParam)[f.klic] ?? "");
         if (val == null) delete parametry[f.klic];
         else parametry[f.klic] = val;
       }
@@ -695,6 +704,24 @@ export default function NabidkovacKatalog() {
                   className="nb-pole"
                   value={ppaParam[f.klic] ?? ""}
                   onChange={(e) => setPpaParam((s) => ({ ...s, [f.klic]: e.target.value }))}
+                  inputMode="decimal"
+                />
+              </div>
+            ))}
+          </div>
+
+          <div style={{ marginTop: 16, marginBottom: 4, fontSize: 13, fontWeight: 600 }}>Peak shaving – defaulty</div>
+          <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 10px" }}>
+            Práh doporučení a ocenění ztrát baterie (audit PS-5). Prázdné pole = kódový default.
+          </p>
+          <div className="nb-form-grid">
+            {PS_POLE.map((f) => (
+              <div key={f.klic}>
+                <label className="nb-label">{f.label}</label>
+                <input
+                  className="nb-pole"
+                  value={psParam[f.klic] ?? ""}
+                  onChange={(e) => setPsParam((s) => ({ ...s, [f.klic]: e.target.value }))}
                   inputMode="decimal"
                 />
               </div>

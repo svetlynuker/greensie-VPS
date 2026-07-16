@@ -852,6 +852,9 @@ def _varianta_json(v: peak_shaving.Varianta) -> dict:
         "pocet_kusu": v.pocet_kusu,
         "celkovy_vykon_kw": round(v.celkovy_vykon_kw, 3),
         "celkova_kapacita_kwh": round(v.celkova_kapacita_kwh, 3),
+        # Simulace jede na využitelné kapacitě (SOC okno) a se ztrátami (PS-5).
+        "vyuzitelna_kapacita_kwh": round(v.vyuzitelna_kapacita_kwh, 3),
+        "ucinnost_rt": round(v.ucinnost_rt, 4),
         "cena_celkem_kc": round(v.cena_celkem_kc, 2),
         "nova_rezervovana_kapacita_kw": round(v.nova_rezervovana_kapacita_kw, 2),
         "rocni_uspora_2026_kc": round(v.rocni_uspora_2026, 2),
@@ -996,6 +999,9 @@ def spocti_peak_shaving(
             vykon_kw=float(t.vykon_kw),
             kapacita_kwh=float(t.kapacita_kwh),
             cena_kc=float(t.cena_kc) if t.cena_kc is not None else 0.0,
+            # Round-trip účinnost z katalogu; chybějící/nesmyslná → default
+            # 0,88 (audit PS-5). Toleruje zadání v procentech.
+            ucinnost_rt=peak_shaving.normalizuj_ucinnost_rt(t.ucinnost),
         )
         for t in tech
         if float(t.vykon_kw) > 0 and float(t.kapacita_kwh) > 0 and t.cena_kc
@@ -1013,6 +1019,14 @@ def spocti_peak_shaving(
             )
         )
 
+    # Cena energie pro ocenění ztrát baterie (audit PS-5): vstup OZ má
+    # přednost, jinak manažerské nastavení, jinak kódový default.
+    cena_energie = vstup.cena_energie_kc_mwh
+    if cena_energie is None and aktualni_nastaveni is not None and aktualni_nastaveni.parametry:
+        cena_energie = aktualni_nastaveni.parametry.get("ps_cena_energie_kc_mwh")
+    if cena_energie is None:
+        cena_energie = peak_shaving.VYCHOZI_CENA_ENERGIE_KC_MWH
+
     # 4) výpočet (kap. 4.2–4.6)
     vysledek = peak_shaving.vyber_reseni(
         baterie_katalog=baterie,
@@ -1025,6 +1039,7 @@ def spocti_peak_shaving(
         interval_h=interval_h,
         parametry_2027=parametry_2027,
         je_modelovy_2027=je_modelovy_2027,
+        cena_energie_kc_mwh=float(cena_energie),
     )
 
     popis_json = {
@@ -1033,6 +1048,7 @@ def spocti_peak_shaving(
             "distributor": vstup.distributor,
             "napetova_hladina": vstup.napetova_hladina,
             "rezervovana_kapacita_kw": vstup.rezervovana_kapacita_kw,
+            "cena_energie_kc_mwh": float(cena_energie),
             "interval_h": interval_h,
             "poctu_intervalu": len(profil_kw),
         },
@@ -1063,9 +1079,10 @@ def spocti_peak_shaving(
             profil_kw,
             mesice,
             d.celkovy_vykon_kw,
-            d.celkova_kapacita_kwh,
+            d.vyuzitelna_kapacita_kwh,
             d.nova_rezervovana_kapacita_kw,
             interval_h,
+            d.ucinnost_rt,
         )
         graf["rp_soucasna_kw"] = round(vstup.rezervovana_kapacita_kw, 2)
         graf["rp_nova_kw"] = round(d.nova_rezervovana_kapacita_kw, 2)

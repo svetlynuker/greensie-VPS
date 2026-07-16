@@ -148,14 +148,23 @@ Bez toho půlroční profil tiše vyráběl „roční“ ekonomiku (poloviční
 proti plnému CAPEXu) a 13měsíční profil rozpouštěl lednovou výrobu do 62 dnů
 (bughunt testy T2/T3).
 
-### 4.2 Simulace baterie (kap. 4.2)
-Projezd profilu po 15min intervalech pro daný **strop `T`**:
-- **odběr > T:** baterie dodá `min(odběr − T, výkon, dostupná_energie)`. Když nestačí, strop `T` je **neudržitelný**.
-- **odběr ≤ T:** baterie se dobíjí `min(T − odběr, výkon)`, omezeno volnou kapacitou (jen z rezervy pod stropem).
-- Počáteční nabití = **plná baterie** (zjednodušení v1).
-- Kapacita/účinnost **1:1 bez ztrát**, bez DoD limitu (v1).
+### 4.2 Simulace baterie (kap. 4.2 + ztráty, bughunt PS-5)
+Projezd profilu po 15min intervalech pro daný **strop `T`**, se ztrátami
+(η_ch = η_dis = √RT; **RT default 0,88 AC-AC**, hodnota z katalogového sloupce
+`technologie.ucinnost` má přednost — normalizace toleruje zadání v procentech):
+- **odběr > T:** baterie dodá na AC straně `min(odběr − T, výkon, soc × η_dis / Δt)`;
+  ze zásoby ubývá `dodávka/η_dis`. Když nestačí, strop `T` je **neudržitelný**.
+- **odběr ≤ T:** baterie se dobíjí `min(T − odběr, výkon)` ze sítě, do zásoby se
+  uloží `příkon × η_ch`; omezeno volnou kapacitou (jen z rezervy pod stropem).
+- Počáteční nabití = **plná využitelná baterie** (zjednodušení v1).
+- **Využitelná kapacita = jmenovitá × 0,85** (SOC okno 10–95 %). EOL derating
+  (×0,8) a vlastní spotřeba PCS (~1 %) se zatím neaplikují (volitelné, fáze 2).
 
-Funkce `energie_pri_stropu()` navíc sčítá **nabito/vybito** (pro Koeficient AKU a grafy) – nemění fyziku simulace.
+Funkce `energie_pri_stropu()` sčítá **nabito/vybito na AC straně** (grafy +
+ocenění ztrát). **Cena ztrát cyklování** = `nabito × (1 − RT) × cena energie`
+(`ps_cena_energie_kc_mwh`, default 3 000 Kč/MWh bez DPH, OZ může přepsat
+u výpočtu) — snižuje roční úsporu 2026 i 2027 (v roce 2027 z měsíčních
+simulací; srážení po měsících cykluje víc energie).
 
 ### 4.3 Minimální udržitelná rezervovaná kapacita (kap. 4.3)
 Binární hledání nejnižšího `T` v `[0, roční_maximum]`, při kterém simulace

@@ -268,11 +268,14 @@ export default function PeakShavingPanel({ nabidka }) {
                     <tbody>
                       <tr><td>Roční náklad bez peak shavingu</td><td>{kc(dop.ekonomika_2026?.soucasny_naklad_celkem)}</td></tr>
                       <tr><td>Roční náklad s peak shavingem</td><td>{kc(dop.ekonomika_2026?.novy_naklad_rezervace)}</td></tr>
+                      {dop.ekonomika_2026?.naklad_ztrat_baterie > 0 && (
+                        <tr><td>− ztráty baterie (cyklování)</td><td>{kc(dop.ekonomika_2026.naklad_ztrat_baterie)}</td></tr>
+                      )}
                       <tr><td><b>Roční úspora</b></td><td><b>{kc(dop.ekonomika_2026?.rocni_uspora)}</b></td></tr>
                     </tbody>
                   </table>
                   <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 6 }}>
-                    Rezervovaná kapacita + pokuty za překročení.
+                    Rezervovaná kapacita + pokuty za překročení; úspora po odečtu ztrát baterie.
                   </div>
                 </div>
 
@@ -294,6 +297,9 @@ export default function PeakShavingPanel({ nabidka }) {
                               konzervativní čísla; sleva AKU pro BTM baterii neexistuje. */}
                           <tr><td>Roční náklad bez peak shavingu</td><td>{kc(dop.ekonomika_2027.soucasny_rocni_naklad)}</td></tr>
                           <tr><td>Roční náklad s peak shavingem</td><td>{kc(dop.ekonomika_2027.novy_rocni_naklad_bez_aku ?? dop.ekonomika_2027.novy_rocni_naklad)}</td></tr>
+                          {dop.ekonomika_2027.naklad_ztrat_baterie > 0 && (
+                            <tr><td>… z toho ztráty baterie</td><td>{kc(dop.ekonomika_2027.naklad_ztrat_baterie)}</td></tr>
+                          )}
                           <tr><td><b>Roční úspora</b></td><td><b>{kc(dop.ekonomika_2027.rocni_uspora_bez_aku ?? dop.ekonomika_2027.rocni_uspora)}</b></td></tr>
                           <tr><td>Měsíců na tarifu T1 / T2</td><td>{dop.ekonomika_2027.pocet_mesicu_t1} / {dop.ekonomika_2027.pocet_mesicu_t2}</td></tr>
                         </tbody>

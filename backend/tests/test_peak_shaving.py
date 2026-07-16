@@ -114,3 +114,71 @@ class TestEkonomika2027BezAku:
         assert not hasattr(v, "navratnost_2027_optim")
         assert not hasattr(v, "navratnost_2027_konzerv")
         assert "prumerny_koeficient_aku" not in v.ekonomika_2027
+
+
+# ------------------------------------------------------- PS-5: ztráty baterie
+class TestZtratyBaterie:
+    def test_normalizace_ucinnosti(self):
+        assert ps.normalizuj_ucinnost_rt(None) == 0.88
+        assert ps.normalizuj_ucinnost_rt(0.92) == 0.92
+        assert ps.normalizuj_ucinnost_rt(88) == 0.88  # zadáno v procentech
+        assert ps.normalizuj_ucinnost_rt(1.2) == 0.88  # nesmysl → default
+        assert ps.normalizuj_ucinnost_rt(0.3) == 0.88  # nereálně nízké → default
+        assert ps.normalizuj_ucinnost_rt("nesmysl") == 0.88
+
+    def test_strop_se_ztratami_je_vyssi_nez_bezztraty(self):
+        # T7: dvě špičky denně, mezi nimi krátké okno na dobití.
+        profil = []
+        for den in range(5):
+            profil += [200.0] * 36 + [350.0] * 8 + [200.0] * 8 + [350.0] * 8 + [200.0] * 36
+        bez = ps.min_udrzitelny_strop(profil, 80.0, 160.0, ucinnost_rt=1.0)
+        se_ztratami = ps.min_udrzitelny_strop(profil, 80.0, 160.0, ucinnost_rt=0.88)
+        assert se_ztratami > bez
+
+    def test_energeticka_bilance_nabito_vybito(self):
+        # Vybije se 25 kWh AC na špičce, pak se plně dobije: nabito = vybito/RT.
+        profil = [150.0, 150.0] + [50.0] * 96
+        nabito, vybito = ps.energie_pri_stropu(
+            profil, 100.0, 80.0, 100.0, interval_h=0.25, ucinnost_rt=0.88
+        )
+        assert vybito == pytest.approx(25.0)
+        assert nabito == pytest.approx(25.0 / 0.88, rel=1e-6)
+
+    def test_naklad_ztrat(self):
+        # 10 MWh nabito při RT 0,88 a 3000 Kč/MWh → 10 000 × 0,12 × 3 = 3 600 Kč.
+        assert ps.naklad_ztrat_baterie_kc(10_000.0, 0.88, 3000.0) == pytest.approx(3600.0)
+        assert ps.naklad_ztrat_baterie_kc(10_000.0, 1.0, 3000.0) == 0.0
+
+    def test_varianta_pocita_s_vyuzitelnou_kapacitou_a_ztratami(self):
+        # Špička na začátku, pak base load pod stropem → baterie se po vybití
+        # dobíjí ze sítě a ztráty cyklování mají nenulovou cenu.
+        profil = [200.0] * 4 + [100.0] * 12
+        mesice = [1] * 8 + [2] * 8
+        baterie = ps.Baterie(
+            id=1, nazev="B", vykon_kw=60.0, kapacita_kwh=120.0, cena_kc=1_000_000.0, ucinnost_rt=0.88
+        )
+        v = ps.spocti_variantu(
+            baterie,
+            1,
+            profil,
+            mesice,
+            200.0,
+            3030.78,
+            ps.pokuta_prekroceni_rk_kc_kw(281.823),
+            5.0,
+            cena_energie_kc_mwh=3000.0,
+        )
+        assert v.vyuzitelna_kapacita_kwh == pytest.approx(120.0 * 0.85)
+        assert v.ucinnost_rt == 0.88
+        ek = v.ekonomika_2026
+        assert ek["naklad_ztrat_baterie"] > 0
+        assert ek["rocni_uspora"] == pytest.approx(
+            ek["soucasny_naklad_celkem"] - ek["novy_naklad_rezervace"] - ek["naklad_ztrat_baterie"]
+        )
+
+    def test_bezztratovy_rezim_odpovida_puvodnimu_chovani(self):
+        profil = [100.0, 180.0, 100.0, 150.0]
+        strop = ps.min_udrzitelny_strop(profil, 50.0, 100.0, ucinnost_rt=1.0)
+        nabito, vybito = ps.energie_pri_stropu(profil, strop, 50.0, 100.0, ucinnost_rt=1.0)
+        assert nabito >= 0 and vybito >= 0
+        assert ps.naklad_ztrat_baterie_kc(nabito, 1.0, 3000.0) == 0.0

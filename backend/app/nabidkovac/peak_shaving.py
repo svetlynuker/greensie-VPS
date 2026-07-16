@@ -5,12 +5,14 @@ Modul je záměrně bez závislosti na DB a FastAPI: pracuje jen s prostými
 seznamy 15minutových hodnot odběru (kW) a čísly ze sazebníku, aby šel snadno
 testovat i volat z různých míst. Napojení na DB/API řeší routes.py.
 
-Klíčové vzorce a rozhodnutí přebíráme 1:1 z metodiky:
+Klíčové vzorce a rozhodnutí přebíráme z metodiky (+ audit 16. 7. 2026):
 - kap. 4.1 – výchozí roční náklad (rezervace + pokuty za překročení),
-- kap. 4.2 – simulace baterie po 15min intervalech (nabíjení = vybíjení,
-  kapacita 1:1 bez ztrát a bez DoD limitu – odsouhlasené zjednodušení v1),
-- kap. 4.3 – binární hledání nejnižší udržitelné rezervované kapacity T,
-- kap. 4.4/4.5 – roční úspora, návratnost, výběr nejrychlejší varianty,
+- kap. 4.2 – simulace baterie po 15min intervalech; od auditu PS-5 se
+  ztrátami (η_ch = η_dis = √RT, default RT 0,88) a využitelnou kapacitou
+  (SOC okno 10–95 % ≈ ×0,85 jmenovité),
+- kap. 4.3 – binární hledání nejnižšího udržitelného stropu T,
+- kap. 4.4/4.5 – roční úspora (po odečtu ceny ztrát cyklování), návratnost,
+  výběr nejrychlejší varianty,
 - kap. 4.6 – struktura roku 2027 (srážej co to dá + min(sazba A, B)).
 
 Všechny peněžní hodnoty jsou bez DPH (kap. 6 bod 2).
@@ -18,11 +20,26 @@ Všechny peněžní hodnoty jsou bez DPH (kap. 6 bod 2).
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 # Granularita vstupních dat: 15 min = 0,25 h. Použije se, když ji nejde
 # odvodit z časových značek profilu (kap. 4.2 – "dle granularity vstupních dat").
 VYCHOZI_INTERVAL_H = 0.25
+
+# Účinnost baterie (audit PS-5, rozhodnuto 16. 7. 2026): AC-AC round-trip
+# default 0,88; hodnota z katalogu (`technologie.ucinnost`) má přednost.
+# V simulaci se dělí symetricky η_ch = η_dis = √RT.
+VYCHOZI_UCINNOST_RT = 0.88
+
+# Využitelné SOC okno 10–95 % jmenovité kapacity (audit PS-5) – simulace
+# pracuje s využitelnou kapacitou = jmenovitá × tento podíl. EOL derating
+# (×0,8) se zatím neaplikuje (kryje ho zčásti rezerva RK, PS-6).
+PODIL_VYUZITELNE_KAPACITY = 0.85
+
+# Výchozí cena energie pro ocenění ztrát baterie (silová + variabilní
+# distribuce), Kč/MWh bez DPH; manažerský parametr `ps_cena_energie_kc_mwh`.
+VYCHOZI_CENA_ENERGIE_KC_MWH = 3000.0
 
 # Výchozí práh nedoporučené návratnosti (kap. 4.5, bod 3 v kap. 6). Reálně se
 # bere z vypoctova_nastaveni.parametry["max_navratnost_roky_peak_shaving"],
@@ -54,12 +71,40 @@ def pokuta_prekroceni_rk_kc_kw(cena_mesicni_rk_kc_kw_mesic: float) -> float:
 
 
 # ------------------------------------------------------------------ simulace
-def _max_udrzitelny_vyboj(soc_kwh: float, vykon_kw: float, interval_h: float) -> float:
-    """Max. okamžitý výkon (kW), který baterie zvládne dodat po celý interval.
+def normalizuj_ucinnost_rt(hodnota) -> float:
+    """Round-trip účinnost z katalogu → číslo 0–1 (audit PS-5).
 
-    Omezuje ho jak štítkový výkon, tak zbývající energie (nesmí se vybít pod 0).
+    Toleruje zadání v procentech (88 → 0,88). Hodnoty mimo reálné pásmo
+    AC-AC účinnosti (0,5–1,0) nahradí defaultem – radši rozumný default než
+    nesmyslná fyzika z překlepu.
     """
-    z_energie = soc_kwh / interval_h if interval_h > 0 else 0.0
+    if hodnota is None:
+        return VYCHOZI_UCINNOST_RT
+    try:
+        rt = float(hodnota)
+    except (TypeError, ValueError):
+        return VYCHOZI_UCINNOST_RT
+    if rt > 1.0:
+        rt = rt / 100.0
+    if not (0.5 <= rt <= 1.0):
+        return VYCHOZI_UCINNOST_RT
+    return rt
+
+
+def _eta_jednosmerna(ucinnost_rt: float) -> float:
+    """η_ch = η_dis = √RT (symetrické dělení round-trip účinnosti)."""
+    return math.sqrt(max(0.0, min(1.0, ucinnost_rt)))
+
+
+def _max_udrzitelny_vyboj(
+    soc_kwh: float, vykon_kw: float, interval_h: float, eta_dis: float = 1.0
+) -> float:
+    """Max. okamžitý AC výkon (kW), který baterie zvládne dodat po celý interval.
+
+    Omezuje ho štítkový výkon i zbývající energie: z uložených `soc` kWh jde
+    na AC stranu jen `soc × η_dis` (ztráty vybíjení, audit PS-5).
+    """
+    z_energie = (soc_kwh * eta_dis) / interval_h if interval_h > 0 else 0.0
     return min(vykon_kw, z_energie)
 
 
@@ -70,35 +115,39 @@ def strop_je_udrzitelny(
     kapacita_kwh: float,
     interval_h: float = VYCHOZI_INTERVAL_H,
     pocatecni_soc_kwh: float | None = None,
+    ucinnost_rt: float = 1.0,
 ) -> bool:
     """Projede profil interval po intervalu a řekne, jestli baterie udrží strop.
 
-    Implementace kap. 4.2: nad stropem baterie dodává `min(odběr − T, výkon)`
-    (omezeno stavem nabití); pokud jí dojde energie dřív, než odběr klesne pod
-    strop, strop se neudrží → False. Pod stropem se dobíjí max. výkonem,
-    omezeně volnou kapacitou a rozdílem `T − odběr` (jen z rezervy pod stropem,
-    ne z ničeho navíc).
+    Implementace kap. 4.2 + ztráty (audit PS-5): nad stropem baterie dodává
+    `min(odběr − T, výkon)` na AC straně – ze zásoby ubývá `dodávka/η_dis`;
+    pokud jí dojde energie dřív, než odběr klesne pod strop, strop se neudrží
+    → False. Pod stropem se dobíjí max. výkonem, omezeně volnou kapacitou
+    a rozdílem `T − odběr` (jen z rezervy pod stropem) – do zásoby se uloží
+    `příkon × η_ch`. `ucinnost_rt = 1.0` odpovídá dřívějšímu bezztrátovému
+    modelu; `kapacita_kwh` je VYUŽITELNÁ kapacita (SOC okno řeší volající).
 
-    Počáteční stav nabití: defaultně plná baterie (kap. 4.2 zavádí zjednodušení
-    1:1 bez ztrát; předpokládáme, že baterii lze před špičkou nabít – nejde-li
-    strop udržet ani s plnou baterií, nejde vůbec). Explicitně se dá přepsat.
+    Počáteční stav nabití: defaultně plná (využitelná) baterie – předpokládáme,
+    že baterii lze před špičkou nabít; nejde-li strop udržet ani s plnou
+    baterií, nejde vůbec. Explicitně se dá přepsat.
     """
     if vykon_kw <= 0 or kapacita_kwh <= 0:
         # Bez baterie se udrží jen strop, který profil nikdy nepřekročí.
         return all(odber <= strop_kw for odber in profil_kw)
 
+    eta = _eta_jednosmerna(ucinnost_rt)
     soc = kapacita_kwh if pocatecni_soc_kwh is None else pocatecni_soc_kwh
     for odber in profil_kw:
         if odber > strop_kw:
             potreba = odber - strop_kw
-            dodavka = min(potreba, _max_udrzitelny_vyboj(soc, vykon_kw, interval_h))
+            dodavka = min(potreba, _max_udrzitelny_vyboj(soc, vykon_kw, interval_h, eta))
             if dodavka + 1e-9 < potreba:
                 return False  # baterie nestačí → strop se neudrží
-            soc -= dodavka * interval_h
+            soc -= dodavka * interval_h / eta if eta > 0 else soc
         else:
             # Dobíjení jen z rezervy pod stropem (T − odběr), max. výkonem.
             rezerva = min(strop_kw - odber, vykon_kw)
-            soc = min(kapacita_kwh, soc + rezerva * interval_h)
+            soc = min(kapacita_kwh, soc + rezerva * interval_h * eta)
     return True
 
 
@@ -107,24 +156,29 @@ def min_udrzitelny_strop(
     vykon_kw: float,
     kapacita_kwh: float,
     interval_h: float = VYCHOZI_INTERVAL_H,
+    ucinnost_rt: float = 1.0,
 ) -> float:
     """Kap. 4.3: binárně najde nejnižší strop T, který baterie udrží celý rok.
 
     Udržitelnost je monotónní v T (vyšší strop = méně vybíjení a víc prostoru
-    na dobíjení), takže binární hledání je korektní. Horní mez = celoroční
-    maximum (to jde vždy, i bez baterie). Vrací navrhovanou novou rezervovanou
-    kapacitu pro danou variantu baterie.
+    na dobíjení), takže binární hledání je korektní i se ztrátami. Horní mez =
+    celoroční maximum (to jde vždy, i bez baterie). Vrací navrhovaný fyzický
+    strop odběru pro danou variantu baterie.
     """
     if not profil_kw:
         return 0.0
     horni = max(profil_kw)
     dolni = 0.0
     # Když ani celoroční maximum není udržitelné (nemělo by nastat), vrať ho.
-    if not strop_je_udrzitelny(profil_kw, horni, vykon_kw, kapacita_kwh, interval_h):
+    if not strop_je_udrzitelny(
+        profil_kw, horni, vykon_kw, kapacita_kwh, interval_h, ucinnost_rt=ucinnost_rt
+    ):
         return horni
     while horni - dolni > _BINARNI_TOLERANCE_KW:
         stred = (horni + dolni) / 2
-        if strop_je_udrzitelny(profil_kw, stred, vykon_kw, kapacita_kwh, interval_h):
+        if strop_je_udrzitelny(
+            profil_kw, stred, vykon_kw, kapacita_kwh, interval_h, ucinnost_rt=ucinnost_rt
+        ):
             horni = stred
         else:
             dolni = stred
@@ -138,29 +192,35 @@ def energie_pri_stropu(
     kapacita_kwh: float,
     interval_h: float = VYCHOZI_INTERVAL_H,
     pocatecni_soc_kwh: float | None = None,
+    ucinnost_rt: float = 1.0,
 ) -> tuple[float, float]:
-    """Projede profil na daném stropu a vrátí (nabito_kwh, vybito_kwh).
+    """Projede profil na daném stropu a vrátí (nabito_kwh, vybito_kwh) na AC straně.
 
-    Stejná simulace jako `strop_je_udrzitelny` (kap. 4.2), jen navíc sčítá
-    energii nabitou a vybitou – potřeba pro grafy a ocenění ztrát baterie.
-    Nemění fyziku simulace, jen ji „odposlouchává".
+    Stejná simulace jako `strop_je_udrzitelny` (kap. 4.2 + ztráty PS-5), jen
+    navíc sčítá energii odebranou ze sítě na nabíjení (`nabito`) a dodanou do
+    odběru (`vybito`) – potřeba pro grafy a ocenění ztrát. Nemění fyziku
+    simulace, jen ji „odposlouchává". Ztráty ≈ `nabito × (1 − RT)`.
     """
     if vykon_kw <= 0 or kapacita_kwh <= 0:
         return (0.0, 0.0)
+    eta = _eta_jednosmerna(ucinnost_rt)
     soc = kapacita_kwh if pocatecni_soc_kwh is None else pocatecni_soc_kwh
     nabito = 0.0
     vybito = 0.0
     for odber in profil_kw:
         if odber > strop_kw:
-            dodavka = min(odber - strop_kw, _max_udrzitelny_vyboj(soc, vykon_kw, interval_h))
-            e = dodavka * interval_h
-            soc -= e
-            vybito += e
+            dodavka = min(
+                odber - strop_kw, _max_udrzitelny_vyboj(soc, vykon_kw, interval_h, eta)
+            )
+            e_ac = dodavka * interval_h
+            soc -= e_ac / eta if eta > 0 else soc
+            vybito += e_ac
         else:
             rezerva = min(strop_kw - odber, vykon_kw)
-            e = min(rezerva * interval_h, kapacita_kwh - soc)
-            soc += e
-            nabito += e
+            # Odběr ze sítě omezí volná kapacita (uloží se jen η_ch podílu).
+            e_ac = min(rezerva * interval_h, (kapacita_kwh - soc) / eta if eta > 0 else 0.0)
+            soc = min(kapacita_kwh, soc + e_ac * eta)
+            nabito += e_ac
     return (nabito, vybito)
 
 
@@ -177,13 +237,18 @@ def _mesicni_maxima(profil_kw: list[float], mesice: list[int]) -> dict[int, floa
 # ----------------------------------------------------- ekonomika roku 2026
 @dataclass
 class Ekonomika2026:
-    """Roční náklady/úspora pro tarif `stara_2026` (kap. 4.1–4.4)."""
+    """Roční náklady/úspora pro tarif `stara_2026` (kap. 4.1–4.4).
+
+    `naklad_ztrat_baterie` = cena energie ztracené cyklováním (audit PS-5);
+    snižuje roční úsporu, na rezervaci nemá vliv.
+    """
 
     soucasny_naklad_rezervace: float
     soucasny_naklad_prekroceni: float
     soucasny_naklad_celkem: float
     novy_naklad_rezervace: float
     nova_rezervovana_kapacita_kw: float
+    naklad_ztrat_baterie: float
     rocni_uspora: float
 
 
@@ -215,11 +280,13 @@ def ekonomika_2026(
     cena_rezervace_kc_kw_rok: float,
     cena_prekroceni_kc_kw: float,
     nova_rezervovana_kapacita_kw: float,
+    naklad_ztrat_baterie: float = 0.0,
 ) -> Ekonomika2026:
     """Složí výchozí náklad (4.1) a náklad po baterii (4.4) do jedné struktury.
 
-    Po baterii je díky kap. 4.3 překročení nulové → nový náklad = jen rezervace
-    na navrhované kapacitě T.
+    Po baterii je díky kap. 4.3 překročení nulové → nový náklad = rezervace
+    na navrhované kapacitě + cena ztrát cyklování baterie (audit PS-5,
+    počítá ji volající z celoroční simulace).
     """
     rez, prekr = vychozi_rocni_naklad_2026(
         profil_kw,
@@ -236,8 +303,21 @@ def ekonomika_2026(
         soucasny_naklad_celkem=soucasny_celkem,
         novy_naklad_rezervace=novy,
         nova_rezervovana_kapacita_kw=nova_rezervovana_kapacita_kw,
-        rocni_uspora=soucasny_celkem - novy,
+        naklad_ztrat_baterie=naklad_ztrat_baterie,
+        rocni_uspora=soucasny_celkem - novy - naklad_ztrat_baterie,
     )
+
+
+def naklad_ztrat_baterie_kc(
+    nabito_kwh: float, ucinnost_rt: float, cena_energie_kc_mwh: float
+) -> float:
+    """Roční cena energie ztracené cyklováním baterie (audit PS-5).
+
+    Z energie odebrané ze sítě na nabíjení se do odběru vrátí jen podíl RT →
+    ztráty = `nabito × (1 − RT)`, oceněné cenou energie (silová + variabilní
+    distribuce, Kč/MWh bez DPH).
+    """
+    return nabito_kwh * (1.0 - max(0.0, min(1.0, ucinnost_rt))) * cena_energie_kc_mwh / 1000.0
 
 
 # ----------------------------------------------------- ekonomika roku 2027
@@ -291,6 +371,7 @@ def mesicni_maxima_po_baterii(
     vykon_kw: float,
     kapacita_kwh: float,
     interval_h: float = VYCHOZI_INTERVAL_H,
+    ucinnost_rt: float = 1.0,
 ) -> dict[int, float]:
     """Kap. 4.6 „srážej co to dá": pro každý měsíc nejnižší udržitelné maximum.
 
@@ -304,7 +385,7 @@ def mesicni_maxima_po_baterii(
     for odber, m in zip(profil_kw, mesice):
         po_mesicich.setdefault(m, []).append(odber)
     return {
-        m: min_udrzitelny_strop(vals, vykon_kw, kapacita_kwh, interval_h)
+        m: min_udrzitelny_strop(vals, vykon_kw, kapacita_kwh, interval_h, ucinnost_rt)
         for m, vals in po_mesicich.items()
     }
 
@@ -319,6 +400,8 @@ def ekonomika_2027(
     parametry: dict | None,
     je_modelovy_odhad: bool = True,
     interval_h: float = VYCHOZI_INTERVAL_H,
+    ucinnost_rt: float = 1.0,
+    cena_energie_kc_mwh: float = 0.0,
 ) -> dict:
     """Ekonomika roku 2027 (nová dvousložková struktura ERÚ, METODIKA kap. 4.6).
 
@@ -331,6 +414,10 @@ def ekonomika_2027(
     peak-shavingovou baterii uvnitř odběru (bez exportu do soustavy) K = 0
     (audit 16. 7. 2026, PS-3). Jediný model 2027 = dřívější „konzervativní".
 
+    Ztráty baterie (audit PS-5): per-měsíční srážení cykluje víc energie než
+    roční strop – náklad ztrát se počítá z měsíčních simulací
+    (`nabito × (1 − RT) × cena energie`) a snižuje roční úsporu.
+
     Dokud ERÚ nezveřejní závazné sazby (parametry chybí), vrací se status
     "ceka_na_sazby_eru" a appka místo čísel ukáže hlášku.
     """
@@ -341,15 +428,29 @@ def ekonomika_2027(
     raw = _mesicni_maxima(profil_kw, mesice)
     soucasny, _, _ = _rocni_naklad_2027(rezervovana_kapacita_kw, raw, parametry)
 
-    # S peak shavingem: po měsících srazit M co nejhlouběji (kap. 4.6).
-    mesicni_po = mesicni_maxima_po_baterii(profil_kw, mesice, vykon_kw, kapacita_kwh, interval_h)
+    # S peak shavingem: po měsících srazit M co nejhlouběji (kap. 4.6)
+    # + sečíst nabíjení pro ocenění ztrát (PS-5).
+    po_mesicich: dict[int, list[float]] = {}
+    for odber, m in zip(profil_kw, mesice):
+        po_mesicich.setdefault(m, []).append(odber)
+    mesicni_po: dict[int, float] = {}
+    nabito_celkem = 0.0
+    for m, vals in po_mesicich.items():
+        strop_m = min_udrzitelny_strop(vals, vykon_kw, kapacita_kwh, interval_h, ucinnost_rt)
+        mesicni_po[m] = strop_m
+        nabito, _ = energie_pri_stropu(
+            vals, strop_m, vykon_kw, kapacita_kwh, interval_h, ucinnost_rt=ucinnost_rt
+        )
+        nabito_celkem += nabito
     novy, poc_t1, poc_t2 = _rocni_naklad_2027(nova_rezervovana_kapacita_kw, mesicni_po, parametry)
+    naklad_ztrat = naklad_ztrat_baterie_kc(nabito_celkem, ucinnost_rt, cena_energie_kc_mwh)
 
     return {
         "status": "spocitano",
         "soucasny_rocni_naklad": soucasny,
-        "novy_rocni_naklad": novy,
-        "rocni_uspora": soucasny - novy,
+        "novy_rocni_naklad": novy + naklad_ztrat,
+        "naklad_ztrat_baterie": naklad_ztrat,
+        "rocni_uspora": soucasny - novy - naklad_ztrat,
         # RP je jedna roční hodnota (nemění se po měsících) – shodná s novou
         # rezervovanou kapacitou z roku 2026.
         "rezervovana_kapacita_kw": nova_rezervovana_kapacita_kw,
@@ -366,6 +467,7 @@ def graf_maxima(
     kapacita_kwh: float,
     rocni_strop_kw: float,
     interval_h: float = VYCHOZI_INTERVAL_H,
+    ucinnost_rt: float = 1.0,
 ) -> dict:
     """Data pro graf měsíčních maxim odběru: bez baterie vs. s baterií (kap. B promptu).
 
@@ -374,7 +476,9 @@ def graf_maxima(
     `s_baterii_2027` = maximum po baterii při srážení co to dá po měsících (kap. 4.6).
     """
     raw = _mesicni_maxima(profil_kw, mesice)
-    per_mesic = mesicni_maxima_po_baterii(profil_kw, mesice, vykon_kw, kapacita_kwh, interval_h)
+    per_mesic = mesicni_maxima_po_baterii(
+        profil_kw, mesice, vykon_kw, kapacita_kwh, interval_h, ucinnost_rt
+    )
     ms = sorted(raw)
     return {
         "mesice": ms,
@@ -387,13 +491,18 @@ def graf_maxima(
 # ---------------------------------------------- výběr varianty (kap. 4.5)
 @dataclass
 class Baterie:
-    """Jeden produkt z katalogu `technologie` (typ = baterie)."""
+    """Jeden produkt z katalogu `technologie` (typ = baterie).
+
+    `ucinnost_rt` = AC-AC round-trip účinnost 0–1 (sloupec `technologie.ucinnost`,
+    fallback 0,88 – audit PS-5).
+    """
 
     id: int
     nazev: str
     vykon_kw: float
     kapacita_kwh: float
     cena_kc: float
+    ucinnost_rt: float = VYCHOZI_UCINNOST_RT
 
 
 @dataclass
@@ -405,6 +514,9 @@ class Varianta:
     pocet_kusu: int
     celkovy_vykon_kw: float
     celkova_kapacita_kwh: float
+    # Využitelná kapacita = jmenovitá × SOC okno (audit PS-5) – s tou simulace počítá.
+    vyuzitelna_kapacita_kwh: float
+    ucinnost_rt: float
     cena_celkem_kc: float
     nova_rezervovana_kapacita_kw: float
     rocni_uspora_2026: float
@@ -452,13 +564,22 @@ def spocti_variantu(
     interval_h: float = VYCHOZI_INTERVAL_H,
     parametry_2027: dict | None = None,
     je_modelovy_2027: bool = True,
+    cena_energie_kc_mwh: float = VYCHOZI_CENA_ENERGIE_KC_MWH,
 ) -> Varianta:
-    """Spočítá jednu variantu (produkt × počet kusů): kap. 4.2–4.6."""
+    """Spočítá jednu variantu (produkt × počet kusů): kap. 4.2–4.6 + ztráty PS-5."""
     vykon = baterie.vykon_kw * pocet_kusu
     kapacita = baterie.kapacita_kwh * pocet_kusu
+    # Simulace jede na využitelné kapacitě (SOC okno 10–95 %) a se ztrátami
+    # dle round-trip účinnosti produktu (audit PS-5).
+    kapacita_uzitecna = kapacita * PODIL_VYUZITELNE_KAPACITY
+    ucinnost = baterie.ucinnost_rt
     cena = baterie.cena_kc * pocet_kusu
 
-    novy_strop = min_udrzitelny_strop(profil_kw, vykon, kapacita, interval_h)
+    novy_strop = min_udrzitelny_strop(profil_kw, vykon, kapacita_uzitecna, interval_h, ucinnost)
+    nabito_2026, _ = energie_pri_stropu(
+        profil_kw, novy_strop, vykon, kapacita_uzitecna, interval_h, ucinnost_rt=ucinnost
+    )
+    ztraty_2026 = naklad_ztrat_baterie_kc(nabito_2026, ucinnost, cena_energie_kc_mwh)
     ek = ekonomika_2026(
         profil_kw,
         mesice,
@@ -466,6 +587,7 @@ def spocti_variantu(
         cena_rezervace_kc_kw_rok,
         cena_prekroceni_kc_kw,
         novy_strop,
+        naklad_ztrat_baterie=ztraty_2026,
     )
     navratnost = _navratnost(cena, ek.rocni_uspora)
 
@@ -477,10 +599,12 @@ def spocti_variantu(
         rezervovana_kapacita_kw,
         novy_strop,
         vykon,
-        kapacita,
+        kapacita_uzitecna,
         parametry_2027,
         je_modelovy_2027,
         interval_h,
+        ucinnost_rt=ucinnost,
+        cena_energie_kc_mwh=cena_energie_kc_mwh,
     )
 
     # Návratnost dle modelu 2027 (jediný model – bez slevy AKU, PS-3).
@@ -496,6 +620,8 @@ def spocti_variantu(
         pocet_kusu=pocet_kusu,
         celkovy_vykon_kw=vykon,
         celkova_kapacita_kwh=kapacita,
+        vyuzitelna_kapacita_kwh=kapacita_uzitecna,
+        ucinnost_rt=ucinnost,
         cena_celkem_kc=cena,
         nova_rezervovana_kapacita_kw=novy_strop,
         rocni_uspora_2026=ek.rocni_uspora,
@@ -520,6 +646,7 @@ def vyber_reseni(
     interval_h: float = VYCHOZI_INTERVAL_H,
     parametry_2027: dict | None = None,
     je_modelovy_2027: bool = True,
+    cena_energie_kc_mwh: float = VYCHOZI_CENA_ENERGIE_KC_MWH,
 ) -> VysledekPeakShaving:
     """Kap. 4.5: projede všechny produkty × počty kusů a vybere nejrychlejší návratnost.
 
@@ -553,6 +680,7 @@ def vyber_reseni(
                 interval_h,
                 parametry_2027,
                 je_modelovy_2027,
+                cena_energie_kc_mwh,
             )
             if nejlepsi is None or v._radici_klic() < nejlepsi._radici_klic():
                 nejlepsi = v

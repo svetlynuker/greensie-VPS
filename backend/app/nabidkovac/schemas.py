@@ -179,6 +179,9 @@ class PeakShavingVstup(BaseModel):
     distributor: Distributor
     napetova_hladina: NapetovaHladina
     rezervovana_kapacita_kw: float
+    # Cena energie pro ocenění ztrát baterie, Kč/MWh bez DPH (audit PS-5);
+    # prázdné = manažerské nastavení `ps_cena_energie_kc_mwh` (default 3000).
+    cena_energie_kc_mwh: Optional[float] = None
 
 
 # ---- PPA pro FVE výpočet (METODIKA-ppa-fve.md, kap. 2/4) ----

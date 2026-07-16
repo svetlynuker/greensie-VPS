@@ -137,6 +137,16 @@ snížení = změna smlouvy o připojení, zpětné navýšení je zpoplatněno 
 
 ## PS-5 ⚠️ P1 — Ztráty, SOC okno a degradace baterie nejsou v simulaci ani ekonomice
 
+> ✅ **Vyřešeno 16. 7. 2026** — commit `fix(peak-shaving): ztráty baterie a SOC okno v simulaci i ekonomice (PS-5)`
+> na větvi `bughunt-opravy-p0`. Simulace se ztrátami η_ch = η_dis = √RT
+> (default RT 0,88 — rozhodnuto; `technologie.ucinnost` má přednost,
+> normalizace snese procenta); využitelná kapacita = jmenovitá × 0,85
+> (SOC okno 10–95 %); cena ztrát = nabito × (1 − RT) × cena energie
+> (`ps_cena_energie_kc_mwh` default 3 000, editovatelné v adminu i u výpočtu)
+> snižuje úsporu 2026 i 2027. EOL derating ×0,8 a vlastní spotřeba PCS
+> neaplikovány (volitelné; část rizika kryje rezerva RK z PS-6).
+> Testy: `test_peak_shaving.py::TestZtratyBaterie`.
+
 **Kde:** `strop_je_udrzitelny()`, `energie_pri_stropu()` (kapacita 1:1, bez ztrát, bez
 DoD, počáteční SOC = plná), `_navratnost()`.
 
