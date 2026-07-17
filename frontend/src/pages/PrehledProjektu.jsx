@@ -426,9 +426,11 @@ export default function PrehledProjektu() {
             <>
               {muze_editovat && (
                 <>
-                  <button className="fm-btn fm-primary" onClick={() => setFreeloOtevreno(true)}>
-                    ↻ Načíst z Freelo
-                  </button>
+                  {uzivatel?.je_admin && (
+                    <button className="fm-btn fm-primary" onClick={() => setFreeloOtevreno(true)}>
+                      ↻ Načíst z Freelo
+                    </button>
+                  )}
                   <button className="fm-btn" onClick={() => setPridatProjekt(true)}>
                     + Projekt
                   </button>
