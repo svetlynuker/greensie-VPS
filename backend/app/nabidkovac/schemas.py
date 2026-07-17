@@ -188,6 +188,10 @@ class PeakShavingVstup(BaseModel):
     # Uvažovat snížení RP na novou RK v modelu 2027 (jednosměrné rozhodnutí –
     # zpětné navýšení je zpoplatněno dle přílohy 2 vyhlášky č. 16/2016 Sb.).
     uvazovat_snizeni_rp: bool = False
+    # Ruční override max. AC výkonu střídače (kW) – u modulárních baterií
+    # roste kapacita s počtem kusů, ale výkon bývá omezen sdíleným/pevným
+    # střídačem (PCS). Prázdné = počítá se jen ze štítkového výkonu produktu.
+    max_vykon_stridace_kw: Optional[float] = None
 
 
 # ---- PPA pro FVE výpočet (METODIKA-ppa-fve.md, kap. 2/4) ----

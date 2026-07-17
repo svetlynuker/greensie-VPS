@@ -507,3 +507,45 @@ class TestRezervovanyPrikon2027:
         # RP stejné v obou scénářích → úspora vzniká jen sražením měsíčních maxim
         assert ek["rp_soucasny_kw"] == ek["rp_novy_kw"]
         assert ek["rocni_uspora"] > 0
+
+
+# --------------------------------------- ruční override max. výkonu střídače
+class TestMaxVykonStridace:
+    """U modulárních baterií kapacita roste s počtem kusů, ale AC výkon bývá
+    omezen sdíleným/pevným střídačem (PCS) – OZ ho může zadat natvrdo."""
+
+    def _varianta(self, max_vykon_stridace_kw):
+        baterie = ps.Baterie(
+            id=1, nazev="B", vykon_kw=60.0, kapacita_kwh=200.0, cena_kc=1_000_000.0, ucinnost_rt=1.0
+        )
+        return ps.spocti_variantu(
+            baterie,
+            1,
+            PROFIL_2M,
+            MESICE_2M,
+            250.0,
+            3030.78,
+            ps.pokuta_prekroceni_rk_kc_kw(281.823),
+            5.0,
+            cena_energie_kc_mwh=0.0,
+            max_vykon_stridace_kw=max_vykon_stridace_kw,
+        )
+
+    def test_bez_zadani_pouzije_stitkovy_vykon(self):
+        assert self._varianta(None).celkovy_vykon_kw == 60.0
+
+    def test_override_omezi_vykon_pod_stitkovy(self):
+        assert self._varianta(30.0).celkovy_vykon_kw == 30.0
+
+    def test_override_nad_stitkovym_vykonem_nema_vliv(self):
+        assert self._varianta(200.0).celkovy_vykon_kw == 60.0
+
+    def test_nekladna_hodnota_se_ignoruje(self):
+        assert self._varianta(0.0).celkovy_vykon_kw == 60.0
+
+    def test_nizsi_vykon_nemuze_snizit_strop_pod_bez_omezeni(self):
+        # Nižší reálný AC výkon omezuje vybíjení → udržitelný strop nemůže
+        # klesnout pod hodnotu bez omezení (může jen zůstat stejný nebo růst).
+        bez = self._varianta(None)
+        s_omezenim = self._varianta(30.0)
+        assert s_omezenim.strop_kw >= bez.strop_kw

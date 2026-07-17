@@ -812,9 +812,17 @@ def spocti_variantu(
     uvazovat_snizeni_rp: bool = False,
     cena_mesicni_rk_kc_kw_mesic: float | None = None,
     npv_nastaveni: NastaveniNpv | None = None,
+    max_vykon_stridace_kw: float | None = None,
 ) -> Varianta:
-    """Spočítá jednu variantu (produkt × počet kusů): kap. 4.2–4.6 + PS-4…9."""
+    """Spočítá jednu variantu (produkt × počet kusů): kap. 4.2–4.6 + PS-4…9.
+
+    `max_vykon_stridace_kw` (ruční OZ override): u modulárních baterií roste
+    kapacita s počtem kusů, ale AC výkon bývá omezen sdíleným/pevným
+    střídačem (PCS) – bez zadání se počítá jen ze štítkového výkonu produktu.
+    """
     vykon = baterie.vykon_kw * pocet_kusu
+    if max_vykon_stridace_kw is not None and max_vykon_stridace_kw > 0:
+        vykon = min(vykon, max_vykon_stridace_kw)
     kapacita = baterie.kapacita_kwh * pocet_kusu
     # Simulace jede na využitelné kapacitě (SOC okno 10–95 %) a se ztrátami
     # dle round-trip účinnosti produktu (audit PS-5).
@@ -925,6 +933,7 @@ def vyber_reseni(
     uvazovat_snizeni_rp: bool = False,
     cena_mesicni_rk_kc_kw_mesic: float | None = None,
     npv_nastaveni: NastaveniNpv | None = None,
+    max_vykon_stridace_kw: float | None = None,
 ) -> VysledekPeakShaving:
     """Kap. 4.5 + PS-8/PS-9: projede produkty × počty kusů, vítěze řadí dle NPV.
 
@@ -966,6 +975,7 @@ def vyber_reseni(
                 uvazovat_snizeni_rp,
                 cena_mesicni_rk_kc_kw_mesic,
                 npv_nastaveni,
+                max_vykon_stridace_kw,
             )
             if nejlepsi is None or v._radici_klic() < nejlepsi._radici_klic():
                 nejlepsi = v

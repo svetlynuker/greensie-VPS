@@ -1091,6 +1091,9 @@ def spocti_peak_shaving(
             float(cena_mesicni_rk) if cena_mesicni_rk is not None else None
         ),
         npv_nastaveni=npv_nastaveni,
+        max_vykon_stridace_kw=(
+            float(vstup.max_vykon_stridace_kw) if vstup.max_vykon_stridace_kw else None
+        ),
     )
 
     # Upozornění k modelu 2027 (audit PS-4).
@@ -1124,6 +1127,7 @@ def spocti_peak_shaving(
             "cena_energie_kc_mwh": float(cena_energie),
             "rezervovany_prikon_kw": vstup.rezervovany_prikon_kw,
             "uvazovat_snizeni_rp": bool(vstup.uvazovat_snizeni_rp),
+            "max_vykon_stridace_kw": vstup.max_vykon_stridace_kw,
             "interval_h": interval_h,
             "poctu_intervalu": len(profil_kw),
         },
