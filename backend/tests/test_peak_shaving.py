@@ -378,6 +378,63 @@ class TestNpvBaterie:
         assert cf == [100.0, 100.0, 100.0]
 
 
+# -------------------------------------- rozpis cash flow po letech (FE tabulka)
+class TestRokyCashFlow:
+    def test_struktura_a_modely_roku(self):
+        n = ps.NastaveniNpv(diskontni_sazba=0.0, horizont_roky=3,
+                            oam_procenta_capex_rok=0.0, degradace_uspor_procenta_rok=0.0)
+        _, _, cf, pouzit = ps._npv_baterie(500.0, 100.0, 250.0, n)
+        roky = ps._roky_cash_flow(500.0, cf, n, pouzit)
+        assert [r["rok"] for r in roky] == [1, 2, 3]
+        assert [r["model"] for r in roky] == ["2026", "2027", "2027"]
+        assert [r["cf_kc"] for r in roky] == [100.0, 250.0, 250.0]
+        assert roky[-1]["uspora_kum_kc"] == pytest.approx(600.0)
+        # kum. CF = kum. úspora − investice
+        assert roky[-1]["cf_kum_kc"] == pytest.approx(100.0)
+
+    def test_kumulovany_diskontovany_cf_konci_na_npv(self):
+        n = ps.NastaveniNpv()  # defaulty: diskont 8 %, O&M 2 % CAPEX, degradace 1,5 %
+        npv, _, cf, pouzit = ps._npv_baterie(1_000_000.0, 180_000.0, 240_000.0, n)
+        roky = ps._roky_cash_flow(1_000_000.0, cf, n, pouzit)
+        assert len(roky) == n.horizont_roky
+        assert roky[-1]["cf_kum_disk_kc"] == pytest.approx(npv, abs=0.01)
+        # přínos = CF + O&M; O&M = 2 % z CAPEX; rok 1 bez degradace
+        assert roky[0]["oam_kc"] == pytest.approx(20_000.0)
+        assert roky[0]["prinos_kc"] == pytest.approx(180_000.0)
+
+    def test_bez_sazeb_2027_je_cely_horizont_2026(self):
+        n = ps.NastaveniNpv(diskontni_sazba=0.0, horizont_roky=3,
+                            oam_procenta_capex_rok=0.0, degradace_uspor_procenta_rok=0.0)
+        _, _, cf, pouzit = ps._npv_baterie(0.0, 100.0, None, n)
+        roky = ps._roky_cash_flow(0.0, cf, n, pouzit)
+        assert [r["model"] for r in roky] == ["2026", "2026", "2026"]
+
+    def test_spocti_variantu_nese_konzistentni_roky(self):
+        profil, mesice = [], []
+        for m in range(1, 13):
+            profil += [200.0] * 6 + [400.0] + [200.0] * 5
+            mesice += [m] * 12
+        baterie = ps.Baterie(
+            id=1, nazev="B", vykon_kw=150.0, kapacita_kwh=400.0, cena_kc=2_000_000.0, ucinnost_rt=1.0
+        )
+        v = ps.spocti_variantu(
+            baterie,
+            1,
+            profil,
+            mesice,
+            400.0,
+            1_287.48,
+            160.0,
+            8.0,
+            cena_energie_kc_mwh=0.0,
+            rezerva_rk_procenta=0.0,
+            cena_mesicni_rk_kc_kw_mesic=107.29,
+        )
+        assert len(v.roky) == v.npv_horizont_roky
+        assert v.roky[-1]["cf_kum_disk_kc"] == pytest.approx(v.npv_kc, abs=0.01)
+        assert v.roky[0]["prinos_kc"] == pytest.approx(v.prinos_baterie_2026, abs=0.01)
+
+
 # ------------------------------------------------ PS-10: citlivost stropu
 class TestCitlivostStropu:
     # Špička 350 kW nad základem 200, baterie výkonově omezená (80 kW).

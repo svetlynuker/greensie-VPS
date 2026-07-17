@@ -875,6 +875,8 @@ def _varianta_json(v: peak_shaving.Varianta) -> dict:
         "irr": round(v.irr, 4) if v.irr is not None else None,
         "npv_horizont_roky": v.npv_horizont_roky,
         "npv_pouzit_model_2027": v.npv_pouzit_model_2027,
+        # Rozpis cash flow po letech (hodnoty zaokrouhluje už _roky_cash_flow).
+        "roky": v.roky,
         "doporuceno": v.doporuceno,
         "ekonomika_2026": {
             k: (round(x, 2) if isinstance(x, float) else x) for k, x in v.ekonomika_2026.items()

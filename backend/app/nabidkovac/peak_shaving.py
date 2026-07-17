@@ -674,6 +674,46 @@ def _npv_baterie(
     return _npv(cf, cena_kc, n.diskontni_sazba), _irr(cf, cena_kc), cf, pouzit_2027
 
 
+def _roky_cash_flow(
+    cena_kc: float,
+    cf: list[float],
+    n: NastaveniNpv,
+    pouzit_2027: bool,
+) -> list[dict]:
+    """Rozpis cash flow po letech pro FE tabulku (stejný vzor jako u PPA).
+
+    Vychází z cash flow z `_npv_baterie` (přínos po degradaci − O&M). Řádek
+    nese i kumulace: `uspora_kum_kc` = Σ CF (kolik celkem přinese),
+    `cf_kum_kc` = −investice + Σ CF (přechod přes nulu = reálná návratnost
+    vč. degradace a O&M) a `cf_kum_disk_kc` = průběh diskontovaného CF
+    (poslední řádek = NPV varianty).
+    """
+    oam = cena_kc * max(0.0, n.oam_procenta_capex_rok) / 100.0
+    uspora_kum = 0.0
+    cf_kum = -cena_kc
+    cf_kum_disk = -cena_kc
+    radky: list[dict] = []
+    for rok, cf_rok in enumerate(cf, start=1):
+        uspora_kum += cf_rok
+        cf_kum += cf_rok
+        cf_kum_disk += cf_rok / ((1.0 + n.diskontni_sazba) ** rok)
+        radky.append(
+            {
+                "rok": rok,
+                # Rok 1 jede na tarifu 2026 (platí do konce roku), dál NTS 2027;
+                # bez sazeb 2027 konzervativně model 2026 celý horizont.
+                "model": "2027" if (rok > 1 and pouzit_2027) else "2026",
+                "prinos_kc": round(cf_rok + oam, 2),
+                "oam_kc": round(oam, 2),
+                "cf_kc": round(cf_rok, 2),
+                "uspora_kum_kc": round(uspora_kum, 2),
+                "cf_kum_kc": round(cf_kum, 2),
+                "cf_kum_disk_kc": round(cf_kum_disk, 2),
+            }
+        )
+    return radky
+
+
 @dataclass
 class Baterie:
     """Jeden produkt z katalogu `technologie` (typ = baterie).
@@ -723,6 +763,8 @@ class Varianta:
     irr: float | None
     npv_horizont_roky: int
     npv_pouzit_model_2027: bool
+    # Rozpis cash flow po letech pro FE tabulku (viz _roky_cash_flow).
+    roky: list[dict]
     ekonomika_2026: dict
     ekonomika_2027: dict
     doporuceno: bool
@@ -832,9 +874,8 @@ def spocti_variantu(
         navratnost_2027 = None
 
     # NPV na horizontu životnosti (PS-8/PS-9): rok 1 = model 2026, dál 2027.
-    npv, irr, _, npv_pouzit_2027 = _npv_baterie(
-        cena, ek.prinos_baterie, prinos_2027, npv_nastaveni or NastaveniNpv()
-    )
+    nast_npv = npv_nastaveni or NastaveniNpv()
+    npv, irr, cf, npv_pouzit_2027 = _npv_baterie(cena, ek.prinos_baterie, prinos_2027, nast_npv)
 
     doporuceno = navratnost is not None and navratnost <= max_navratnost_roky
     return Varianta(
@@ -857,8 +898,9 @@ def spocti_variantu(
         navratnost_2027=navratnost_2027,
         npv_kc=npv,
         irr=irr,
-        npv_horizont_roky=(npv_nastaveni or NastaveniNpv()).horizont_roky,
+        npv_horizont_roky=nast_npv.horizont_roky,
         npv_pouzit_model_2027=npv_pouzit_2027,
+        roky=_roky_cash_flow(cena, cf, nast_npv, npv_pouzit_2027),
         ekonomika_2026=ek.__dict__,
         ekonomika_2027=ek_2027,
         doporuceno=doporuceno,
