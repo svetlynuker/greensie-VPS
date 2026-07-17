@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { login, nactiMe, nactiNastaveni } from "../api";
-import { setTheme } from "../theme";
+import { setTheme, setCvd } from "../theme";
 import { setVelikost } from "../velikost";
 import ThemeToggle from "../components/ThemeToggle";
+import CvdToggle from "../components/CvdToggle";
+import Ikona from "../components/Ikona";
 
 // Po přihlášení stáhne uložený vzhled z DB a použije ho (přenos mezi zařízeními).
 async function synchronizujVzhled() {
@@ -11,6 +13,7 @@ async function synchronizujVzhled() {
     const n = await nactiNastaveni();
     if (n.tema) setTheme(n.tema);
     if (n.velikost) setVelikost(n.velikost);
+    if (n.cvd) setCvd(n.cvd);
   } catch {
     // vzhled není kritický – když se nenačte, jede se s lokálním nastavením
   }
@@ -45,24 +48,19 @@ export default function Login() {
         position: "relative",
       }}
     >
-      <div style={{ position: "absolute", top: 16, right: 16 }}>
+      <div style={{ position: "absolute", top: 16, right: 16, display: "flex", gap: 8 }}>
         <ThemeToggle />
+        <CvdToggle />
       </div>
       <form
         onSubmit={odeslat}
         className="fm-card"
         style={{ padding: 32, width: 320, display: "flex", flexDirection: "column", gap: 14 }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <span
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius: "50%",
-              background: "var(--fm-brand)",
-              display: "inline-block",
-            }}
-          />
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <span className="gs-brand-mark">
+            <Ikona jmeno="logo" velikost={15} />
+          </span>
           <strong style={{ fontSize: 17 }}>Greensie</strong>
         </div>
 
@@ -104,7 +102,7 @@ export default function Login() {
           />
         </label>
 
-        {chyba && <div style={{ color: "#c92a2a", fontSize: 13 }}>{chyba}</div>}
+        {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</div>}
 
         <button type="submit" className="fm-btn fm-primary" style={{ marginTop: 6 }}>
           Přihlásit se

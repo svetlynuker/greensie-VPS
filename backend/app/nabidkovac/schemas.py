@@ -179,6 +179,19 @@ class PeakShavingVstup(BaseModel):
     distributor: Distributor
     napetova_hladina: NapetovaHladina
     rezervovana_kapacita_kw: float
+    # Cena energie pro ocenění ztrát baterie, Kč/MWh bez DPH (audit PS-5);
+    # prázdné = manažerské nastavení `ps_cena_energie_kc_mwh` (default 3000).
+    cena_energie_kc_mwh: Optional[float] = None
+    # Rezervovaný příkon ze smlouvy o připojení – pro model 2027 (audit PS-4).
+    # Prázdné = fallback na současnou RK (s upozorněním ve výstupu).
+    rezervovany_prikon_kw: Optional[float] = None
+    # Uvažovat snížení RP na novou RK v modelu 2027 (jednosměrné rozhodnutí –
+    # zpětné navýšení je zpoplatněno dle přílohy 2 vyhlášky č. 16/2016 Sb.).
+    uvazovat_snizeni_rp: bool = False
+    # Ruční override max. AC výkonu střídače (kW) – u modulárních baterií
+    # roste kapacita s počtem kusů, ale výkon bývá omezen sdíleným/pevným
+    # střídačem (PCS). Prázdné = počítá se jen ze štítkového výkonu produktu.
+    max_vykon_stridace_kw: Optional[float] = None
 
 
 # ---- PPA pro FVE výpočet (METODIKA-ppa-fve.md, kap. 2/4) ----
@@ -196,7 +209,9 @@ class PpaVstup(BaseModel):
     sklon_st: float = 35.0
     azimut_st: float = 0.0  # 0 = jih, ±90 = V/Z, 180 = sever
     cena_ppa_kc_mwh: float
-    cena_dodavatel_kc_mwh: float
+    # Silová složka ceny dodavatele (audit PPA-5) – vyhnutelné regulované
+    # složky se přičítají zvlášť (default z manažerského nastavení).
+    cena_silova_kc_mwh: float
     delka_kontraktu_roky: int
 
     # Velikost FVE navrhuje appka sama (kap. 4.7). `instalovany_vykon_kwp` je
@@ -208,6 +223,10 @@ class PpaVstup(BaseModel):
     index_ppa_rocni: Optional[float] = None
     index_dodavatel_rocni: Optional[float] = None
     degradace_rocni: Optional[float] = None
+    # LID – degradace 1. roku (audit PPA-4); default z nastavení (−2 % PERC).
+    degradace_rok1: Optional[float] = None
+    # Vyhnutelné regulované složky Kč/MWh (audit PPA-5); default z nastavení (~260).
+    vyhnutelne_regulovane_kc_mwh: Optional[float] = None
 
     # Náklady na FVE (kap. 3.4) – přepínač + volitelný přetok.
     rezim_capex: RezimCapex = "cena_kwp"

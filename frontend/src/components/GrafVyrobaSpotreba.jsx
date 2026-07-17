@@ -8,11 +8,14 @@
 
 const MESICE_ZKR = ["led", "úno", "bře", "dub", "kvě", "čvn", "čvc", "srp", "zář", "říj", "lis", "pro"];
 
+// Barvy přes CSS tokeny --c-* (global.css): graf sám funguje ve světlém,
+// tmavém i CVD režimu (kompenzace červeno-zelené vady mění samospotřebu
+// na modrou a přetok na amber — ověřeno validátorem).
 const BARVA = {
-  samospotreba: "#2f9e44", // zeleně krytá spotřeba z FVE
-  dokup: "#ced4da", // dokup ze sítě
-  export: "#1971c2", // přetok do sítě
-  orez: "#e8590c", // ořez (nad rez. výkonem dodávky)
+  samospotreba: "var(--c-after)", // spotřeba krytá z FVE
+  dokup: "var(--c-before)", // dokup ze sítě
+  export: "var(--c-export)", // přetok do sítě
+  orez: "var(--c-orez)", // ořez (nad rez. výkonem dodávky)
 };
 
 function mwh(kwh) {
@@ -43,13 +46,28 @@ export default function GrafVyrobaSpotreba({ graf }) {
 
   const ticky = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round((maxKwh * f) / 1000) * 1000);
 
-  // Vykreslí stohovaný sloupec (odspodu) ze segmentů [{v, barva}].
+  // Vykreslí stohovaný sloupec (odspodu) ze segmentů [{v, barva, popis}].
+  // Vlasový obrys v barvě podkladu opticky odděluje segmenty (čitelné
+  // i pro barvoslepé a v tisku).
   function Sloupec({ cx, segmenty }) {
     let base = y1;
     return segmenty.map((s, i) => {
       const vyska = h(s.v);
       base -= vyska;
-      return <rect key={i} x={cx} y={base} width={bw} height={Math.max(0, vyska)} fill={s.barva} />;
+      return (
+        <rect
+          key={i}
+          x={cx}
+          y={base}
+          width={bw}
+          height={Math.max(0, vyska)}
+          fill={s.barva}
+          stroke="var(--surface)"
+          strokeWidth="1"
+        >
+          {s.popis && <title>{s.popis}</title>}
+        </rect>
+      );
     });
   }
 
@@ -64,13 +82,13 @@ export default function GrafVyrobaSpotreba({ graf }) {
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", maxWidth: "100%" }} role="img">
         {ticky.map((t, i) => (
           <g key={i}>
-            <line x1={x0} y1={y(t)} x2={x1} y2={y(t)} stroke="#e9ecef" strokeWidth="1" />
-            <text x={x0 - 6} y={y(t) + 3} textAnchor="end" fontSize="10" fill="#868e96">
+            <line x1={x0} y1={y(t)} x2={x1} y2={y(t)} stroke="var(--c-grid)" strokeWidth="1" />
+            <text x={x0 - 6} y={y(t) + 3} textAnchor="end" fontSize="10" fill="var(--muted)">
               {Math.round(t / 1000)}
             </text>
           </g>
         ))}
-        <text x={x0 - 6} y={y0 - 1} textAnchor="end" fontSize="9" fill="#adb5bd">MWh</text>
+        <text x={x0 - 6} y={y0 - 1} textAnchor="end" fontSize="9" fill="var(--muted)">MWh</text>
         {mesice.map((m, i) => {
           const gx = x0 + i * gw;
           const cx = gx + gw / 2;
@@ -80,20 +98,20 @@ export default function GrafVyrobaSpotreba({ graf }) {
               <Sloupec
                 cx={cx - bw - 1}
                 segmenty={[
-                  { v: samospotreba_kwh[i] ?? 0, barva: BARVA.samospotreba },
-                  { v: dokup_kwh[i] ?? 0, barva: BARVA.dokup },
+                  { v: samospotreba_kwh[i] ?? 0, barva: BARVA.samospotreba, popis: `${MESICE_ZKR[m - 1] || m} · samospotřeba ${mwh(samospotreba_kwh[i] ?? 0)}` },
+                  { v: dokup_kwh[i] ?? 0, barva: BARVA.dokup, popis: `${MESICE_ZKR[m - 1] || m} · dokup ${mwh(dokup_kwh[i] ?? 0)}` },
                 ]}
               />
               {/* pravý sloupec = výroba (samospotřeba + přetok + ořez) */}
               <Sloupec
                 cx={cx + 1}
                 segmenty={[
-                  { v: samospotreba_kwh[i] ?? 0, barva: BARVA.samospotreba },
-                  { v: export_kwh[i] ?? 0, barva: BARVA.export },
-                  { v: orez_kwh[i] ?? 0, barva: BARVA.orez },
+                  { v: samospotreba_kwh[i] ?? 0, barva: BARVA.samospotreba, popis: `${MESICE_ZKR[m - 1] || m} · samospotřeba ${mwh(samospotreba_kwh[i] ?? 0)}` },
+                  { v: export_kwh[i] ?? 0, barva: BARVA.export, popis: `${MESICE_ZKR[m - 1] || m} · přetok ${mwh(export_kwh[i] ?? 0)}` },
+                  { v: orez_kwh[i] ?? 0, barva: BARVA.orez, popis: `${MESICE_ZKR[m - 1] || m} · ořez ${mwh(orez_kwh[i] ?? 0)}` },
                 ]}
               />
-              <text x={cx} y={y1 + 14} textAnchor="middle" fontSize="10" fill="#868e96">
+              <text x={cx} y={y1 + 14} textAnchor="middle" fontSize="10" fill="var(--muted)">
                 {MESICE_ZKR[m - 1] || m}
               </text>
             </g>

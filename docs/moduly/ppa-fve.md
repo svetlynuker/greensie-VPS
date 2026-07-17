@@ -52,13 +52,19 @@ existující tabulky:
   |---|---|---|
   | `ppa_cena_fve_kc_kwp` | cena za kWp (zjednodušený CAPEX) | default 25 000 |
   | `ppa_ostatni_naklady_kc_kwp` | BOS (montáž/konstrukce) pro komponentový CAPEX | default 0 |
-  | `ppa_merny_vynos_kwh_kwp` | měrný výnos FVE | default 1000; **pojistka 100–2000** |
+  | `ppa_merny_vynos_kwh_kwp` | měrný výnos FVE | default 1055 (PVGIS v5.3, střed ČR — PPA-2); **pojistka 100–2000** |
   | `ppa_index_ceny_rocni` | roční eskalace PPA ceny | default 0,03 |
-  | `ppa_index_dodavatel_rocni` | roční eskalace ceny dodavatele | default = index PPA |
+  | `ppa_index_dodavatel_rocni` | roční eskalace silové ceny dodavatele | default = index PPA |
+  | `ppa_vyhnutelne_regulovane_kc_mwh` | vyhnutelné regulované složky (PPA-5) | default 260 |
+  | `ppa_index_regulovane_rocni` | eskalace regulovaných složek | default 0 |
+  | `ppa_poze_kc_mwh` | POZE | default 0 (2026) |
   | `ppa_index_prebytek_rocni` | roční eskalace ceny přebytku | default 0 |
   | `ppa_degradace_rocni` | degradace panelů | default 0,005 |
-  | `ppa_oam_kc_kwp_rok` | provozní náklady investora | default 0 |
-  | `ppa_diskontni_sazba` | diskont pro NPV/IRR | default 0,05 |
+  | `ppa_degradace_rok1` | LID – degradace 1. roku (PPA-4) | default 0,02 (PERC); TOPCon 0,01 |
+  | `ppa_oam_kc_kwp_rok` | provozní náklady investora (PPA-6) | default 350 (vč. pojištění, revizí, monitoringu) |
+  | `ppa_diskontni_sazba` | diskont pro NPV/IRR (PPA-6) | default 0,075 (WACC 6–9 %) |
+  | `ppa_vymena_stridace_rok` | rok jednorázové výměny střídače (PPA-6) | default 0 = vypnuto |
+  | `ppa_vymena_stridace_kc_kwp` | cena výměny střídače | default 0 (~5–10 % CAPEX, rok 10–15) |
 
   Spravuje se v adminu (právo `nabidkovac_katalog`); uložení = nová verze (staré zůstávají).
 
@@ -70,13 +76,17 @@ existující tabulky:
 ## 3. Výpočtová logika — `backend/app/nabidkovac/ppa_fve.py`
 
 Čistě deterministický modul bez závislosti na DB/FastAPI (jako `peak_shaving.py`). Konstanty:
-interval `0,25 h`, měrný výnos `1000` kWh/kWp, degradace `0,5 %/rok`, cena FVE `25 000` Kč/kWp,
-šířka ČR `49,8°`, horní mez velikosti `3× roční spotřeba`.
+interval `0,25 h`, měrný výnos `1055` kWh/kWp (PVGIS v5.3, střed ČR — bughunt PPA-2),
+degradace `0,5 %/rok`, cena FVE `25 000` Kč/kWp, šířka ČR `49,8°`, horní mez velikosti
+`3× roční spotřeba`.
 
-### 3.1 Simulace výroby FVE (`simuluj_vyrobu`)
+### 3.1 Simulace výroby FVE (`simuluj_vyrobu`) — kalibrováno PVGIS v5.3 (PPA-2)
 Roční výnos `E_rok = kWp × měrný_výnos × korekce_orientace(azimut, sklon)`. Rozpuštění:
-- **po měsících** dle tabulky (kWh/kWp/měsíc při ročním výnosu 1000):
-  led 26, úno 42, bře 83, dub 120, kvě 135, čvn 132, čvc 138, srp 120, zář 90, říj 58, lis 30, pro 26 (Σ = 1000);
+- **po měsících** dle tabulky (kWh/kWp/měsíc při ročním výnosu 1000; normované hodnoty
+  SARAH3, střed ČR, Σ = přesně 1000):
+  led 30,6 · úno 51,8 · bře 84,9 · dub 113,7 · kvě 120,9 · čvn 123,1 · čvc 124,6 ·
+  srp 114,9 · zář 98,5 · říj 72,0 · lis 36,0 · pro 29,0 — zimní půlrok 30,4 % ročního
+  výnosu (dřívější ilustrativní tabulka jen 26,5 %);
 - **měsíc na dny** podle počtu dní přítomných v profilu;
 - **den na intervaly** clear-sky křivkou ze solární geometrie:
   ```
@@ -86,13 +96,24 @@ Roční výnos `E_rok = kWp × měrný_výnos × korekce_orientace(azimut, sklon
   g(t) = max(0, sin(π·(t−t_východ)/(t_západ−t_východ)))
   V_i  = E_den · g(t_i) / Σ_den g                  # kWh za interval
   ```
-- **korekce orientace** `k_orient(azimut, sklon)` – bilineární interpolace tabulky (jih+35° = 1,00; V/Z+35° ≈ 0,84; sever ≈ 0,50). ⚠️ ilustrativní hodnoty ke kalibraci.
+  **Letní čas (PPA-3):** časové značky profilu jsou lokální → v okně SELČ
+  (poslední neděle v březnu 02:00 – poslední neděle v říjnu 03:00) se tvar dne
+  vyhodnocuje v `t − 1 h`. Špička výroby tak v létě padne na ~13:00 lokálního
+  času (dřív model „vyráběl“ o hodinu dřív a u odpolední zátěže podstřeloval
+  samospotřebu o ~7 % — bughunt test T4).
+- **korekce orientace** `k_orient(azimut, sklon)` – bilineární interpolace tabulky
+  PVGIS v5.3 (jih+35° = 1,00; JV/JZ+35° = 0,94; V/Z+35° = 0,80; sever+35° = 0,54;
+  sever+60° = 0,34; horizontála = 0,85; strmý jih 60° = 0,94).
 
 Výroba je **lineární v kWp** → pro sweep se simuluje jednou pro 1 kWp a jen se škáluje.
+Zdroj kalibrace: `docs/reserze_kalkulator/pvgis-kalibrace-vyroby-fve.md` (+ surová data
+`pvgis-data.csv`); regionální rozpětí ČR ~1 030–1 165 kWh/kWp, meziroční nejistota ±6 %.
 
-### 3.2 Degradace (kap. 4.2 metodiky)
-Rok `t`: `V_t = V_1 × (1 − degradace)^(t−1)`. Spárování se počítá znovu každý rok (min() je
-nelineární).
+### 3.2 Degradace (kap. 4.2 metodiky) — s LID prvního roku (bughunt PPA-4)
+Rok `t`: `V_t = V_nom × (1 − LID) × (1 − degradace)^(t−1)` — pokles prvního roku
+(LID, default −2 % PERC / −1 % TOPCon přes `ppa_degradace_rok1`) se projeví už
+v roce 1 a nese se celý kontrakt; headline metriky i graf ukazují rok 1 včetně
+LID. Spárování se počítá znovu každý rok (min() je nelineární).
 
 ### 3.3 Spárování výroby a spotřeby (`sparuj`) — samospotřeba / přetok / ořez / dokup
 Pořadí toku v každém intervalu: nejdřív samospotřeba, pak přetok do sítě omezený rezervovaným
@@ -107,22 +128,38 @@ dokup_i        = max(0, S_i − V_i)
 `P_rez` prázdné/0 = neomezeno. Ořez **neovlivňuje samospotřebu** (ta je lokální).
 
 ### 3.4 Ekonomika po letech (`spocti_ppa`)
-Ceny se eskalují geometricky (rok 1 = základ). Klient:
+Ceny se eskalují geometricky (rok 1 = základ). Klient (rozklad ceny — bughunt PPA-5):
 ```
-úspora_t = (samospotřeba_t / 1000) × (cena_dodavatel_t − cena_ppa_t)   # Kč
+cena_silová_t     = cena_silova_kc_mwh × (1 + index_dodavatel)^(t−1)     # zadává OZ
+cena_regulované_t = (vyhnutelné_regulované + POZE) × (1 + index_regul)^(t−1)  # z nastavení
+vyhnutelná_cena_t = cena_silová_t + cena_regulované_t
+úspora_t = (samospotřeba_t / 1000) × (vyhnutelná_cena_t − cena_ppa_t)   # Kč
 ```
+Samospotřeba za elektroměrem šetří kromě silové elektřiny i variabilní regulované
+platby (použití sítí ~83–106 Kč/MWh dle DSO + systémové služby 164,24 + POZE 0
+pro 2026 → default 260 Kč/MWh v manažerském nastavení). Daň z elektřiny je mimo
+obě strany srovnání (symetrická — PPA dodávka z výrobny > 30 kW jí podléhá také);
+u výroben > 30 kW jde do výstupu upozornění na registrační povinnost investora.
+Výstup nese rozklad (`cena_silova_kc_mwh`, `vyhnutelne_regulovane_kc_mwh`,
+`poze_kc_mwh`, `vyhnutelna_cena_rok1_kc_mwh`, `uspora_zahrnuje`).
 Investor:
 ```
 CAPEX
 výnos_t = (samospotřeba_t/1000)·cena_ppa_t  [+ (export_t/1000)·cena_přebytku_t, když se přebytek prodává]
-cf_t    = výnos_t − O&M                        # O&M = ppa_oam_kc_kwp_rok × kWp
+cf_t    = výnos_t − O&M − výměna_střídače_t    # O&M = ppa_oam_kc_kwp_rok × kWp (default 350, PPA-6)
+                                               # výměna střídače jen v roce ppa_vymena_stridace_rok
 cf_kum_t = (Σ cf) − CAPEX
 payback  = nejmenší t s cf_kum_t ≥ 0 (lin. interpolace)
-NPV      = −CAPEX + Σ cf_t/(1+r)^t
+NPV      = −CAPEX + Σ cf_t/(1+r)^t             # r default 0,075 (PPA-6)
 IRR      = r, kde NPV = 0 (bisekce)
+doporuceno = NPV > 0                           # flag pro FE (PPA-8)
 ```
 Prodej přebytku vstupuje **jen do výnosu investora** a jen když je zapnutý; ořezaná energie
-nikdy nevýnosí.
+nikdy nevýnosí. Nákladové položky jsou viditelné v tabulce let (`naklad_oam_kc`,
+`naklad_vymena_stridace_kc`) i ve výstupu (`oam_kc_kwp_rok`, `vymena_stridace`).
+**Sanity-checky (PPA-8):** PPA cena mimo pásmo trhu 1 600–2 600 Kč/MWh → varování;
+PPA cena ≥ vyhnutelná cena klienta → varování „klient nešetří nic“; záporné NPV →
+`doporuceno = false` + hláška; vždy upozornění na riziko poklesu spotřeby (take-or-pay).
 
 ### 3.5 CAPEX – dva režimy (`rezim_capex`)
 - **`cena_kwp`** (default): `CAPEX = kWp × ppa_cena_fve_kc_kwp`.
@@ -131,8 +168,11 @@ nikdy nevýnosí.
   `kWp × ppa_ostatni_naklady_kc_kwp`. Rozpad je ve výstupu.
 
 ### 3.6 Návrh velikosti = ekonomický výběr (`kandidatni_velikosti` + `vyber_velikost`)
-1. Vygeneruje řadu velikostí (rovnoměrný krok od malé FVE po `3× roční spotřeba`, příp.
-   omezeno `max_kwp`; ~30 kandidátů).
+1. Vygeneruje řadu velikostí (rovnoměrný krok od malé FVE po `3× roční spotřeba`,
+   min. 5 kWp rozsah sweepu; ~30 kandidátů). **Limit `max_kwp` je tvrdý a uplatní
+   se až nakonec** — žádný kandidát ho nepřekročí (oprava bughunt PPA-1: dřívější
+   pořadí operací vracelo pro `max_kwp < 5` kandidáty nad limit střechy);
+   pro `max_kwp < 1` se vrací aspoň `[1]`.
 2. Pro každou spočítá kompletní ekonomiku (CAPEX per velikost + `spocti_ppa`).
 3. Vybere **nejvyšší NPV**, sekundárně **nejkratší návratnost**; vrací i 2.–3. variantu.
 
@@ -169,14 +209,17 @@ Měsíční agregáty rok 1: spotřeba, výroba, samospotřeba, přetok, ořez, 
 override), `max_kwp`, `rezim_capex`, `prebytek_uctovat`, `prebytek_cena_kc_mwh`,
 `rezervovany_vykon_dodavky_kw`, `index_ppa_rocni`, `index_dodavatel_rocni`, `degradace_rocni`.
 
-Route: načte profil, doplní defaulty z manažerského nastavení (`_ppa_param`), **ošetří
-nereálný měrný výnos** (mimo 100–2000 → default 1000 + upozornění), určí lokalitu (GPS nabídky,
-fallback 49,8°), sestaví `capex_fn(kwp)` a šablonu vstupu, a buď spustí ekonomický sweep, nebo
-počítá ruční velikost.
+Route: načte profil, **zvaliduje pokrytí roku** (`profil_pokryti.py`, bughunt SP-1: profil
+delší než rok se ořízne na posledních 12 celých měsíců; kratší než ~350 dní / s chybějícími
+měsíci / s dírami > 2 % → HTTP 422), doplní defaulty z manažerského nastavení (`_ppa_param`),
+**ošetří nereálný měrný výnos** (mimo 100–2000 → default 1000 + upozornění), určí lokalitu
+(GPS nabídky, fallback 49,8°), sestaví `capex_fn(kwp)` a šablonu vstupu, a buď spustí
+ekonomický sweep, nebo počítá ruční velikost.
 
 **Výstup `popis_json`:** `vstup` (vč. `navrzeno_automaticky`, `metoda_navrhu`), `vysledek`
-(kompletní ekonomika + `roky[]` + `graf`), `varianty` (top 4 velikosti pro srovnání),
-`upozorneni`.
+(kompletní ekonomika + `roky[]` + `graf`), `varianty` (top 4 velikosti — **kompletní
+výsledky vč. `roky` a `graf`**, aby šel detail přepínat kliknutím ve FE; starší uložené
+výsledky mají jen kompaktní souhrn), `upozorneni`.
 
 ---
 
@@ -187,6 +230,9 @@ počítá ruční velikost.
   – navržená velikost + zvýrazněné **% pokrytí spotřeby z FVE**, dlaždice payback/IRR/NPV/úspora
   klienta, tabulka **Srovnání velikostí**, měsíční graf, tabulka po letech. **Vstupy se
   předvyplní z posledního výpočtu** → jde libovolně přepočítávat a měnit hodnoty.
+  **Kliknutím na řádek srovnání se celý detail (čísla, graf, tabulka let) překreslí pro
+  danou velikost** (◄ = zobrazená; u starších uložených výsledků bez plných dat variant
+  se detail nepřepíná).
 - **`components/GrafVyrobaSpotreba.jsx`**: lehký **SVG graf bez knihovny** – dvojice sloupců
   na měsíc (spotřeba = samospotřeba + dokup; výroba = samospotřeba + přetok + ořez).
 - **`pages/NabidkaDetail.jsx`**: pro `typ = ppa` renderuje `PpaPanel`.
@@ -205,8 +251,9 @@ nastavují v adminu (jsou to data, ne kód – změna se projeví bez deploye).
 ---
 
 ## 7. Otevřené body / předpoklady k ověření (⚠️)
-1. **Koeficienty výroby** (měrný výnos 1000, měsíční rozdělení, tabulka orientace) jsou
-   ilustrativní – kalibrovat pro ČR, ideálně po krajích / z GPS (příp. PVGIS).
+1. ~~**Koeficienty výroby** ilustrativní~~ → kalibrováno PVGIS v5.3/SARAH3 (bughunt PPA-2,
+   16. 7. 2026): výnos 1055, měsíční řada i k_orient z reálných all-sky dat. Zbývá fáze 2:
+   regionalizace dle GPS (interpolace tabulky A rešerše), příp. PVGIS API za runtime s cache.
 2. **Cena za kWp / O&M** – doplnit reálné hodnoty do manažerského nastavení.
 3. **„Cena dodavatele"** – jen silová složka vs. vč. distribuce; a jak eskalovat.
 4. **Prodej přebytku** – default vypnuto; cena se zadává u nabídky.

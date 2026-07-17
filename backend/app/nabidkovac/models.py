@@ -55,8 +55,8 @@ VYCHOZI_STAV_ZPRACOVANI = "nahrano"
 
 # ---- Peak shaving: sazby distributorů (METODIKA-peak-shaving.md, kap. 3.1) ----
 
-# Distributoři, se kterými appka počítá. Naostro jede zatím jen "cez"
-# (kap. 6 bod 5), "egd"/"pre" se doplní přes admin, až budou čísla ověřená.
+# Distributoři, se kterými appka počítá. Sazby 2026 všech tří RDS jsou
+# seedované z CV ERÚ č. 13/2025 (audit 16. 7. 2026, bughunt PS-1).
 DISTRIBUTORI = ("cez", "egd", "pre")
 
 # Peak shaving řešíme jen pro VN a VVN, NN appka nenabízí (kap. 1 / kap. 6 bod 4).
@@ -264,9 +264,19 @@ class SpotrebaProfil(Base):
 
     Plnění (parsování CSV) se v tomto promptu NEIMPLEMENTUJE – tabulka jen
     existuje, aby na ni šlo navázat.
+
+    Unikátnost (nabidka_id, cas) je DB pojistka proti dvojímu profilu (audit
+    16. 7. 2026, SP-2): dva nahrané soubory se dřív tiše sečetly (2× „roční“
+    spotřeba). Zpracování profilu maže celý předchozí profil nabídky
+    („poslední vyhrává“) a duplicitní časy v souboru (podzimní přechod času)
+    slučuje ještě před vkladem. Na existující DB doplňuje unique index
+    `_lehka_migrace()` v main.py (včetně deduplikace, jinak by start spadl).
     """
 
     __tablename__ = "spotreba_profil"
+    __table_args__ = (
+        UniqueConstraint("nabidka_id", "cas", name="uq_spotreba_profil_nabidka_cas"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     nabidka_id = Column(

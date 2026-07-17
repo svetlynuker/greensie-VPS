@@ -153,3 +153,25 @@ def nacti_profil(cesta: str, pripona: str) -> list[tuple[datetime, float]]:
     if not body:
         raise ValueError("soubor neobsahuje žádné použitelné 15min hodnoty odběru")
     return body
+
+
+def deduplikuj_casy(
+    body: list[tuple[datetime, float]],
+) -> tuple[list[tuple[datetime, float]], int]:
+    """Sloučí řádky se shodným časem – z duplicit zůstane nejvyšší kW (SP-2).
+
+    Podzimní přechod času má v lokálním čase duplicitní hodinu 02:00–03:00
+    (v exportech OTE konvence 92/100 čtvrthodin) → 4 duplicitní čtvrthodiny
+    ročně jsou legitimní; výrazně víc obvykle znamená dvakrát vložený rozsah.
+    Maximum (místo součtu) volíme konzervativně: nezdvojí energii a nepodstřelí
+    špičku. Vrací (body v pořadí prvního výskytu, počet sloučených řádků).
+    """
+    podle_casu: dict[datetime, float] = {}
+    poradi: list[datetime] = []
+    for cas, kw in body:
+        if cas in podle_casu:
+            podle_casu[cas] = max(podle_casu[cas], kw)
+        else:
+            podle_casu[cas] = kw
+            poradi.append(cas)
+    return [(c, podle_casu[c]) for c in poradi], len(body) - len(poradi)

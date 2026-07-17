@@ -151,7 +151,7 @@ function UzivatelEditor({ uzivatel, ciselniky, skupiny, onSave, onClose }) {
         <label style={{ ...labelStyl, marginTop: 12 }}>Práva navíc (mimo skupinu)</label>
         <PravaVyber katalog={ciselniky.prava} vybrana={extraPrava} onZmena={setExtraPrava} />
       </div>
-      {chyba && <div style={{ color: "#c92a2a", fontSize: 13 }}>{chyba}</div>}
+      {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</div>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
         <button className="fm-btn" onClick={onClose} disabled={uklada}>Zrušit</button>
         <button className="fm-btn fm-primary" onClick={uloz} disabled={uklada}>
@@ -202,7 +202,7 @@ function ResetDialog({ uzivatel, onReset, onClose }) {
           placeholder="alespoň 6 znaků"
         />
       )}
-      {chyba && <div style={{ color: "#c92a2a", fontSize: 13 }}>{chyba}</div>}
+      {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</div>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
         <button className="fm-btn" onClick={onClose} disabled={uklada}>Zrušit</button>
         <button className="fm-btn fm-primary" onClick={uloz} disabled={uklada}>
@@ -279,7 +279,7 @@ function SkupinaEditor({ skupina, ciselniky, onSave, onClose }) {
         <label style={labelStyl}>Co smí členové skupiny</label>
         <PravaVyber katalog={ciselniky.prava} vybrana={prava} onZmena={setPrava} />
       </div>
-      {chyba && <div style={{ color: "#c92a2a", fontSize: 13 }}>{chyba}</div>}
+      {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</div>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
         <button className="fm-btn" onClick={onClose} disabled={uklada}>Zrušit</button>
         <button className="fm-btn fm-primary" onClick={uloz} disabled={uklada}>
@@ -402,7 +402,7 @@ export default function AdminNastaveni() {
     return (
       <Layout uzivatel={uzivatel}>
         <Link to="/rozcestnik" className="fm-btn" style={{ textDecoration: "none" }}>← Zpět na rozcestník</Link>
-        <div style={{ padding: 24, color: "#c92a2a" }}>Chyba: {chyba}</div>
+        <div style={{ padding: 24, color: "var(--st-crit)" }}>Chyba: {chyba}</div>
       </Layout>
     );
   }

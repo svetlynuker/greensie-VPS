@@ -41,7 +41,9 @@ export default function PpaPanel({ nabidka }) {
   const [sklon, setSklon] = useState(_v.sklon_st != null ? s(_v.sklon_st) : "35");
   const [azimut, setAzimut] = useState(_v.azimut_st != null ? s(_v.azimut_st) : "0");
   const [cenaPpa, setCenaPpa] = useState(s(_v.cena_ppa_kc_mwh));
-  const [cenaDod, setCenaDod] = useState(s(_v.cena_dodavatel_kc_mwh));
+  // Silová složka ceny dodavatele (PPA-5); starší výpočty měly klíč cena_dodavatel_kc_mwh.
+  const [cenaSilova, setCenaSilova] = useState(s(_v.cena_silova_kc_mwh ?? _v.cena_dodavatel_kc_mwh));
+  const [regulovane, setRegulovane] = useState(s(_v.vyhnutelne_regulovane_kc_mwh));
   const [delka, setDelka] = useState(_v.delka_kontraktu_roky != null ? s(_v.delka_kontraktu_roky) : "15");
   const [rezimCapex, setRezimCapex] = useState(_v.rezim_capex || "cena_kwp");
   const [prebytekUctovat, setPrebytekUctovat] = useState(!!_v.prebytek_uctovat);
@@ -51,6 +53,8 @@ export default function PpaPanel({ nabidka }) {
   const [indexDod, setIndexDod] = useState("");
 
   const [vysledek, setVysledek] = useState(_posl);
+  // Velikost vybraná kliknutím v tabulce srovnání (null = navržená).
+  const [vybranyKwp, setVybranyKwp] = useState(null);
   const [chyba, setChyba] = useState(null);
   const [zprava, setZprava] = useState(null);
   const [pocita, setPocita] = useState(false);
@@ -65,7 +69,7 @@ export default function PpaPanel({ nabidka }) {
     (d) => d.typ === "spotreba_csv" || d.typ === "jiny"
   );
   const profilOk = souhrn && souhrn.pocet > 0;
-  const vstupyOk = n(cenaPpa) > 0 && n(cenaDod) > 0 && n(delka) > 0;
+  const vstupyOk = n(cenaPpa) > 0 && n(cenaSilova) > 0 && n(delka) > 0;
 
   async function nactiProfil(dokId) {
     setZpracovavaId(dokId);
@@ -94,7 +98,8 @@ export default function PpaPanel({ nabidka }) {
         sklon_st: n(sklon) ?? 35,
         azimut_st: n(azimut) ?? 0,
         cena_ppa_kc_mwh: n(cenaPpa),
-        cena_dodavatel_kc_mwh: n(cenaDod),
+        cena_silova_kc_mwh: n(cenaSilova),
+        vyhnutelne_regulovane_kc_mwh: n(regulovane),
         delka_kontraktu_roky: n(delka),
         rezim_capex: rezimCapex,
         prebytek_uctovat: prebytekUctovat,
@@ -104,6 +109,7 @@ export default function PpaPanel({ nabidka }) {
         index_dodavatel_rocni: n(indexDod),
       });
       setVysledek(r.popis_json);
+      setVybranyKwp(null);
     } catch (e) {
       setChyba(e.message);
     } finally {
@@ -111,7 +117,14 @@ export default function PpaPanel({ nabidka }) {
     }
   }
 
-  const v = vysledek?.vysledek;
+  const navrzena = vysledek?.vysledek;
+  const varianty = vysledek?.varianty || [];
+  // Detail velikosti vybrané kliknutím ve srovnání. Starší uložené výsledky
+  // mají u variant jen souhrn (bez `roky`/`graf`) → detail jde zobrazit jen
+  // pro navrženou velikost; nové výpočty nesou plná data všech variant.
+  const vybrana =
+    vybranyKwp != null ? varianty.find((z) => z.kwp === vybranyKwp && z.roky) : null;
+  const v = vybrana || navrzena;
 
   return (
     <div className="fm-card" style={{ padding: 18 }}>
@@ -169,8 +182,12 @@ export default function PpaPanel({ nabidka }) {
           <input className="nb-pole" value={cenaPpa} onChange={(e) => setCenaPpa(e.target.value)} inputMode="decimal" placeholder="např. 2500" />
         </div>
         <div>
-          <label className="nb-label">Cena dodavatele (Kč/MWh)</label>
-          <input className="nb-pole" value={cenaDod} onChange={(e) => setCenaDod(e.target.value)} inputMode="decimal" placeholder="silová složka, např. 4000" />
+          <label className="nb-label">Silová cena dodavatele (Kč/MWh)</label>
+          <input className="nb-pole" value={cenaSilova} onChange={(e) => setCenaSilova(e.target.value)} inputMode="decimal" placeholder="jen silová složka, např. 3200" />
+        </div>
+        <div>
+          <label className="nb-label">Vyhnutelné regulované (Kč/MWh, volit.)</label>
+          <input className="nb-pole" value={regulovane} onChange={(e) => setRegulovane(e.target.value)} inputMode="decimal" placeholder="prázdné = z nastavení (~260)" />
         </div>
         <div>
           <label className="nb-label">Délka kontraktu (roky)</label>
@@ -214,14 +231,18 @@ export default function PpaPanel({ nabidka }) {
         {pocita ? "Počítám…" : "Spočítat PPA"}
       </button>
       {zprava && <div style={{ color: "var(--fm-brand-dk)", fontSize: 13, marginTop: 10 }}>{zprava}</div>}
-      {chyba && <div style={{ color: "#c92a2a", fontSize: 13, marginTop: 10 }}>{chyba}</div>}
+      {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13, marginTop: 10 }}>{chyba}</div>}
 
       {/* 3) Výsledek */}
       {v && (
         <div style={{ marginTop: 18 }}>
           <h4 style={{ margin: "0 0 8px", fontSize: 13 }}>
-            Navržená FVE: <b>{v.kwp} kWp</b>
-            {vysledek.vstup?.navrzeno_automaticky ? (
+            {vybrana && vybrana.kwp !== navrzena?.kwp ? "Zobrazená FVE" : "Navržená FVE"}: <b>{v.kwp} kWp</b>
+            {vybrana && vybrana.kwp !== navrzena?.kwp ? (
+              <span className="nb-badge" style={{ marginLeft: 8, color: "color-mix(in srgb, var(--st-warn) 72%, var(--ink))" }}>
+                alternativa — návrh je {navrzena?.kwp} kWp
+              </span>
+            ) : vysledek.vstup?.navrzeno_automaticky ? (
               <span className="nb-badge" style={{ marginLeft: 8 }} title="Velikost navrhla appka podle nejlepší ekonomiky (NPV/návratnost)">
                 ekonomický návrh
               </span>
@@ -231,7 +252,7 @@ export default function PpaPanel({ nabidka }) {
           </h4>
           <div className="fm-card" style={{ padding: 14, marginBottom: 14, background: "var(--fm-bg, #fafafa)" }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-              <span style={{ fontSize: 26, fontWeight: 700, color: "#2f9e44" }}>{pct(v.pokryti_spotreby_fve)}</span>
+              <span style={{ fontSize: 26, fontWeight: 700, color: "var(--brand-strong)" }}>{pct(v.pokryti_spotreby_fve)}</span>
               <span style={{ fontSize: 13 }}>spotřeby klienta pokryje elektřina z FVE (samospotřeba)</span>
             </div>
             <div style={{ fontSize: 13, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 6 }}>
@@ -240,9 +261,26 @@ export default function PpaPanel({ nabidka }) {
               <div>Samospotřeba: <b>{mwh(v.samospotreba_rok1_kwh)}</b> ({pct(v.mira_samospotreby)} výroby)</div>
               <div>Přetok do sítě: {mwh(v.export_rok1_kwh)}{v.orez_rok1_kwh > 0 ? `, ořez ${mwh(v.orez_rok1_kwh)}` : ""}</div>
               <div>Investice (CAPEX): <b>{kc(v.capex_kc)}</b></div>
+              {v.vyhnutelna_cena_rok1_kc_mwh != null && (
+                <div>
+                  Vyhnutelná cena klienta: <b>{Math.round(v.vyhnutelna_cena_rok1_kc_mwh).toLocaleString("cs-CZ")} Kč/MWh</b>{" "}
+                  (silová {Math.round(v.cena_silova_kc_mwh).toLocaleString("cs-CZ")} + regulované{" "}
+                  {Math.round((v.vyhnutelne_regulovane_kc_mwh || 0) + (v.poze_kc_mwh || 0)).toLocaleString("cs-CZ")})
+                </div>
+              )}
             </div>
           </div>
 
+          {v.doporuceno === false && (
+            <div className="nb-warn" style={{ margin: "0 0 12px" }}>
+              <span>⚠️</span>
+              <span>
+                PPA se při těchto parametrech investorovi nevyplatí (záporné NPV při
+                diskontu {pct(v.diskontni_sazba)}). Zvaž vyšší PPA cenu, delší kontrakt
+                nebo levnější CAPEX.
+              </span>
+            </div>
+          )}
           <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Ekonomika investora (Greensie)</h4>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 14 }}>
             <div className="fm-card" style={{ padding: 14 }}>
@@ -263,7 +301,7 @@ export default function PpaPanel({ nabidka }) {
             </div>
           </div>
 
-          {(vysledek.varianty || []).length > 1 && (
+          {varianty.length > 1 && (
             <>
               <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Srovnání velikostí (ekonomický výběr)</h4>
               <div className="nb-scroll" style={{ marginBottom: 14 }}>
@@ -272,8 +310,18 @@ export default function PpaPanel({ nabidka }) {
                     <tr><th>Velikost</th><th>Pokrytí spotřeby</th><th>Samospotřeba</th><th>Výroba</th><th>CAPEX</th><th>Návratnost</th><th>NPV</th></tr>
                   </thead>
                   <tbody>
-                    {vysledek.varianty.map((z) => (
-                      <tr key={z.kwp} style={z.kwp === v.kwp ? { fontWeight: 700, background: "rgba(47,158,68,.08)" } : undefined}>
+                    {varianty.map((z) => (
+                      <tr
+                        key={z.kwp}
+                        onClick={() => z.roky && setVybranyKwp(z.kwp === navrzena?.kwp ? null : z.kwp)}
+                        title={z.roky ? "Kliknutím zobrazíš detail této velikosti" : "Starší výsledek – detail variant se uloží až s novým výpočtem"}
+                        style={{
+                          cursor: z.roky ? "pointer" : "default",
+                          ...(z.kwp === v.kwp
+                            ? { fontWeight: 700, background: "color-mix(in srgb, var(--brand) 9%, transparent)" }
+                            : {}),
+                        }}
+                      >
                         <td>{z.kwp} kWp{z.kwp === v.kwp ? " ◄" : ""}</td>
                         <td>{pct(z.pokryti_spotreby_fve)}</td>
                         <td>{pct(z.mira_samospotreby)}</td>
@@ -287,7 +335,8 @@ export default function PpaPanel({ nabidka }) {
                 </table>
               </div>
               <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: -8, marginBottom: 14 }}>
-                Vybrána velikost s nejlepší ekonomikou (nejvyšší NPV / nejkratší návratnost). Řádek ◄ = navržená.
+                Navržena velikost s nejlepší ekonomikou (nejvyšší NPV / nejkratší návratnost).
+                <b> Kliknutím na řádek se všechna čísla, grafy i tabulka let překreslí pro danou velikost</b> (řádek ◄ = zobrazená).
               </div>
             </>
           )}
@@ -312,7 +361,7 @@ export default function PpaPanel({ nabidka }) {
                       <th>Výroba</th>
                       <th>Samospotř.</th>
                       <th>Cena PPA</th>
-                      <th>Cena dodav.</th>
+                      <th>Vyhnutelná cena</th>
                       <th>Úspora klienta</th>
                       <th>Kum. úspora</th>
                       <th>CF investora</th>
@@ -323,7 +372,7 @@ export default function PpaPanel({ nabidka }) {
                     {v.roky.map((r) => {
                       const paybackRok = v.navratnost_roky != null && r.rok === Math.ceil(v.navratnost_roky);
                       return (
-                        <tr key={r.rok} style={paybackRok ? { fontWeight: 700, background: "rgba(47,158,68,.08)" } : undefined}>
+                        <tr key={r.rok} style={paybackRok ? { fontWeight: 700, background: "color-mix(in srgb, var(--brand) 9%, transparent)" } : undefined}>
                           <td>{r.rok}{paybackRok ? " ◄" : ""}</td>
                           <td>{mwh(r.vyroba_kwh)}</td>
                           <td>{mwh(r.samospotreba_kwh)}</td>
@@ -340,7 +389,10 @@ export default function PpaPanel({ nabidka }) {
                 </table>
               </div>
               <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 4 }}>
-                Ceny jsou Kč/MWh. Úspora klienta = samospotřeba × (cena dodavatele − PPA cena). CF investora = platby za samospotřebu {v.prebytek_uctovat ? "+ prodej přetoku " : ""}− O&M. Řádek ◄ = rok návratnosti.
+                Ceny jsou Kč/MWh. Úspora klienta = samospotřeba × (vyhnutelná cena − PPA cena);
+                vyhnutelná cena = silová složka + vyhnutelné regulované platby (použití sítí,
+                systémové služby, POZE), daň z elektřiny symetricky mimo. CF investora = platby
+                za samospotřebu {v.prebytek_uctovat ? "+ prodej přetoku " : ""}− O&M. Řádek ◄ = rok návratnosti.
               </div>
             </>
           )}

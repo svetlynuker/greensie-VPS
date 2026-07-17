@@ -1,35 +1,142 @@
+/* ============================================================
+   GREENSIE — design tokeny a sdílená primitiva
+   Tři barevné osy: světlý/tmavý (data-theme) × kompenzace
+   červeno-zelené vady (data-cvd). Layout se mezi režimy nemění,
+   přepínají se jen tokeny. Barvy grafů a stavů ověřeny CVD
+   validátorem (viz docs + memory cvd-kompenzace-pozadavek).
+   ============================================================ */
+
 :root {
   color-scheme: light;
 
-  --fm-brand: #2f9e44;
-  --fm-brand-dk: #237032;
-  --fm-brand-soft: #e6f4ea;
-  --fm-bg: #f4f6f5;
-  --fm-card: #ffffff;
-  --fm-head: #eef2f0;
-  --fm-text: #1f2933;
-  --fm-muted: #6b7280;
-  --fm-line: #dfe6e2;
+  /* ---- plochy a inkousty (neutrály s jemným zeleným nádechem) ---- */
+  --bg:        #eaeeeb;
+  --surface:   #ffffff;
+  --surface-2: #f5f8f6;
+  --ink:       #16211c;
+  --ink-2:     #4b5852;
+  --muted:     #78847d;
+  --line:      #e1e7e3;
+  --line-soft: #eef2ef;
+
+  /* ---- brand ---- */
+  --brand:        #2f9e44;
+  --brand-strong: #237a34;
+  --brand-wash:   #e7f3ea;
+
+  /* ---- stavy (termíny, faktury) — vždy s tečkou/popiskem ---- */
+  --st-good:      #0ca30c;
+  --st-warn:      #cf8a00;
+  --st-serious:   #d1652f;
+  --st-crit:      #d03b3b;
+  --st-good-w:    #e6f4e6;
+  --st-warn-w:    #faf0d6;
+  --st-serious-w: #f7e7de;
+  --st-crit-w:    #f7e0e0;
+
+  /* ---- grafy (série ověřeny CVD validátorem pro všechny 4 režimy) ---- */
+  --c-before: #c4cdc7; /* srovnávací/neutrální série (bez baterie, dokup) */
+  --c-after:  #2f9e44; /* hlavní série (s baterií, samospotřeba) */
+  --c-export: #1971c2; /* přetok do sítě */
+  --c-orez:   #e8590c; /* ořez výroby */
+  --c-refnew: #d97706; /* referenční čára — nová hodnota */
+  --c-refnow: #78847d; /* referenční čára — současný stav */
+  --c-grid:   #e9edea;
+  --c-axis:   #4b5852;
+
+  /* ---- elevace a tvary ---- */
+  --shadow-1: 0 1px 2px rgba(20, 33, 28, 0.06), 0 1px 1px rgba(20, 33, 28, 0.04);
+  --shadow-2: 0 6px 20px -6px rgba(20, 33, 28, 0.18), 0 2px 6px rgba(20, 33, 28, 0.06);
+  --radius:    14px;
+  --radius-sm: 10px;
 
   /* rozvržení rozcestníku - libovolně měnitelné bez zásahu do JS */
-  --fm-tile-min-width: 220px;
-  --fm-tile-gap: 16px;
-  --fm-tile-radius: 16px;
+  --fm-tile-min-width: 232px;
+  --fm-tile-gap: 14px;
+  --fm-tile-radius: var(--radius);
+
+  /* ---- zpětně kompatibilní aliasy (starší styly --fm-*) ---- */
+  --fm-brand:      var(--brand);
+  --fm-brand-dk:   var(--brand-strong);
+  --fm-brand-soft: var(--brand-wash);
+  --fm-bg:         var(--bg);
+  --fm-card:       var(--surface);
+  --fm-head:       var(--surface-2);
+  --fm-text:       var(--ink);
+  --fm-muted:      var(--muted);
+  --fm-line:       var(--line);
 }
 
-/* ---- Tmavý režim: přepíná jen barvy, rozvržení zůstává ---- */
+/* ---- Tmavý režim: přepíná jen tokeny, rozvržení zůstává ---- */
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --fm-brand: #40c057;
-  --fm-brand-dk: #69db7c;
-  --fm-brand-soft: #17321f;
-  --fm-bg: #12161a;
-  --fm-card: #1b2126;
-  --fm-head: #232b31;
-  --fm-text: #e6ebe8;
-  --fm-muted: #9aa5a0;
-  --fm-line: #333d43;
+  --bg:        #0e1512;
+  --surface:   #161e1a;
+  --surface-2: #1b2420;
+  --ink:       #e7ece9;
+  --ink-2:     #aab4ae;
+  --muted:     #7f8b85;
+  --line:      #26302b;
+  --line-soft: #1f2823;
+
+  --brand:        #40c057;
+  --brand-strong: #69db7c;
+  --brand-wash:   #172a1d;
+
+  --st-good:      #2fbf46;
+  --st-warn:      #fab219;
+  --st-serious:   #ec835a;
+  --st-crit:      #e15d5d;
+  --st-good-w:    #14251a;
+  --st-warn-w:    #2b2410;
+  --st-serious-w: #2c1e16;
+  --st-crit-w:    #2c1717;
+
+  --c-before: #3a453f;
+  --c-after:  #1fa04a;
+  --c-export: #3987e5;
+  --c-orez:   #d95926;
+  --c-refnew: #c98500;
+  --c-refnow: #7f8b85;
+  --c-grid:   #232d28;
+  --c-axis:   #aab4ae;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 24px -8px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* ---- Kompenzace červeno-zelené vady (deuteranopie/protanopie):
+   „v pořádku" = modrá, závažnost = žlutá → oranžová → tmavá červená
+   (odlišené jasem, ne odstínem). Přepisuje jen stavy + hlavní sérii grafu. ---- */
+:root[data-cvd="on"] {
+  --st-good:      #2a78d6;
+  --st-warn:      #eda100;
+  --st-serious:   #d55e00;
+  --st-crit:      #a61e2b;
+  --st-good-w:    #e7effb;
+  --st-warn-w:    #faf0d6;
+  --st-serious-w: #f9e7da;
+  --st-crit-w:    #f6dfe1;
+  --c-after:      #2a78d6;
+  --c-export:     #eda100; /* amber — modrou přebírá hlavní série */
+  --c-orez:       #d55e00;
+  --c-refnew:     #d97706;
+}
+
+:root[data-theme="dark"][data-cvd="on"] {
+  --st-good:      #3987e5;
+  --st-warn:      #c98500;
+  --st-serious:   #c04c1b;
+  --st-crit:      #e36262;
+  --st-good-w:    #141f2e;
+  --st-warn-w:    #2b2410;
+  --st-serious-w: #2a1a10;
+  --st-crit-w:    #2c1717;
+  --c-after:      #3987e5;
+  --c-export:     #c98500;
+  --c-orez:       #c04c1b;
+  --c-refnew:     #c98500;
 }
 
 * {
@@ -45,59 +152,389 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  background: var(--fm-bg);
-  color: var(--fm-text);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
   font-size: 14px;
-  line-height: 1.4;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
   color: inherit;
 }
 
+/* tabulkové číslice — všude, kde se čísla zarovnávají pod sebe */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Tlačítka ---------- */
 .fm-btn {
-  border: 1px solid var(--fm-line);
-  background: var(--fm-card);
-  color: var(--fm-text);
-  padding: 8px 14px;
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 7px 13px;
+  border-radius: 9px;
+  font: inherit;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
 
 .fm-btn:hover {
-  border-color: var(--fm-brand);
-  color: var(--fm-brand-dk);
+  border-color: var(--brand);
+  color: var(--brand-strong);
+}
+
+.fm-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 .fm-btn.fm-primary {
-  background: var(--fm-brand);
-  border-color: var(--fm-brand);
+  background: var(--brand);
+  border-color: var(--brand);
   color: #fff;
 }
 
 .fm-btn.fm-primary:hover {
-  background: var(--fm-brand-dk);
+  background: var(--brand-strong);
+  border-color: var(--brand-strong);
+  color: #fff;
 }
 
+/* zapnutý přepínač (téma, kompenzace vady…) */
+.fm-btn[aria-pressed="true"] {
+  border-color: var(--brand);
+  color: var(--brand-strong);
+  background: var(--brand-wash);
+}
+
+/* čtvercové ikonové tlačítko do lišty */
+.gs-icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.gs-icon-btn:hover {
+  border-color: var(--brand);
+  color: var(--brand-strong);
+}
+
+.gs-icon-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.gs-icon-btn[aria-pressed="true"] {
+  border-color: var(--brand);
+  color: var(--brand-strong);
+  background: var(--brand-wash);
+}
+
+.gs-icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ---------- Karty ---------- */
 .fm-card {
-  background: var(--fm-card);
-  border: 1px solid var(--fm-line);
-  border-radius: 12px;
-  box-shadow: 0 1px 2px rgba(31, 41, 51, 0.05);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-1);
 }
 
-/* formulářová pole respektují téma (jinak by v tmavém režimu zůstala bílá) */
+/* ---------- Horní lišta ---------- */
+.gs-topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  box-shadow: var(--shadow-1);
+  margin-bottom: 16px;
+}
+
+.gs-brand-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--brand), var(--brand-strong));
+  display: grid;
+  place-items: center;
+  color: #fff;
+  flex: none;
+}
+
+.gs-brand-mark svg {
+  width: 15px;
+  height: 15px;
+}
+
+.gs-brand-name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.gs-topbar-spacer {
+  flex: 1;
+}
+
+.gs-topbar-who {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---------- Dlaždice rozcestníku ---------- */
+.gs-tile {
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--fm-tile-radius);
+  padding: 18px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 128px;
+  min-width: var(--fm-tile-min-width);
+  box-shadow: var(--shadow-1);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+  font: inherit;
+  color: var(--ink);
+}
+
+.gs-tile:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-2);
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--line));
+}
+
+.gs-tile:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.gs-tile-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.gs-tile-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: var(--brand-wash);
+  color: var(--brand-strong);
+  display: grid;
+  place-items: center;
+}
+
+.gs-tile-icon svg {
+  width: 21px;
+  height: 21px;
+}
+
+.gs-tile-arrow {
+  color: var(--muted);
+  transition: transform 0.16s, color 0.16s;
+}
+
+.gs-tile:hover .gs-tile-arrow {
+  transform: translate(2px, -2px);
+  color: var(--brand-strong);
+}
+
+.gs-tile-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.gs-tile-sub {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.gs-tile.locked {
+  cursor: not-allowed;
+}
+
+.gs-tile.locked .gs-tile-icon {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.gs-tile.locked .gs-tile-title,
+.gs-tile.locked .gs-tile-sub {
+  color: var(--muted);
+}
+
+.gs-tile.locked:hover {
+  transform: none;
+  box-shadow: var(--shadow-1);
+  border-color: var(--line);
+}
+
+.gs-lockchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  padding: 3px 8px;
+  border-radius: 999px;
+  align-self: flex-start;
+}
+
+.gs-lockchip svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* ---------- Stavové pilulky (tečka + popisek; barva nikdy sama) ---------- */
+.gs-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px 3px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.gs-pill .gs-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: currentColor;
+}
+
+.gs-pill.good {
+  color: var(--st-good);
+  background: var(--st-good-w);
+  border-color: color-mix(in srgb, var(--st-good) 25%, transparent);
+}
+
+.gs-pill.warn {
+  color: var(--st-warn);
+  background: var(--st-warn-w);
+  border-color: color-mix(in srgb, var(--st-warn) 30%, transparent);
+}
+
+.gs-pill.serious {
+  color: var(--st-serious);
+  background: var(--st-serious-w);
+  border-color: color-mix(in srgb, var(--st-serious) 30%, transparent);
+}
+
+.gs-pill.crit {
+  color: var(--st-crit);
+  background: var(--st-crit-w);
+  border-color: color-mix(in srgb, var(--st-crit) 30%, transparent);
+}
+
+.gs-pill.idle {
+  color: var(--muted);
+  background: var(--surface-2);
+  border-color: var(--line);
+}
+
+/* ---------- KPI stat dlaždice (nabídkovač) ---------- */
+.gs-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.gs-kpi {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 15px 16px;
+  box-shadow: var(--shadow-1);
+}
+
+.gs-kpi-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.gs-kpi-value {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 6px;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.gs-kpi-value .gs-unit {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-left: 3px;
+  letter-spacing: 0;
+}
+
+.gs-kpi-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 5px;
+}
+
+.gs-kpi.accent {
+  background: linear-gradient(160deg, var(--brand-wash), var(--surface));
+  border-color: color-mix(in srgb, var(--brand) 35%, var(--line));
+}
+
+.gs-kpi.accent .gs-kpi-value {
+  color: var(--brand-strong);
+}
+
+/* ---------- Formulářová pole ---------- */
 input,
 select,
 textarea {
-  background: var(--fm-card);
-  color: var(--fm-text);
+  background: var(--surface);
+  color: var(--ink);
 }
 
 input::placeholder,
 textarea::placeholder {
-  color: var(--fm-muted);
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fm-btn,
+  .gs-icon-btn,
+  .gs-tile,
+  .gs-tile-arrow {
+    transition: none;
+  }
 }

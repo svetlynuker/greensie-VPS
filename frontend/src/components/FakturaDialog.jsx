@@ -133,13 +133,13 @@ export default function FakturaDialog({ projektNazev, faktura, onSave, onDelete,
           </div>
         )}
 
-        {chyba && <div style={{ color: "#c92a2a", fontSize: 13 }}>{chyba}</div>}
+        {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</div>}
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
           {onDelete && (
             <button
               className="fm-btn"
-              style={{ color: "#c92a2a" }}
+              style={{ color: "var(--st-crit)" }}
               onClick={onDelete}
               disabled={uklada}
               title="Odebrat tuto fakturu z projektu"

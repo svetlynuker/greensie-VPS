@@ -97,7 +97,7 @@ export default function NabidkaDetail() {
   if (chyba && !nabidka) {
     return (
       <Layout uzivatel={me?.uzivatel}>
-        <div style={{ padding: 24, color: "#c92a2a" }}>Chyba: {chyba}</div>
+        <div style={{ padding: 24, color: "var(--st-crit)" }}>Chyba: {chyba}</div>
       </Layout>
     );
   }
@@ -146,13 +146,13 @@ export default function NabidkaDetail() {
             </div>
           </div>
           {zprava && <div style={{ color: "var(--fm-brand-dk)", fontSize: 13, marginTop: 10 }}>{zprava}</div>}
-          {chyba && <div style={{ color: "#c92a2a", fontSize: 13, marginTop: 10 }}>{chyba}</div>}
+          {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13, marginTop: 10 }}>{chyba}</div>}
           <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
             <button className="fm-btn fm-primary" onClick={uloz} disabled={uklada}>
               {uklada ? "Ukládám…" : "Uložit"}
             </button>
             <span style={{ flex: 1 }} />
-            <button className="fm-btn" style={{ color: "#c92a2a" }} onClick={smaz}>
+            <button className="fm-btn" style={{ color: "var(--st-crit)" }} onClick={smaz}>
               Smazat nabídku
             </button>
           </div>

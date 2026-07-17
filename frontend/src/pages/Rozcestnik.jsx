@@ -12,6 +12,22 @@ const TRASY = {
   admin: "/admin",
 };
 
+// Vzhled dlaždic: ikona + podtitulek dle klíče modulu.
+const IKONY = {
+  projekty: "projekty",
+  finance: "finance",
+  zmeny: "zmeny",
+  nabidkovac: "nabidkovac",
+  admin: "admin",
+};
+const PODTITULY = {
+  projekty: "Matice úkolů a fází ze Freela",
+  finance: "Faktury k projektům, párování POHODA",
+  zmeny: "Připravujeme",
+  nabidkovac: "Nabídky FVE, PPA a peak shaving",
+  admin: "Uživatelé, skupiny a oprávnění",
+};
+
 // Nedostupné (zamčené) a zatím rozpracované dlaždice vedou sem.
 const VYVOJ_VIDEO = "https://youtu.be/oPLObjVAvIU";
 // Výjimky: konkrétní dlaždice s vlastním odkazem.
@@ -59,6 +75,8 @@ export default function Rozcestnik() {
           <Tile
             key={d.klic}
             nazev={d.nazev}
+            popis={PODTITULY[d.klic]}
+            ikona={IKONY[d.klic] || "projekty"}
             zamceno={!d.muze_otevrit}
             onClick={() => {
               // hotová sekce, na kterou má uživatel právo → otevřít ji

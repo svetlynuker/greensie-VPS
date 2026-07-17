@@ -1,33 +1,24 @@
 /* Pohled 1 – Přehled projektů. Vizuál převzatý z prototypu (docs/prehled projektu.txt),
    s úpravami dle SPEC.md kap. 3.2. Namespace fm-, barvy z global.css (--fm-*). */
 
+/* Lokální proměnné odvozené z globálních tokenů (global.css) —
+   světlý/tmavý i CVD režim se tak přepínají samy, bez vlastních bloků. */
 :root {
-  --fm-done-bg: #e9f7ee;
-  --fm-done: #2f9e44;
-  --fm-todo-bg: #fff7ed;
-  --fm-todo: #e8850c;
-  --fm-sticky: #f8faf9;
-  --fm-row-hover: #f6faf8;
-  --fm-sticky-hover: #eef4f1;
-  --fm-empty-bg: #fbfcfc;
-  --fm-empty-hint: #c7d0cb;
-  --fm-grp-hover: #e4ebe7;
+  --fm-done-bg: var(--st-good-w);
+  --fm-done: var(--st-good);
+  --fm-todo-bg: var(--st-serious-w);
+  --fm-todo: var(--st-serious);
+  --fm-sticky: var(--surface-2);
+  --fm-row-hover: var(--surface-2);
+  --fm-sticky-hover: color-mix(in srgb, var(--ink) 5%, var(--surface-2));
+  --fm-empty-bg: color-mix(in srgb, var(--surface) 55%, var(--surface-2));
+  --fm-empty-hint: color-mix(in srgb, var(--muted) 55%, transparent);
+  --fm-grp-hover: color-mix(in srgb, var(--ink) 6%, var(--surface-2));
   --fm-w-handle: 32px;
   --fm-w-proj: 240px;
   --fm-w-term: 132px;
   --fm-w-done: 120px;
   --fm-w-task: 176px;
-}
-
-:root[data-theme="dark"] {
-  --fm-done-bg: #173224;
-  --fm-done: #40c057;
-  --fm-sticky: #171d22;
-  --fm-row-hover: #1f272d;
-  --fm-sticky-hover: #232c32;
-  --fm-empty-bg: #171d22;
-  --fm-empty-hint: #3a444a;
-  --fm-grp-hover: #2a343a;
 }
 
 .fm-app {
@@ -43,9 +34,9 @@
   padding: 10px 12px;
   background: var(--fm-card);
   border: 1px solid var(--fm-line);
-  border-radius: 12px;
+  border-radius: var(--radius);
   margin-bottom: 12px;
-  box-shadow: 0 1px 2px rgba(31, 41, 51, 0.05);
+  box-shadow: var(--shadow-1);
 }
 
 .fm-group {
@@ -101,10 +92,10 @@
   color: var(--fm-text);
   background: var(--fm-card);
   border: 1px solid var(--fm-line);
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 10px 16px;
   margin-bottom: 12px;
-  box-shadow: 0 1px 2px rgba(31, 41, 51, 0.05);
+  box-shadow: var(--shadow-1);
 }
 
 .fm-legend > span {
@@ -130,10 +121,10 @@
 .fm-scroll {
   background: var(--fm-card);
   border: 1px solid var(--fm-line);
-  border-radius: 12px;
+  border-radius: var(--radius);
   overflow: auto;
   max-height: calc(100vh - 220px);
-  box-shadow: 0 1px 2px rgba(31, 41, 51, 0.05);
+  box-shadow: var(--shadow-1);
 }
 
 table.fm-matrix {
@@ -286,7 +277,7 @@ tr.fm-drop-row td {
 }
 
 .fm-row-hide:hover {
-  color: #c92a2a;
+  color: var(--st-crit);
 }
 
 .fm-skryte-panel {
@@ -473,58 +464,34 @@ td.fm-cell.fm-s-done {
   line-height: 1;
 }
 
-/* ---- Termínové úrovně (deadlineLevel z prototypu) ---- */
+/* ---- Termínové úrovně (deadlineLevel z prototypu) ----
+   Mapované na stavové tokeny --st-* (global.css): světlý/tmavý režim
+   i kompenzace červeno-zelené vady se přepínají samy. Text úrovně se
+   ztmavuje/zesvětluje příměsí inkoustu, aby držel kontrast na podkladu. */
 .fm-lvl-green {
-  --lvl: #2f9e44;
-  --lvlbg: #e9f7ee;
-  --lvltx: #237032;
+  --lvl: var(--st-good);
+  --lvlbg: var(--st-good-w);
+  --lvltx: color-mix(in srgb, var(--st-good) 72%, var(--ink));
 }
 .fm-lvl-yellow {
-  --lvl: #e6b800;
-  --lvlbg: #fff9db;
-  --lvltx: #8a6410;
+  --lvl: var(--st-warn);
+  --lvlbg: var(--st-warn-w);
+  --lvltx: color-mix(in srgb, var(--st-warn) 72%, var(--ink));
 }
 .fm-lvl-orange {
-  --lvl: #e8850c;
-  --lvlbg: #fff2e2;
-  --lvltx: #b5540a;
+  --lvl: var(--st-serious);
+  --lvlbg: var(--st-serious-w);
+  --lvltx: color-mix(in srgb, var(--st-serious) 72%, var(--ink));
 }
 .fm-lvl-red {
-  --lvl: #e03131;
-  --lvlbg: #ffe9e7;
-  --lvltx: #c0261f;
+  --lvl: var(--st-crit);
+  --lvlbg: var(--st-crit-w);
+  --lvltx: color-mix(in srgb, var(--st-crit) 72%, var(--ink));
 }
 .fm-lvl-none {
-  --lvl: #e8850c;
-  --lvlbg: #fff2e2;
-  --lvltx: #b5540a;
-}
-
-/* tmavé varianty úrovní – tmavší podklad s barevným nádechem, světlý text */
-:root[data-theme="dark"] .fm-lvl-green {
-  --lvl: #40c057;
-  --lvlbg: #14301f;
-  --lvltx: #8ce99a;
-}
-:root[data-theme="dark"] .fm-lvl-yellow {
-  --lvl: #e6b800;
-  --lvlbg: #33290a;
-  --lvltx: #ffe066;
-}
-:root[data-theme="dark"] .fm-lvl-orange {
-  --lvl: #e8850c;
-  --lvlbg: #3a2510;
-  --lvltx: #ffc078;
-}
-:root[data-theme="dark"] .fm-lvl-red {
-  --lvl: #e03131;
-  --lvlbg: #3a1614;
-  --lvltx: #ff8787;
-}
-:root[data-theme="dark"] .fm-lvl-none {
-  --lvl: #e8850c;
-  --lvlbg: #3a2510;
-  --lvltx: #ffc078;
+  --lvl: var(--st-serious);
+  --lvlbg: var(--st-serious-w);
+  --lvltx: color-mix(in srgb, var(--st-serious) 72%, var(--ink));
 }
 
 /* název projektu obarvený dle termínu projektu (SPEC 3.2: bez proužku nejhoršího úkolu) */

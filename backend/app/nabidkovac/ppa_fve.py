@@ -18,27 +18,52 @@ Všechny peněžní hodnoty jsou bez DPH.
 
 from __future__ import annotations
 
+import calendar
 import dataclasses
 import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
+from functools import lru_cache
 
 # Granularita vstupních dat (fallback, když ji nejde odvodit z časových značek).
 VYCHOZI_INTERVAL_H = 0.25
 
-# Výchozí měrný výnos ČR, jižní orientace, optimální sklon ~35° (kap. 4.1).
-# ⚠️ Ilustrativní default k potvrzení/kalibraci – reálné rozpětí ČR ~950–1080.
-VYCHOZI_MERNY_VYNOS_KWH_KWP = 1000.0
+# Výchozí měrný výnos ČR, jižní orientace, optimální sklon ~35°, ztráty 14 %
+# (kap. 4.1). Kalibrováno PVGIS v5.3 / SARAH3 (audit 16. 7. 2026, PPA-2):
+# střed ČR 1 055 kWh/kWp/rok; regionální rozpětí ~1 030 (sever) – 1 165
+# (jižní Morava), meziroční variabilita ±6 %. Zdroj:
+# docs/reserze_kalkulator/pvgis-kalibrace-vyroby-fve.md.
+VYCHOZI_MERNY_VYNOS_KWH_KWP = 1055.0
 
-# Výchozí roční degradace panelů (kap. 4.2).
+# Výchozí roční degradace panelů (kap. 4.2). Medián terénních dat NREL.
 VYCHOZI_DEGRADACE_ROCNI = 0.005
+
+# Degradace prvního roku – LID (audit PPA-4, rozhodnuto 16. 7. 2026):
+# p-type PERC typicky −1,5 až −3 % (default −2 %), n-type TOPCon ~−1 %
+# (přes manažerské nastavení `ppa_degradace_rok1`).
+VYCHOZI_DEGRADACE_ROK1 = 0.02
 
 # Výchozí cena za kWp pro zjednodušený režim CAPEX (kap. 3.4/4.5).
 # ⚠️ Orientační odhad k potvrzení.
 VYCHOZI_CENA_FVE_KC_KWP = 25000.0
 
+# Ekonomika investora – defaulty (audit PPA-6, rozhodnuto 16. 7. 2026):
+# O&M ~1–2 % CAPEX/rok vč. pojištění, revizí a monitoringu; WACC investora
+# 6–9 % → diskont 7,5 %. Dřívější defaulty (O&M 0, diskont 5 %) přikrášlovaly.
+VYCHOZI_OAM_KC_KWP_ROK = 350.0
+VYCHOZI_DISKONTNI_SAZBA = 0.075
+
 # Zeměpisná šířka středu ČR – fallback, když nabídka nemá GPS (kap. 4.1).
 VYCHOZI_LAT = 49.8
+
+# Vyhnutelné regulované složky ceny (audit PPA-5, rozhodnuto 16. 7. 2026):
+# samospotřeba za elektroměrem se kromě silové elektřiny vyhne i variabilním
+# regulovaným platbám – pro VN 2026 (bez DPH): použití sítí ~83–106 Kč/MWh
+# (dle DSO) + systémové služby 164,24 + POZE 0 → ~250–270 Kč/MWh. Default
+# střed pásma; přesná hodnota v manažerském nastavení
+# (`ppa_vyhnutelne_regulovane_kc_mwh`). Daň z elektřiny se nezapočítává
+# (symetrická – PPA dodávka z výrobny > 30 kW jí podléhá také).
+VYCHOZI_VYHNUTELNE_REGULOVANE_KC_MWH = 260.0
 
 # Cílová míra samospotřeby pro automatický návrh velikosti FVE (kap. 4.7).
 # Návrh = největší kWp, u něhož se ještě aspoň tento podíl výroby přímo spotřebuje
@@ -49,24 +74,29 @@ VYCHOZI_CIL_MIRA_SAMOSPOTREBY = 0.80
 # (ochrana proti absurdně velké FVE u ryze denní zátěže).
 _MAX_POMER_VYROBA_SPOTREBA = 3.0
 
-# Měsíční rozdělení ročního výnosu pro ČR – kWh/kWp/měsíc při ročním výnosu 1000
-# (METODIKA kap. 4.1). ⚠️ Ilustrativní, součet = 1000; ke kalibraci.
+# Měsíční rozdělení ročního výnosu pro ČR – kWh/kWp/měsíc při ročním výnosu
+# 1000 (METODIKA kap. 4.1). Kalibrováno PVGIS v5.3, střed ČR, 35°/jih
+# (audit PPA-2) – normované měsíční hodnoty ze SARAH3, součet přesně 1000
+# (celočíselná řada z rešerše by sečetla 1001). Zimní půlrok tvoří 30,4 %
+# ročního výnosu (dřívější ilustrativní tabulka jen 26,5 % – moc „letní“).
 _MESICNI_VYNOS = {
-    1: 26.0, 2: 42.0, 3: 83.0, 4: 120.0, 5: 135.0, 6: 132.0,
-    7: 138.0, 8: 120.0, 9: 90.0, 10: 58.0, 11: 30.0, 12: 26.0,
+    1: 30.6, 2: 51.8, 3: 84.9, 4: 113.7, 5: 120.9, 6: 123.1,
+    7: 124.6, 8: 114.9, 9: 98.5, 10: 72.0, 11: 36.0, 12: 29.0,
 }
 _SUMA_MESICNI = sum(_MESICNI_VYNOS.values())  # = 1000
 
 # Korekce orientace k_orient(azimut, sklon), METODIKA kap. 4.1. Řádky = sklon,
 # sloupce = |azimut| (0 = jih, 45 = JV/JZ, 90 = V/Z, 180 = sever). Bilineární
-# interpolace mezi uzly. ⚠️ Ilustrativní hodnoty, kalibrovat proti PVGIS.
+# interpolace mezi uzly. Kalibrováno PVGIS v5.3, střed ČR (audit PPA-2) –
+# hlavní opravy proti dřívější ilustrativní tabulce: sever 35° 0,66 → 0,54,
+# sever 60° 0,50 → 0,34, horizontála 0,88 → 0,85, strmý jih 0,91 → 0,94.
 _ORIENT_SKLONY = [0, 15, 35, 60]
 _ORIENT_AZIMUTY = [0, 45, 90, 180]
 _ORIENT_TAB = {
-    0: [0.88, 0.88, 0.88, 0.88],
-    15: [0.96, 0.94, 0.88, 0.80],
-    35: [1.00, 0.96, 0.84, 0.66],
-    60: [0.91, 0.86, 0.72, 0.50],
+    0: [0.85, 0.85, 0.85, 0.85],
+    15: [0.95, 0.92, 0.84, 0.72],
+    35: [1.00, 0.94, 0.80, 0.54],
+    60: [0.94, 0.87, 0.70, 0.34],
 }
 
 
@@ -102,6 +132,37 @@ def korekce_orientace(azimut_st: float, sklon_st: float) -> float:
 
 
 # -------------------------------------------------------- solární geometrie
+def _posledni_nedele(rok: int, mesic: int) -> date:
+    """Datum poslední neděle daného měsíce (přechody SEČ/SELČ)."""
+    posledni_den = date(rok, mesic, calendar.monthrange(rok, mesic)[1])
+    return posledni_den - timedelta(days=(posledni_den.weekday() + 1) % 7)
+
+
+@lru_cache(maxsize=None)
+def _okno_letniho_casu(rok: int) -> tuple[datetime, datetime]:
+    """(začátek, konec) letního času v lokálním čase pro daný rok."""
+    zacatek = datetime.combine(_posledni_nedele(rok, 3), datetime.min.time()).replace(hour=2)
+    konec = datetime.combine(_posledni_nedele(rok, 10), datetime.min.time()).replace(hour=3)
+    return zacatek, konec
+
+
+def _je_letni_cas(c: datetime) -> bool:
+    """Platí v `c` (lokální čas ČR) letní čas (SELČ)?
+
+    Okno: poslední neděle v březnu 02:00 – poslední neděle v říjnu 03:00.
+    Profily z portálů distributorů jsou v lokálním čase, takže v létě je
+    solární poledne ~13:00, ne 12:00 (audit PPA-3: model bez posunu „vyráběl"
+    o hodinu dřív a u odpolední zátěže podstřeloval samospotřebu o ~7 %).
+
+    Časy z DB (`DateTime(timezone=True)`) chodí tz-aware – porovnává se
+    „nástěnný" čas bez tzinfo, stejně jako zbytek simulace čte c.hour/.month.
+    """
+    if c.tzinfo is not None:
+        c = c.replace(tzinfo=None)
+    zacatek, konec = _okno_letniho_casu(c.year)
+    return zacatek <= c < konec
+
+
 def _slunecni_okno(den_v_roce: int, lat_deg: float) -> tuple[float, float]:
     """Solární čas východu a západu Slunce pro daný den v roce a šířku (kap. 4.1)."""
     dekl = 23.45 * math.sin(math.radians(360.0 * (284 + den_v_roce) / 365.0))
@@ -132,7 +193,9 @@ def simuluj_vyrobu(
 
     Roční výnos `E_rok = kWp × měrný_výnos × korekce_orientace` se rozdělí po
     měsících (tabulka `_MESICNI_VYNOS`), měsíc na dny (podle počtu dní přítomných
-    v profilu) a den na intervaly clear-sky křivkou. Vrací kWh za interval.
+    v profilu) a den na intervaly clear-sky křivkou. Časové značky profilu jsou
+    v lokálním čase ČR – v okně letního času se tvar dne vyhodnocuje v `t − 1 h`
+    (SELČ → SEČ ~ solární čas; audit PPA-3). Vrací kWh za interval.
     """
     n = len(casy)
     if n == 0 or kwp <= 0:
@@ -153,6 +216,8 @@ def simuluj_vyrobu(
         yday = c.timetuple().tm_yday
         t_vychod, t_zapad = _slunecni_okno(yday, lat_deg)
         t_h = c.hour + c.minute / 60.0 + c.second / 3600.0
+        if _je_letni_cas(c):
+            t_h -= 1.0  # SELČ → SEČ: v létě je solární poledne ~13:00 lokálního času
         g = _tvar_produkce(t_h, t_vychod, t_zapad)
         tvar[i] = g
         kd = (c.year, yday)
@@ -428,7 +493,10 @@ class VstupPPA:
     azimut_st: float
     cena_ppa_kc_mwh: float
     index_ppa_rocni: float
-    cena_dodavatel_kc_mwh: float
+    # Cena dodavatele rozložená (audit PPA-5): silová složka (zadává OZ,
+    # eskaluje se indexem dodavatele) + vyhnutelné regulované složky
+    # (default z manažerského nastavení, eskalace samostatně).
+    cena_silova_kc_mwh: float
     index_dodavatel_rocni: float
     delka_kontraktu_roky: int
     degradace_rocni: float
@@ -442,6 +510,16 @@ class VstupPPA:
     capex_rozpad: dict | None = None
     merny_vynos_kwh_kwp: float = VYCHOZI_MERNY_VYNOS_KWH_KWP
     interval_h: float = VYCHOZI_INTERVAL_H
+    # LID – pokles výroby už v prvním roce (audit PPA-4).
+    degradace_rok1: float = VYCHOZI_DEGRADACE_ROK1
+    # Vyhnutelné regulované složky + POZE (audit PPA-5), Kč/MWh bez DPH.
+    vyhnutelne_regulovane_kc_mwh: float = VYCHOZI_VYHNUTELNE_REGULOVANE_KC_MWH
+    index_regulovane_rocni: float = 0.0
+    poze_kc_mwh: float = 0.0
+    # Jednorázová výměna střídače v průběhu kontraktu (audit PPA-6):
+    # rok 0 = vypnuto; typicky rok 10–15, ~5–10 % CAPEX (Kč/kWp).
+    vymena_stridace_rok: int = 0
+    vymena_stridace_kc_kwp: float = 0.0
 
 
 def spocti_ppa(
@@ -470,29 +548,49 @@ def spocti_ppa(
     mesice = [c.month for c in casy]
     e_spotreba = sum(spotreba_kwh)
 
-    bil1 = sparuj(vyroba1, spotreba_kwh, v.rezervovany_vykon_dodavky_kw, v.interval_h)
+    def _faktor_degradace(t: int) -> float:
+        # Kap. 4.2 + audit PPA-4: f(t) = (1 − LID) × (1 − d)^(t−1) – pokles
+        # prvního roku (LID) se projeví už v roce 1 a nese se celý kontrakt.
+        return (1.0 - v.degradace_rok1) * (1.0 - v.degradace_rocni) ** (t - 1)
+
+    # Headline bilance a graf reflektují rok 1 VČETNĚ LID (to klient dostane).
+    f1 = _faktor_degradace(1)
+    vyroba_r1 = [x * f1 for x in vyroba1] if f1 != 1.0 else vyroba1
+    bil1 = sparuj(vyroba_r1, spotreba_kwh, v.rezervovany_vykon_dodavky_kw, v.interval_h)
 
     roky = []
     uspora_kum = 0.0
     cf_rok: list[float] = []
     for t in range(1, max(1, v.delka_kontraktu_roky) + 1):
-        f = (1.0 - v.degradace_rocni) ** (t - 1)
-        vyroba_t = [x * f for x in vyroba1] if t > 1 else vyroba1
-        bil = sparuj(vyroba_t, spotreba_kwh, v.rezervovany_vykon_dodavky_kw, v.interval_h)
+        f = _faktor_degradace(t)
+        vyroba_t = [x * f for x in vyroba1] if t > 1 else vyroba_r1
+        bil = sparuj(vyroba_t, spotreba_kwh, v.rezervovany_vykon_dodavky_kw, v.interval_h) if t > 1 else bil1
 
         cena_ppa_t = v.cena_ppa_kc_mwh * (1 + v.index_ppa_rocni) ** (t - 1)
-        cena_dod_t = v.cena_dodavatel_kc_mwh * (1 + v.index_dodavatel_rocni) ** (t - 1)
+        cena_silova_t = v.cena_silova_kc_mwh * (1 + v.index_dodavatel_rocni) ** (t - 1)
+        cena_regulovane_t = (v.vyhnutelne_regulovane_kc_mwh + v.poze_kc_mwh) * (
+            1 + v.index_regulovane_rocni
+        ) ** (t - 1)
+        # Vyhnutelná cena klienta = silová + vyhnutelné regulované složky
+        # (audit PPA-5): samospotřeba za elektroměrem šetří obojí.
+        cena_dod_t = cena_silova_t + cena_regulovane_t
         cena_pre_t = v.prebytek_cena_kc_mwh * (1 + v.index_prebytek_rocni) ** (t - 1)
 
-        # Klient: úspora = samospotřeba × (cena dodavatele − PPA cena) (kap. 4.4).
+        # Klient: úspora = samospotřeba × (vyhnutelná cena − PPA cena) (kap. 4.4).
         uspora_t = (bil.samospotreba_kwh / 1000.0) * (cena_dod_t - cena_ppa_t)
         uspora_kum += uspora_t
 
-        # Investor: výnos z PPA + volitelně z prodeje přetoku, minus O&M (kap. 4.5).
+        # Investor: výnos z PPA + volitelně z prodeje přetoku, minus O&M
+        # a případná jednorázová výměna střídače (kap. 4.5 + audit PPA-6).
         vynos_ppa = (bil.samospotreba_kwh / 1000.0) * cena_ppa_t
         vynos_pre = (bil.export_kwh / 1000.0) * cena_pre_t if v.prebytek_uctovat else 0.0
         oam = v.oam_kc_kwp_rok * v.kwp
-        cf = vynos_ppa + vynos_pre - oam
+        vymena = (
+            v.vymena_stridace_kc_kwp * v.kwp
+            if (v.vymena_stridace_rok and t == v.vymena_stridace_rok and v.vymena_stridace_kc_kwp > 0)
+            else 0.0
+        )
+        cf = vynos_ppa + vynos_pre - oam - vymena
         cf_rok.append(cf)
 
         roky.append(
@@ -504,11 +602,16 @@ def spocti_ppa(
                 "orez_kwh": round(bil.orez_kwh, 1),
                 "dokup_kwh": round(bil.dokup_kwh, 1),
                 "cena_ppa_kc_mwh": round(cena_ppa_t, 2),
+                # „Cena dodavatele" = vyhnutelná cena (silová + regulované) –
+                # klíč zachován kvůli starším uloženým výsledkům ve FE.
                 "cena_dodavatel_kc_mwh": round(cena_dod_t, 2),
+                "cena_silova_kc_mwh": round(cena_silova_t, 2),
                 "uspora_klient_kc": round(uspora_t, 2),
                 "uspora_klient_kum_kc": round(uspora_kum, 2),
                 "vynos_ppa_kc": round(vynos_ppa, 2),
                 "vynos_prebytek_kc": round(vynos_pre, 2),
+                "naklad_oam_kc": round(oam, 2),
+                "naklad_vymena_stridace_kc": round(vymena, 2),
                 "cf_investor_kc": round(cf, 2),
             }
         )
@@ -524,7 +627,7 @@ def spocti_ppa(
     irr = _irr(cf_rok, v.capex_kc)
 
     vyroba_rok1 = bil1.vyroba_kwh
-    graf = _graf_mesicni(mesice, vyroba1, spotreba_kwh, v.rezervovany_vykon_dodavky_kw, v.interval_h)
+    graf = _graf_mesicni(mesice, vyroba_r1, spotreba_kwh, v.rezervovany_vykon_dodavky_kw, v.interval_h)
 
     return {
         "kwp": round(v.kwp, 2),
@@ -553,10 +656,32 @@ def spocti_ppa(
         "rezervovany_vykon_dodavky_kw": v.rezervovany_vykon_dodavky_kw,
         "index_ppa_rocni": v.index_ppa_rocni,
         "index_dodavatel_rocni": v.index_dodavatel_rocni,
+        "degradace_rocni": v.degradace_rocni,
+        "degradace_rok1": v.degradace_rok1,
+        # Rozklad vyhnutelné ceny klienta (audit PPA-5) – co srovnání obsahuje.
+        "cena_silova_kc_mwh": round(v.cena_silova_kc_mwh, 2),
+        "vyhnutelne_regulovane_kc_mwh": round(v.vyhnutelne_regulovane_kc_mwh, 2),
+        "poze_kc_mwh": round(v.poze_kc_mwh, 2),
+        "index_regulovane_rocni": v.index_regulovane_rocni,
+        "vyhnutelna_cena_rok1_kc_mwh": round(
+            v.cena_silova_kc_mwh + v.vyhnutelne_regulovane_kc_mwh + v.poze_kc_mwh, 2
+        ),
+        "uspora_zahrnuje": (
+            "silová složka + vyhnutelné regulované platby (použití sítí, systémové "
+            "služby, POZE) − PPA cena; daň z elektřiny symetricky mimo srovnání"
+        ),
         "navratnost_roky": round(navratnost, 2) if navratnost is not None else None,
         "irr": round(irr, 4) if irr is not None else None,
         "npv_kc": round(npv, 2),
+        # Doporučení investorovi (audit PPA-8): záporné NPV = nevyplatí se.
+        "doporuceno": npv > 0,
         "diskontni_sazba": v.diskontni_sazba,
+        "oam_kc_kwp_rok": round(v.oam_kc_kwp_rok, 2),
+        "vymena_stridace": (
+            {"rok": v.vymena_stridace_rok, "kc_kwp": round(v.vymena_stridace_kc_kwp, 2)}
+            if (v.vymena_stridace_rok and v.vymena_stridace_kc_kwp > 0)
+            else None
+        ),
         "souhrn_klient": {"uspora_kum_kc": round(uspora_kum, 2)},
         "souhrn_investor": {
             "cf_kum_kc": round(kum, 2),
@@ -584,19 +709,26 @@ def kandidatni_velikosti(
 ) -> list[int]:
     """Řada kandidátních velikostí (kWp) pro ekonomický sweep (kap. 4.7).
 
-    Horní mez = `_MAX_POMER_VYROBA_SPOTREBA`× roční spotřeby (příp. `max_kwp`).
-    Rovnoměrný krok, zaokrouhleno na celé kWp, unikátní, min. 1 kWp.
+    Horní mez = `_MAX_POMER_VYROBA_SPOTREBA`× roční spotřeby, minimálně 5 kWp
+    (ať má sweep co zkoušet i u malé spotřeby); limit střechy/připojení
+    `max_kwp` se uplatní až NAKONEC a je tvrdý – žádný kandidát ho nesmí
+    překročit (audit 16. 7. 2026, PPA-1: dřívější pořadí `min` → `max`
+    vracelo pro max_kwp < 5 kandidáty nad limit střechy). Rovnoměrný krok,
+    zaokrouhleno na celé kWp, unikátní, min. 1 kWp (i pro max_kwp < 1).
     """
     prod_per_kwp = sum(base_vyroba_1kwp)
     e_spotreba = sum(spotreba_kwh)
     if prod_per_kwp <= 0 or e_spotreba <= 0:
         return []
     cap = _MAX_POMER_VYROBA_SPOTREBA * e_spotreba / prod_per_kwp
+    cap = max(cap, 5.0)
     if max_kwp and max_kwp > 0:
         cap = min(cap, max_kwp)
-    cap = max(cap, 5.0)
     krok = max(1, round(cap / pocet))
-    return sorted({k for k in range(krok, int(cap) + 1, krok) if k >= 1})
+    kandidati = sorted({k for k in range(krok, int(cap) + 1, krok) if k >= 1})
+    # Limit menší než 1 kWp: zaokrouhlení na celé kWp nic menšího nenabízí –
+    # vrať aspoň nejmenší smysluplnou velikost 1 kWp.
+    return kandidati or [1]
 
 
 def vyber_velikost(

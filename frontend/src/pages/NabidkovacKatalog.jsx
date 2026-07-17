@@ -50,8 +50,10 @@ const NAZEV_STRUKTURY = Object.fromEntries(STRUKTURY.map((s) => [s.klic, s.nazev
 // Parametry (ceny) podle struktury tarifu – klíče musí sedět s backendem.
 const POLE_PARAMETRU = {
   stara_2026: [
-    { klic: "cena_rezervovana_kapacita_kc_kw_rok", label: "Rezervovaná kapacita (Kč/kW/rok)" },
-    { klic: "cena_prekroceni_kc_kw", label: "Pokuta za překročení (Kč/kW/měsíc)" },
+    { klic: "cena_rezervovana_kapacita_kc_kw_rok", label: "Roční RK (Kč/kW/rok = 12× měsíční cena roční RK)" },
+    // Pokuta za překročení RK se NEzadává – odvozuje se výpočtem jako
+    // 1,5× měsíční RK (bod 4.24 výměru ERÚ; audit 16. 7. 2026, PS-2).
+    { klic: "cena_mesicni_rk_kc_kw_mesic", label: "Měsíční RK (Kč/kW/měsíc; pokuta za překročení = 1,5×)" },
   ],
   nova_2027: [
     { klic: "t1_kapacita_kc_kw_mesic", label: "Tarif T1 – kapacita (Kč/kW/měsíc)" },
@@ -59,8 +61,10 @@ const POLE_PARAMETRU = {
     { klic: "t2_kapacita_kc_kw_mesic", label: "Tarif T2 – kapacita (Kč/kW/měsíc)" },
     { klic: "t2_spicka_kc_kw_mesic", label: "Tarif T2 – špička (Kč/kW/měsíc)" },
     { klic: "sazba_prekroceni_kc_kw_mesic", label: "Penalizace překročení RP (Kč/kW/měsíc)" },
-    { klic: "u1_ucinnost", label: "Koeficient AKU – práh U1 (např. 0,60)" },
-    { klic: "u2_ucinnost", label: "Koeficient AKU – práh U2 (0,75 VN / 0,70 VVN)" },
+    // Prahy AKU: předběžné hodnoty (VKP ERÚ 10/2026). Model 2027 slevu AKU
+    // NEaplikuje – pro BTM baterii bez exportu vychází dle ERÚ K=0 (PS-3).
+    { klic: "u1_ucinnost", label: "Koeficient AKU – práh U1 (předběžné; model neaplikuje)" },
+    { klic: "u2_ucinnost", label: "Koeficient AKU – práh U2 (0,75 VN / 0,70 VVN; předběžné)" },
   ],
 };
 
@@ -71,11 +75,34 @@ const PPA_POLE = [
   { klic: "ppa_ostatni_naklady_kc_kwp", label: "Ostatní náklady / BOS (Kč/kWp)" },
   { klic: "ppa_merny_vynos_kwh_kwp", label: "Měrný výnos FVE (kWh/kWp/rok)" },
   { klic: "ppa_index_ceny_rocni", label: "Index PPA ceny (%/rok, např. 0.03)" },
-  { klic: "ppa_index_dodavatel_rocni", label: "Index ceny dodavatele (%/rok)" },
+  { klic: "ppa_index_dodavatel_rocni", label: "Index silové ceny dodavatele (%/rok)" },
+  // Rozklad ceny dodavatele (PPA-5): OZ zadává silovou složku, vyhnutelné
+  // regulované platby (použití sítí + systémové služby + POZE) jdou odsud.
+  { klic: "ppa_vyhnutelne_regulovane_kc_mwh", label: "Vyhnutelné regulované složky (Kč/MWh, default 260)" },
+  { klic: "ppa_index_regulovane_rocni", label: "Index regulovaných složek (%/rok, default 0)" },
+  { klic: "ppa_poze_kc_mwh", label: "POZE (Kč/MWh, 2026 = 0)" },
   { klic: "ppa_index_prebytek_rocni", label: "Index ceny přebytku (%/rok)" },
   { klic: "ppa_degradace_rocni", label: "Degradace panelů (%/rok, např. 0.005)" },
-  { klic: "ppa_oam_kc_kwp_rok", label: "O&M (Kč/kWp/rok)" },
-  { klic: "ppa_diskontni_sazba", label: "Diskontní sazba NPV/IRR (např. 0.05)" },
+  { klic: "ppa_degradace_rok1", label: "Degradace 1. roku – LID (0.02 = PERC, 0.01 = TOPCon)" },
+  { klic: "ppa_oam_kc_kwp_rok", label: "O&M (Kč/kWp/rok, default 350)" },
+  { klic: "ppa_diskontni_sazba", label: "Diskontní sazba NPV/IRR (default 0.075)" },
+  // Volitelná jednorázová výměna střídače (PPA-6): rok 0 = vypnuto.
+  { klic: "ppa_vymena_stridace_rok", label: "Výměna střídače – rok kontraktu (0 = vypnuto)" },
+  { klic: "ppa_vymena_stridace_kc_kwp", label: "Výměna střídače – cena (Kč/kWp)" },
+];
+
+// Peak shaving – manažerské parametry (vypoctova_nastaveni.parametry).
+const PS_POLE = [
+  { klic: "max_navratnost_roky_peak_shaving", label: "Práh doporučení – max. návratnost (roky, default 5)" },
+  // Ocenění ztrát baterie (PS-5): silová + variabilní distribuce, bez DPH.
+  { klic: "ps_cena_energie_kc_mwh", label: "Cena energie pro ztráty baterie (Kč/MWh, default 3000)" },
+  // Rezerva sjednané RK nad nalezený strop (PS-6).
+  { klic: "ps_rezerva_rk_procenta", label: "Rezerva RK nad strop (%, default 5)" },
+  // NPV ekonomika baterie (PS-8/PS-9) – řídí výběr vítěze.
+  { klic: "ps_diskontni_sazba", label: "Diskont NPV baterie (default 0.08)" },
+  { klic: "ps_horizont_npv_roky", label: "Horizont NPV (roky, default 10)" },
+  { klic: "ps_oam_procenta_capex_rok", label: "O&M baterie (% CAPEX/rok, default 2)" },
+  { klic: "ps_degradace_uspor_procenta_rok", label: "Degradace úspor (%/rok, default 1.5)" },
 ];
 
 function num(v) {
@@ -209,7 +236,7 @@ function TechEditor({ tech, sloupce, onSave, onClose }) {
           <input type="checkbox" checked={dostupnost} onChange={(e) => setDostupnost(e.target.checked)} />
           Dostupná v katalogu
         </label>
-        {chyba && <div style={{ color: "#c92a2a", fontSize: 13 }}>{chyba}</div>}
+        {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
           <span style={{ flex: 1 }} />
           <button className="fm-btn" onClick={onClose} disabled={uklada}>Zrušit</button>
@@ -278,7 +305,7 @@ function SloupecEditor({ sloupec, onSave, onClose }) {
             Přejmenování a změna typu se projeví hned; už uložené hodnoty zůstávají.
           </p>
         )}
-        {chyba && <div style={{ color: "#c92a2a", fontSize: 13 }}>{chyba}</div>}
+        {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
           <span style={{ flex: 1 }} />
           <button className="fm-btn" onClick={onClose} disabled={uklada}>Zrušit</button>
@@ -324,11 +351,12 @@ function SazbaEditor({ sazba, onSave, onClose }) {
     }
     let parametry = null;
     if (!cekaNaEru) {
-      // Poskládej objekt s klíči dané struktury; prázdné pole = null
-      // (např. ČEZ VVN má vyplněnou jen pokutu, rezervace zůstává null).
+      // Poskládej objekt s klíči dané struktury; prázdný input klíč vynechá
+      // (nezapisuje null – uklízí to i legacy klíče, které struktura už nemá).
       parametry = {};
       for (const p of pole) {
-        parametry[p.klic] = num(ceny[p.klic] ?? "");
+        const val = num(ceny[p.klic] ?? "");
+        if (val != null) parametry[p.klic] = val;
       }
     }
     setUklada(true);
@@ -411,7 +439,7 @@ function SazbaEditor({ sazba, onSave, onClose }) {
           <input className="nb-pole" value={poznamka} onChange={(e) => setPoznamka(e.target.value)} />
         </div>
 
-        {chyba && <div style={{ color: "#c92a2a", fontSize: 13 }}>{chyba}</div>}
+        {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
           <span style={{ flex: 1 }} />
           <button className="fm-btn" onClick={onClose} disabled={uklada}>Zrušit</button>
@@ -441,6 +469,7 @@ export default function NabidkovacKatalog() {
   const [minRoky, setMinRoky] = useState("");
   const [maxRoky, setMaxRoky] = useState("");
   const [ppaParam, setPpaParam] = useState({});
+  const [psParam, setPsParam] = useState({});
   const [nastavZprava, setNastavZprava] = useState(null);
   const [nastavUklada, setNastavUklada] = useState(false);
 
@@ -461,6 +490,7 @@ export default function NabidkovacKatalog() {
     setMaxRoky(str(akt?.max_delka_kontraktu_roky));
     const p = akt?.parametry || {};
     setPpaParam(Object.fromEntries(PPA_POLE.map((f) => [f.klic, p[f.klic] == null ? "" : String(p[f.klic])])));
+    setPsParam(Object.fromEntries(PS_POLE.map((f) => [f.klic, p[f.klic] == null ? "" : String(p[f.klic])])));
   }
 
   useEffect(() => {
@@ -531,11 +561,11 @@ export default function NabidkovacKatalog() {
     setNastavUklada(true);
     setNastavZprava(null);
     try {
-      // Zachovej existující klíče parametrů (např. max_navratnost_roky_peak_shaving)
-      // a přepiš/doplň jen PPA pole; prázdné pole klíč odebere.
+      // Zachovej existující (neznámé) klíče parametrů a přepiš/doplň jen
+      // PPA + peak shaving pole; prázdné pole klíč odebere.
       const parametry = { ...(nastaveni?.[0]?.parametry || {}) };
-      for (const f of PPA_POLE) {
-        const val = num(ppaParam[f.klic] ?? "");
+      for (const f of [...PPA_POLE, ...PS_POLE]) {
+        const val = num((f.klic in psParam ? psParam : ppaParam)[f.klic] ?? "");
         if (val == null) delete parametry[f.klic];
         else parametry[f.klic] = val;
       }
@@ -557,7 +587,7 @@ export default function NabidkovacKatalog() {
   if (chyba) {
     return (
       <Layout uzivatel={me?.uzivatel}>
-        <div style={{ padding: 24, color: "#c92a2a" }}>Chyba: {chyba}</div>
+        <div style={{ padding: 24, color: "var(--st-crit)" }}>Chyba: {chyba}</div>
       </Layout>
     );
   }
@@ -597,7 +627,7 @@ export default function NabidkovacKatalog() {
                 <button
                   onClick={() => smazSloupec(s)}
                   title="Smazat sloupec"
-                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "#c92a2a", fontWeight: 700 }}
+                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--st-crit)", fontWeight: 700 }}
                 >
                   ×
                 </button>
@@ -637,7 +667,7 @@ export default function NabidkovacKatalog() {
                     );
                   })}
                   <td onClick={(e) => e.stopPropagation()}>
-                    <button className="fm-btn" style={{ padding: "4px 10px", color: "#c92a2a" }} onClick={() => smazTech(t)}>Smazat</button>
+                    <button className="fm-btn" style={{ padding: "4px 10px", color: "var(--st-crit)" }} onClick={() => smazTech(t)}>Smazat</button>
                   </td>
                 </tr>
               ))}
@@ -682,6 +712,24 @@ export default function NabidkovacKatalog() {
                   className="nb-pole"
                   value={ppaParam[f.klic] ?? ""}
                   onChange={(e) => setPpaParam((s) => ({ ...s, [f.klic]: e.target.value }))}
+                  inputMode="decimal"
+                />
+              </div>
+            ))}
+          </div>
+
+          <div style={{ marginTop: 16, marginBottom: 4, fontSize: 13, fontWeight: 600 }}>Peak shaving – defaulty</div>
+          <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 10px" }}>
+            Práh doporučení a ocenění ztrát baterie (audit PS-5). Prázdné pole = kódový default.
+          </p>
+          <div className="nb-form-grid">
+            {PS_POLE.map((f) => (
+              <div key={f.klic}>
+                <label className="nb-label">{f.label}</label>
+                <input
+                  className="nb-pole"
+                  value={psParam[f.klic] ?? ""}
+                  onChange={(e) => setPsParam((s) => ({ ...s, [f.klic]: e.target.value }))}
                   inputMode="decimal"
                 />
               </div>
@@ -755,7 +803,7 @@ export default function NabidkovacKatalog() {
                     {s.platne_do ? ` – ${String(s.platne_do).slice(0, 10)}` : ""}
                   </td>
                   <td onClick={(e) => e.stopPropagation()}>
-                    <button className="fm-btn" style={{ padding: "4px 10px", color: "#c92a2a" }} onClick={() => smazSazbu(s)}>Smazat</button>
+                    <button className="fm-btn" style={{ padding: "4px 10px", color: "var(--st-crit)" }} onClick={() => smazSazbu(s)}>Smazat</button>
                   </td>
                 </tr>
               ))}

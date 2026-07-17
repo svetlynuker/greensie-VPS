@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { nactiMe, zmenHeslo, logout } from "../api";
+import Ikona from "../components/Ikona";
 
 const inputStyl = {
   display: "block",
@@ -57,8 +58,10 @@ export default function ZmenaHesla() {
         className="fm-card"
         style={{ padding: 32, width: 360, display: "flex", flexDirection: "column", gap: 14 }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--fm-brand)" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span className="gs-brand-mark">
+            <Ikona jmeno="logo" velikost={15} />
+          </span>
           <strong style={{ fontSize: 17 }}>Nastav si nové heslo</strong>
         </div>
         <div style={{ fontSize: 13, color: "var(--fm-muted)" }}>
@@ -74,7 +77,7 @@ export default function ZmenaHesla() {
           <input type="password" value={znovu} onChange={(e) => setZnovu(e.target.value)} required style={inputStyl} />
         </label>
 
-        {chyba && <div style={{ color: "#c92a2a", fontSize: 13 }}>{chyba}</div>}
+        {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</div>}
 
         <button type="submit" className="fm-btn fm-primary" style={{ marginTop: 6 }} disabled={uklada}>
           {uklada ? "Ukládám…" : "Uložit nové heslo"}

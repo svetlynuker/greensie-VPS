@@ -59,6 +59,23 @@ def _lehka_migrace():
             )
         )
 
+        # Duplicitní profily spotřeby (audit 16. 7. 2026, SP-2): dřív se dva
+        # nahrané soubory tiše sečetly. Před unique indexem se existující
+        # duplicity musí smazat („poslední vyhrává“ = řádek s vyšším id),
+        # jinak by start appky spadl. Obojí je idempotentní.
+        conn.execute(
+            text(
+                "DELETE FROM spotreba_profil a USING spotreba_profil b "
+                "WHERE a.nabidka_id = b.nabidka_id AND a.cas = b.cas AND a.id < b.id"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_spotreba_profil_nabidka_cas "
+                "ON spotreba_profil (nabidka_id, cas)"
+            )
+        )
+
 
 _lehka_migrace()
 

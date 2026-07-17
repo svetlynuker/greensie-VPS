@@ -62,7 +62,7 @@ export default function NabidkovacSekce() {
   if (chyba) {
     return (
       <Layout uzivatel={me?.uzivatel}>
-        <div style={{ padding: 24, color: "#c92a2a" }}>Chyba: {chyba}</div>
+        <div style={{ padding: 24, color: "var(--st-crit)" }}>Chyba: {chyba}</div>
       </Layout>
     );
   }
