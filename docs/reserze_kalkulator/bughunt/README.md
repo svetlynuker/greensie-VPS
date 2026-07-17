@@ -83,12 +83,16 @@ validace ceny přebytku, PPA-9 CAPEX pásma, SP-3 medián intervalu, SP-4 Status
    `ps_oam_procenta_capex_rok` (2), `ps_degradace_uspor_procenta_rok` (1.5).
 4. **Katalog baterií (RUČNĚ):** doplnit `ucinnost` (AC-AC round-trip, např. 0,88)
    u bateriových produktů — bez ní platí default 0,88.
-5. Před nasazením zkontrolovat změnový výměr **CV 3/2026** (19. 6. 2026) na
-   https://eru.gov.cz/cenove-vymery (rešerše ho nedohledala, RK by se týkat neměl).
+5. ✅ **Ověřeno 17. 7. 2026** (věstníky na https://eru.gov.cz/cenove-vymery):
+   **CV 1/2026** (30. 4. 2026, účinnost 1. 6. 2026) mění CV 13/2025 jen v bodě (4.34)
+   a části 24 — vyhodnocení RK u lokálních distribučních soustav s účastníky
+   neplatícími RK dle § 54a odst. 2 PTE. Sazby RK (roční i měsíční) ani platby za
+   překročení se nemění → bez dopadu na model. **CV 3/2026** (19. 6. 2026) mění jen
+   CV 11/2025 (povinný výkup, záruky původu) — RK se netýká.
 
 ## Kalendář
 
 - **říjen 2026** — veřejná konzultace ERÚ k parametrizaci koeficientu AKU.
 - **~listopad 2026** — závazný cenový výměr 2027 → přepsat modelové seedy `nova_2027`.
-- Před nasazením oprav zkontrolovat změnový výměr CV 3/2026 (19. 6. 2026) na
-  https://eru.gov.cz/cenove-vymery.
+- ~~Před nasazením oprav zkontrolovat změnový výměr CV 3/2026 (19. 6. 2026)~~ —
+  ověřeno 17. 7. 2026, CV 1/2026 ani CV 3/2026 sazby RK nemění (viz checklist bod 5).
