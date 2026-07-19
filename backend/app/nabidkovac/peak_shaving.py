@@ -728,6 +728,17 @@ class Baterie:
     kapacita_kwh: float
     cena_kc: float
     ucinnost_rt: float = VYCHOZI_UCINNOST_RT
+    # Nové katalogové parametry z ceníku BESS (Technologie.extra). Obojí je
+    # nepovinné – když v katalogu chybí, spadne se na jmenovité hodnoty, takže
+    # se výpočet chová stejně jako dřív:
+    #  - `uzitna_kapacita_kwh` = kapacita, se kterou simulace počítá (fallback
+    #    jmenovitá kapacita_kwh); SOC okno (PODIL_VYUZITELNE_KAPACITY) se pak
+    #    aplikuje ještě na ni.
+    #  - `max_vykon_stridacu_kw` = reálný AC výkon střídačů NA JEDEN KUS
+    #    (fallback jmenovitý vykon_kw); u modulárních baterií, kde kapacita
+    #    roste s počtem kusů rychleji než výkon střídačů, drží AC strop.
+    uzitna_kapacita_kwh: float | None = None
+    max_vykon_stridacu_kw: float | None = None
 
 
 @dataclass
@@ -821,12 +832,22 @@ def spocti_variantu(
     střídačem (PCS) – bez zadání se počítá jen ze štítkového výkonu produktu.
     """
     vykon = baterie.vykon_kw * pocet_kusu
+    # AC strop reálných střídačů z katalogu (na kus × počet); u modulárních
+    # baterií bývá nižší než součet jmenovitých výkonů. Bez katalogové hodnoty
+    # se spadne na jmenovitý výkon → beze změny oproti dřívějšku.
+    if baterie.max_vykon_stridacu_kw is not None and baterie.max_vykon_stridacu_kw > 0:
+        vykon = min(vykon, baterie.max_vykon_stridacu_kw * pocet_kusu)
+    # Ruční OZ override (sdílený/pevný PCS) má přednost, pokud je nižší.
     if max_vykon_stridace_kw is not None and max_vykon_stridace_kw > 0:
         vykon = min(vykon, max_vykon_stridace_kw)
+    # Jmenovitá kapacita (nameplate) – tu vidí zákazník. Simulace ale jede na
+    # užitné kapacitě z katalogu (fallback jmenovitá), na kterou se navíc
+    # aplikuje SOC okno 10–95 % a ztráty dle round-trip účinnosti (audit PS-5).
     kapacita = baterie.kapacita_kwh * pocet_kusu
-    # Simulace jede na využitelné kapacitě (SOC okno 10–95 %) a se ztrátami
-    # dle round-trip účinnosti produktu (audit PS-5).
-    kapacita_uzitecna = kapacita * PODIL_VYUZITELNE_KAPACITY
+    zaklad_kapacity = baterie.uzitna_kapacita_kwh
+    if zaklad_kapacity is None or zaklad_kapacity <= 0:
+        zaklad_kapacity = baterie.kapacita_kwh
+    kapacita_uzitecna = zaklad_kapacity * pocet_kusu * PODIL_VYUZITELNE_KAPACITY
     ucinnost = baterie.ucinnost_rt
     cena = baterie.cena_kc * pocet_kusu
 

@@ -1015,6 +1015,11 @@ def spocti_peak_shaving(
             # Round-trip účinnost z katalogu; chybějící/nesmyslná → default
             # 0,88 (audit PS-5). Toleruje zadání v procentech.
             ucinnost_rt=peak_shaving.normalizuj_ucinnost_rt(t.ucinnost),
+            # Nové parametry z ceníku BESS (Technologie.extra) – užitná kapacita
+            # a reálný AC výkon střídačů na kus. Chybí-li, výpočet spadne na
+            # jmenovité hodnoty (viz Baterie).
+            uzitna_kapacita_kwh=_num((t.extra or {}).get("uzitna_kapacita_kwh")),
+            max_vykon_stridacu_kw=_num((t.extra or {}).get("max_vykon_stridacu_kw")),
         )
         for t in tech
         if float(t.vykon_kw) > 0 and float(t.kapacita_kwh) > 0 and t.cena_kc

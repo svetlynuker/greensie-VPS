@@ -549,3 +549,45 @@ class TestMaxVykonStridace:
         bez = self._varianta(None)
         s_omezenim = self._varianta(30.0)
         assert s_omezenim.strop_kw >= bez.strop_kw
+
+
+# --------------------------- katalogové parametry z ceníku BESS (extra)
+class TestKatalogoveParametry:
+    """Nové sloupce ceníku BESS: `uzitna_kapacita_kwh` (kapacita pro simulaci)
+    a `max_vykon_stridacu_kw` (reálný AC výkon střídačů na kus). Chybí-li,
+    výpočet spadne na jmenovité hodnoty (beze změny oproti dřívějšku)."""
+
+    def _varianta(self, pocet, **kwargs):
+        baterie = ps.Baterie(
+            id=1, nazev="B", vykon_kw=60.0, kapacita_kwh=200.0, cena_kc=1_000_000.0,
+            ucinnost_rt=1.0, **kwargs,
+        )
+        return ps.spocti_variantu(
+            baterie, pocet, PROFIL_2M, MESICE_2M, 250.0, 3030.78,
+            ps.pokuta_prekroceni_rk_kc_kw(281.823), 5.0, cena_energie_kc_mwh=0.0,
+        )
+
+    def test_uzitna_kapacita_se_pouzije_v_simulaci(self):
+        # Užitná < jmenovitá → simulace jede na užitné × SOC okno, nameplate
+        # (celková kapacita) zůstává jmenovitá.
+        v = self._varianta(1, uzitna_kapacita_kwh=100.0)
+        assert v.celkova_kapacita_kwh == 200.0  # nameplate beze změny
+        assert v.vyuzitelna_kapacita_kwh == 100.0 * ps.PODIL_VYUZITELNE_KAPACITY
+
+    def test_chybejici_uzitna_spadne_na_jmenovitou(self):
+        v = self._varianta(1)
+        assert v.vyuzitelna_kapacita_kwh == 200.0 * ps.PODIL_VYUZITELNE_KAPACITY
+
+    def test_nekladna_uzitna_spadne_na_jmenovitou(self):
+        v = self._varianta(1, uzitna_kapacita_kwh=0.0)
+        assert v.vyuzitelna_kapacita_kwh == 200.0 * ps.PODIL_VYUZITELNE_KAPACITY
+
+    def test_ac_strop_stridacu_omezi_vykon_pri_vice_kusech(self):
+        # Střídač 40 kW/kus × 2 kusy = 80 kW AC strop, i když jmenovitý
+        # výkon dvou kusů je 120 kW.
+        v = self._varianta(2, max_vykon_stridacu_kw=40.0)
+        assert v.celkovy_vykon_kw == 80.0
+
+    def test_ac_strop_rovny_jmenovitemu_nema_vliv(self):
+        v = self._varianta(2, max_vykon_stridacu_kw=60.0)
+        assert v.celkovy_vykon_kw == 120.0
