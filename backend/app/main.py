@@ -96,7 +96,24 @@ def _seed_sazby():
         db.close()
 
 
+def _seed_baterie():
+    """Naplní katalog `technologie` bateriemi z ceníku BESS (baterie_seed.py).
+
+    Idempotentní – vloží jen chybějící produkty a definice sloupců, ruční
+    úpravy cen/dostupnosti přes admin katalog nepřepíše.
+    """
+    from app.database import SessionLocal
+    from app.nabidkovac.baterie_seed import seed_baterie
+
+    db = SessionLocal()
+    try:
+        seed_baterie(db)
+    finally:
+        db.close()
+
+
 _seed_sazby()
+_seed_baterie()
 
 app = FastAPI(title="Greensie")
 
