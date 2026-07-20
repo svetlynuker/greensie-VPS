@@ -72,6 +72,7 @@ DLAZDICE = [
     {"klic": "zmeny", "nazev": "Přehled změn"},
     {"klic": "nabidkovac", "nazev": "Nabídkovač"},
     {"klic": "admin", "nazev": "Admin nastavení"},
+    {"klic": "logy", "nazev": "Logy"},
 ]
 
 # Katalog přidělitelných práv (skupinám i jednotlivcům). Otevírací práva mají
@@ -90,6 +91,7 @@ PRAVA = [
     {"klic": "nabidkovac_katalog", "nazev": "Nabídkovač – editace katalogu a výpočtů (vedení)"},
     {"klic": "admin", "nazev": "Otevřít Admin nastavení"},
     {"klic": "editace", "nazev": "Editace matice (Přehled projektů)"},
+    {"klic": "logy", "nazev": "Otevřít Logy (provoz, chyby, audit)"},
 ]
 
 VSECHNA_PRAVA = {p["klic"] for p in PRAVA}

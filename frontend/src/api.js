@@ -320,3 +320,18 @@ export function adminUpravSkupinu(id, data) {
 export function adminSmazSkupinu(id) {
   return zavolej(`/admin/skupiny/${id}`, { method: "DELETE" });
 }
+
+// ---- Logy (provoz, chyby, audit) ----
+export function nactiLogy({ typ, hledej, limit } = {}) {
+  const p = new URLSearchParams();
+  if (typ) p.set("typ", typ);
+  if (hledej) p.set("hledej", hledej);
+  if (limit) p.set("limit", String(limit));
+  const q = p.toString();
+  return zavolej(`/logy${q ? `?${q}` : ""}`);
+}
+
+export function smazLogy(starsiNezDni) {
+  const q = starsiNezDni != null ? `?starsi_nez_dni=${starsiNezDni}` : "";
+  return zavolej(`/logy${q}`, { method: "DELETE" });
+}

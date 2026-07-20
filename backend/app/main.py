@@ -12,6 +12,9 @@ from app.nabidkovac import models as nabidkovac_models  # noqa: F401 - registrac
 from app.nabidkovac.routes import router as nabidkovac_router
 from app.nastaveni import models as nastaveni_models  # noqa: F401 - registrace modelů
 from app.nastaveni.routes import router as nastaveni_router
+from app.logy import models as logy_models  # noqa: F401 - registrace modelů
+from app.logy.routes import router as logy_router
+from app.logy.middleware import LogovaciMiddleware
 from app.admin.routes import router as admin_router
 from app.database import Base, engine
 
@@ -127,6 +130,10 @@ _seed_baterie()
 
 app = FastAPI(title="Greensie")
 
+# Logovací middleware přidáváme PŘED CORS, aby CORS zůstal nejkrajnější
+# vrstvou (jinak by se hlavičky nemusely dostat na chybové odpovědi).
+app.add_middleware(LogovaciMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -143,6 +150,7 @@ app.include_router(matice_router)
 app.include_router(finance_router)
 app.include_router(nabidkovac_router)
 app.include_router(nastaveni_router)
+app.include_router(logy_router)
 app.include_router(admin_router)
 
 

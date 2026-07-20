@@ -8,6 +8,7 @@ import NabidkovacSekce from "./pages/NabidkovacSekce";
 import NabidkaDetail from "./pages/NabidkaDetail";
 import NabidkovacKatalog from "./pages/NabidkovacKatalog";
 import AdminNastaveni from "./pages/AdminNastaveni";
+import Logy from "./pages/Logy";
 import ZmenaHesla from "./pages/ZmenaHesla";
 import { getToken } from "./api";
 
@@ -89,6 +90,14 @@ export default function App() {
           element={
             <VyzadujePrihlaseni>
               <AdminNastaveni />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/logy"
+          element={
+            <VyzadujePrihlaseni>
+              <Logy />
             </VyzadujePrihlaseni>
           }
         />
