@@ -88,6 +88,7 @@ class SyncNastaveniOut(BaseModel):
     auto_zapnuto: bool
     interval_min: int
     sync_stav: bool
+    zapis_stav_do_freela: bool
     sync_nove_ukoly: bool
     sync_nove_projekty: bool
     sync_terminy: bool
@@ -100,6 +101,7 @@ class SyncNastaveniVstup(BaseModel):
     auto_zapnuto: bool
     interval_min: int
     sync_stav: bool
+    zapis_stav_do_freela: bool
     sync_nove_ukoly: bool
     sync_nove_projekty: bool
     sync_terminy: bool

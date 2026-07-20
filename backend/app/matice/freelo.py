@@ -1,4 +1,8 @@
-"""Klient Freelo API v1 (jen čtení – appka do Freela nikdy nezapisuje).
+"""Klient Freelo API v1.
+
+Čtení projektů a úkolů + zápis STAVU úkolu (dokončit / znovu aktivovat).
+Zápis se používá pro obousměrnou synchronizaci stavu: když se stav změní
+v tabulce, appka ho promítne i do Freela. Ostatní pole appka do Freela nezapisuje.
 
 Ověření: HTTP Basic (e-mail + API klíč) + povinná hlavička User-Agent.
 Proměnné z .env: FREELO_EMAIL, FREELO_API_KEY.
@@ -32,6 +36,34 @@ def _get(path, params=None):
     if isinstance(data, dict) and "error" in data:
         raise RuntimeError(f"Freelo API chyba: {data['error']}")
     return data
+
+
+def _post(path):
+    """POST bez těla (finish/activate). Vrátí případné JSON, jinak None."""
+    resp = requests.post(
+        f"{BASE}/{path}",
+        auth=_auth(),
+        headers={"User-Agent": USER_AGENT},
+        timeout=TIMEOUT,
+    )
+    resp.raise_for_status()
+    try:
+        data = resp.json()
+    except ValueError:
+        return None
+    if isinstance(data, dict) and "error" in data:
+        raise RuntimeError(f"Freelo API chyba: {data['error']}")
+    return data
+
+
+def dokonci_ukol(task_id):
+    """Označí úkol ve Freelu jako dokončený (POST /task/{id}/finish)."""
+    _post(f"task/{task_id}/finish")
+
+
+def aktivuj_ukol(task_id):
+    """Znovu aktivuje (rozpracuje) úkol ve Freelu (POST /task/{id}/activate)."""
+    _post(f"task/{task_id}/activate")
 
 
 def nacti_aktivni_projekty():
