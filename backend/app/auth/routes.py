@@ -12,6 +12,7 @@ from app.auth.permissions import (
     vytvor_access_token,
 )
 from app.database import get_db
+from app.logy.audit import zaznamenej_audit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -20,11 +21,41 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def login(udaje: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == udaje.email).first()
     if user is None or not over_heslo(udaje.heslo, user.heslo_hash):
+        # Neúspěšné přihlášení zaznamenáme kvůli auditu. Surový vstup ukládáme
+        # jen když e-mail patří existujícímu uživateli – u neznámého účtu se
+        # do pole e-mail mohlo omylem napsat heslo, to nesmíme uložit natrvalo.
+        if user is not None:
+            zaznamenej_audit(
+                db,
+                f"Neúspěšné přihlášení: {user.email}",
+                uzivatel_id=user.id,
+                uzivatel_email=user.email,
+                metoda="POST",
+                cesta="/auth/login",
+                status_kod=status.HTTP_401_UNAUTHORIZED,
+            )
+        else:
+            zaznamenej_audit(
+                db,
+                "Neúspěšné přihlášení (neznámý účet)",
+                metoda="POST",
+                cesta="/auth/login",
+                status_kod=status.HTTP_401_UNAUTHORIZED,
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Nesprávný e-mail nebo heslo",
         )
     token = vytvor_access_token({"sub": str(user.id)})
+    zaznamenej_audit(
+        db,
+        f"Přihlášení: {user.jmeno}",
+        uzivatel_id=user.id,
+        uzivatel_email=user.email,
+        metoda="POST",
+        cesta="/auth/login",
+        status_kod=200,
+    )
     return Token(access_token=token)
 
 
