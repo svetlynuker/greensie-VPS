@@ -2,6 +2,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     Date,
+    DateTime,
     ForeignKey,
     Integer,
     String,
@@ -85,3 +86,29 @@ class NastaveniBarev(Base):
     # hodně po (červená): d >= cervena_od
     cervena_od = Column(Integer, nullable=True, default=4)
     cervena_do = Column(Integer, nullable=True, default=None)
+
+
+class NastaveniSynchronizace(Base):
+    """Globální nastavení automatické synchronizace z Freela (jeden řádek, id=1).
+
+    Určuje, zda a jak často server sám stahuje data z Freela a která pole
+    buněk se při synchronizaci přepisují. Zapnuté pole = Freelo vyhrává a
+    přepíše i ručně zadanou hodnotu; vypnuté pole zůstane beze změny.
+    Poznámka (`poznamka` na buňce) se nepřepisuje NIKDY.
+    """
+
+    __tablename__ = "nastaveni_synchronizace"
+
+    id = Column(Integer, primary_key=True)
+    # plánovaná synchronizace na serveru
+    auto_zapnuto = Column(Boolean, nullable=False, default=True, server_default="true")
+    interval_min = Column(Integer, nullable=False, default=60, server_default="60")
+    # co se synchronizuje
+    sync_stav = Column(Boolean, nullable=False, default=True, server_default="true")
+    sync_nove_ukoly = Column(Boolean, nullable=False, default=True, server_default="true")
+    sync_nove_projekty = Column(Boolean, nullable=False, default=True, server_default="true")
+    sync_terminy = Column(Boolean, nullable=False, default=False, server_default="false")
+    sync_osoby = Column(Boolean, nullable=False, default=False, server_default="false")
+    # informativní stav posledního běhu
+    posledni_beh = Column(DateTime, nullable=True)
+    posledni_vysledek = Column(Text, nullable=False, default="", server_default="")

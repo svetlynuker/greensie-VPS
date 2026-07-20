@@ -7,7 +7,7 @@ from app.auth.models import User
 from app.auth.permissions import get_current_user
 from app.database import get_db
 from app.matice import freelo
-from app.matice.models import Bunka, NastaveniBarev, Projekt, Sloupec
+from app.matice.models import Bunka, NastaveniBarev, NastaveniSynchronizace, Projekt, Sloupec
 from app.matice.permissions import muze_editovat, vyzaduj_editora
 from app.matice.schemas import (
     BarvyOut,
@@ -20,9 +20,12 @@ from app.matice.schemas import (
     ProjektOut,
     ProjektVstup,
     SloupecVstup,
+    SyncNastaveniOut,
+    SyncNastaveniVstup,
     UkolOut,
     ZobrazeniVstup,
 )
+from app.auth.permissions import vyzaduj_admina
 
 router = APIRouter(prefix="/matice", tags=["matice"])
 
@@ -223,27 +226,36 @@ def uloz_barvy(
     return _barvy_out(b)
 
 
-# ---- načtení z Freela ----
-@router.post("/freelo/nacist", response_model=FreeloVysledek)
-def nacti_z_freela(
-    vstup: FreeloVstup,
-    user: User = Depends(vyzaduj_editora),
-    db: Session = Depends(get_db),
-):
-    prepsat = vstup.rezim == "prepsat"
+# ---- synchronizace z Freela (sdílené jádro) ----
+def proved_synchronizaci(
+    db: Session,
+    *,
+    nove_projekty: bool,
+    nove_ukoly: bool,
+    prepis_stav: bool,
+    prepis_terminy: bool,
+    prepis_osoby: bool,
+) -> FreeloVysledek:
+    """Stáhne data z Freela a promítne je do matice podle zapnutých voleb.
 
-    try:
-        fr_projekty = freelo.nacti_aktivni_projekty()
-        fr_ukoly = freelo.nacti_ukoly([p["freelo_id"] for p in fr_projekty])
-    except Exception as e:  # noqa: BLE001 - chybu chceme ukázat uživateli
-        raise HTTPException(status_code=502, detail=f"Načtení z Freela selhalo: {e}")
+    - `nove_projekty` / `nove_ukoly` — zakládat nové projekty / úkoly (buňky+sloupce).
+    - `prepis_*` — u EXISTUJÍCÍ buňky přepsat dané pole hodnotou z Freela
+      (vypnuté pole zůstane beze změny). Poznámka se nepřepisuje NIKDY.
 
-    # projekty (upsert dle freelo_id)
+    Volá se ručně z endpointu i automaticky z plánovače. Chyby Freela probublají
+    ven (volající je ošetří). Na konci commituje.
+    """
+    fr_projekty = freelo.nacti_aktivni_projekty()
+    fr_ukoly = freelo.nacti_ukoly([p["freelo_id"] for p in fr_projekty])
+
+    # projekty (upsert dle freelo_id; nové jen když nove_projekty)
     projekt_dle_freelo: dict[int, Projekt] = {}
     poradi_p = db.query(Projekt).count()
     for fp in fr_projekty:
         p = db.query(Projekt).filter(Projekt.freelo_id == fp["freelo_id"]).first()
         if p is None:
+            if not nove_projekty:
+                continue
             p = Projekt(freelo_id=fp["freelo_id"], nazev=fp["nazev"], url=fp["url"], poradi=poradi_p)
             poradi_p += 1
             db.add(p)
@@ -253,12 +265,14 @@ def nacti_z_freela(
         projekt_dle_freelo[fp["freelo_id"]] = p
     db.flush()
 
-    # sloupce (dle labelu)
+    # sloupce (dle labelu; nové jen když nove_ukoly)
     sloupec_dle_labelu: dict[str, Sloupec] = {s.label: s for s in db.query(Sloupec).all()}
     poradi_s = len(sloupec_dle_labelu)
     pocet_novych_sloupcu = 0
     for u in fr_ukoly:
         if u["label"] not in sloupec_dle_labelu:
+            if not nove_ukoly:
+                continue
             s = Sloupec(label=u["label"], faze=u["faze"], nazev=u["ukol_nazev"], poradi=poradi_s)
             poradi_s += 1
             pocet_novych_sloupcu += 1
@@ -278,6 +292,8 @@ def nacti_z_freela(
             db.query(Bunka).filter(Bunka.projekt_id == p.id, Bunka.sloupec_id == s.id).first()
         )
         if bunka is None:
+            if not nove_ukoly:
+                continue
             bunka = Bunka(projekt_id=p.id, sloupec_id=s.id)
             db.add(bunka)
             bunka.stav = u["stav"]
@@ -287,16 +303,24 @@ def nacti_z_freela(
             bunka.freelo_task_id = u["freelo_task_id"]
             bunka.upraveno_rucne = False
             novych += 1
-        elif prepsat:
-            # přepíšeme data z Freela, ale poznámku (jen v appce) NIKDY nemažeme
-            bunka.stav = u["stav"]
-            bunka.termin = _parse_date(u["termin"])
-            bunka.osoba = u["osoba"]
+        else:
+            # url + freelo_task_id jsou čistá Freelo metadata (odkaz na úkol) →
+            # držíme je aktuální vždy, nepočítá se to jako přepis hodnoty.
             bunka.url = u["url"]
             bunka.freelo_task_id = u["freelo_task_id"]
-            bunka.upraveno_rucne = False
-            prepsanych += 1
-        # bez_prepsani + existující buňka → necháváme být
+            zmeneno = False
+            if prepis_stav:
+                bunka.stav = u["stav"]
+                zmeneno = True
+            if prepis_terminy:
+                bunka.termin = _parse_date(u["termin"])
+                zmeneno = True
+            if prepis_osoby:
+                bunka.osoba = u["osoba"]
+                zmeneno = True
+            # poznámku (jen v appce) NIKDY nepřepisujeme/nemažeme
+            if zmeneno:
+                prepsanych += 1
 
     db.commit()
     return FreeloVysledek(
@@ -305,3 +329,79 @@ def nacti_z_freela(
         bunek_novych=novych,
         bunek_prepsanych=prepsanych,
     )
+
+
+# ---- ruční načtení z Freela (tlačítko v pohledu) ----
+@router.post("/freelo/nacist", response_model=FreeloVysledek)
+def nacti_z_freela(
+    vstup: FreeloVstup,
+    user: User = Depends(vyzaduj_editora),
+    db: Session = Depends(get_db),
+):
+    # "prepsat" = přepíše všechna pole; "bez_prepsani" = doplní jen nové úkoly/projekty
+    prepsat = vstup.rezim == "prepsat"
+    try:
+        return proved_synchronizaci(
+            db,
+            nove_projekty=True,
+            nove_ukoly=True,
+            prepis_stav=prepsat,
+            prepis_terminy=prepsat,
+            prepis_osoby=prepsat,
+        )
+    except Exception as e:  # noqa: BLE001 - chybu chceme ukázat uživateli
+        raise HTTPException(status_code=502, detail=f"Načtení z Freela selhalo: {e}")
+
+
+# ---- nastavení automatické synchronizace ----
+def ziskej_sync_nastaveni(db: Session) -> NastaveniSynchronizace:
+    n = db.get(NastaveniSynchronizace, 1)
+    if n is None:
+        n = NastaveniSynchronizace(id=1)
+        db.add(n)
+        db.commit()
+        db.refresh(n)
+    return n
+
+
+def _sync_out(n: NastaveniSynchronizace) -> SyncNastaveniOut:
+    return SyncNastaveniOut(
+        auto_zapnuto=n.auto_zapnuto,
+        interval_min=n.interval_min,
+        sync_stav=n.sync_stav,
+        sync_nove_ukoly=n.sync_nove_ukoly,
+        sync_nove_projekty=n.sync_nove_projekty,
+        sync_terminy=n.sync_terminy,
+        sync_osoby=n.sync_osoby,
+        posledni_beh=n.posledni_beh.isoformat() if n.posledni_beh else None,
+        posledni_vysledek=n.posledni_vysledek or "",
+    )
+
+
+@router.get("/sync-nastaveni", response_model=SyncNastaveniOut)
+def nacti_sync_nastaveni(
+    user: User = Depends(vyzaduj_admina),
+    db: Session = Depends(get_db),
+):
+    return _sync_out(ziskej_sync_nastaveni(db))
+
+
+@router.put("/sync-nastaveni", response_model=SyncNastaveniOut)
+def uloz_sync_nastaveni(
+    vstup: SyncNastaveniVstup,
+    user: User = Depends(vyzaduj_admina),
+    db: Session = Depends(get_db),
+):
+    if vstup.interval_min < 5:
+        raise HTTPException(status_code=422, detail="Interval musí být alespoň 5 minut.")
+    n = ziskej_sync_nastaveni(db)
+    n.auto_zapnuto = vstup.auto_zapnuto
+    n.interval_min = vstup.interval_min
+    n.sync_stav = vstup.sync_stav
+    n.sync_nove_ukoly = vstup.sync_nove_ukoly
+    n.sync_nove_projekty = vstup.sync_nove_projekty
+    n.sync_terminy = vstup.sync_terminy
+    n.sync_osoby = vstup.sync_osoby
+    db.commit()
+    db.refresh(n)
+    return _sync_out(n)
