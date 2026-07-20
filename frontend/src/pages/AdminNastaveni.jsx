@@ -14,6 +14,8 @@ import {
   adminPridejSkupinu,
   adminUpravSkupinu,
   adminSmazSkupinu,
+  getSyncNastaveni,
+  ulozSyncNastaveni,
 } from "../api";
 
 const poleStyl = {
@@ -309,6 +311,139 @@ function Chip({ children }) {
   );
 }
 
+/* ---------- karta: synchronizace s Freelem ---------- */
+const SYNC_POLE = [
+  { klic: "sync_stav", nazev: "Stav (hotovo / nehotovo)", popis: "Když je úkol ve Freelu hotový a v tabulce ne, přepíše se na hotovo (a naopak)." },
+  { klic: "sync_nove_ukoly", nazev: "Nové úkoly z Freela", popis: "Úkoly, které ve Freelu přibyly, se doplní jako nové sloupce/buňky." },
+  { klic: "sync_nove_projekty", nazev: "Nové projekty z Freela", popis: "Projekty, které ve Freelu přibyly, se přidají jako nové řádky." },
+  { klic: "sync_terminy", nazev: "Termíny", popis: "Přepíše termín podle Freela – i ručně zadaný." },
+  { klic: "sync_osoby", nazev: "Odpovědné osoby", popis: "Přepíše odpovědnou osobu podle Freela – i ručně zadanou." },
+];
+
+function SynchronizaceKarta() {
+  const [nast, setNast] = useState(null);
+  const [uklada, setUklada] = useState(false);
+  const [stav, setStav] = useState(null); // "ok" | null
+  const [chyba, setChyba] = useState(null);
+
+  useEffect(() => {
+    getSyncNastaveni()
+      .then(setNast)
+      .catch((e) => setChyba(e.message));
+  }, []);
+
+  function nastav(klic, hodnota) {
+    setNast((n) => ({ ...n, [klic]: hodnota }));
+    setStav(null);
+  }
+
+  async function uloz() {
+    setUklada(true);
+    setChyba(null);
+    try {
+      const ulozene = await ulozSyncNastaveni({
+        auto_zapnuto: nast.auto_zapnuto,
+        interval_min: Number(nast.interval_min),
+        sync_stav: nast.sync_stav,
+        sync_nove_ukoly: nast.sync_nove_ukoly,
+        sync_nove_projekty: nast.sync_nove_projekty,
+        sync_terminy: nast.sync_terminy,
+        sync_osoby: nast.sync_osoby,
+      });
+      setNast(ulozene);
+      setStav("ok");
+      setTimeout(() => setStav(null), 1800);
+    } catch (e) {
+      setChyba(e.message);
+    } finally {
+      setUklada(false);
+    }
+  }
+
+  const bunkaStyl = { display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 0" };
+
+  return (
+    <div className="fm-card" style={{ padding: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
+        <strong style={{ fontSize: 15 }}>Synchronizace s Freelem</strong>
+      </div>
+      <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--fm-muted)", lineHeight: 1.5 }}>
+        Server sám v nastaveném intervalu stáhne data z Freela a promítne je do Přehledu projektů.
+        Zaškrtnuté pole se přepíše hodnotou z Freela (i kdyby bylo v tabulce zadané ručně), ostatní
+        zůstane beze změny. Poznámky se nepřepisují nikdy.
+      </p>
+
+      {!nast ? (
+        chyba ? (
+          <div style={{ color: "var(--st-crit)", fontSize: 13 }}>Chyba: {chyba}</div>
+        ) : (
+          <div style={{ color: "var(--fm-muted)", fontSize: 13 }}>Načítám…</div>
+        )
+      ) : (
+        <>
+          <label style={{ ...bunkaStyl, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={nast.auto_zapnuto}
+              onChange={(e) => nastav("auto_zapnuto", e.target.checked)}
+            />
+            <span style={{ fontWeight: 600 }}>Zapnout automatickou synchronizaci</span>
+          </label>
+
+          <div style={{ ...bunkaStyl, alignItems: "center", opacity: nast.auto_zapnuto ? 1 : 0.5 }}>
+            <span style={{ fontSize: 14 }}>Spouštět každých</span>
+            <input
+              type="number"
+              min={5}
+              step={5}
+              disabled={!nast.auto_zapnuto}
+              value={nast.interval_min}
+              onChange={(e) => nastav("interval_min", e.target.value)}
+              style={{ ...poleStyl, width: 90, padding: "6px 8px" }}
+            />
+            <span style={{ fontSize: 14 }}>minut (nejméně 5)</span>
+          </div>
+
+          <div style={{ height: 1, background: "var(--fm-line)", margin: "8px 0" }} />
+          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--fm-muted)", marginBottom: 2 }}>
+            Co synchronizovat
+          </div>
+          {SYNC_POLE.map((pole) => (
+            <label key={pole.klic} style={bunkaStyl}>
+              <input
+                type="checkbox"
+                checked={!!nast[pole.klic]}
+                onChange={(e) => nastav(pole.klic, e.target.checked)}
+                style={{ marginTop: 3 }}
+              />
+              <span>
+                <span style={{ fontWeight: 600 }}>{pole.nazev}</span>
+                <div style={{ fontSize: 12, color: "var(--fm-muted)" }}>{pole.popis}</div>
+              </span>
+            </label>
+          ))}
+
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
+            <button className="fm-btn fm-primary" onClick={uloz} disabled={uklada}>
+              {uklada ? "Ukládám…" : "Uložit nastavení"}
+            </button>
+            {stav === "ok" && <span style={{ color: "var(--fm-brand-dk)", fontSize: 13 }}>Uloženo ✓</span>}
+            {chyba && <span style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</span>}
+          </div>
+
+          <div style={{ marginTop: 12, fontSize: 12, color: "var(--fm-muted)" }}>
+            Naposledy proběhlo:{" "}
+            {nast.posledni_beh
+              ? new Date(nast.posledni_beh).toLocaleString("cs-CZ")
+              : "zatím neproběhlo"}
+            {nast.posledni_vysledek ? ` — ${nast.posledni_vysledek}` : ""}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function AdminNastaveni() {
   const [uzivatel, setUzivatel] = useState(null);
   const [ciselniky, setCiselniky] = useState(null);
@@ -505,6 +640,9 @@ export default function AdminNastaveni() {
             </div>
           )}
         </div>
+
+        {/* ---- Synchronizace s Freelem ---- */}
+        <SynchronizaceKarta />
       </div>
 
       {editUzivatel && (

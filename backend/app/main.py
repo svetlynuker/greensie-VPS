@@ -136,6 +136,21 @@ app.include_router(nastaveni_router)
 app.include_router(admin_router)
 
 
+@app.on_event("startup")
+def _spust_planovac_synchronizace():
+    # plánovaná automatická synchronizace z Freela (vlákno na pozadí)
+    from app.matice.scheduler import spust_planovac
+
+    spust_planovac()
+
+
+@app.on_event("shutdown")
+def _zastav_planovac_synchronizace():
+    from app.matice.scheduler import zastav_planovac
+
+    zastav_planovac()
+
+
 @app.get("/health")
 def health():
     return {"stav": "ok"}

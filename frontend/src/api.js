@@ -87,6 +87,14 @@ export function nacistZFreela(rezim) {
   return zavolej("/matice/freelo/nacist", { method: "POST", body: JSON.stringify({ rezim }) });
 }
 
+export function getSyncNastaveni() {
+  return zavolej("/matice/sync-nastaveni");
+}
+
+export function ulozSyncNastaveni(data) {
+  return zavolej("/matice/sync-nastaveni", { method: "PUT", body: JSON.stringify(data) });
+}
+
 export function ulozBarvy(data) {
   return zavolej("/matice/barvy", { method: "PUT", body: JSON.stringify(data) });
 }

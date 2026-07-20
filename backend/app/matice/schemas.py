@@ -82,3 +82,25 @@ class FreeloVysledek(BaseModel):
     sloupcu: int
     bunek_novych: int
     bunek_prepsanych: int
+
+
+class SyncNastaveniOut(BaseModel):
+    auto_zapnuto: bool
+    interval_min: int
+    sync_stav: bool
+    sync_nove_ukoly: bool
+    sync_nove_projekty: bool
+    sync_terminy: bool
+    sync_osoby: bool
+    posledni_beh: Optional[str] = None  # ISO datetime, nebo None když ještě neběželo
+    posledni_vysledek: str = ""
+
+
+class SyncNastaveniVstup(BaseModel):
+    auto_zapnuto: bool
+    interval_min: int
+    sync_stav: bool
+    sync_nove_ukoly: bool
+    sync_nove_projekty: bool
+    sync_terminy: bool
+    sync_osoby: bool
