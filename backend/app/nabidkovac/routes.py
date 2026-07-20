@@ -823,7 +823,10 @@ def _interval_h_z_profilu(casy: list[datetime]) -> float:
 
 
 def _zvaliduj_a_orizni_profil(
-    casy: list[datetime], hodnoty: list[float], interval_h: float
+    casy: list[datetime],
+    hodnoty: list[float],
+    interval_h: float,
+    pro_peak_shaving: bool = False,
 ) -> tuple[list[datetime], list[float], list[str]]:
     """Ochrana ročních výpočtů před neúplným/přesahujícím profilem (SP-1).
 
@@ -831,9 +834,18 @@ def _zvaliduj_a_orizni_profil(
     do výstupu); profil, který ani potom není použitelný jako roční (málo dní,
     chybějící měsíce, díry > 2 %), shodí na HTTP 422 – radši žádné číslo než
     sebejistě špatná „roční“ ekonomika (bughunt testy T2/T3).
+
+    S `pro_peak_shaving=True` se toleruje „rok a kousek“ s překrývajícími se
+    okrajovými měsíci – ořízne se na klouzavé okno posledního roku a kontroluje
+    se pokrytí po číslech měsíce (peak shaving bere měsíční maxima). PPA volá
+    bez přepínače (přísný režim – energii sčítá, překryv by ji zdvojnásobil).
     """
-    casy, hodnoty, orezano = profil_pokryti.orizni_na_posledni_rok(casy, hodnoty, interval_h)
-    ok, duvod = profil_pokryti.zkontroluj_pokryti(casy, interval_h)
+    casy, hodnoty, orezano = profil_pokryti.orizni_na_posledni_rok(
+        casy, hodnoty, interval_h, pro_peak_shaving=pro_peak_shaving
+    )
+    ok, duvod = profil_pokryti.zkontroluj_pokryti(
+        casy, interval_h, pro_peak_shaving=pro_peak_shaving
+    )
     if not ok:
         raise HTTPException(status_code=422, detail=f"Profil spotřeby nelze použít: {duvod}")
     upozorneni: list[str] = []
@@ -930,8 +942,9 @@ def spocti_peak_shaving(
     profil_kw = [float(r.hodnota_kw) for r in radky]
     interval_h = _interval_h_z_profilu(casy_profilu)
     # Validace pokrytí roku + případné oříznutí na posledních 12 měsíců (SP-1).
+    # pro_peak_shaving=True: toleruje „rok a kousek“ s překrývajícími se okraji.
     casy_profilu, profil_kw, upozorneni_profilu = _zvaliduj_a_orizni_profil(
-        casy_profilu, profil_kw, interval_h
+        casy_profilu, profil_kw, interval_h, pro_peak_shaving=True
     )
     mesice = [c.month for c in casy_profilu]
 
