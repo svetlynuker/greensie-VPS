@@ -59,6 +59,16 @@ def _lehka_migrace():
             )
         )
 
+        # Obousměrná synchronizace stavu: zápis stavu z tabulky zpět do Freela.
+        # Tabulka nastaveni_synchronizace už mohla vzniknout dřív (bez tohoto
+        # sloupce) → create_all ho nedoplní, přidáme ho ručně (idempotentní).
+        conn.execute(
+            text(
+                "ALTER TABLE nastaveni_synchronizace ADD COLUMN IF NOT EXISTS "
+                "zapis_stav_do_freela BOOLEAN NOT NULL DEFAULT true"
+            )
+        )
+
         # Duplicitní profily spotřeby (audit 16. 7. 2026, SP-2): dřív se dva
         # nahrané soubory tiše sečetly. Před unique indexem se existující
         # duplicity musí smazat („poslední vyhrává“ = řádek s vyšším id),

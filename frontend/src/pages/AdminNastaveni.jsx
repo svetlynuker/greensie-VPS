@@ -313,7 +313,7 @@ function Chip({ children }) {
 
 /* ---------- karta: synchronizace s Freelem ---------- */
 const SYNC_POLE = [
-  { klic: "sync_stav", nazev: "Stav (hotovo / nehotovo)", popis: "Když je úkol ve Freelu hotový a v tabulce ne, přepíše se na hotovo (a naopak)." },
+  { klic: "sync_stav", nazev: "Stav (hotovo / nehotovo)", popis: "Když je úkol ve Freelu hotový a v tabulce ne, přepíše se v tabulce na hotovo." },
   { klic: "sync_nove_ukoly", nazev: "Nové úkoly z Freela", popis: "Úkoly, které ve Freelu přibyly, se doplní jako nové sloupce/buňky." },
   { klic: "sync_nove_projekty", nazev: "Nové projekty z Freela", popis: "Projekty, které ve Freelu přibyly, se přidají jako nové řádky." },
   { klic: "sync_terminy", nazev: "Termíny", popis: "Přepíše termín podle Freela – i ručně zadaný." },
@@ -345,6 +345,7 @@ function SynchronizaceKarta() {
         auto_zapnuto: nast.auto_zapnuto,
         interval_min: Number(nast.interval_min),
         sync_stav: nast.sync_stav,
+        zapis_stav_do_freela: nast.zapis_stav_do_freela,
         sync_nove_ukoly: nast.sync_nove_ukoly,
         sync_nove_projekty: nast.sync_nove_projekty,
         sync_terminy: nast.sync_terminy,
@@ -406,7 +407,7 @@ function SynchronizaceKarta() {
 
           <div style={{ height: 1, background: "var(--fm-line)", margin: "8px 0" }} />
           <div style={{ fontSize: 12, fontWeight: 600, color: "var(--fm-muted)", marginBottom: 2 }}>
-            Co synchronizovat
+            Co stahovat z Freela do tabulky
           </div>
           {SYNC_POLE.map((pole) => (
             <label key={pole.klic} style={bunkaStyl}>
@@ -422,6 +423,26 @@ function SynchronizaceKarta() {
               </span>
             </label>
           ))}
+
+          <div style={{ height: 1, background: "var(--fm-line)", margin: "8px 0" }} />
+          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--fm-muted)", marginBottom: 2 }}>
+            Zápis z tabulky zpět do Freela
+          </div>
+          <label style={bunkaStyl}>
+            <input
+              type="checkbox"
+              checked={!!nast.zapis_stav_do_freela}
+              onChange={(e) => nastav("zapis_stav_do_freela", e.target.checked)}
+              style={{ marginTop: 3 }}
+            />
+            <span>
+              <span style={{ fontWeight: 600 }}>Zapisovat změnu stavu zpět do Freela</span>
+              <div style={{ fontSize: 12, color: "var(--fm-muted)" }}>
+                Když v tabulce označíš úkol jako hotový/nehotový, změní se stav i ve Freelu. Spolu se
+                stahováním stavu (nahoře) tak stav funguje obousměrně. Píše se do reálného Freela.
+              </div>
+            </span>
+          </label>
 
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
             <button className="fm-btn fm-primary" onClick={uloz} disabled={uklada}>

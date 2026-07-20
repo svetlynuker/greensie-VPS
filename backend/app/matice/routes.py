@@ -118,6 +118,9 @@ def uloz_bunku(
     if db.get(Sloupec, vstup.sloupec_id) is None:
         raise HTTPException(status_code=404, detail="Sloupec neexistuje")
 
+    # nastavení čteme dřív, než začneme měnit buňku (ziskej_sync_nastaveni může commitnout)
+    nast = ziskej_sync_nastaveni(db)
+
     bunka = (
         db.query(Bunka)
         .filter(Bunka.projekt_id == vstup.projekt_id, Bunka.sloupec_id == vstup.sloupec_id)
@@ -127,7 +130,30 @@ def uloz_bunku(
         bunka = Bunka(projekt_id=vstup.projekt_id, sloupec_id=vstup.sloupec_id)
         db.add(bunka)
 
-    bunka.stav = vstup.stav
+    stary_stav = bunka.stav
+    novy_stav = vstup.stav
+
+    # obousměrná synchronizace stavu: změnu stavu buňky napojené na Freelo
+    # promítneme i do Freela. Zápis děláme PŘED uložením – když selže, stav
+    # neuložíme (jinak by ho příští plánovaný sync z Freela přepsal zpět).
+    if (
+        nast.zapis_stav_do_freela
+        and bunka.freelo_task_id
+        and novy_stav != stary_stav
+        and novy_stav in ("done", "todo")
+    ):
+        try:
+            if novy_stav == "done":
+                freelo.dokonci_ukol(bunka.freelo_task_id)
+            else:
+                freelo.aktivuj_ukol(bunka.freelo_task_id)
+        except Exception as e:  # noqa: BLE001 - chybu ukážeme uživateli, stav neuložíme
+            raise HTTPException(
+                status_code=502,
+                detail=f"Zápis stavu do Freela selhal: {e}. Stav se neuložil, zkuste to prosím znovu.",
+            )
+
+    bunka.stav = novy_stav
     bunka.termin = _parse_date(vstup.termin)
     bunka.osoba = vstup.osoba or ""
     bunka.poznamka = vstup.poznamka or ""
@@ -369,6 +395,7 @@ def _sync_out(n: NastaveniSynchronizace) -> SyncNastaveniOut:
         auto_zapnuto=n.auto_zapnuto,
         interval_min=n.interval_min,
         sync_stav=n.sync_stav,
+        zapis_stav_do_freela=n.zapis_stav_do_freela,
         sync_nove_ukoly=n.sync_nove_ukoly,
         sync_nove_projekty=n.sync_nove_projekty,
         sync_terminy=n.sync_terminy,
@@ -398,6 +425,7 @@ def uloz_sync_nastaveni(
     n.auto_zapnuto = vstup.auto_zapnuto
     n.interval_min = vstup.interval_min
     n.sync_stav = vstup.sync_stav
+    n.zapis_stav_do_freela = vstup.zapis_stav_do_freela
     n.sync_nove_ukoly = vstup.sync_nove_ukoly
     n.sync_nove_projekty = vstup.sync_nove_projekty
     n.sync_terminy = vstup.sync_terminy

@@ -103,8 +103,10 @@ class NastaveniSynchronizace(Base):
     # plánovaná synchronizace na serveru
     auto_zapnuto = Column(Boolean, nullable=False, default=True, server_default="true")
     interval_min = Column(Integer, nullable=False, default=60, server_default="60")
-    # co se synchronizuje
+    # co se synchronizuje (Freelo → tabulka)
     sync_stav = Column(Boolean, nullable=False, default=True, server_default="true")
+    # obousměrně: zápis změny stavu z tabulky zpět do Freela (tabulka → Freelo)
+    zapis_stav_do_freela = Column(Boolean, nullable=False, default=True, server_default="true")
     sync_nove_ukoly = Column(Boolean, nullable=False, default=True, server_default="true")
     sync_nove_projekty = Column(Boolean, nullable=False, default=True, server_default="true")
     sync_terminy = Column(Boolean, nullable=False, default=False, server_default="false")
