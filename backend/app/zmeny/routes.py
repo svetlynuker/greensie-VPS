@@ -87,15 +87,15 @@ def prehled_zmen(
     }
 
     # --- agregace po projektech ---
-    per_projekt: dict[int, ProjektZmeny] = {}
+    # Předvyplníme řádek pro KAŽDÝ neskrytý projekt (i bez pohybu), ať je
+    # v přehledu vidět i to, kde se nic neděje.
+    per_projekt: dict[int, ProjektZmeny] = {
+        p.id: ProjektZmeny(id=p.id, nazev=p.nazev, url=p.url or "")
+        for p in projekty.values()
+    }
 
     def _radek(projekt_id: int) -> ProjektZmeny | None:
-        if projekt_id not in projekty:
-            return None
-        if projekt_id not in per_projekt:
-            p = projekty[projekt_id]
-            per_projekt[projekt_id] = ProjektZmeny(id=p.id, nazev=p.nazev, url=p.url or "")
-        return per_projekt[projekt_id]
+        return per_projekt.get(projekt_id)
 
     def _ukol(bunka, termin) -> UkolZmena:
         s = sloupce.get(bunka.sloupec_id)
@@ -131,12 +131,8 @@ def prehled_zmen(
             radek.aktualne_v_prodleni += 1
             radek.detail_prodleni.append(_ukol(bunka, termin_end))
 
-    # jen projekty s pohybem
-    radky = [
-        r
-        for r in per_projekt.values()
-        if r.splneno or r.spadlo_do_prodleni or r.aktualne_v_prodleni
-    ]
+    # všechny neskryté projekty (i bez pohybu); s pohybem se řadí nahoru
+    radky = list(per_projekt.values())
     radky.sort(
         key=lambda r: (
             -r.aktualne_v_prodleni,

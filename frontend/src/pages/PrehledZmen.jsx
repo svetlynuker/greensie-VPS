@@ -303,9 +303,7 @@ export default function PrehledZmen() {
         {/* Prázdný stav */}
         {data && data.projekty.length === 0 && !nacita && (
           <div className="pz-table">
-            <div className="pz-empty">
-              Za zvolené období se v žádném projektu nic nezměnilo.
-            </div>
+            <div className="pz-empty">Žádné projekty k zobrazení.</div>
           </div>
         )}
 
