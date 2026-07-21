@@ -1,0 +1,295 @@
+/* Pohled 3 – Přehled změn. Ukazuje pohyb v projektech za zvolené období.
+   Namespace pz-, barvy z global.css (--st-*, --fm-*), aby se světlý/tmavý
+   i CVD režim přepínaly samy (stejně jako Pohled 1/2). */
+
+.pz-wrap {
+  padding: 4px 4px 60px;
+}
+
+/* ---- Filtr období ---- */
+.pz-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--fm-card);
+  border: 1px solid var(--fm-line);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  box-shadow: var(--shadow-1);
+}
+
+.pz-seg {
+  display: inline-flex;
+  border: 1px solid var(--fm-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.pz-seg button {
+  border: none;
+  background: transparent;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fm-text);
+  cursor: pointer;
+}
+
+.pz-seg button + button {
+  border-left: 1px solid var(--fm-line);
+}
+
+.pz-seg button.pz-active {
+  background: var(--fm-brand);
+  color: #fff;
+}
+
+.pz-dates {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--fm-muted);
+}
+
+.pz-dates input {
+  padding: 5px 8px;
+  border: 1px solid var(--fm-line);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  background: var(--fm-card);
+  color: var(--fm-text);
+}
+
+.pz-spacer {
+  flex: 1 1 auto;
+}
+
+.pz-obdobi {
+  font-size: 12.5px;
+  color: var(--fm-muted);
+}
+
+.pz-obdobi b {
+  color: var(--fm-text);
+}
+
+.pz-info {
+  font-size: 12px;
+  color: var(--fm-muted);
+  margin: 0 0 12px 2px;
+}
+
+/* ---- Souhrnné karty ---- */
+.pz-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.pz-card {
+  background: var(--fm-card);
+  border: 1px solid var(--fm-line);
+  border-left: 5px solid var(--pz-accent, var(--fm-line));
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  box-shadow: var(--shadow-1);
+}
+
+.pz-card-num {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--pz-accent, var(--fm-text));
+}
+
+.pz-card-lbl {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fm-muted);
+  margin-top: 2px;
+}
+
+.pz-c-done {
+  --pz-accent: var(--st-good);
+}
+.pz-c-fall {
+  --pz-accent: var(--st-crit);
+}
+.pz-c-late {
+  --pz-accent: var(--st-serious);
+}
+
+/* ---- Tabulka projektů ---- */
+.pz-table {
+  background: var(--fm-card);
+  border: 1px solid var(--fm-line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-1);
+}
+
+.pz-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.6fr) 2fr 90px 90px 90px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--fm-line);
+  cursor: pointer;
+}
+
+.pz-row.pz-head {
+  cursor: default;
+  background: var(--fm-head);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--fm-muted);
+}
+
+.pz-row:not(.pz-head):hover {
+  background: var(--fm-row-hover);
+}
+
+.pz-row:last-child {
+  border-bottom: none;
+}
+
+.pz-name {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.pz-name .pz-caret {
+  color: var(--fm-muted);
+  font-size: 11px;
+  flex: none;
+}
+
+.pz-name-txt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* dvoubarevný proužek pohybu: zelená=splněno, červená=spadlo do prodlení */
+.pz-bar {
+  height: 12px;
+  border-radius: 6px;
+  background: var(--fm-line);
+  overflow: hidden;
+  display: flex;
+}
+
+.pz-bar-done {
+  background: var(--st-good);
+  height: 100%;
+}
+
+.pz-bar-fall {
+  background: var(--st-crit);
+  height: 100%;
+}
+
+.pz-num {
+  text-align: center;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.pz-num.pz-zero {
+  color: var(--fm-muted);
+  font-weight: 500;
+}
+
+.pz-num.pz-done {
+  color: var(--st-good);
+}
+.pz-num.pz-fall {
+  color: var(--st-crit);
+}
+.pz-num.pz-late {
+  color: var(--st-serious);
+}
+
+/* ---- Detail (rozbalený řádek) ---- */
+.pz-detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  padding: 12px 16px 16px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--fm-line);
+}
+
+.pz-det-col h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pz-det-col.pz-done h4 {
+  color: var(--st-good);
+}
+.pz-det-col.pz-fall h4 {
+  color: var(--st-crit);
+}
+.pz-det-col.pz-late h4 {
+  color: var(--st-serious);
+}
+
+.pz-det-col ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pz-det-col li {
+  font-size: 12.5px;
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--fm-line);
+}
+
+.pz-det-col li:last-child {
+  border-bottom: none;
+}
+
+.pz-det-faze {
+  color: var(--fm-muted);
+  font-size: 11px;
+}
+
+.pz-det-term {
+  color: var(--fm-muted);
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+.pz-det-col a {
+  color: var(--fm-brand-dk);
+  text-decoration: none;
+}
+
+.pz-det-col a:hover {
+  text-decoration: underline;
+}
+
+.pz-det-prazdne {
+  color: var(--fm-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.pz-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--fm-muted);
+}

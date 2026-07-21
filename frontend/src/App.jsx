@@ -3,6 +3,7 @@ import Login from "./pages/Login";
 import Rozcestnik from "./pages/Rozcestnik";
 import PrehledProjektu from "./pages/PrehledProjektu";
 import PrehledFinanci from "./pages/PrehledFinanci";
+import PrehledZmen from "./pages/PrehledZmen";
 import Nabidkovac from "./pages/Nabidkovac";
 import NabidkovacSekce from "./pages/NabidkovacSekce";
 import NabidkaDetail from "./pages/NabidkaDetail";
@@ -50,6 +51,14 @@ export default function App() {
           element={
             <VyzadujePrihlaseni>
               <PrehledFinanci />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/zmeny"
+          element={
+            <VyzadujePrihlaseni>
+              <PrehledZmen />
             </VyzadujePrihlaseni>
           }
         />

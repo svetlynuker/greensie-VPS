@@ -335,3 +335,12 @@ export function smazLogy(starsiNezDni) {
   const q = starsiNezDni != null ? `?starsi_nez_dni=${starsiNezDni}` : "";
   return zavolej(`/logy${q}`, { method: "DELETE" });
 }
+
+// ---- Přehled změn (Pohled 3) ----
+export function nactiZmeny({ od, do: doDatum } = {}) {
+  const p = new URLSearchParams();
+  if (od) p.set("od", od);
+  if (doDatum) p.set("do", doDatum);
+  const q = p.toString();
+  return zavolej(`/zmeny${q ? `?${q}` : ""}`);
+}

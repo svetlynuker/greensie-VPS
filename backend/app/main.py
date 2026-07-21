@@ -15,6 +15,8 @@ from app.nastaveni.routes import router as nastaveni_router
 from app.logy import models as logy_models  # noqa: F401 - registrace modelů
 from app.logy.routes import router as logy_router
 from app.logy.middleware import LogovaciMiddleware
+from app.zmeny import models as zmeny_models  # noqa: F401 - registrace modelů
+from app.zmeny.routes import router as zmeny_router
 from app.admin.routes import router as admin_router
 from app.database import Base, engine
 
@@ -151,6 +153,7 @@ app.include_router(finance_router)
 app.include_router(nabidkovac_router)
 app.include_router(nastaveni_router)
 app.include_router(logy_router)
+app.include_router(zmeny_router)
 app.include_router(admin_router)
 
 
