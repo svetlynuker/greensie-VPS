@@ -168,6 +168,24 @@ export default function NabidkaDetail() {
           <DokumentUpload nabidkaId={nabidka.id} dokumenty={nabidka.dokumenty} onZmena={nactiZnovu} />
         </div>
 
+        {/* Nabídka pro zákazníka (PDF) – jen tam, kde už je výpočet (PPA / peak shaving) */}
+        {(nabidka.typ === "ppa" || nabidka.typ === "peak_shaving") && (
+          <div className="fm-card" style={{ padding: 18, marginBottom: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <h3 style={{ margin: "0 0 4px", fontSize: 14 }}>Nabídka pro zákazníka</h3>
+              <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: 0 }}>
+                Sestav a uprav nabídkovou stránku (jen zákaznická data) a ulož ji do PDF.
+              </p>
+            </div>
+            <button
+              className="fm-btn fm-primary"
+              onClick={() => navigate(`/nabidkovac/nabidka/${nabidka.id}/vystup/${nabidka.typ}`)}
+            >
+              Otevřít nabídku pro zákazníka
+            </button>
+          </div>
+        )}
+
         {/* Navržená řešení */}
         {nabidka.typ === "peak_shaving" ? (
           <PeakShavingPanel nabidka={nabidka} />

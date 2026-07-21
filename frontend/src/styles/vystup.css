@@ -1,0 +1,144 @@
+/* Nabídkový výstup (PDF pro zákazníka) – layout stránky editor+náhled a
+ * tiskové A4. Tisk do PDF řešíme přes window.print() (žádná knihovna navíc):
+ * v @media print schováme všechno s třídou .np (no-print) a vytiskneme jen
+ * A4 list .vystup-sheet. Barvy jdou přes stejné tokeny jako zbytek appky. */
+
+.vystup-page {
+  min-height: 100vh;
+  background: var(--fm-bg, #f4f6f5);
+  color: var(--fm-text, #1c2321);
+}
+
+/* Horní lišta stránky (netiskne se) */
+.vystup-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--surface, #fff);
+  border-bottom: 1px solid var(--fm-line, #dfe4e2);
+}
+.vystup-bar h1 { font-size: 15px; margin: 0; flex: 0 0 auto; }
+.vystup-bar .sp { flex: 1; }
+
+/* Rozložení: vlevo editor, vpravo náhled */
+.vystup-layout {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 20px;
+  align-items: start;
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+@media (max-width: 860px) {
+  .vystup-layout { grid-template-columns: 1fr; }
+}
+
+.vystup-editor {
+  position: sticky;
+  top: 64px;
+  max-height: calc(100vh - 84px);
+  overflow: auto;
+  background: var(--surface, #fff);
+  border: 1px solid var(--fm-line, #dfe4e2);
+  border-radius: 12px;
+  padding: 14px;
+}
+.vystup-nahled-wrap { display: flex; justify-content: center; }
+
+/* ---- Tisková A4 stránka ---- */
+.vystup-sheet {
+  width: 210mm;
+  max-width: 100%;
+  min-height: 297mm;
+  box-sizing: border-box;
+  padding: 16mm 16mm 18mm;
+  background: #fff;
+  color: #1c2321;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* Hlavička nabídky */
+.vy-hlavicka { border-bottom: 3px solid var(--brand, #2f9e44); padding-bottom: 14px; margin-bottom: 22px; }
+.vy-logo {
+  width: 150px; height: 46px;
+  border: 1px dashed #b9c2be; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  color: #99a3a0; font-size: 10px; letter-spacing: 0.04em;
+  margin-bottom: 14px;
+}
+.vy-hlavicka h1 { font-size: 22px; margin: 0 0 4px; color: #17321f; }
+.vy-hlavicka .podnadpis { color: var(--brand, #2f9e44); font-weight: 600; font-size: 13px; }
+.vy-prijemce { margin-top: 12px; font-size: 12.5px; }
+.vy-prijemce .lbl { color: #6a7570; }
+.vy-prijemce b { font-size: 14px; }
+
+/* Bloky */
+.vy-blok { margin-bottom: 20px; }
+.vy-blok h2 {
+  font-size: 15px; margin: 0 0 8px;
+  color: #17321f; border-left: 4px solid var(--brand, #2f9e44);
+  padding-left: 8px;
+}
+.vy-text { white-space: pre-wrap; margin: 0 0 6px; }
+.vy-intro { color: #55605b; margin: 0 0 10px; }
+
+/* Karty údajů */
+.vy-karty { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.vy-karty.dva { grid-template-columns: repeat(2, 1fr); }
+.vy-karta {
+  border: 1px solid #e2e8e4; border-radius: 10px; padding: 12px 14px;
+  background: #f7faf8;
+}
+.vy-karta .k-nazev { font-size: 11px; color: #6a7570; margin-bottom: 4px; }
+.vy-karta .k-hodnota { font-size: 19px; font-weight: 700; color: #17321f; }
+.vy-karta.zvyraznit { background: #eaf6ec; border-color: #bfe3c6; }
+.vy-karta.zvyraznit .k-hodnota { color: var(--brand-strong, #248139); }
+
+/* Tabulka */
+.vy-tabulka { width: 100%; border-collapse: collapse; font-size: 12px; }
+.vy-tabulka th, .vy-tabulka td { padding: 6px 8px; text-align: right; border-bottom: 1px solid #e2e8e4; }
+.vy-tabulka th:first-child, .vy-tabulka td:first-child { text-align: left; }
+.vy-tabulka thead th { background: #eef3f0; color: #43514c; font-weight: 600; }
+
+.vy-graf { border: 1px solid #e9eeeb; border-radius: 10px; padding: 12px; }
+.vy-prazdno { color: #99a3a0; font-style: italic; font-size: 12px; }
+
+/* ---- Editor (ovládání) ---- */
+.ed-blok {
+  border: 1px solid var(--fm-line, #dfe4e2); border-radius: 10px;
+  padding: 10px; margin-bottom: 10px; background: var(--surface, #fff);
+}
+.ed-blok.skryty { opacity: 0.55; }
+.ed-hlava { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.ed-hlava .druh { font-size: 10px; color: var(--fm-muted, #7a857f); text-transform: uppercase; letter-spacing: 0.04em; }
+.ed-hlava .sp { flex: 1; }
+.ed-btn {
+  border: 1px solid var(--fm-line, #dfe4e2); background: var(--surface, #fff);
+  border-radius: 6px; padding: 2px 7px; cursor: pointer; font-size: 12px; color: inherit;
+}
+.ed-btn:disabled { opacity: 0.35; cursor: default; }
+.ed-pole-nadpis { width: 100%; box-sizing: border-box; margin-bottom: 6px; }
+.ed-textarea { width: 100%; box-sizing: border-box; min-height: 66px; resize: vertical; font: inherit; }
+.ed-checkbox { display: flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 3px 0; }
+.ed-checkbox .sp { flex: 1; }
+.ed-sekce-nadpis { font-size: 11px; color: var(--fm-muted, #7a857f); margin: 8px 0 2px; }
+
+@media print {
+  @page { size: A4; margin: 0; }
+  .np { display: none !important; }
+  .vystup-page { background: #fff; }
+  .vystup-layout { display: block; padding: 0; margin: 0; max-width: none; }
+  .vystup-nahled-wrap { display: block; }
+  .vystup-sheet {
+    width: auto; min-height: auto; box-shadow: none; padding: 14mm 16mm;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .vy-blok { break-inside: avoid; }
+}

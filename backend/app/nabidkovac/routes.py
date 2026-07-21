@@ -18,7 +18,14 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import User
 from app.database import get_db
-from app.nabidkovac import peak_shaving, ppa_fve, profil_import, profil_pokryti, soubory
+from app.nabidkovac import (
+    peak_shaving,
+    ppa_fve,
+    profil_import,
+    profil_pokryti,
+    sablona_katalog,
+    soubory,
+)
 from app.nabidkovac.models import (
     DISTRIBUTORI,
     NAPETOVE_HLADINY,
@@ -29,6 +36,7 @@ from app.nabidkovac.models import (
     KatalogSloupec,
     Nabidka,
     NabidkaDokument,
+    NabidkaVystup,
     NavrhovaneReseni,
     SazbaDistributoru,
     SpotrebaProfil,
@@ -53,6 +61,8 @@ from app.nabidkovac.schemas import (
     TechnologieVstup,
     VypoctovaNastaveniOut,
     VypoctovaNastaveniVstup,
+    VystupKonfigurace,
+    VystupOut,
 )
 
 router = APIRouter(prefix="/nabidkovac", tags=["nabidkovac"])
@@ -1571,3 +1581,140 @@ def spocti_ppa(
     db.commit()
     db.refresh(reseni)
     return {"reseni_id": reseni.id, "popis_json": popis_json}
+
+
+# ================= Nabídková šablona / výstup (PDF pro zákazníka) =================
+def _posledni_reseni(db: Session, nabidka_id: int, typ_reseni: str) -> NavrhovaneReseni | None:
+    """Nejnovější spočítané řešení daného typu (podle něj se plní hodnoty)."""
+    return (
+        db.query(NavrhovaneReseni)
+        .filter(
+            NavrhovaneReseni.nabidka_id == nabidka_id,
+            NavrhovaneReseni.typ_reseni == typ_reseni,
+        )
+        .order_by(NavrhovaneReseni.id.desc())
+        .first()
+    )
+
+
+def _vystup_out(db: Session, n: Nabidka, typ_reseni: str, vychozi: bool = False) -> VystupOut:
+    """Sestaví kompletní podklad pro náhled/editor: konfigurace (uložená nebo
+    výchozí) + katalog dostupných polí + resolvnuté zákaznické hodnoty.
+
+    `vychozi=True` vynutí kódovou předlohu i tehdy, když je něco uloženo
+    (tlačítko „Obnovit výchozí" – uloží se až na explicitní Uložit)."""
+    ulozeny = (
+        db.query(NabidkaVystup)
+        .filter(NabidkaVystup.nabidka_id == n.id, NabidkaVystup.typ_reseni == typ_reseni)
+        .first()
+    )
+    if not vychozi and ulozeny is not None and ulozeny.konfigurace_json:
+        konfigurace = ulozeny.konfigurace_json
+        je_vychozi = False
+    else:
+        konfigurace = sablona_katalog.vychozi_sablona(typ_reseni)
+        je_vychozi = True
+
+    reseni = _posledni_reseni(db, n.id, typ_reseni)
+    popis = reseni.popis_json if reseni is not None else None
+
+    return VystupOut(
+        typ_reseni=typ_reseni,
+        existuje_reseni=reseni is not None,
+        je_vychozi=je_vychozi,
+        konfigurace=konfigurace,
+        katalog=sablona_katalog.katalog_pro_frontend(typ_reseni),
+        zakaznik={
+            "nazev": n.zakaznik_nazev or "",
+            "adresa": n.zakaznik_adresa or "",
+            "datum": _iso(datetime.now()),
+        },
+        hodnoty=sablona_katalog.resolvni_hodnoty(typ_reseni, popis),
+        tabulka=sablona_katalog.resolvni_tabulku(typ_reseni, popis),
+        graf=sablona_katalog.graf_pro_typ(typ_reseni, popis),
+    )
+
+
+def _over_typ_reseni(typ_reseni: str) -> None:
+    if typ_reseni not in sablona_katalog.PODPOROVANE_TYPY:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Šablona výstupu není podporovaná pro typ: {typ_reseni}",
+        )
+
+
+@router.get("/nabidky/{nabidka_id}/vystup/{typ_reseni}", response_model=VystupOut)
+def detail_vystupu(
+    nabidka_id: int,
+    typ_reseni: str,
+    vychozi: bool = False,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Podklad pro editor i tiskový náhled nabídky (konfigurace + hodnoty).
+    `vychozi=1` vrátí kódovou předlohu i při uložené šabloně."""
+    _over_typ_reseni(typ_reseni)
+    n = db.get(Nabidka, nabidka_id)
+    if n is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    return _vystup_out(db, n, typ_reseni, vychozi=vychozi)
+
+
+@router.put("/nabidky/{nabidka_id}/vystup/{typ_reseni}", response_model=VystupOut)
+def uloz_vystup(
+    nabidka_id: int,
+    typ_reseni: str,
+    vstup: VystupKonfigurace,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Uloží šablonu výstupu nabídky. POJISTKA „jen zákaznická data": každé
+    pole/sloupec musí být v katalogu daného typu, jinak 422 – interní klíč
+    (CAPEX, NPV, marže…) se do konfigurace nedostane."""
+    _over_typ_reseni(typ_reseni)
+    n = db.get(Nabidka, nabidka_id)
+    if n is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+
+    povolena_pole = sablona_katalog.platne_klice(typ_reseni)
+    povolene_sloupce = sablona_katalog.platne_sloupce(typ_reseni)
+    for blok in vstup.bloky:
+        if blok.druh == "udaje":
+            for klic in blok.pole:
+                if klic not in povolena_pole:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"Pole '{klic}' není mezi povolenými zákaznickými údaji "
+                            f"pro {typ_reseni} – do nabídky ho vložit nelze."
+                        ),
+                    )
+        elif blok.druh == "tabulka":
+            for klic in blok.pole:
+                if klic not in povolene_sloupce:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"Sloupec '{klic}' není mezi povolenými sloupci tabulky "
+                            f"pro {typ_reseni}."
+                        ),
+                    )
+
+    konfigurace = vstup.model_dump()
+    zaznam = (
+        db.query(NabidkaVystup)
+        .filter(NabidkaVystup.nabidka_id == n.id, NabidkaVystup.typ_reseni == typ_reseni)
+        .first()
+    )
+    if zaznam is None:
+        zaznam = NabidkaVystup(
+            nabidka_id=n.id,
+            typ_reseni=typ_reseni,
+            konfigurace_json=konfigurace,
+            vytvoril_user_id=user.id,
+        )
+        db.add(zaznam)
+    else:
+        zaznam.konfigurace_json = konfigurace
+    db.commit()
+    return _vystup_out(db, n, typ_reseni)

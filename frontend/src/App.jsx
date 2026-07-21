@@ -7,6 +7,7 @@ import PrehledZmen from "./pages/PrehledZmen";
 import Nabidkovac from "./pages/Nabidkovac";
 import NabidkovacSekce from "./pages/NabidkovacSekce";
 import NabidkaDetail from "./pages/NabidkaDetail";
+import NabidkaVystupStranka from "./pages/NabidkaVystupStranka";
 import NabidkovacKatalog from "./pages/NabidkovacKatalog";
 import AdminNastaveni from "./pages/AdminNastaveni";
 import Logy from "./pages/Logy";
@@ -83,6 +84,14 @@ export default function App() {
           element={
             <VyzadujePrihlaseni>
               <NabidkaDetail />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/nabidkovac/nabidka/:id/vystup/:typ"
+          element={
+            <VyzadujePrihlaseni>
+              <NabidkaVystupStranka />
             </VyzadujePrihlaseni>
           }
         />

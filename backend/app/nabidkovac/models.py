@@ -409,6 +409,41 @@ class NavrhovaneReseni(Base):
     nabidka = relationship("Nabidka", back_populates="reseni")
 
 
+class NabidkaVystup(Base):
+    """Uložená nabídková šablona konkrétní nabídky (per typ řešení).
+
+    Dan zvolil variantu „šablona zvlášť u každé nabídky" – žádný globální
+    master. Nová nabídka startuje z kódové výchozí předlohy
+    (`sablona_katalog.vychozi_sablona`), a jakmile ji OZ v editoru uloží,
+    uloží se sem override konkrétní nabídky. `konfigurace_json` drží seznam
+    bloků (druh, viditelný, nadpis, text, vybraná pole) – strukturu i
+    whitelist polí hlídá `sablona_katalog`.
+
+    Jeden řádek na (nabídka × typ řešení), protože jedna nabídka může mít
+    víc řešení (PPA i peak shaving) a každé má vlastní šablonu. Nová tabulka
+    vzniká přes `create_all` – žádná migrace navíc.
+    """
+
+    __tablename__ = "nabidka_vystup"
+    __table_args__ = (
+        UniqueConstraint("nabidka_id", "typ_reseni", name="uq_nabidka_vystup_nabidka_typ"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    nabidka_id = Column(
+        Integer, ForeignKey("nabidky.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    typ_reseni = Column(String, nullable=False)  # "ppa" / "peak_shaving"
+    konfigurace_json = Column(JSONB, nullable=False, default=dict, server_default="{}")
+
+    aktualizovano_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    vytvoril_user_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True
+    )
+
+
 class GenerovanaNabidkaPdf(Base):
     """Vygenerované PDF nabídky (kap. 4.8 SPEC).
 

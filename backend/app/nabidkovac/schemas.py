@@ -1,6 +1,6 @@
 """Pydantic schémata Nabídkovače. Literaly musí odpovídat enumům v models.py."""
 
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel
 
@@ -233,3 +233,37 @@ class PpaVstup(BaseModel):
     prebytek_uctovat: bool = False
     prebytek_cena_kc_mwh: Optional[float] = None
     rezervovany_vykon_dodavky_kw: Optional[float] = None
+
+
+# ---- Nabídková šablona / výstup (viz sablona_katalog.py) ----
+TypReseniVystup = Literal["ppa", "peak_shaving"]
+DruhBloku = Literal["hlavicka", "text", "udaje", "graf", "tabulka"]
+
+
+class VystupBlok(BaseModel):
+    """Jeden blok nabídky. `pole` se používá u druhů udaje/tabulka."""
+
+    id: str
+    druh: DruhBloku
+    viditelny: bool = True
+    nadpis: str = ""
+    text: str = ""
+    pole: list[str] = []
+
+
+class VystupKonfigurace(BaseModel):
+    bloky: list[VystupBlok] = []
+
+
+class VystupOut(BaseModel):
+    """Vše, co frontend potřebuje k vykreslení náhledu i editoru."""
+
+    typ_reseni: TypReseniVystup
+    existuje_reseni: bool
+    je_vychozi: bool  # True = ještě neuloženo, jede se z výchozí předlohy
+    konfigurace: VystupKonfigurace
+    katalog: dict = {}  # dostupná pole + sloupce tabulky pro editor
+    zakaznik: dict = {}  # nazev/adresa/datum pro hlavičku
+    hodnoty: dict[str, Any] = {}  # {klic: {nazev, format, hodnota, hodnota_text}}
+    tabulka: dict = {}  # {sloupce, radky}
+    graf: Optional[dict] = None  # surová data grafu (dle typ_reseni)
