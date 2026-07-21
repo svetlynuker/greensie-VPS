@@ -264,6 +264,19 @@ export function ppaProfilSouhrn(nabidkaId) {
   return zavolej(`/nabidkovac/nabidky/${nabidkaId}/ppa/profil-souhrn`);
 }
 
+// ---- Nabídkový výstup (šablona pro zákazníka / PDF) ----
+export function nabidkaVystup(nabidkaId, typReseni, vychozi = false) {
+  const q = vychozi ? "?vychozi=1" : "";
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/vystup/${typReseni}${q}`);
+}
+
+export function nabidkaVystupUloz(nabidkaId, typReseni, konfigurace) {
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/vystup/${typReseni}`, {
+    method: "PUT",
+    body: JSON.stringify(konfigurace),
+  });
+}
+
 // ---- Uživatelská nastavení (pohledy + vzhled, uložená v DB) ----
 export function nactiNastaveni() {
   return zavolej("/nastaveni");
