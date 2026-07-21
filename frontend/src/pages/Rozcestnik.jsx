@@ -8,6 +8,7 @@ import { nactiMe, logout } from "../api";
 const TRASY = {
   projekty: "/projekty",
   finance: "/finance",
+  zmeny: "/zmeny",
   nabidkovac: "/nabidkovac",
   admin: "/admin",
   logy: "/logy",
@@ -25,7 +26,7 @@ const IKONY = {
 const PODTITULY = {
   projekty: "Matice úkolů a fází ze Freela",
   finance: "Faktury k projektům, párování POHODA",
-  zmeny: "Připravujeme",
+  zmeny: "Co se v projektech pohnulo za období",
   nabidkovac: "Nabídky FVE, PPA a peak shaving",
   admin: "Uživatelé, skupiny a oprávnění",
   logy: "Provoz serveru, chyby a kdo co udělal",

@@ -62,10 +62,31 @@ def _mozna_synchronizuj() -> None:
         db.close()
 
 
+def _mozna_sejmi_snimek() -> None:
+    """Uloží denní snímek stavu matice pro Přehled změn (idempotentní per den).
+
+    První úspěšné sejmutí po nasazení = „základna“, se kterou porovnává volba
+    „od začátku“. Chyby jen spolkneme – snímek nikdy nesmí shodit synchronizaci.
+    """
+    from app.zmeny.snapshot import sejmi_snimek
+
+    db = SessionLocal()
+    try:
+        sejmi_snimek(db)
+    except Exception:  # noqa: BLE001 - chybu spolkneme, vlákno běží dál
+        db.rollback()
+    finally:
+        db.close()
+
+
 def _smycka() -> None:
     if _stop.wait(START_PRODLEVA_S):
         return
     while not _stop.is_set():
+        try:
+            _mozna_sejmi_snimek()  # denní fotka stavu (základna hned při startu)
+        except Exception:  # noqa: BLE001 - vlákno nesmí nikdy spadnout
+            pass
         try:
             _mozna_synchronizuj()
         except Exception:  # noqa: BLE001 - vlákno nesmí nikdy spadnout
