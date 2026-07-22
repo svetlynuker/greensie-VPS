@@ -1,9 +1,44 @@
 # -*- coding: utf-8 -*-
-"""Testy importu profilu – deduplikace časů (audit SP-2)."""
+"""Testy importu profilu – detekce sloupců a deduplikace časů (audit SP-2)."""
 
 from datetime import datetime
 
-from app.nabidkovac.profil_import import deduplikuj_casy
+import pytest
+
+from app.nabidkovac.profil_import import _najdi_sloupce, deduplikuj_casy
+
+
+def test_pnd_hlavicka_bere_cinny_vykon():
+    # PND export ČEZ/EG.D: Datum | Profil +A [kW] | Status | Datum | +Ri [kVAr] | ...
+    hlavicka = ["Datum", "Profil +A [kW]", "Status", "Datum", "Profil +Ri [kVAr]", "Status"]
+    assert _najdi_sloupce(hlavicka) == (0, 1)
+
+
+def test_msv_sloupec_spotreba_v_kw_je_vykon():
+    # „Spotřeba [kw]" je činný odběr v kW (ne kWh) – bereme ho.
+    hlavicka = ["Datum", "Spotřeba [kw]", "Status", "Datum", "Přetoky [kw]", "Status"]
+    assert _najdi_sloupce(hlavicka) == (0, 1)
+
+
+def test_pre_bere_vykon_kw_ne_spotrebu_kwh():
+    # PRE export: čas jako Počátek/Konec intervalu, vedle sebe spotřeba [kWh]
+    # a výkon [kW]. Musíme vzít VÝKON (kW), ne energii (kWh), a jako čas
+    # POČÁTEK intervalu (ne konec).
+    hlavicka = [
+        "Počátek intervalu",
+        "Konec intervalu",
+        "859182400300013392 - Činná - spotřeba [kWh]",
+        "859182400300013392 - Činný - výkon [kW]",
+        "859182400300013392 - Induktivní - spotřeba [kVAr]",
+        "859182400300013392 - Kapacitní - spotřeba [kVAr]",
+    ]
+    assert _najdi_sloupce(hlavicka) == (0, 3)
+
+
+def test_jalovina_kvar_se_nebere_jako_vykon():
+    # Když je k dispozici jen jalovina [kVAr], sloupec výkonu není → chyba.
+    with pytest.raises(ValueError):
+        _najdi_sloupce(["Datum", "Profil +Ri [kVAr]", "Status"])
 
 
 def test_bez_duplicit_vraci_puvodni_body():
