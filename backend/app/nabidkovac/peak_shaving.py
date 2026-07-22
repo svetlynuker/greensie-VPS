@@ -468,6 +468,43 @@ def _rocni_naklad_2027(rp_kw: float, mesicni_maxima: dict[int, float], p: dict) 
     return naklad, poc_t1, poc_t2
 
 
+def optimalizuj_rp_2027(
+    mesicni_maxima: dict[int, float], parametry: dict
+) -> tuple[float, float]:
+    """Nejlevnější rezervovaný příkon (RP) bez baterie v tarifu 2027 (třetí výpočet).
+
+    Protějšek `optimalizuj_rk` (model 2026) pro dvousložkovou strukturu 2027:
+    měsíční maxima M jsou bez baterie pevná, volí se jediné roční RP. Měsíční
+    náklad `min(RP·T1kap + M·T1špička, RP·T2kap + M·T2špička)` + penalizace za
+    překročení je po částech lineární v RP – zlomy leží v každém M (penalizace)
+    a v bodě, kde se pro dané M přehoupne volba levnějšího tarifu T1/T2. Optimum
+    po částech lineární funkce (kapacitní sazby > 0 ⇒ pro RP→∞ náklad roste)
+    proto leží v některém zlomu; grid-search přes kandidáty je korektní, stejně
+    jako u RK 2026. RP smí klesnout i pod maxima, když je penalizace levnější
+    než úspora na kapacitní složce (volná optimalizace – rozhodnuto se zadavatelem).
+    Vrací (náklad Kč/rok bez baterie, optimální RP kW).
+    """
+    if not mesicni_maxima:
+        return 0.0, 0.0
+    maxima = list(mesicni_maxima.values())
+    t1k = parametry["t1_kapacita_kc_kw_mesic"]
+    t2k = parametry["t2_kapacita_kc_kw_mesic"]
+    t1s = parametry["t1_spicka_kc_kw_mesic"]
+    t2s = parametry["t2_spicka_kc_kw_mesic"]
+    kandidati = {0.0, *maxima}
+    # Tarifní zlomy: RP, kde pro dané M vychází T1 == T2 (mění se levnější tarif).
+    if t1k != t2k:
+        for m in maxima:
+            rp = m * (t2s - t1s) / (t1k - t2k)
+            if rp > 0:
+                kandidati.add(rp)
+    nejlepsi_rp = min(
+        kandidati, key=lambda rp: _rocni_naklad_2027(rp, mesicni_maxima, parametry)[0]
+    )
+    naklad, _, _ = _rocni_naklad_2027(nejlepsi_rp, mesicni_maxima, parametry)
+    return naklad, nejlepsi_rp
+
+
 def mesicni_maxima_po_baterii(
     profil_kw: list[float],
     mesice: list[int],
@@ -509,6 +546,11 @@ def ekonomika_2027(
     """Ekonomika roku 2027 (nová dvousložková struktura ERÚ, METODIKA kap. 4.6).
 
     - Bez peak shavingu: RP = aktuální sjednaná kapacita, M = naměřené měsíční maximum.
+    - Optimalizace RP bez baterie (třetí výpočet): nejlevnější RP nad týmiž
+      naměřenými maximy, bez jakékoli investice (`optimalizuj_rp_2027`) –
+      protějšek „optimalizace RK bez baterie" z modelu 2026. Přínos baterie se
+      pak počítá proti této fér baseline, ne proti (často předimenzovanému)
+      současnému RP. Počítá se vždy, informativně.
     - S peak shavingem: RP = nová (roční, jedna hodnota = min. udržitelný strop pro
       celý rok), M = měsíční maximum PO baterii, sražené co nejhlouběji v každém
       měsíci (kap. 4.6 „srážej co to dá“). RP se přes rok nemění – mění se jen M.
@@ -538,6 +580,10 @@ def ekonomika_2027(
     raw = _mesicni_maxima(profil_kw, mesice)
     soucasny, _, _ = _rocni_naklad_2027(rezervovana_kapacita_kw, raw, parametry)
 
+    # Optimalizace RP bez baterie (třetí výpočet): fér baseline pro rok 2027 –
+    # nejlevnější RP nad naměřenými maximy, bez investice (protějšek RK 2026).
+    naklad_opt_bez, rp_opt_bez = optimalizuj_rp_2027(raw, parametry)
+
     # S peak shavingem: po měsících srazit M co nejhlouběji (kap. 4.6)
     # + sečíst nabíjení pro ocenění ztrát (PS-5).
     po_mesicich: dict[int, list[float]] = {}
@@ -555,10 +601,19 @@ def ekonomika_2027(
     novy, poc_t1, poc_t2 = _rocni_naklad_2027(nova_rezervovana_kapacita_kw, mesicni_po, parametry)
     naklad_ztrat = naklad_ztrat_baterie_kc(nabito_celkem, ucinnost_rt, cena_energie_kc_mwh)
 
+    novy_naklad_s_baterii = novy + naklad_ztrat
     return {
         "status": "spocitano",
         "soucasny_rocni_naklad": soucasny,
-        "novy_rocni_naklad": novy + naklad_ztrat,
+        # Třetí výpočet: nejlevnější RP bez baterie a rozpad úspory (fér baseline
+        # 2027, symetrický s modelem 2026). Přínos baterie = proti optimalizaci,
+        # ne proti současnému (často předimenzovanému) RP. Řízení výběru variant
+        # to zatím nemění – slouží informativně.
+        "naklad_optimalni_bez_baterie": naklad_opt_bez,
+        "optimalni_rp_bez_baterie_kw": rp_opt_bez,
+        "uspora_optimalizaci_bez_baterie": soucasny - naklad_opt_bez,
+        "prinos_baterie": naklad_opt_bez - novy_naklad_s_baterii,
+        "novy_rocni_naklad": novy_naklad_s_baterii,
         "naklad_ztrat_baterie": naklad_ztrat,
         "rocni_uspora": soucasny - novy - naklad_ztrat,
         # RP obou scénářů (audit PS-4): hodnota ze smlouvy o připojení
