@@ -500,8 +500,26 @@ export default function PeakShavingPanel({ nabidka }) {
                         <tbody>
                           {/* Starší uložené výsledky (před PS-3) nesou *_bez_aku – zobrazí se
                               konzervativní čísla; sleva AKU pro BTM baterii neexistuje. */}
-                          <tr><td>Roční náklad bez peak shavingu</td><td>{kc(dop.ekonomika_2027.soucasny_rocni_naklad)}</td></tr>
+                          <tr><td>Roční náklad dnes (RP {kw(dop.ekonomika_2027.rp_soucasny_kw)})</td><td>{kc(dop.ekonomika_2027.soucasny_rocni_naklad)}</td></tr>
+                          {/* Třetí výpočet: nejlevnější RP bez baterie (fér baseline 2027). */}
+                          {dop.ekonomika_2027.naklad_optimalni_bez_baterie != null && (
+                            <>
+                              <tr>
+                                <td>Optimalizace RP bez baterie</td>
+                                <td>
+                                  {kc(dop.ekonomika_2027.naklad_optimalni_bez_baterie)}
+                                  <span style={{ fontSize: 11, color: "var(--fm-muted)" }}>
+                                    {" "}(RP {kw(dop.ekonomika_2027.optimalni_rp_bez_baterie_kw)})
+                                  </span>
+                                </td>
+                              </tr>
+                              <tr><td><b>Úspora hned bez investice</b></td><td><b>{kc(dop.ekonomika_2027.uspora_optimalizaci_bez_baterie)}</b></td></tr>
+                            </>
+                          )}
                           <tr><td>Roční náklad s peak shavingem</td><td>{kc(dop.ekonomika_2027.novy_rocni_naklad_bez_aku ?? dop.ekonomika_2027.novy_rocni_naklad)}</td></tr>
+                          {dop.ekonomika_2027.prinos_baterie != null && (
+                            <tr><td><b>Přínos baterie</b></td><td><b>{kc(dop.ekonomika_2027.prinos_baterie)}</b></td></tr>
+                          )}
                           {dop.ekonomika_2027.naklad_ztrat_baterie > 0 && (
                             <tr><td>… z toho ztráty baterie</td><td>{kc(dop.ekonomika_2027.naklad_ztrat_baterie)}</td></tr>
                           )}

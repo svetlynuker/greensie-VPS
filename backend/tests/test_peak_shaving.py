@@ -116,6 +116,58 @@ class TestEkonomika2027BezAku:
         assert "prumerny_koeficient_aku" not in v.ekonomika_2027
 
 
+class TestOptimalizaceRp2027:
+    """Třetí výpočet: nejlevnější RP bez baterie v tarifu 2027 (fér baseline)."""
+
+    def test_je_nejlevnejsi_ze_vsech_kandidatu(self):
+        # Optimalizovaný náklad musí být ≤ náklad při libovolném RP.
+        raw = ps._mesicni_maxima(PROFIL_2M, MESICE_2M)  # {1: 100, 2: 200}
+        naklad, rp = ps.optimalizuj_rp_2027(raw, P2027_CEZ_VN)
+        for zkusmy_rp in (0.0, 50.0, 100.0, 150.0, 200.0, 250.0, 300.0):
+            zkusmy, _, _ = ps._rocni_naklad_2027(zkusmy_rp, raw, P2027_CEZ_VN)
+            assert naklad <= zkusmy + 1e-6
+        vlastni, _, _ = ps._rocni_naklad_2027(rp, raw, P2027_CEZ_VN)
+        assert naklad == pytest.approx(vlastni)
+
+    def test_neni_horsi_nez_soucasny_rp(self):
+        # Optimalizace nikdy nezhorší náklad proti (předimenzovanému) RP.
+        raw = ps._mesicni_maxima(PROFIL_2M, MESICE_2M)
+        naklad_opt, _ = ps.optimalizuj_rp_2027(raw, P2027_CEZ_VN)
+        soucasny, _, _ = ps._rocni_naklad_2027(300.0, raw, P2027_CEZ_VN)
+        assert naklad_opt <= soucasny
+
+    def test_prazdna_maxima(self):
+        assert ps.optimalizuj_rp_2027({}, P2027_CEZ_VN) == (0.0, 0.0)
+
+
+class TestEkonomika2027RozpadUspory:
+    """Rozklad úspory 2027 je symetrický s modelem 2026 (dnešní → opt → baterie)."""
+
+    def test_vystup_nese_rozpad_bez_baterie(self):
+        ek = ps.ekonomika_2027(PROFIL_2M, MESICE_2M, 300.0, 150.0, 60.0, 1000.0, P2027_CEZ_VN)
+        for klic in (
+            "naklad_optimalni_bez_baterie",
+            "optimalni_rp_bez_baterie_kw",
+            "uspora_optimalizaci_bez_baterie",
+            "prinos_baterie",
+        ):
+            assert klic in ek
+
+    def test_soucet_slozek_dava_celkovou_usporu(self):
+        # úspora bez investice + přínos baterie == celková roční úspora.
+        ek = ps.ekonomika_2027(PROFIL_2M, MESICE_2M, 300.0, 150.0, 60.0, 1000.0, P2027_CEZ_VN)
+        assert ek["uspora_optimalizaci_bez_baterie"] + ek["prinos_baterie"] == pytest.approx(
+            ek["rocni_uspora"]
+        )
+
+    def test_optimalizovany_naklad_odpovida_funkci(self):
+        ek = ps.ekonomika_2027(PROFIL_2M, MESICE_2M, 300.0, 150.0, 60.0, 1000.0, P2027_CEZ_VN)
+        raw = ps._mesicni_maxima(PROFIL_2M, MESICE_2M)
+        naklad, rp = ps.optimalizuj_rp_2027(raw, P2027_CEZ_VN)
+        assert ek["naklad_optimalni_bez_baterie"] == pytest.approx(naklad)
+        assert ek["optimalni_rp_bez_baterie_kw"] == pytest.approx(rp)
+
+
 # ------------------------------------------------------- PS-5: ztráty baterie
 class TestZtratyBaterie:
     def test_normalizace_ucinnosti(self):

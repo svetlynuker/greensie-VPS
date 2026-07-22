@@ -5,8 +5,13 @@ sloupce `Datum` + `Profil +A [kW]` + `Status`, ~34 944 řádků na rok), přípa
 XLSX nebo CSV se stejnou logikou. Výstupem je seznam dvojic (čas, kW), který
 plní tabulku `spotreba_profil`, nad níž pak počítá jádro peak shavingu.
 
-Bere se ČINNÝ výkon `+A [kW]` (odběr), ne jalový (Ri/Rc). Hlavička se hledá
-dynamicky, ať to snese drobné odchylky exportu (pořadí/prázdné úvodní řádky).
+Bere se ČINNÝ VÝKON v kW (odběr), ne energie ani jalovina. Export PRE má jiný
+tvar než PND – vedle sloupce `Činný - výkon [kW]` nese i `Činná - spotřeba [kWh]`
+a čas jako `Počátek/Konec intervalu` (žádný sloupec „Datum"). Sloupec `[kWh]`
+obsahuje podřetězec „kw", takže se dřív omylem načetla energie místo výkonu
+(hodnoty ×4 nafouknuté) – proto se energie [kWh] a jalovina [kVAr] z výběru
+výslovně vylučují. Hlavička se hledá dynamicky, ať to snese drobné odchylky
+exportu (pořadí/prázdné úvodní řádky).
 """
 
 from __future__ import annotations
@@ -56,32 +61,59 @@ def _to_float(v) -> float | None:
         return None
 
 
+# Klíčová slova hlavičky časového sloupce. PRE nemá „Datum", jen
+# „Počátek/Konec intervalu" – bereme POČÁTEK čtvrthodiny (konec ignorujeme).
+_DATUM_KLICE = ("počátek", "pocatek", "začátek", "zacatek", "datum", "čas", "cas", "interval")
+
+
+def _je_sloupec_vykonu_kw(h: str) -> bool:
+    """Hlavička činného výkonu v kW? Vyloučí energii [kWh] i jalovinu [kVAr].
+
+    `[kWh]` obsahuje podřetězec „kw", takže bez tohoto vyloučení se u PRE
+    exportu načte sloupec spotřeby v kWh místo výkonu v kW (hodnoty ×4).
+    """
+    return "kw" in h and "kwh" not in h and "kvar" not in h
+
+
 def _najdi_sloupce(radek: list) -> tuple[int, int]:
     """Z hlavičky najde index sloupce s činným výkonem (kW) a příslušného data.
 
-    Preferuje `+A ... kW` (činný odběr); jinak první sloupec s „kW". Datum bere
-    z nejbližšího sloupce nalevo obsahujícího „datum"/„čas", jinak o jeden vlevo.
+    Výkon: preferuje `+A … kW` (PND), pak `… výkon … kW` (PRE), pak první
+    sloupec s kW – vždy jen skutečný výkon (energie [kWh] ani jalovina [kVAr]
+    se neberou). Datum: nejbližší sloupec nalevo s datovým klíčovým slovem,
+    s předností „počátku" intervalu před „koncem"; fallback o jeden vlevo.
     Vyhodí ValueError, když sloupec s výkonem není → řádek to není hlavička.
     """
     nizke = [str(h).strip().lower() for h in radek]
     kw_idx = None
     for i, h in enumerate(nizke):
-        if "+a" in h and "kw" in h:
+        if "+a" in h and _je_sloupec_vykonu_kw(h):
             kw_idx = i
             break
     if kw_idx is None:
         for i, h in enumerate(nizke):
-            if "kw" in h:
+            if "výkon" in h and _je_sloupec_vykonu_kw(h):
+                kw_idx = i
+                break
+    if kw_idx is None:
+        for i, h in enumerate(nizke):
+            if _je_sloupec_vykonu_kw(h):
                 kw_idx = i
                 break
     if kw_idx is None:
         raise ValueError("nenalezen sloupec s činným výkonem (kW)")
 
-    datum_idx = None
-    for i in range(kw_idx - 1, -1, -1):
-        if "datum" in nizke[i] or "čas" in nizke[i] or "cas" in nizke[i]:
-            datum_idx = i
-            break
+    # Datum: kandidáti nalevo od výkonu; přednost počátku intervalu, jinak
+    # první, který není „konec", jinak první kandidát, jinak o sloupec vlevo.
+    kandidati = [i for i in range(kw_idx) if any(k in nizke[i] for k in _DATUM_KLICE)]
+    datum_idx = next(
+        (i for i in kandidati if any(k in nizke[i] for k in ("počátek", "pocatek", "začátek", "zacatek"))),
+        None,
+    )
+    if datum_idx is None:
+        datum_idx = next((i for i in kandidati if "konec" not in nizke[i]), None)
+    if datum_idx is None and kandidati:
+        datum_idx = kandidati[0]
     if datum_idx is None:
         datum_idx = kw_idx - 1 if kw_idx > 0 else 0
     return datum_idx, kw_idx
