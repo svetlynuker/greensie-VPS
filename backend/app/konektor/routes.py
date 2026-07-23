@@ -608,14 +608,22 @@ def rucni_zrcadlit(
     _user: User = Depends(vyzaduj_pravo_konektor),
     db: Session = Depends(get_db),
 ):
-    """Ruční spuštění zrcadlení stromu Disku do modulu Dokumenty (FR3)."""
-    try:
-        return logika.zrcadli_strom(db)
-    except logika.NastaveniNepripraveno as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:  # noqa: BLE001
-        zaloguj(db, "error", "zrcadleni", f"Ruční zrcadlení stromu selhalo: {e}")
-        raise HTTPException(status_code=502, detail=str(e))
+    """Zařadí zrcadlení Disk → modul Dokumenty (FR3) jako úlohu na pozadí.
+
+    Běh je dlouhý (stovky složek), takže se NEspouští synchronně v requestu
+    (blokoval by backend / timeoval), ale zpracuje ho worker. Průběh a
+    výsledek jsou v logu (událost „zrcadleni“). Dedup: neběží víc najednou.
+    """
+    existuje = (
+        db.query(KonektorJobQueue)
+        .filter(KonektorJobQueue.typ == "zrcadleni", KonektorJobQueue.status == "pending")
+        .first()
+    )
+    if existuje is not None:
+        return {"zarazeno": False, "duvod": "Zrcadlení už čeká/běží."}
+    fronta.zarad(db, "zrcadleni", {})
+    zaloguj(db, "info", "zrcadleni", "Zrcadlení do Dokumentů zařazeno – běží na pozadí.")
+    return {"zarazeno": True}
 
 
 @router.get("/watch")

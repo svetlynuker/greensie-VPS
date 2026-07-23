@@ -659,7 +659,8 @@ def zrcadli_strom(db: Session) -> dict:
     if not zdroj:
         raise NastaveniNepripraveno("Není nastavena zdrojová složka pro zrcadlení do Dokumentů.")
 
-    vytvoreno_slozek = vytvoreno_souboru = preskoceno = 0
+    vytvoreno_slozek = vytvoreno_souboru = preskoceno = chyb = 0
+    posledni_log = 0
     # fronta: (drive_folder_id, dms_path, dms_parent_id) – zpracováváme OBSAH
     # drive_folder_id do DMS složky s cestou dms_path a id dms_parent_id.
     # Kořen: dms_path=None (výpis přes GET /dms/), dms_parent_id=None.
@@ -683,7 +684,14 @@ def zrcadli_strom(db: Session) -> dict:
                     dms_id = nalez["id"]
                     child_path = nalez.get("path") or f"{zaklad_path}/{ocisteny}"
                 else:
-                    dms_id = raynet.create_document_folder(nazev, dms_parent)
+                    try:
+                        dms_id = raynet.create_document_folder(nazev, dms_parent)
+                    except Exception as e:  # noqa: BLE001 - jedna vadná složka nezastaví celek
+                        chyb += 1
+                        zaloguj(db, "warn", "zrcadleni",
+                                f"Složku „{nazev}“ se nepodařilo vytvořit v Dokumentech: {e}",
+                                {"path": zaklad_path})
+                        continue  # přeskočíme i její potomky
                     child_path = f"{zaklad_path}/{ocisteny}"
                     vytvoreno_slozek += 1
                 fronta.append((child["id"], child_path, int(dms_id)))
@@ -693,16 +701,33 @@ def zrcadli_strom(db: Session) -> dict:
                     continue
                 if _dms_najdi_polozku(raynet, dms_path, ocisteny, je_slozka=False) is not None:
                     continue  # odkaz už v této složce existuje
-                raynet.create_dms_link(nazev, child.get("webViewLink", ""), dms_parent)
-                vytvoreno_souboru += 1
+                try:
+                    raynet.create_dms_link(nazev, child.get("webViewLink", ""), dms_parent)
+                    vytvoreno_souboru += 1
+                except Exception as e:  # noqa: BLE001
+                    chyb += 1
+                    zaloguj(db, "warn", "zrcadleni",
+                            f"Odkaz „{nazev}“ se nepodařilo vytvořit v Dokumentech: {e}",
+                            {"path": zaklad_path})
+
+        # průběžný log – ať je vidět, že běh pokračuje (u velkých stromů)
+        hotovo = vytvoreno_slozek + vytvoreno_souboru
+        if hotovo - posledni_log >= 25:
+            posledni_log = hotovo
+            zaloguj(db, "info", "zrcadleni",
+                    f"Zrcadlení běží – složek {vytvoreno_slozek}, odkazů {vytvoreno_souboru}, "
+                    f"fronta {len(fronta)}…",
+                    {"slozek": vytvoreno_slozek, "souboru": vytvoreno_souboru, "fronta": len(fronta)})
 
     zaloguj(
         db, "info", "zrcadleni",
         f"Zrcadlení do Dokumentů hotovo – nových složek {vytvoreno_slozek}, "
-        f"odkazů {vytvoreno_souboru}" + (f", přeskočeno souborů v kořeni {preskoceno}" if preskoceno else "") + ".",
-        {"slozek": vytvoreno_slozek, "souboru": vytvoreno_souboru, "preskoceno": preskoceno},
+        f"odkazů {vytvoreno_souboru}"
+        + (f", přeskočeno souborů v kořeni {preskoceno}" if preskoceno else "")
+        + (f", chyb {chyb}" if chyb else "") + ".",
+        {"slozek": vytvoreno_slozek, "souboru": vytvoreno_souboru, "preskoceno": preskoceno, "chyb": chyb},
     )
-    return {"slozek": vytvoreno_slozek, "souboru": vytvoreno_souboru, "preskoceno": preskoceno}
+    return {"slozek": vytvoreno_slozek, "souboru": vytvoreno_souboru, "preskoceno": preskoceno, "chyb": chyb}
 
 
 # =================== Google Drive push (watch) ===================

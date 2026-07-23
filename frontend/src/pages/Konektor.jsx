@@ -651,7 +651,11 @@ function SyncDiskKarta({ onChyba }) {
     setVysledek(null);
     try {
       const v = await konektorZrcadlit();
-      setVysledek(`Zrcadlení hotovo – nových složek ${v.slozek}, souborů ${v.souboru}.`);
+      setVysledek(
+        v.zarazeno
+          ? "Zrcadlení zařazeno – běží na pozadí, průběh sleduj v logu (událost „zrcadleni“)."
+          : `Zrcadlení se nespustilo: ${v.duvod || "už běží"}.`
+      );
     } catch (e) {
       onChyba(e);
     } finally {
