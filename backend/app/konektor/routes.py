@@ -461,14 +461,29 @@ def dokumenty_test_odkaz(
     raynet = RaynetClient(n.raynet_instance, n.raynet_api_user, api_key, n.raynet_base_url)
     vzor = (n.google_vzor_folder_id or "").strip()
     url = f"https://drive.google.com/drive/folders/{vzor}" if vzor else "https://drive.google.com/"
-    try:
-        data = raynet.create_dms_link("TEST odkaz konektor (smaž mě)", url)
-    except Exception as e:  # noqa: BLE001
-        zaloguj(db, "error", "dokumenty_test", f"Test odkazu v Dokumentech selhal: {e}")
-        raise HTTPException(status_code=502, detail=str(e))
-    zaloguj(db, "info", "dokumenty_test",
-            f"Test odkazu v Dokumentech OK: {json.dumps(data, ensure_ascii=False)[:1500]}")
-    return {"vytvoreno": data}
+    nm = "TEST odkaz konektor (smaž mě)"
+
+    # pole `link` chce objekt (Map) – zkusíme kandidátní tvary, první úspěšný vyhrává
+    kandidati = [
+        ("link={url}", {"name": nm, "link": {"url": url}}),
+        ("link={href}", {"name": nm, "link": {"href": url}}),
+        ("link={link}", {"name": nm, "link": {"link": url}}),
+        ("link={name,url}", {"name": nm, "link": {"name": nm, "url": url}}),
+        ("link={url,type}", {"name": nm, "link": {"url": url, "type": "URL"}}),
+    ]
+    posledni = ""
+    for popis, telo in kandidati:
+        try:
+            data = raynet.put_dms_document(telo)
+        except Exception as e:  # noqa: BLE001 - zkoušíme další tvar
+            posledni = str(e)
+            continue
+        zaloguj(db, "info", "dokumenty_test",
+                f"Test odkazu v Dokumentech OK ({popis}): {json.dumps(data, ensure_ascii=False)[:1200]}")
+        return {"tvar": popis, "vytvoreno": data}
+
+    zaloguj(db, "error", "dokumenty_test", f"Žádný tvar odkazu neprošel. Poslední chyba: {posledni}")
+    raise HTTPException(status_code=502, detail=f"Žádný tvar link neprošel. Poslední: {posledni}")
 
 
 @router.post("/import/rozsah")

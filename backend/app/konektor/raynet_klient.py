@@ -227,20 +227,24 @@ class RaynetClient:
         data = self._over_odpoved(r, f"Vytvoření složky dokumentů „{name}“")
         return int(data.get("id")) if isinstance(data, dict) and data.get("id") is not None else 0
 
-    def create_dms_link(self, name: str, url_value: str, folder_id: str | int | None = None, timeout: int = 20) -> dict:
-        """Vytvoří v modulu Dokumenty (DMS) položku typu ODKAZ (pole `link`).
-
-        Model odkazů: soubor zůstává na Disku, DMS drží jen odkaz. Vrací celou
-        odpověď (pro ověření tvaru). `folder_id` = id nadřazené složky v DMS.
-        """
+    def put_dms_document(self, telo: dict, timeout: int = 20) -> dict:
+        """Odešle syrové tělo na PUT /dms/document/ (vytvoření dokumentu). Vrací `data`."""
         endpoint = f"{self.base_url}dms/document/"
-        telo: dict = {"name": name, "link": url_value}
-        if folder_id:
-            telo["folder"] = int(folder_id)
         r = requests.put(
             endpoint, auth=(self.api_user, self.api_key), headers=self._headers(), json=telo, timeout=timeout
         )
-        return self._over_odpoved(r, f"Vytvoření odkazu v Dokumentech „{name}“")
+        return self._over_odpoved(r, "Vytvoření dokumentu v DMS")
+
+    def create_dms_link(self, name: str, url_value: str, folder_id: str | int | None = None, timeout: int = 20) -> dict:
+        """Vytvoří v modulu Dokumenty (DMS) položku typu ODKAZ (pole `link` = objekt).
+
+        Model odkazů: soubor zůstává na Disku, DMS drží jen odkaz. `folder_id`
+        = id nadřazené složky v DMS. Tvar `link` objektu ověřen diagnostikou.
+        """
+        telo: dict = {"name": name, "link": {"url": url_value}}
+        if folder_id:
+            telo["folder"] = int(folder_id)
+        return self.put_dms_document(telo, timeout=timeout)
 
     def create_link_document_in_folder(
         self, name: str, url_value: str, parent_id: str, timeout: int = 20
