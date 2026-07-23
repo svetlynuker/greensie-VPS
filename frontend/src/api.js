@@ -379,6 +379,11 @@ export function konektorVytvorSlozku(companyId) {
   return zavolej(`/konektor/klient/${companyId}/slozka`, { method: "POST" });
 }
 
+export function konektorStromVzoru(folderId) {
+  const q = folderId ? `?folder_id=${encodeURIComponent(folderId)}` : "";
+  return zavolej(`/konektor/vzor/strom${q}`, { method: "POST" });
+}
+
 export function konektorReconcile() {
   return zavolej("/konektor/reconcile", { method: "POST" });
 }

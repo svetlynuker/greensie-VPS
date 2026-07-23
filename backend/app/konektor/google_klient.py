@@ -73,6 +73,21 @@ class DriveClient:
                 return f
         return None
 
+    def strom(self, folder_id: str, hloubka: int = 0, max_hloubka: int = 8) -> list[str]:
+        """Rekurzivně vypíše strom složky jako řádky s odsazením (diagnostika vzoru).
+
+        Složky mají prefix „[D]“, soubory „[F]“. Slouží k zjištění přesných
+        názvů a vnoření vzorové struktury bez ručního opisování z Disku.
+        """
+        radky: list[str] = []
+        deti = sorted(self.list_children(folder_id), key=lambda x: x.get("name", ""))
+        for f in deti:
+            je_slozka = f.get("mimeType") == FOLDER_MIME
+            radky.append(f"{'  ' * hloubka}{'[D]' if je_slozka else '[F]'} {f.get('name', '')}")
+            if je_slozka and hloubka < max_hloubka:
+                radky.extend(self.strom(f["id"], hloubka + 1, max_hloubka))
+        return radky
+
     def upload_file(
         self,
         name: str,

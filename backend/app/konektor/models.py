@@ -62,6 +62,8 @@ class KonektorNastaveni(Base):
     # ID složky ve Shared Drive, kam se zakládají složky zákazníků.
     # Prázdné = přímo kořen Shared Drivu.
     google_root_folder_id = Column(String, nullable=False, default="", server_default="")
+    # ID vzorové složky („0. vzor“) – kopíruje se jako struktura nového klienta.
+    google_vzor_folder_id = Column(String, nullable=False, default="", server_default="")
     # e-mail uživatele k impersonaci přes domain-wide delegation (volitelné)
     google_subject_email = Column(String, nullable=False, default="", server_default="")
     # service-account JSON – ŠIFROVANĚ (Fernet), prázdné = nenastaveno

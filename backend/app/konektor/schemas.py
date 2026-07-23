@@ -26,6 +26,7 @@ class KonektorNastaveniOut(BaseModel):
     # Google (bez JSON – jen příznak)
     google_shared_drive_id: str = ""
     google_root_folder_id: str = ""
+    google_vzor_folder_id: str = ""
     google_subject_email: str = ""
     google_sa_json_nastaven: bool = False
     # chování
@@ -53,6 +54,7 @@ class KonektorNastaveniVstup(BaseModel):
     raynet_webhook_token: str = ""
     google_shared_drive_id: str = ""
     google_root_folder_id: str = ""
+    google_vzor_folder_id: str = ""
     google_subject_email: str = ""
     sync_model: str = "links"
     template_subfolders: str = ""
