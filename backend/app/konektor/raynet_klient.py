@@ -265,6 +265,57 @@ class RaynetClient:
             telo["folder"] = int(folder_id)
         return self.put_dms_document(telo, timeout=timeout)
 
+    def get_dms_document(self, document_id: str | int, timeout: int = 20) -> dict:
+        """Detail dokumentu v Dokumentech (GET /dms/document/{id}/). Vrací `data`."""
+        r = requests.get(
+            f"{self.base_url}dms/document/{document_id}/",
+            auth=(self.api_user, self.api_key), headers=self._headers(), timeout=timeout,
+        )
+        return self._over_odpoved(r, f"Načtení dokumentu {document_id}")
+
+    def stahni_soubor(self, file_id: str | int, timeout: int = 90) -> tuple[bytes, str, str, int | None]:
+        """Stáhne obsah souboru z DMS (dvoukrok fileHeader → fileBody).
+
+        1) GET /fileHeader/{fileId}/ → uuid, accessToken, instanceName, fileName,
+           contentType, fileSize (jednorázový token).
+        2) GET /fileBody/{uuid}/{accessToken}/{instanceName}/?fileName&contentType
+           → binární obsah.
+        Ověří, že stažená velikost odpovídá hlavičce. Vrací (obsah, fileName,
+        contentType, fileSize).
+        """
+        h = requests.get(
+            f"{self.base_url}fileHeader/{file_id}/",
+            auth=(self.api_user, self.api_key), headers=self._headers(), timeout=timeout,
+        )
+        if h.status_code >= 400:
+            raise RuntimeError(f"fileHeader {file_id}: HTTP {h.status_code} – {h.text[:200]}")
+        hd = h.json()
+        uuid, tok, inst = hd.get("uuid"), hd.get("accessToken"), hd.get("instanceName")
+        fn, ct, sz = hd.get("fileName"), hd.get("contentType"), hd.get("fileSize")
+        if not (uuid and tok and inst):
+            raise RuntimeError(f"fileHeader {file_id}: chybí uuid/accessToken/instanceName.")
+        r = requests.get(
+            f"{self.base_url}fileBody/{uuid}/{tok}/{inst}/",
+            params={"fileName": fn, "contentType": ct},
+            headers={"X-Instance-Name": self.instance}, timeout=timeout,
+        )
+        if r.status_code >= 400:
+            raise RuntimeError(f"fileBody {file_id}: HTTP {r.status_code} – {r.text[:200]}")
+        obsah = r.content
+        if sz is not None and len(obsah) != int(sz):
+            raise RuntimeError(
+                f"Stažený soubor {file_id}: {len(obsah)} B, hlavička uvádí {sz} B – nesouhlasí, přerušeno."
+            )
+        return obsah, fn, ct, (int(sz) if sz is not None else None)
+
+    def smaz_dms_dokument(self, document_id: str | int, timeout: int = 20) -> None:
+        """Smaže dokument v modulu Dokumenty (DELETE /dms/document/{id}/)."""
+        r = requests.delete(
+            f"{self.base_url}dms/document/{document_id}/",
+            auth=(self.api_user, self.api_key), headers=self._headers(), timeout=timeout,
+        )
+        self._over_odpoved(r, f"Smazání dokumentu {document_id}")
+
     def create_link_document_in_folder(
         self, name: str, url_value: str, parent_id: str, timeout: int = 20
     ) -> int:

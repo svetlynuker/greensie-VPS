@@ -140,6 +140,13 @@ def _lehka_migrace():
             text("ALTER TABLE konektor_nastaveni ADD COLUMN IF NOT EXISTS dms_sken_posledni "
                  "TIMESTAMPTZ")
         )
+        conn.execute(
+            text("ALTER TABLE konektor_nastaveni ADD COLUMN IF NOT EXISTS dms_presun_zapnuto "
+                 "BOOLEAN NOT NULL DEFAULT false")
+        )
+        conn.execute(
+            text("ALTER TABLE konektor_nastaveni ADD COLUMN IF NOT EXISTS dms_baseline JSONB")
+        )
 
 
 _lehka_migrace()

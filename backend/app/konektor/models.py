@@ -77,6 +77,11 @@ class KonektorNastaveni(Base):
     dms_sken_zapnuto = Column(Boolean, nullable=False, default=True, server_default="true")
     dms_sken_casy = Column(String, nullable=False, default="08:00,20:00", server_default="08:00,20:00")
     dms_sken_posledni = Column(DateTime(timezone=True), nullable=True)
+    # Přesun souborů RN → Disk (maže originál v RN!). Default vypnuto – zapíná
+    # se vědomě. `dms_baseline` = id dokumentů, které existovaly při zapnutí
+    # přesunu (staré, „neřešit"); None = přesun ještě nebyl inicializován.
+    dms_presun_zapnuto = Column(Boolean, nullable=False, default=False, server_default="false")
+    dms_baseline = Column(JSONB, nullable=True)
     # názvy kontejnerů ve vzoru (kam se zakládají OP / nabídky / objednávky)
     kontejner_op = Column(String, nullable=False, default=VYCHOZI_KONTEJNER_OP, server_default=VYCHOZI_KONTEJNER_OP)
     kontejner_nabidky = Column(String, nullable=False, default=VYCHOZI_KONTEJNER_NABIDKY, server_default=VYCHOZI_KONTEJNER_NABIDKY)

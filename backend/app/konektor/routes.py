@@ -102,6 +102,7 @@ def _nastaveni_out(n: KonektorNastaveni) -> KonektorNastaveniOut:
         dms_sken_zapnuto=n.dms_sken_zapnuto,
         dms_sken_casy=n.dms_sken_casy,
         dms_sken_posledni=n.dms_sken_posledni,
+        dms_presun_zapnuto=n.dms_presun_zapnuto,
         kontejner_op=n.kontejner_op,
         kontejner_nabidky=n.kontejner_nabidky,
         kontejner_objednavky=n.kontejner_objednavky,
@@ -163,6 +164,7 @@ def uloz_nastaveni(
     n.google_vzor_folder_id = vstup.google_vzor_folder_id.strip()
     n.google_dms_zdroj_folder_id = vstup.google_dms_zdroj_folder_id.strip()
     n.dms_sken_zapnuto = vstup.dms_sken_zapnuto
+    n.dms_presun_zapnuto = vstup.dms_presun_zapnuto
     # časy scanu: ponech jen platné HH:MM, seřaď; prázdné = výchozí
     n.dms_sken_casy = _normalizuj_casy(vstup.dms_sken_casy) or "08:00,20:00"
     # prázdný název kontejneru = ponech výchozí (jinak by se nedal najít)

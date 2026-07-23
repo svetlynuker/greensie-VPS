@@ -89,6 +89,7 @@ function NastaveniKarta() {
         google_dms_zdroj_folder_id: nast.google_dms_zdroj_folder_id,
         dms_sken_zapnuto: nast.dms_sken_zapnuto,
         dms_sken_casy: nast.dms_sken_casy,
+        dms_presun_zapnuto: nast.dms_presun_zapnuto,
         kontejner_op: nast.kontejner_op,
         kontejner_nabidky: nast.kontejner_nabidky,
         kontejner_objednavky: nast.kontejner_objednavky,
@@ -265,6 +266,15 @@ function NastaveniKarta() {
       <div style={{ marginTop: 6, fontSize: 12, color: "var(--fm-muted)" }}>
         Poslední sken:{" "}
         {nast.dms_sken_posledni ? new Date(nast.dms_sken_posledni).toLocaleString("cs-CZ") : "zatím neproběhl"}
+      </div>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer", marginTop: 10 }}>
+        <input type="checkbox" checked={nast.dms_presun_zapnuto} onChange={(e) => nastav("dms_presun_zapnuto", e.target.checked)} />
+        <strong>Přesouvat nové soubory z RN na Disk</strong> (nahradí je v RN odkazem)
+      </label>
+      <div style={{ marginTop: 4, fontSize: 12, color: "var(--st-warn)", lineHeight: 1.5 }}>
+        Pozor: při zapnutém přesunu konektor stažené soubory po ověření <strong>smaže z RN</strong> a nahradí
+        odkazem na Disk. Při prvním běhu se stávající soubory zapamatují jako „staré" a nepřesouvají se –
+        přesouvá jen to, co přibude potom.
       </div>
 
       {/* ---- Chování ---- */}
