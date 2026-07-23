@@ -618,21 +618,23 @@ def zpracuj_raynet_dokument(db: Session, document_id: str, company_id: int | Non
 
 
 # =================== Flow C: zrcadlení do modulu Dokumenty (DMS, FR3) ===================
-def _dms_najdi_polozku(raynet: RaynetClient, dms_parent: int | None, nazev_ocisteny: str, je_slozka: bool) -> int | None:
-    """Najde v DMS složce (dms_parent, None=kořen) položku daného typu a názvu.
+DMS_KOREN_PATH = "/Dokumenty"  # prefix cest v modulu Dokumenty
 
-    Řídí se skutečným stavem v Raynetu (ne uloženými id) → odolné vůči smazání
-    složky v RN i vůči duplicitám. Vrací id, nebo None když neexistuje.
+
+def _dms_najdi_polozku(raynet: RaynetClient, dms_path: str | None, nazev_ocisteny: str, je_slozka: bool) -> dict | None:
+    """Najde v DMS složce (dané cestou `dms_path`, None=kořen) položku daného
+    typu a názvu. Řídí se skutečným stavem v Raynetu (ne uloženými id) → odolné
+    vůči smazání i duplicitám. Vrací {'id', 'path'}, nebo None když neexistuje.
     """
     try:
-        data = raynet.list_document_folders(dms_parent)
+        data = raynet.list_document_folders(dms_path)
     except Exception:  # noqa: BLE001 - nedostupný výpis → chováme se jako „nenalezeno“
         return None
     typ = "Folder" if je_slozka else "Document"
     for it in (data or []):
         if isinstance(it, dict) and it.get("type") == typ and (it.get("name") or "") == nazev_ocisteny:
             try:
-                return int(it.get("id"))
+                return {"id": int(it.get("id")), "path": it.get("path")}
             except (ValueError, TypeError):
                 return None
     return None
@@ -658,32 +660,38 @@ def zrcadli_strom(db: Session) -> dict:
         raise NastaveniNepripraveno("Není nastavena zdrojová složka pro zrcadlení do Dokumentů.")
 
     vytvoreno_slozek = vytvoreno_souboru = preskoceno = 0
-    # fronta: (drive_folder_id, dms_parent_id) – zpracováváme OBSAH drive_folder_id
-    # do složky dms_parent_id (None = kořen Dokumentů)
-    fronta: list[tuple[str, int | None]] = [(zdroj, None)]
+    # fronta: (drive_folder_id, dms_path, dms_parent_id) – zpracováváme OBSAH
+    # drive_folder_id do DMS složky s cestou dms_path a id dms_parent_id.
+    # Kořen: dms_path=None (výpis přes GET /dms/), dms_parent_id=None.
+    fronta: list[tuple[str, str | None, int | None]] = [(zdroj, None, None)]
     navstivene: set[str] = set()
 
     while fronta:
-        drive_folder_id, dms_parent = fronta.pop()
+        drive_folder_id, dms_path, dms_parent = fronta.pop()
         if drive_folder_id in navstivene:
             continue
         navstivene.add(drive_folder_id)
+        zaklad_path = dms_path or DMS_KOREN_PATH  # pro sestavení cest potomků
 
         for child in drive.list_children(drive_folder_id):
             nazev = child.get("name", "")
             ocisteny = dms_bezpecny_nazev(nazev)
             if child.get("mimeType") == FOLDER_MIME:
                 # najdi-nebo-vytvoř: řídíme se skutečným stavem v DMS (ne uloženými id)
-                dms_id = _dms_najdi_polozku(raynet, dms_parent, ocisteny, je_slozka=True)
-                if dms_id is None:
+                nalez = _dms_najdi_polozku(raynet, dms_path, ocisteny, je_slozka=True)
+                if nalez is not None:
+                    dms_id = nalez["id"]
+                    child_path = nalez.get("path") or f"{zaklad_path}/{ocisteny}"
+                else:
                     dms_id = raynet.create_document_folder(nazev, dms_parent)
+                    child_path = f"{zaklad_path}/{ocisteny}"
                     vytvoreno_slozek += 1
-                fronta.append((child["id"], int(dms_id)))
+                fronta.append((child["id"], child_path, int(dms_id)))
             else:
                 if dms_parent is None:
                     preskoceno += 1  # soubor přímo v kořeni zdroje – nemá kam (DMS chce složku)
                     continue
-                if _dms_najdi_polozku(raynet, dms_parent, ocisteny, je_slozka=False) is not None:
+                if _dms_najdi_polozku(raynet, dms_path, ocisteny, je_slozka=False) is not None:
                     continue  # odkaz už v této složce existuje
                 raynet.create_dms_link(nazev, child.get("webViewLink", ""), dms_parent)
                 vytvoreno_souboru += 1
