@@ -81,6 +81,9 @@ function NastaveniKarta() {
         google_shared_drive_id: nast.google_shared_drive_id,
         google_root_folder_id: nast.google_root_folder_id,
         google_vzor_folder_id: nast.google_vzor_folder_id,
+        kontejner_op: nast.kontejner_op,
+        kontejner_nabidky: nast.kontejner_nabidky,
+        kontejner_objednavky: nast.kontejner_objednavky,
         google_subject_email: nast.google_subject_email,
         sync_model: nast.sync_model,
         template_subfolders: nast.template_subfolders,
@@ -207,6 +210,18 @@ function NastaveniKarta() {
         <div>
           <label style={labelStyl}>Vzorová složka „0. vzor" – ID</label>
           <input style={poleStyl} value={nast.google_vzor_folder_id} onChange={(e) => nastav("google_vzor_folder_id", e.target.value)} placeholder="ID složky se vzorem struktury" />
+        </div>
+        <div>
+          <label style={labelStyl}>Kontejner – obchodní případy</label>
+          <input style={poleStyl} value={nast.kontejner_op} onChange={(e) => nastav("kontejner_op", e.target.value)} placeholder="1. Obchodní Případy" />
+        </div>
+        <div>
+          <label style={labelStyl}>Kontejner – nabídky (v OP)</label>
+          <input style={poleStyl} value={nast.kontejner_nabidky} onChange={(e) => nastav("kontejner_nabidky", e.target.value)} placeholder="1. nabídky" />
+        </div>
+        <div>
+          <label style={labelStyl}>Kontejner – objednávky (v OP)</label>
+          <input style={poleStyl} value={nast.kontejner_objednavky} onChange={(e) => nastav("kontejner_objednavky", e.target.value)} placeholder="5. objednávky" />
         </div>
         <div>
           <label style={labelStyl}>Impersonovaný uživatel (delegace, volitelné)</label>

@@ -27,6 +27,9 @@ class KonektorNastaveniOut(BaseModel):
     google_shared_drive_id: str = ""
     google_root_folder_id: str = ""
     google_vzor_folder_id: str = ""
+    kontejner_op: str = ""
+    kontejner_nabidky: str = ""
+    kontejner_objednavky: str = ""
     google_subject_email: str = ""
     google_sa_json_nastaven: bool = False
     # chování
@@ -55,6 +58,9 @@ class KonektorNastaveniVstup(BaseModel):
     google_shared_drive_id: str = ""
     google_root_folder_id: str = ""
     google_vzor_folder_id: str = ""
+    kontejner_op: str = ""
+    kontejner_nabidky: str = ""
+    kontejner_objednavky: str = ""
     google_subject_email: str = ""
     sync_model: str = "links"
     template_subfolders: str = ""

@@ -110,6 +110,22 @@ def _lehka_migrace():
                     "VARCHAR NOT NULL DEFAULT ''"
                 )
             )
+        # názvy kontejnerů ve vzoru – s nenulovými výchozími hodnotami
+        for sloupec, vychozi in (
+            ("kontejner_op", "1. Obchodní Případy"),
+            ("kontejner_nabidky", "1. nabídky"),
+            ("kontejner_objednavky", "5. objednávky"),
+        ):
+            conn.execute(
+                text(
+                    f"ALTER TABLE konektor_nastaveni ADD COLUMN IF NOT EXISTS {sloupec} "
+                    f"VARCHAR NOT NULL DEFAULT '{vychozi}'"
+                )
+            )
+        # ID kontejnerů uvnitř složek klientů/OP (odolnost vůči přejmenování)
+        conn.execute(
+            text("ALTER TABLE konektor_entity_folder ADD COLUMN IF NOT EXISTS kontejnery JSONB")
+        )
 
 
 _lehka_migrace()

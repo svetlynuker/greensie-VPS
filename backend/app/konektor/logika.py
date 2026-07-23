@@ -17,6 +17,9 @@ from app.konektor import crypto
 from app.konektor.google_klient import FOLDER_MIME, DriveClient
 from app.konektor.logger import zaloguj
 from app.konektor.models import (
+    VYCHOZI_KONTEJNER_NABIDKY,
+    VYCHOZI_KONTEJNER_OBJEDNAVKY,
+    VYCHOZI_KONTEJNER_OP,
     KonektorClientFolderMap,
     KonektorDriveChangeState,
     KonektorDriveChannel,
@@ -94,12 +97,64 @@ def _vazba_id(data: dict, klic: str) -> int | None:
         return None
 
 
-def _slozka_pro_typ(n: KonektorNastaveni, klic: str) -> str:
-    """Najde v šabloně podsložek tu pro daný typ (nabídky/objednávky)."""
-    for s in _podslozky(n):
-        if klic in s.lower():
-            return s
-    return "01_Nabídky" if klic == "nabíd" else "02_Objednávky"
+def _kfg_kontejnery(n: KonektorNastaveni) -> tuple[str, str, str]:
+    """Názvy kontejnerů (OP, nabídky, objednávky) – s fallbackem na výchozí."""
+    return (
+        (n.kontejner_op or VYCHOZI_KONTEJNER_OP).strip(),
+        (n.kontejner_nabidky or VYCHOZI_KONTEJNER_NABIDKY).strip(),
+        (n.kontejner_objednavky or VYCHOZI_KONTEJNER_OBJEDNAVKY).strip(),
+    )
+
+
+def _najdi_podslozku(drive: DriveClient, parent_id: str, nazev: str) -> dict | None:
+    """Najde podsložku daného názvu (case-insensitive, ořezané mezery)."""
+    cil = (nazev or "").strip().lower()
+    for f in drive.list_children(parent_id):
+        if f.get("mimeType") == FOLDER_MIME and (f.get("name") or "").strip().lower() == cil:
+            return f
+    return None
+
+
+def _jedina_podslozka(drive: DriveClient, parent_id: str) -> dict | None:
+    """Vzor uvnitř kontejneru = jeho (první) podsložka, nebo None když žádná není."""
+    slozky = [f for f in drive.list_children(parent_id) if f.get("mimeType") == FOLDER_MIME]
+    slozky.sort(key=lambda x: x.get("name", ""))
+    return slozky[0] if slozky else None
+
+
+def _kontejner_ze_slozky(drive: DriveClient, ef: KonektorEntityFolder, klic: str, nazev: str) -> str | None:
+    """ID kontejneru uvnitř složky `ef` – přednostně z uloženého ID (ověří, že
+    existuje a není v koši), jinak dohledá podle názvu. Tím je odolný vůči
+    přejmenování kontejneru lidmi v konkrétní klientské složce."""
+    ulozene = (ef.kontejnery or {}).get(klic) if ef.kontejnery else None
+    if ulozene:
+        try:
+            f = drive.get_file(ulozene)
+            if not f.get("trashed"):
+                return ulozene
+        except Exception:  # noqa: BLE001 - přejmenování řeší fallback níže
+            pass
+    nalez = _najdi_podslozku(drive, ef.drive_folder_id, nazev)
+    return nalez["id"] if nalez else None
+
+
+def _vzor_op(drive: DriveClient, n: KonektorNastaveni) -> dict | None:
+    """Vzorová složka OP v globálním „0. vzor“ (jediná podsložka kontejneru OP)."""
+    kop, _, _ = _kfg_kontejnery(n)
+    kont = _najdi_podslozku(drive, n.google_vzor_folder_id, kop)
+    return _jedina_podslozka(drive, kont["id"]) if kont else None
+
+
+def _vzor_polozky(drive: DriveClient, n: KonektorNastaveni, klic: str) -> dict | None:
+    """Vzor nabídky/objednávky v globálním vzoru: 0.vzor → kont.OP → vzor OP →
+    kont.nabídek/objednávek → jeho jediná podsložka. None = bez vzoru (prostá složka)."""
+    vzor_op = _vzor_op(drive, n)
+    if vzor_op is None:
+        return None
+    _, knab, kobj = _kfg_kontejnery(n)
+    nazev_kont = knab if klic == "nabidky" else kobj
+    kont = _najdi_podslozku(drive, vzor_op["id"], nazev_kont)
+    return _jedina_podslozka(drive, kont["id"]) if kont else None
 
 
 def _najdi_ef(db: Session, entity: str, entity_id: int) -> KonektorEntityFolder | None:
@@ -123,18 +178,39 @@ def _zapis_odkaz(raynet: RaynetClient, resource: str, record_id: int, kody: list
 
 
 def zajisti_slozku_zakaznika(db: Session, raynet: RaynetClient, drive: DriveClient, n: KonektorNastaveni, company_id: int) -> KonektorEntityFolder:
-    """Vrátí složku zákazníka; vytvoří ji (+ zapíše odkaz), pokud chybí."""
+    """Vrátí složku zákazníka; vytvoří ji (+ zapíše odkaz), pokud chybí.
+
+    Je-li nastaven vzor („0. vzor“), zkopíruje se celá jeho struktura a kořen
+    se přejmenuje na „název [id]“. Vzorová složka OP se do kopie NEzahrne
+    (kontejner OP zůstane prázdný, vzor se bere centrálně z „0. vzor“).
+    """
     ef = _najdi_ef(db, "company", company_id)
     if ef is not None:
         return ef
     company = raynet.get_record("company", company_id)
     nazev = _nazev(company, f"Zákazník {company_id}")
-    # kořen pro zakládání = vyhrazená složka, jinak kořen Shared Drivu
     parent = n.google_root_folder_id or n.google_shared_drive_id
-    root = drive.create_folder(_bezpecny_nazev(f"{nazev} [{company_id}]"), parent)
+    nazev_slozky = _bezpecny_nazev(f"{nazev} [{company_id}]")
+    kontejnery = None
+
+    if n.google_vzor_folder_id:
+        kop, _, _ = _kfg_kontejnery(n)
+        # do kopie klienta nezahrneme vzorovou složku OP (bere se z „0. vzor“)
+        skip: set[str] = set()
+        vzor_op = _vzor_op(drive, n)
+        if vzor_op:
+            skip.add(vzor_op["id"])
+        root = drive.copy_tree(n.google_vzor_folder_id, parent, nazev_slozky, skip)
+        kont_op = _najdi_podslozku(drive, root["id"], kop)
+        if kont_op:
+            kontejnery = {"op": kont_op["id"]}
+    else:
+        root = drive.create_folder(nazev_slozky, parent)
+
     ef = KonektorEntityFolder(
         entity="company", entity_id=company_id,
-        drive_folder_id=root["id"], drive_folder_url=root.get("webViewLink", ""), name=nazev,
+        drive_folder_id=root["id"], drive_folder_url=root.get("webViewLink", ""),
+        name=nazev, kontejnery=kontejnery,
     )
     db.add(ef)
     db.commit()
@@ -159,26 +235,56 @@ def zajisti_slozku_op(db: Session, raynet: RaynetClient, drive: DriveClient, n: 
 
     # název složky = číslo OP (Raynet `code`, např. OP-26-0223) + název
     nazev = _nazev_s_cislem(deal, deal_id)
-    op = drive.create_folder(nazev, zak.drive_folder_id)
+    kop, knab, kobj = _kfg_kontejnery(n)
+    kontejnery = None
+
+    if n.google_vzor_folder_id:
+        vzor_op = _vzor_op(drive, n)
+        if vzor_op is None:
+            raise RuntimeError("Ve vzoru „0. vzor“ chybí vzorová složka obchodního případu.")
+        cil_kont_op = _kontejner_ze_slozky(drive, zak, "op", kop)
+        if cil_kont_op is None:
+            raise RuntimeError(f"Ve složce klienta chybí kontejner „{kop}“.")
+        # vzorové složky objednávek do kopie OP nezahrneme (berou se z „0. vzor“)
+        skip: set[str] = set()
+        vzor_obj = _vzor_polozky(drive, n, "objednavky")
+        if vzor_obj:
+            skip.add(vzor_obj["id"])
+        op = drive.copy_tree(vzor_op["id"], cil_kont_op, nazev, skip)
+        knab_kopie = _najdi_podslozku(drive, op["id"], knab)
+        kobj_kopie = _najdi_podslozku(drive, op["id"], kobj)
+        kontejnery = {
+            "nabidky": knab_kopie["id"] if knab_kopie else None,
+            "objednavky": kobj_kopie["id"] if kobj_kopie else None,
+        }
+    else:
+        op = drive.create_folder(nazev, zak.drive_folder_id)
+        for sub in _podslozky(n):
+            drive.create_folder(sub, op["id"])
+
     ef = KonektorEntityFolder(
         entity="deal", entity_id=deal_id,
-        drive_folder_id=op["id"], drive_folder_url=op.get("webViewLink", ""), name=nazev,
+        drive_folder_id=op["id"], drive_folder_url=op.get("webViewLink", ""),
+        name=nazev, kontejnery=kontejnery,
     )
     db.add(ef)
     db.commit()
-    for sub in _podslozky(n):
-        drive.create_folder(sub, op["id"])
     ok, zprava = _zapis_odkaz(
         raynet, "deal", deal_id, [n.raynet_deal_drive_field, n.raynet_deal_drive_field2], ef.drive_folder_url
     )
     zaloguj(db, "info" if ok else "warn", "novy_deal",
-            f"Vytvořena složka obch. případu „{nazev}“ ({len(_podslozky(n))} podsložek); {zprava}.",
+            f"Vytvořena složka obch. případu „{nazev}“; {zprava}.",
             {"deal_id": deal_id, "company_id": company_id, "drive_folder_id": ef.drive_folder_id})
     return ef
 
 
-def _zpracuj_zaznam_pod_op(db, n, raynet, drive, entity: str, resource: str, record_id: int, klic_typu: str, pole_kod: str) -> dict:
-    """Společná logika pro nabídku/objednávku: podsložka pod OP + odkaz do pole."""
+def _zpracuj_zaznam_pod_op(db, n, raynet, drive, entity: str, resource: str, record_id: int, pole_kod: str) -> dict:
+    """Nabídka/objednávka: vlastní složka v příslušném kontejneru pod OP + odkaz.
+
+    Kontejner (nabídky/objednávky) se hledá v OP složce – přednostně přes
+    uložené ID, jinak podle názvu. Je-li ve vzoru pro daný typ vzorová složka
+    (jediná podsložka kontejneru), zkopíruje se; jinak vznikne prostá složka.
+    """
     if _najdi_ef(db, entity, record_id) is not None:
         return {"skip": True}
     zaznam = raynet.get_record(resource, record_id)
@@ -187,21 +293,32 @@ def _zpracuj_zaznam_pod_op(db, n, raynet, drive, entity: str, resource: str, rec
     deal_id = _vazba_id(zaznam, "businessCase") or _vazba_id(zaznam, "deal")
     if deal_id is None:
         raise RuntimeError(f"{resource} {record_id} nemá navázaný obchodní případ (deal).")
-    op = zajisti_slozku_op(db, raynet, drive, n, deal_id)
+    op_ef = zajisti_slozku_op(db, raynet, drive, n, deal_id)
 
-    typ_nazev = _slozka_pro_typ(n, klic_typu)
-    typ_slozka = drive.find_folder(typ_nazev, op.drive_folder_id) or drive.create_folder(typ_nazev, op.drive_folder_id)
+    _, knab, kobj = _kfg_kontejnery(n)
+    klic, nazev_kont = ("nabidky", knab) if entity == "offer" else ("objednavky", kobj)
+    cil_kont = _kontejner_ze_slozky(drive, op_ef, klic, nazev_kont)
+    if cil_kont is None:
+        # fallback: vytvoř kontejner přímo v OP složce (starý režim bez vzoru)
+        vytvoreny = drive.create_folder(nazev_kont, op_ef.drive_folder_id)
+        cil_kont = vytvoreny["id"]
+
     nazev = _nazev_s_cislem(zaznam, record_id)
-    podslozka = drive.create_folder(nazev, typ_slozka["id"])
+    vzor = _vzor_polozky(drive, n, klic) if n.google_vzor_folder_id else None
+    if vzor is not None:
+        slozka = drive.copy_tree(vzor["id"], cil_kont, nazev)
+    else:
+        slozka = drive.create_folder(nazev, cil_kont)
+
     ef = KonektorEntityFolder(
         entity=entity, entity_id=record_id,
-        drive_folder_id=podslozka["id"], drive_folder_url=podslozka.get("webViewLink", ""), name=nazev,
+        drive_folder_id=slozka["id"], drive_folder_url=slozka.get("webViewLink", ""), name=nazev,
     )
     db.add(ef)
     db.commit()
     ok, zprava = _zapis_odkaz(raynet, resource, record_id, [pole_kod], ef.drive_folder_url)
     zaloguj(db, "info" if ok else "warn", f"novy_{entity}",
-            f"Vytvořena složka „{nazev}“ v {typ_nazev}; {zprava}.",
+            f"Vytvořena složka „{nazev}“ v „{nazev_kont}“; {zprava}.",
             {f"{entity}_id": record_id, "deal_id": deal_id, "drive_folder_id": ef.drive_folder_id})
     return {"drive_folder_id": ef.drive_folder_id, "drive_folder_url": ef.drive_folder_url, "odkaz_ok": ok}
 
@@ -236,7 +353,7 @@ def zpracuj_nova_nabidka(db: Session, offer_id: int) -> dict:
     if n is None:
         raise NastaveniNepripraveno("Nastavení konektoru neexistuje.")
     raynet, drive = vytvor_klienty(n)
-    return _zpracuj_zaznam_pod_op(db, n, raynet, drive, "offer", "offer", offer_id, "nabíd", n.raynet_offer_drive_field)
+    return _zpracuj_zaznam_pod_op(db, n, raynet, drive, "offer", "offer", offer_id, n.raynet_offer_drive_field)
 
 
 def zpracuj_nova_objednavka(db: Session, order_id: int) -> dict:
@@ -245,7 +362,7 @@ def zpracuj_nova_objednavka(db: Session, order_id: int) -> dict:
     if n is None:
         raise NastaveniNepripraveno("Nastavení konektoru neexistuje.")
     raynet, drive = vytvor_klienty(n)
-    return _zpracuj_zaznam_pod_op(db, n, raynet, drive, "order", "order", order_id, "objedn", n.raynet_order_drive_field)
+    return _zpracuj_zaznam_pod_op(db, n, raynet, drive, "order", "order", order_id, n.raynet_order_drive_field)
 
 
 # =================== Flow B: Disk → Raynet (FR2a) ===================
