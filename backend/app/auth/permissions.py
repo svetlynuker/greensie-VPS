@@ -73,6 +73,7 @@ DLAZDICE = [
     {"klic": "nabidkovac", "nazev": "Nabídkovač"},
     {"klic": "admin", "nazev": "Admin nastavení"},
     {"klic": "logy", "nazev": "Logy"},
+    {"klic": "konektor", "nazev": "Konektor Raynet ↔ Disk"},
 ]
 
 # Katalog přidělitelných práv (skupinám i jednotlivcům). Otevírací práva mají
@@ -92,6 +93,7 @@ PRAVA = [
     {"klic": "admin", "nazev": "Otevřít Admin nastavení"},
     {"klic": "editace", "nazev": "Editace matice (Přehled projektů)"},
     {"klic": "logy", "nazev": "Otevřít Logy (provoz, chyby, audit)"},
+    {"klic": "konektor", "nazev": "Otevřít Konektor Raynet ↔ Google Drive (nastavení, logy)"},
 ]
 
 VSECHNA_PRAVA = {p["klic"] for p in PRAVA}

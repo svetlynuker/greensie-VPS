@@ -29,6 +29,12 @@ const CESTY = {
       <path d="M8 8h8M8 12h8M8 16h5" />
     </>
   ),
+  konektor: (
+    <>
+      <path d="M9 12a3 3 0 0 1 3-3h3a3 3 0 0 1 0 6h-1" />
+      <path d="M15 12a3 3 0 0 1-3 3H9a3 3 0 0 1 0-6h1" />
+    </>
+  ),
 
   // UI drobnosti
   sipka: <path d="M7 17 17 7M9 7h8v8" />,

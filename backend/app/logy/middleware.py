@@ -28,7 +28,7 @@ from app.logy.models import vytvor_zaznam
 # Cesty, které se NElogují: preflight (OPTIONS) řeší metoda níže; zdravotní
 # kontrola, čtení samotných logů (jinak by se log donekonečna plevelil při
 # obnovování stránky) a přihlášení (to si zapisuje samo, i se jménem).
-NELOGOVAT_PREFIXY = ("/logy", "/health")
+NELOGOVAT_PREFIXY = ("/logy", "/health", "/konektor/logy")
 NELOGOVAT_PRESNE = {"/auth/login"}
 
 # Čitelné popisy vybraných akcí. Klíč = (metoda, regulární výraz na cestu).
@@ -52,6 +52,10 @@ _POPISY = [
     ("POST", re.compile(r"^/finance/pohoda/synchronizovat$"), "Synchronizace s POHODA"),
     ("POST", re.compile(r"^/nabidkovac/nabidky$"), "Založení nabídky"),
     ("DELETE", re.compile(r"^/nabidkovac/nabidky/\d+$"), "Smazání nabídky"),
+    ("PUT", re.compile(r"^/konektor/nastaveni$"), "Změna nastavení konektoru"),
+    ("POST", re.compile(r"^/konektor/test-spojeni$"), "Test spojení konektoru"),
+    ("POST", re.compile(r"^/konektor/webhooks/raynet$"), "Webhook z Raynetu"),
+    ("POST", re.compile(r"^/konektor/webhooks/drive$"), "Google Drive push"),
 ]
 
 

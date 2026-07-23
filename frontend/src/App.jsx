@@ -11,6 +11,7 @@ import NabidkaVystupStranka from "./pages/NabidkaVystupStranka";
 import NabidkovacKatalog from "./pages/NabidkovacKatalog";
 import AdminNastaveni from "./pages/AdminNastaveni";
 import Logy from "./pages/Logy";
+import Konektor from "./pages/Konektor";
 import ZmenaHesla from "./pages/ZmenaHesla";
 import { getToken } from "./api";
 
@@ -116,6 +117,14 @@ export default function App() {
           element={
             <VyzadujePrihlaseni>
               <Logy />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/konektor"
+          element={
+            <VyzadujePrihlaseni>
+              <Konektor />
             </VyzadujePrihlaseni>
           }
         />

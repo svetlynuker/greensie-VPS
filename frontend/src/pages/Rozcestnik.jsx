@@ -12,6 +12,7 @@ const TRASY = {
   nabidkovac: "/nabidkovac",
   admin: "/admin",
   logy: "/logy",
+  konektor: "/konektor",
 };
 
 // Vzhled dlaždic: ikona + podtitulek dle klíče modulu.
@@ -22,6 +23,7 @@ const IKONY = {
   nabidkovac: "nabidkovac",
   admin: "admin",
   logy: "logy",
+  konektor: "konektor",
 };
 const PODTITULY = {
   projekty: "Matice úkolů a fází ze Freela",
@@ -30,6 +32,7 @@ const PODTITULY = {
   nabidkovac: "Nabídky FVE, PPA a peak shaving",
   admin: "Uživatelé, skupiny a oprávnění",
   logy: "Provoz serveru, chyby a kdo co udělal",
+  konektor: "Synchronizace klientů a dokumentů s Google Diskem",
 };
 
 // Nedostupné (zamčené) a zatím rozpracované dlaždice vedou sem.
@@ -39,7 +42,7 @@ const VIDEO_DLE_KLICE = {};
 
 // Dlaždice, které se uživateli bez práva ÚPLNĚ SKRYJÍ (dle SPEC kap. 2 a 4),
 // místo aby se jen zamkly. Zatím jen finance (Přehled financí – jen Rosťa/vedení).
-const SKRYT_BEZ_PRAVA = new Set(["finance", "nabidkovac", "logy"]);
+const SKRYT_BEZ_PRAVA = new Set(["finance", "nabidkovac", "logy", "konektor"]);
 
 export default function Rozcestnik() {
   const [data, setData] = useState(null);
