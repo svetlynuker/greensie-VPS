@@ -21,6 +21,7 @@ class KonektorNastaveniOut(BaseModel):
     raynet_deal_drive_field2: str = ""
     raynet_offer_drive_field: str = ""
     raynet_order_drive_field: str = ""
+    raynet_webhook_token: str = ""
     raynet_api_key_nastaven: bool = False
     # Google (bez JSON – jen příznak)
     google_shared_drive_id: str = ""
@@ -49,6 +50,7 @@ class KonektorNastaveniVstup(BaseModel):
     raynet_deal_drive_field2: str = ""
     raynet_offer_drive_field: str = ""
     raynet_order_drive_field: str = ""
+    raynet_webhook_token: str = ""
     google_shared_drive_id: str = ""
     google_root_folder_id: str = ""
     google_subject_email: str = ""
