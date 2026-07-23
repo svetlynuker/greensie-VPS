@@ -463,25 +463,30 @@ def dokumenty_test_odkaz(
     url = f"https://drive.google.com/drive/folders/{vzor}" if vzor else "https://drive.google.com/"
     nm = "TEST odkaz konektor (smaž mě)"
 
-    # pole `link` chce objekt (Map) – zkusíme kandidátní tvary, první úspěšný vyhrává
+    # zkoušíme kandidátní tvary; u KAŽDÉHO zaznamenáme výsledek (ať vidíme vzorec)
     kandidati = [
-        ("link={link,linkName}", {"name": nm, "link": {"link": url, "linkName": nm}}),
-        ("top-level link,linkName", {"name": nm, "link": url, "linkName": nm}),
-        ("link={url,linkName}", {"name": nm, "link": {"url": url, "linkName": nm}}),
+        ("link=Map{link,linkName}", {"name": nm, "link": {"link": url, "linkName": nm}}),
+        ("link=Map{url}+linkName", {"name": nm, "link": {"url": url}, "linkName": nm}),
+        ("link=Map{link}+linkName", {"name": nm, "link": {"link": url}, "linkName": nm}),
+        ("link=Map{url,linkName}", {"name": nm, "link": {"url": url, "linkName": nm}}),
+        ("link=str+linkName=str", {"name": nm, "link": url, "linkName": nm}),
+        ("link=Map{link,linkName}+top", {"name": nm, "link": {"link": url, "linkName": nm}, "linkName": nm}),
     ]
-    posledni = ""
+    vysledky = []
+    uspesny = None
     for popis, telo in kandidati:
         try:
             data = raynet.put_dms_document(telo)
-        except Exception as e:  # noqa: BLE001 - zkoušíme další tvar
-            posledni = str(e)
-            continue
-        zaloguj(db, "info", "dokumenty_test",
-                f"Test odkazu v Dokumentech OK ({popis}): {json.dumps(data, ensure_ascii=False)[:1200]}")
-        return {"tvar": popis, "vytvoreno": data}
+            vysledky.append({"tvar": popis, "ok": True, "odpoved": data})
+            uspesny = popis
+            break  # první úspěch stačí
+        except Exception as e:  # noqa: BLE001 - zaznamenáme chybu a jdeme dál
+            vysledky.append({"tvar": popis, "ok": False, "chyba": str(e)[:400]})
 
-    zaloguj(db, "error", "dokumenty_test", f"Žádný tvar odkazu neprošel. Poslední chyba: {posledni}")
-    raise HTTPException(status_code=502, detail=f"Žádný tvar link neprošel. Poslední: {posledni}")
+    zaloguj(db, "info" if uspesny else "warn", "dokumenty_test",
+            f"Test odkazu DMS – úspěšný tvar: {uspesny or 'žádný'}",
+            {"vysledky": vysledky})
+    return {"uspesny": uspesny, "vysledky": vysledky}
 
 
 @router.post("/import/rozsah")
