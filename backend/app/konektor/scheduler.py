@@ -11,9 +11,16 @@ Chyby úloh se řeší retry s exponenciálním backoffem; po vyčerpání pokus
 import threading
 from datetime import datetime, timedelta, timezone
 
+try:
+    from zoneinfo import ZoneInfo
+    PRAHA = ZoneInfo("Europe/Prague")
+except Exception:  # noqa: BLE001 - kdyby chybělo tzdata, spadneme na UTC
+    PRAHA = timezone.utc
+
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
+from app.konektor import fronta
 from app.konektor.logger import zaloguj
 from app.konektor.logika import NastaveniNepripraveno
 from app.konektor.models import KonektorJobQueue, KonektorNastaveni
@@ -64,6 +71,9 @@ def _zpracuj_job(db: Session, job: KonektorJobQueue) -> None:
         zpracuj_raynet_dokument(db, str(job.payload["document_id"]), job.payload.get("company_id"))
     elif job.typ == "zrcadleni":
         zrcadli_strom(db)
+    elif job.typ == "dms_sken":
+        from app.konektor.logika import dms_sken
+        dms_sken(db)
     else:
         raise RuntimeError(f"Neznámý typ úlohy: {job.typ}")
 
@@ -158,6 +168,65 @@ def _mozna_reconcile() -> None:
         db.close()
 
 
+def _parse_casy(surove: str) -> list[tuple[int, int]]:
+    """„08:00,20:00“ → [(8,0),(20,0)]. Neplatné položky přeskočí."""
+    vysledek: list[tuple[int, int]] = []
+    for kus in (surove or "").replace(";", ",").split(","):
+        kus = kus.strip()
+        if not kus:
+            continue
+        try:
+            h, m = kus.split(":")
+            hh, mm = int(h), int(m)
+        except (ValueError, TypeError):
+            continue
+        if 0 <= hh <= 23 and 0 <= mm <= 59:
+            vysledek.append((hh, mm))
+    return vysledek
+
+
+def _mozna_dms_sken() -> None:
+    """Spustí sken Dokumentů (RN → Disk) v nastavené hodiny (Europe/Prague).
+
+    Každý naplánovaný čas se za den spustí jednou – hlídá se přes
+    `dms_sken_posledni`. Dedup: nekupí víc pending úloh.
+    """
+    db = SessionLocal()
+    try:
+        n = db.get(KonektorNastaveni, 1)
+        if n is None or not n.dms_sken_zapnuto:
+            return
+        casy = _parse_casy(n.dms_sken_casy)
+        if not casy:
+            return
+        ted = datetime.now(PRAHA)
+        posledni = n.dms_sken_posledni
+        if posledni is not None and posledni.tzinfo is None:
+            posledni = posledni.replace(tzinfo=timezone.utc)
+        posledni_praha = posledni.astimezone(PRAHA) if posledni else None
+
+        for hh, mm in casy:
+            cil = ted.replace(hour=hh, minute=mm, second=0, microsecond=0)
+            # nastal naplánovaný čas a od tohoto cíle jsme ještě neběželi
+            if ted >= cil and (posledni_praha is None or posledni_praha < cil):
+                existuje = (
+                    db.query(KonektorJobQueue)
+                    .filter(KonektorJobQueue.typ == "dms_sken", KonektorJobQueue.status == "pending")
+                    .first()
+                )
+                if existuje is None:
+                    fronta.zarad(db, "dms_sken", {})
+                n.dms_sken_posledni = _ted()
+                db.commit()
+                zaloguj(db, "info", "dms_sken",
+                        f"Naplánovaný sken Dokumentů ({hh:02d}:{mm:02d}) zařazen.")
+                break
+    except Exception:  # noqa: BLE001 - plánovač nesmí shodit worker
+        db.rollback()
+    finally:
+        db.close()
+
+
 def _mozna_obnov_watch() -> None:
     """Obnova push kanálu, jen když je automatika zapnutá. Throttluje se."""
     global _dalsi_watch_kontrola
@@ -187,7 +256,7 @@ def _smycka() -> None:
     if _stop.wait(START_PRODLEVA_S):
         return
     while not _stop.is_set():
-        for krok in (_tik, _mozna_reconcile, _mozna_obnov_watch):
+        for krok in (_tik, _mozna_reconcile, _mozna_obnov_watch, _mozna_dms_sken):
             try:
                 krok()
             except Exception:  # noqa: BLE001 - vlákno nesmí nikdy spadnout

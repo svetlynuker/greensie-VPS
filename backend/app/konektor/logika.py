@@ -730,6 +730,54 @@ def zrcadli_strom(db: Session) -> dict:
     return {"slozek": vytvoreno_slozek, "souboru": vytvoreno_souboru, "preskoceno": preskoceno, "chyb": chyb}
 
 
+# =================== RN Dokumenty → Disk (sken) ===================
+def dms_sken(db: Session) -> dict:
+    """Sken modulu Dokumenty (RN → Disk).
+
+    ZATÍM DETEKČNÍ: projde celý strom Dokumentů a najde nové FYZICKÉ soubory
+    (mají `file`, nikoli `link` – náš vlastní odkaz se přeskočí, echo
+    suppression). Nahlásí, kolik jich je a kde, kolik složek prošel a kolik to
+    stálo API callů. Přesun na Disk + nahrazení odkazem (s mazáním originálu)
+    se doplní po ověření stahování obsahu.
+    """
+    n = db.get(KonektorNastaveni, 1)
+    if n is None:
+        raise NastaveniNepripraveno("Nastavení konektoru neexistuje.")
+    raynet, _ = vytvor_klienty(n)
+
+    calls = slozky = 0
+    fyzicke: list[dict] = []
+    stack: list[str | None] = [None]
+    navstivene: set = set()
+    while stack:
+        path = stack.pop()
+        if path in navstivene:
+            continue
+        navstivene.add(path)
+        calls += 1
+        try:
+            data = raynet.list_document_folders(path)
+        except Exception:  # noqa: BLE001 - nedostupnou složku přeskočíme
+            continue
+        for it in (data or []):
+            if not isinstance(it, dict):
+                continue
+            if it.get("type") == "Folder":
+                slozky += 1
+                if it.get("path"):
+                    stack.append(it["path"])
+            elif it.get("type") == "Document":
+                # fyzický soubor nahraný uživatelem = má file a nemá náš link
+                if it.get("file") and not it.get("link"):
+                    fyzicke.append({"id": it.get("id"), "name": it.get("name"), "path": it.get("path")})
+
+    zaloguj(db, "info", "dms_sken",
+            f"Sken Dokumentů: prošel {slozky} složek ({calls} API callů), "
+            f"nových fyzických souborů k přesunu: {len(fyzicke)}.",
+            {"slozky": slozky, "cally": calls, "fyzickych": len(fyzicke), "ukazka": fyzicke[:50]})
+    return {"slozky": slozky, "cally": calls, "fyzickych": len(fyzicke)}
+
+
 # =================== Google Drive push (watch) ===================
 def webhook_token() -> str:
     """Token, kterým Google značí push notifikace (X-Goog-Channel-Token)."""

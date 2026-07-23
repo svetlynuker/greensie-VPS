@@ -42,6 +42,26 @@ POVOLENE_MODELY = {"links", "mirror"}
 POVOLENE_UROVNE = {"debug", "info", "warn", "error"}
 
 
+def _normalizuj_casy(surove: str) -> str:
+    """Z textu „08:00, 20:00“ udělá validní seřazený seznam HH:MM (unikátní).
+
+    Neplatné položky zahodí. Prázdný výsledek → volající dosadí výchozí.
+    """
+    platne: set[str] = set()
+    for kus in (surove or "").replace(";", ",").split(","):
+        kus = kus.strip()
+        if not kus:
+            continue
+        try:
+            h, m = kus.split(":")
+            hh, mm = int(h), int(m)
+        except (ValueError, TypeError):
+            continue
+        if 0 <= hh <= 23 and 0 <= mm <= 59:
+            platne.add(f"{hh:02d}:{mm:02d}")
+    return ",".join(sorted(platne))
+
+
 def vyzaduj_pravo_konektor(user: User = Depends(get_current_user)) -> User:
     """Povolí jen ty, kdo smí otevřít dlaždici Konektor (admin ji má vždy)."""
     if not muze_otevrit(user, "konektor"):
@@ -79,6 +99,9 @@ def _nastaveni_out(n: KonektorNastaveni) -> KonektorNastaveniOut:
         google_root_folder_id=n.google_root_folder_id,
         google_vzor_folder_id=n.google_vzor_folder_id,
         google_dms_zdroj_folder_id=n.google_dms_zdroj_folder_id,
+        dms_sken_zapnuto=n.dms_sken_zapnuto,
+        dms_sken_casy=n.dms_sken_casy,
+        dms_sken_posledni=n.dms_sken_posledni,
         kontejner_op=n.kontejner_op,
         kontejner_nabidky=n.kontejner_nabidky,
         kontejner_objednavky=n.kontejner_objednavky,
@@ -139,6 +162,9 @@ def uloz_nastaveni(
     n.google_root_folder_id = vstup.google_root_folder_id.strip()
     n.google_vzor_folder_id = vstup.google_vzor_folder_id.strip()
     n.google_dms_zdroj_folder_id = vstup.google_dms_zdroj_folder_id.strip()
+    n.dms_sken_zapnuto = vstup.dms_sken_zapnuto
+    # časy scanu: ponech jen platné HH:MM, seřaď; prázdné = výchozí
+    n.dms_sken_casy = _normalizuj_casy(vstup.dms_sken_casy) or "08:00,20:00"
     # prázdný název kontejneru = ponech výchozí (jinak by se nedal najít)
     n.kontejner_op = vstup.kontejner_op.strip() or VYCHOZI_KONTEJNER_OP
     n.kontejner_nabidky = vstup.kontejner_nabidky.strip() or VYCHOZI_KONTEJNER_NABIDKY
@@ -623,6 +649,24 @@ def rucni_zrcadlit(
         return {"zarazeno": False, "duvod": "Zrcadlení už čeká/běží."}
     fronta.zarad(db, "zrcadleni", {})
     zaloguj(db, "info", "zrcadleni", "Zrcadlení do Dokumentů zařazeno – běží na pozadí.")
+    return {"zarazeno": True}
+
+
+@router.post("/dms-sken")
+def rucni_dms_sken(
+    _user: User = Depends(vyzaduj_pravo_konektor),
+    db: Session = Depends(get_db),
+):
+    """Ruční spuštění skenu Dokumentů (RN → Disk) na pozadí – bez čekání na hodinu."""
+    existuje = (
+        db.query(KonektorJobQueue)
+        .filter(KonektorJobQueue.typ == "dms_sken", KonektorJobQueue.status == "pending")
+        .first()
+    )
+    if existuje is not None:
+        return {"zarazeno": False, "duvod": "Sken už čeká/běží."}
+    fronta.zarad(db, "dms_sken", {})
+    zaloguj(db, "info", "dms_sken", "Ruční sken Dokumentů zařazen – běží na pozadí.")
     return {"zarazeno": True}
 
 

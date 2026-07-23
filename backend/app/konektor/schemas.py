@@ -28,6 +28,8 @@ class KonektorNastaveniOut(BaseModel):
     google_root_folder_id: str = ""
     google_vzor_folder_id: str = ""
     google_dms_zdroj_folder_id: str = ""
+    dms_sken_zapnuto: bool = True
+    dms_sken_casy: str = "08:00,20:00"
     kontejner_op: str = ""
     kontejner_nabidky: str = ""
     kontejner_objednavky: str = ""
@@ -44,6 +46,7 @@ class KonektorNastaveniOut(BaseModel):
     # stav
     posledni_beh: Optional[datetime] = None
     posledni_vysledek: str = ""
+    dms_sken_posledni: Optional[datetime] = None
 
 
 class KonektorNastaveniVstup(BaseModel):
@@ -60,6 +63,8 @@ class KonektorNastaveniVstup(BaseModel):
     google_root_folder_id: str = ""
     google_vzor_folder_id: str = ""
     google_dms_zdroj_folder_id: str = ""
+    dms_sken_zapnuto: bool = True
+    dms_sken_casy: str = "08:00,20:00"
     kontejner_op: str = ""
     kontejner_nabidky: str = ""
     kontejner_objednavky: str = ""
