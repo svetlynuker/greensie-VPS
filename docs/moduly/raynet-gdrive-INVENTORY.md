@@ -163,11 +163,13 @@ Zatím **chybí, blokuje F1+**:
 
 MVP = **F0–F3**. Po každé fázi akceptační test (kap. 16 specu).
 
-- **F0 — Inventura** (tento dokument) — hotovo, čeká na schválení + přístupy.
-- **F1 — Skeleton modulu:** balíček `app/konektor/` (modely + lehká migrace tabulek), právo/dlaždice `konektor`, stránka `Konektor.jsx` (prázdná karta Nastavení + panel Logy), `crypto.py`, uložení/šifrování tajemství z UI + `POST /konektor/test-spojeni` (ověří Raynet i Google). Webhook endpointy (zatím jen příjem + zalogování). **Zachytit reálný payload Raynet webhooku.** Akceptace: test-spojení zeleně, config se uloží, logy se zobrazí.
-- **F2 — Flow A (FR1):** company.created → složka + podsložky na Disku + zpětný odkaz do vlastního pole. Akceptace A1.
-- **F3 — Flow B směr Disk→Raynet (FR2a):** Drive push + `changes.list` + odkazové dokumenty; reconcile vlákno. Akceptace A2, A4.
-- **F4 — Flow B směr Raynet→Disk (FR2b):** stažení obsahu (`download body of file`) → upload na Disk. Akceptace A3.
+- **F0 — Inventura** (tento dokument) — ✅ HOTOVO.
+- **F1 — Skeleton modulu:** ✅ HOTOVO. Balíček `app/konektor/`, právo/dlaždice `konektor`, stránka `Konektor.jsx` (Nastavení + Logy), `crypto.py`, šifrovaná write-only tajemství z UI, `POST /konektor/test-spojeni`, webhooky. Zbývá zachytit reálný payload Raynet webhooku (až s přístupy).
+- **F2 — Flow A (FR1):** ✅ HOTOVO. company.created → složka + podsložky + zpětný odkaz; DB fronta + worker; ruční trigger. Akceptace A1 čeká na přístupy.
+- **F3 — Flow B směr Disk→Raynet (FR2a):** ✅ HOTOVO. changes.list + odkazové dokumenty + koš; push watch (registrace/obnova); periodický i ruční reconcile. Akceptace A2, A4 čeká na přístupy.
+- **F4 — Flow B směr Raynet→Disk (FR2b):** ⏳ stažení obsahu (`download body of file`) → upload na Disk. Akceptace A3.
 - **F5 — Flow C (FR3):** plné zrcadlení stromu do Raynet Dokumentů.
 - **F6 — Zpevnění:** echo suppression, idempotence, reconcile, rate-limit (≤ 4 spojení), doladění UI/logů. Akceptace A5, A6.
 - **F7 (volitelná) — Migrace historie** existujících klientů.
+
+> **MVP (F0–F3) hotovo 2026-07-23.** Ověřeno bez reálných přístupů (import/migrace, chráněné endpointy 401, webhooky, parsery, dedup, build). Reálné akceptační testy A1–A4, zachycení webhook payloadu a doladění `TO VERIFY` tvarů (odkazový dokument v `/document/document/`, název pole company, webhook payload) proběhnou po zadání přístupů v UI. Šifrovací klíč `KONEKTOR_ENC_KEY` a `KONEKTOR_WEBHOOK_SECRET` jsou v `.env` (chmod 600).
