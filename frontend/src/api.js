@@ -375,6 +375,10 @@ export function konektorSmazLogy() {
   return zavolej("/konektor/logy", { method: "DELETE" });
 }
 
+export function konektorVytvorSlozku(companyId) {
+  return zavolej(`/konektor/klient/${companyId}/slozka`, { method: "POST" });
+}
+
 // ---- Přehled změn (Pohled 3) ----
 export function nactiZmeny({ od, do: doDatum } = {}) {
   const p = new URLSearchParams();

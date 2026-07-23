@@ -15,7 +15,9 @@ from sqlalchemy.orm import Session
 from app.auth.models import User
 from app.auth.permissions import get_current_user, muze_otevrit
 from app.database import get_db
-from app.konektor import crypto, google_klient
+import json
+
+from app.konektor import crypto, fronta, google_klient, logika
 from app.konektor.logger import zaloguj
 from app.konektor.models import KonektorLog, KonektorNastaveni
 from app.konektor.raynet_klient import RaynetClient
@@ -205,18 +207,79 @@ async def _telo_jako_text(request: Request) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
+def _parse_raynet_company_created(telo: str) -> int | None:
+    """Tolerantní parser: z payloadu se pokusí rozpoznat vznik company a její id.
+
+    TO VERIFY: přesný tvar Raynet webhook payloadu není zdokumentován – parser
+    je záměrně tolerantní (zkouší běžné názvy polí). Po zachycení reálného
+    payloadu se zpřesní.
+    """
+    try:
+        data = json.loads(telo)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    entita = str(data.get("entityName") or data.get("entity") or data.get("object") or "").lower()
+    akce = str(data.get("action") or data.get("event") or data.get("type") or "").lower()
+    if "company" not in entita:
+        return None
+    if not any(k in akce for k in ("create", "created", "new", "insert")):
+        return None
+
+    for klic in ("id", "entityId", "recordId", "objectId"):
+        if data.get(klic) is not None:
+            try:
+                return int(data[klic])
+            except (ValueError, TypeError):
+                pass
+    vnorene = data.get("data")
+    if isinstance(vnorene, dict) and vnorene.get("id") is not None:
+        try:
+            return int(vnorene["id"])
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
 @router.post("/webhooks/raynet")
 async def webhook_raynet(request: Request, db: Session = Depends(get_db)):
-    """Příjem Raynet webhooku. Ve F1 payload jen zalogujeme (zachycení tvaru)."""
+    """Příjem Raynet webhooku.
+
+    Vždy zaloguje payload (zachycení reálného tvaru). Pokud rozpozná vznik
+    company, zařadí úlohu „novy_klient“ do fronty (Flow A / FR1).
+    """
     telo = await _telo_jako_text(request)
+    company_id = _parse_raynet_company_created(telo)
     zaloguj(
         db,
         uroven="info",
         udalost="webhook_raynet",
         zprava=f"Přijat Raynet webhook: {telo}",
-        kontext={"content_type": request.headers.get("content-type")},
+        kontext={"content_type": request.headers.get("content-type"), "company_id": company_id},
     )
+    if company_id is not None:
+        fronta.zarad(db, "novy_klient", {"company_id": company_id})
     return {"prijato": True}
+
+
+@router.post("/klient/{company_id}/slozka")
+def rucni_vytvor_slozku(
+    company_id: int,
+    _user: User = Depends(vyzaduj_pravo_konektor),
+    db: Session = Depends(get_db),
+):
+    """Ruční spuštění Flow A pro dané company id (test A1 bez čekání na webhook)."""
+    try:
+        vysledek = logika.zpracuj_novy_klient(db, company_id)
+    except logika.NastaveniNepripraveno as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:  # noqa: BLE001 - chybu chceme ukázat uživateli
+        zaloguj(db, "error", "novy_klient", f"Ruční vytvoření složky pro {company_id} selhalo: {e}",
+                {"company_id": company_id})
+        raise HTTPException(status_code=502, detail=str(e))
+    return vysledek
 
 
 @router.post("/webhooks/drive")

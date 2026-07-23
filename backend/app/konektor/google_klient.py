@@ -28,6 +28,52 @@ def _build_service(sa_json_str: str, subject_email: str | None = None):
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 
 
+FOLDER_MIME = "application/vnd.google-apps.folder"
+
+
+class DriveClient:
+    """Fasáda nad Google Drive API v3 pro Shared Drive.
+
+    Drží sestavený `service`. Všechny volání používají `supportsAllDrives=True`
+    (Shared Drive). Ve F2 využíváme jen tvorbu složek.
+    """
+
+    def __init__(self, sa_json_str: str, subject_email: str | None = None):
+        self.service = _build_service(sa_json_str, subject_email or None)
+
+    def create_folder(self, name: str, parent_id: str) -> dict:
+        """Vytvoří složku pod parent_id. Vrací {id, name, webViewLink}."""
+        metadata = {"name": name, "mimeType": FOLDER_MIME, "parents": [parent_id]}
+        return (
+            self.service.files()
+            .create(body=metadata, fields="id,name,webViewLink", supportsAllDrives=True)
+            .execute()
+        )
+
+    def list_children(self, parent_id: str) -> list[dict]:
+        """Vypíše (nesmazané) přímé potomky složky."""
+        q = f"'{parent_id}' in parents and trashed=false"
+        vysledek = (
+            self.service.files()
+            .list(
+                q=q,
+                fields="files(id,name,mimeType,webViewLink)",
+                includeItemsFromAllDrives=True,
+                supportsAllDrives=True,
+                pageSize=1000,
+            )
+            .execute()
+        )
+        return vysledek.get("files", [])
+
+    def find_folder(self, name: str, parent_id: str) -> dict | None:
+        """Najde podsložku daného jména pod parentem (nebo None)."""
+        for f in self.list_children(parent_id):
+            if f.get("mimeType") == FOLDER_MIME and f.get("name") == name:
+                return f
+        return None
+
+
 def test_spojeni(
     sa_json_str: str,
     shared_drive_id: str,

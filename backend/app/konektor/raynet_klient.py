@@ -46,3 +46,47 @@ class RaynetClient:
         if r.status_code == 429:
             return False, "Překročen limit požadavků Raynetu (429) – zkus to za chvíli."
         return False, f"Neočekávaná odpověď Raynetu: HTTP {r.status_code}."
+
+    # ---- operace pro FR1 (Flow A) ----
+    def _over_odpoved(self, r: requests.Response, kontext: str) -> dict:
+        """Vrátí `data` z odpovědi, nebo vyhodí RuntimeError s čitelnou zprávou.
+
+        Raynet vrací obálku {"success": bool, "data": ...} (ověřeno v dokumentaci).
+        """
+        if r.status_code == 429:
+            raise RuntimeError(f"{kontext}: překročen limit požadavků Raynetu (429).")
+        if r.status_code >= 400:
+            raise RuntimeError(f"{kontext}: HTTP {r.status_code} – {r.text[:300]}")
+        try:
+            telo = r.json()
+        except ValueError:
+            raise RuntimeError(f"{kontext}: odpověď není JSON.")
+        # success bývá bool i řetězec "true" – bereme oboje
+        uspech = telo.get("success")
+        if uspech in (False, "false"):
+            raise RuntimeError(f"{kontext}: Raynet vrátil success=false ({telo}).")
+        return telo.get("data", {})
+
+    def get_company(self, company_id: int, timeout: int = 20) -> dict:
+        """Načte detail company (GET /company/{id}/). Vrací `data` objekt."""
+        url = f"{self.base_url}company/{company_id}/"
+        r = requests.get(url, auth=(self.api_user, self.api_key), headers=self._headers(), timeout=timeout)
+        return self._over_odpoved(r, f"Načtení company {company_id}")
+
+    def set_company_drive_field(
+        self, company_id: int, field_code: str, url_value: str, timeout: int = 20
+    ) -> dict:
+        """Zapíše odkaz na Drive složku do vlastního pole company.
+
+        Modify = POST /company/{id}/ s tělem {"customFields": {kod: hodnota}}
+        (tvar customFields ověřen v dokumentaci; přesný kód pole = TO VERIFY
+        v UI podle konkrétní instance).
+        """
+        if not field_code:
+            raise RuntimeError("Není nastaven kód vlastního pole pro odkaz na Disk.")
+        url = f"{self.base_url}company/{company_id}/"
+        telo = {"customFields": {field_code: url_value}}
+        r = requests.post(
+            url, auth=(self.api_user, self.api_key), headers=self._headers(), json=telo, timeout=timeout
+        )
+        return self._over_odpoved(r, f"Zápis odkazu do company {company_id}")

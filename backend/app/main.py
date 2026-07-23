@@ -175,6 +175,21 @@ def _zastav_planovac_synchronizace():
     zastav_planovac()
 
 
+@app.on_event("startup")
+def _spust_konektor_worker():
+    # worker fronty úloh konektoru (Raynet ↔ Google Drive)
+    from app.konektor.scheduler import spust_worker
+
+    spust_worker()
+
+
+@app.on_event("shutdown")
+def _zastav_konektor_worker():
+    from app.konektor.scheduler import zastav_worker
+
+    zastav_worker()
+
+
 @app.get("/health")
 def health():
     return {"stav": "ok"}

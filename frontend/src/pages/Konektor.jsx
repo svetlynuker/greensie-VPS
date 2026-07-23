@@ -9,6 +9,7 @@ import {
   konektorTestSpojeni,
   konektorLogy as apiKonektorLogy,
   konektorSmazLogy,
+  konektorVytvorSlozku,
 } from "../api";
 
 const poleStyl = {
@@ -277,6 +278,64 @@ function StavRadek({ nazev, stav }) {
   );
 }
 
+/* =================== Karta: Ruční akce (test) =================== */
+function RucniAkceKarta() {
+  const [companyId, setCompanyId] = useState("");
+  const [bezi, setBezi] = useState(false);
+  const [vysledek, setVysledek] = useState(null);
+  const [chyba, setChyba] = useState(null);
+
+  async function vytvor() {
+    setBezi(true);
+    setChyba(null);
+    setVysledek(null);
+    try {
+      const v = await konektorVytvorSlozku(Number(companyId));
+      setVysledek(v);
+    } catch (e) {
+      setChyba(e.message);
+    } finally {
+      setBezi(false);
+    }
+  }
+
+  return (
+    <div className="fm-card" style={{ padding: 16 }}>
+      <strong style={{ fontSize: 15 }}>Ruční test – vytvoření složky klienta</strong>
+      <p style={{ margin: "4px 0 12px", fontSize: 13, color: "var(--fm-muted)", lineHeight: 1.5 }}>
+        Spustí Flow A pro zadané ID company v Raynetu (vytvoří složku + podsložky na Disku a zapíše
+        odkaz zpět). Slouží k ověření nastavení bez čekání na webhook.
+      </p>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <input
+          style={{ ...poleStyl, width: 200 }}
+          type="number"
+          value={companyId}
+          onChange={(e) => setCompanyId(e.target.value)}
+          placeholder="ID company v Raynetu"
+        />
+        <button className="fm-btn fm-primary" onClick={vytvor} disabled={bezi || !companyId}>
+          {bezi ? "Vytvářím…" : "Vytvořit složku"}
+        </button>
+      </div>
+      {vysledek && (
+        <div style={{ marginTop: 12, fontSize: 13, color: "var(--fm-brand-dk)" }}>
+          {vysledek.skip
+            ? `Klient už složku má (${vysledek.drive_folder_id}).`
+            : `Hotovo – složka ${vysledek.drive_folder_id}${vysledek.odkaz_ok ? ", odkaz zapsán ✓" : ", ale odkaz se nezapsal ✗"}.`}
+          {vysledek.drive_folder_url && (
+            <>
+              {" "}
+              <a href={vysledek.drive_folder_url} target="_blank" rel="noopener noreferrer">otevřít na Disku</a>
+            </>
+          )}
+        </div>
+      )}
+      {chyba && <div style={{ marginTop: 12, fontSize: 13, color: "var(--st-crit)" }}>{chyba}</div>}
+    </div>
+  );
+}
+
 /* =================== Panel: Logy konektoru =================== */
 const UROVEN_STYL = {
   debug: { text: "debug", barva: "var(--fm-muted)" },
@@ -454,6 +513,7 @@ export default function Konektor() {
         </Link>
         <h2 style={{ margin: 0, fontSize: 18 }}>Konektor Raynet ↔ Google Disk</h2>
         <NastaveniKarta />
+        <RucniAkceKarta />
         <LogyPanel onChyba={osetriChybu} />
       </div>
     </Layout>

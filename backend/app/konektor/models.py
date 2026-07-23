@@ -14,7 +14,7 @@ Drive push kanály) přibudou až ve fázích F2/F3, kdy se začnou používat.
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 
 from app.database import Base
@@ -92,6 +92,53 @@ class KonektorLog(Base):
     zprava = Column(Text, nullable=False, default="", server_default="")
     # strukturovaný kontext bez tajemství (id záznamů, počty, hlavičky…)
     kontext = Column(JSONB, nullable=True)
+
+
+class KonektorClientFolderMap(Base):
+    """Mapování klient (Raynet company) ↔ kořenová složka klienta na Disku.
+
+    Datový model dle specu kap. 7 (client_folder_map), prefix `konektor_`.
+    """
+
+    __tablename__ = "konektor_client_folder_map"
+
+    raynet_company_id = Column(BigInteger, primary_key=True)
+    drive_folder_id = Column(String, nullable=False)
+    drive_folder_url = Column(String, nullable=False, default="", server_default="")
+    client_name = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_ted)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_ted, onupdate=_ted)
+
+
+class KonektorProcessedEvent(Base):
+    """Idempotence příchozích událostí (spec kap. 7, processed_events).
+
+    Klíč = hash zdroje+typu+id+revize; duplicitní doručení se zahodí.
+    """
+
+    __tablename__ = "konektor_processed_events"
+
+    event_key = Column(String, primary_key=True)
+    processed_at = Column(DateTime(timezone=True), nullable=False, default=_ted)
+
+
+class KonektorJobQueue(Base):
+    """Fronta úloh v DB (fallback bez Redis, spec kap. 7 + S9).
+
+    Webhook rychle zařadí úlohu a vrátí 200; worker ji zpracuje idempotentně
+    s retry/backoff (respektuje limit 4 souběžných spojení Raynetu).
+    """
+
+    __tablename__ = "konektor_job_queue"
+
+    id = Column(Integer, primary_key=True, index=True)
+    typ = Column(String, nullable=False)  # např. "novy_klient"
+    payload = Column(JSONB, nullable=False)
+    run_after = Column(DateTime(timezone=True), nullable=False, default=_ted, index=True)
+    attempts = Column(Integer, nullable=False, default=0, server_default="0")
+    status = Column(String, nullable=False, default="pending", index=True)  # pending|done|failed
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_ted)
 
 
 # Horní meze délky textů (ochrana DB před obřími řádky).
