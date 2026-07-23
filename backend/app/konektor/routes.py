@@ -70,6 +70,7 @@ def _nastaveni_out(n: KonektorNastaveni) -> KonektorNastaveniOut:
         raynet_api_key_nastaven=bool(n.raynet_api_key_enc),
         google_shared_drive_id=n.google_shared_drive_id,
         google_root_folder_id=n.google_root_folder_id,
+        google_vzor_folder_id=n.google_vzor_folder_id,
         google_subject_email=n.google_subject_email,
         google_sa_json_nastaven=bool(n.google_sa_json_enc),
         sync_model=n.sync_model,
@@ -125,6 +126,7 @@ def uloz_nastaveni(
     n.raynet_webhook_token = vstup.raynet_webhook_token.strip()
     n.google_shared_drive_id = vstup.google_shared_drive_id.strip()
     n.google_root_folder_id = vstup.google_root_folder_id.strip()
+    n.google_vzor_folder_id = vstup.google_vzor_folder_id.strip()
     n.google_subject_email = vstup.google_subject_email.strip()
     n.sync_model = vstup.sync_model
     n.template_subfolders = vstup.template_subfolders.strip()
@@ -370,6 +372,35 @@ def rucni_vytvor_slozku(
                 {"company_id": company_id})
         raise HTTPException(status_code=502, detail=str(e))
     return vysledek
+
+
+@router.post("/vzor/strom")
+def vypis_strom_vzoru(
+    folder_id: str | None = Query(None, description="ID složky; prázdné = vzorová složka z nastavení"),
+    _user: User = Depends(vyzaduj_pravo_konektor),
+    db: Session = Depends(get_db),
+):
+    """Diagnostika: vypíše strom vzorové složky na Disku (do logu i do odpovědi).
+
+    Slouží k zjištění přesných názvů a vnoření vzoru, podle kterých se pak
+    kopíruje struktura klienta / OP / nabídky / objednávky.
+    """
+    n = ziskej_nastaveni(db)
+    cil = (folder_id or n.google_vzor_folder_id or "").strip()
+    if not cil:
+        raise HTTPException(status_code=400, detail="Není nastaveno ID vzorové složky.")
+    try:
+        _, drive = logika.vytvor_klienty(n)
+        radky = drive.strom(cil)
+    except logika.NastaveniNepripraveno as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        zaloguj(db, "error", "vzor_strom", f"Výpis stromu vzoru selhal: {e}", {"folder_id": cil})
+        raise HTTPException(status_code=502, detail=str(e))
+    text_stromu = "\n".join(radky) if radky else "(prázdná složka)"
+    zaloguj(db, "info", "vzor_strom", f"Strom vzoru ({cil}):\n{text_stromu}",
+            {"folder_id": cil, "polozek": len(radky)})
+    return {"folder_id": cil, "radky": radky}
 
 
 @router.post("/dokument/{document_id}/na-disk")

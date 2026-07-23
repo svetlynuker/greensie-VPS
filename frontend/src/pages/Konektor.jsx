@@ -10,6 +10,7 @@ import {
   konektorLogy as apiKonektorLogy,
   konektorSmazLogy,
   konektorVytvorSlozku,
+  konektorStromVzoru,
   konektorReconcile,
   konektorWatchStav,
   konektorWatchRegistruj,
@@ -79,6 +80,7 @@ function NastaveniKarta() {
         raynet_webhook_token: nast.raynet_webhook_token,
         google_shared_drive_id: nast.google_shared_drive_id,
         google_root_folder_id: nast.google_root_folder_id,
+        google_vzor_folder_id: nast.google_vzor_folder_id,
         google_subject_email: nast.google_subject_email,
         sync_model: nast.sync_model,
         template_subfolders: nast.template_subfolders,
@@ -203,6 +205,10 @@ function NastaveniKarta() {
           <input style={poleStyl} value={nast.google_root_folder_id} onChange={(e) => nastav("google_root_folder_id", e.target.value)} placeholder="prázdné = kořen Shared Drivu" />
         </div>
         <div>
+          <label style={labelStyl}>Vzorová složka „0. vzor" – ID</label>
+          <input style={poleStyl} value={nast.google_vzor_folder_id} onChange={(e) => nastav("google_vzor_folder_id", e.target.value)} placeholder="ID složky se vzorem struktury" />
+        </div>
+        <div>
           <label style={labelStyl}>Impersonovaný uživatel (delegace, volitelné)</label>
           <input style={poleStyl} value={nast.google_subject_email} onChange={(e) => nastav("google_subject_email", e.target.value)} placeholder="uzivatel@greensie.cz" />
         </div>
@@ -320,6 +326,8 @@ function RucniAkceKarta() {
   const [bezi, setBezi] = useState(false);
   const [vysledek, setVysledek] = useState(null);
   const [chyba, setChyba] = useState(null);
+  const [strom, setStrom] = useState(null);
+  const [stromBezi, setStromBezi] = useState(false);
 
   async function vytvor() {
     setBezi(true);
@@ -332,6 +340,20 @@ function RucniAkceKarta() {
       setChyba(e.message);
     } finally {
       setBezi(false);
+    }
+  }
+
+  async function vypisStrom() {
+    setStromBezi(true);
+    setChyba(null);
+    setStrom(null);
+    try {
+      const v = await konektorStromVzoru();
+      setStrom(v.radky && v.radky.length ? v.radky.join("\n") : "(prázdná složka)");
+    } catch (e) {
+      setChyba(e.message);
+    } finally {
+      setStromBezi(false);
     }
   }
 
@@ -368,6 +390,34 @@ function RucniAkceKarta() {
         </div>
       )}
       {chyba && <div style={{ marginTop: 12, fontSize: 13, color: "var(--st-crit)" }}>{chyba}</div>}
+
+      <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--fm-line)" }}>
+        <strong style={{ fontSize: 14 }}>Diagnostika – strom vzorové složky</strong>
+        <p style={{ margin: "4px 0 10px", fontSize: 13, color: "var(--fm-muted)", lineHeight: 1.5 }}>
+          Vypíše strukturu vzorové složky („0. vzor") podle ID uloženého v nastavení. Slouží k ověření,
+          že konektor vidí správný vzor.
+        </p>
+        <button className="fm-btn" onClick={vypisStrom} disabled={stromBezi}>
+          {stromBezi ? "Načítám…" : "Vypsat strom vzoru"}
+        </button>
+        {strom && (
+          <pre
+            style={{
+              marginTop: 12,
+              padding: 12,
+              background: "var(--fm-head)",
+              border: "1px solid var(--fm-line)",
+              borderRadius: 8,
+              fontSize: 12,
+              lineHeight: 1.5,
+              overflowX: "auto",
+              whiteSpace: "pre",
+            }}
+          >
+            {strom}
+          </pre>
+        )}
+      </div>
     </div>
   );
 }
