@@ -21,6 +21,11 @@ from app.database import Base
 
 # výchozí podsložky POD OBCHODNÍM PŘÍPADEM (potvrzeno se zadavatelem)
 VYCHOZI_PODSLOZKY = "01_Nabídky,02_Objednávky,03_Fotky,04_Dokumenty"
+# výchozí názvy kontejnerů ve vzorové složce („0. vzor“) – kam konektor zakládá
+# jednotlivé záznamy. Vzor uvnitř kontejneru = jeho jediná podsložka.
+VYCHOZI_KONTEJNER_OP = "1. Obchodní Případy"
+VYCHOZI_KONTEJNER_NABIDKY = "1. nabídky"
+VYCHOZI_KONTEJNER_OBJEDNAVKY = "5. objednávky"
 # výchozí base URL Raynet API pro české instance (viz INVENTORY, ověření API)
 VYCHOZI_RAYNET_URL = "https://app.raynet.cz/api/v2/"
 
@@ -64,6 +69,10 @@ class KonektorNastaveni(Base):
     google_root_folder_id = Column(String, nullable=False, default="", server_default="")
     # ID vzorové složky („0. vzor“) – kopíruje se jako struktura nového klienta.
     google_vzor_folder_id = Column(String, nullable=False, default="", server_default="")
+    # názvy kontejnerů ve vzoru (kam se zakládají OP / nabídky / objednávky)
+    kontejner_op = Column(String, nullable=False, default=VYCHOZI_KONTEJNER_OP, server_default=VYCHOZI_KONTEJNER_OP)
+    kontejner_nabidky = Column(String, nullable=False, default=VYCHOZI_KONTEJNER_NABIDKY, server_default=VYCHOZI_KONTEJNER_NABIDKY)
+    kontejner_objednavky = Column(String, nullable=False, default=VYCHOZI_KONTEJNER_OBJEDNAVKY, server_default=VYCHOZI_KONTEJNER_OBJEDNAVKY)
     # e-mail uživatele k impersonaci přes domain-wide delegation (volitelné)
     google_subject_email = Column(String, nullable=False, default="", server_default="")
     # service-account JSON – ŠIFROVANĚ (Fernet), prázdné = nenastaveno
@@ -141,6 +150,9 @@ class KonektorEntityFolder(Base):
     drive_folder_id = Column(String, nullable=False, index=True)
     drive_folder_url = Column(String, nullable=False, default="", server_default="")
     name = Column(String, nullable=True)
+    # ID kontejnerů uvnitř této složky (odolnost vůči přejmenování lidmi):
+    # company → {"op": id}, deal → {"nabidky": id, "objednavky": id}
+    kontejnery = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_ted)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_ted, onupdate=_ted)
 

@@ -73,6 +73,44 @@ class DriveClient:
                 return f
         return None
 
+    def copy_file(self, file_id: str, dest_parent_id: str, new_name: str | None = None) -> dict:
+        """Zkopíruje soubor do cílové složky (Drive `files.copy`)."""
+        body: dict = {"parents": [dest_parent_id]}
+        if new_name:
+            body["name"] = new_name
+        return (
+            self.service.files()
+            .copy(fileId=file_id, body=body, fields="id,name,webViewLink", supportsAllDrives=True)
+            .execute()
+        )
+
+    def _copy_children(self, src_id: str, dest_id: str, skip_ids: set[str]) -> None:
+        """Rekurzivně zkopíruje obsah složky (složky nově vytvoří, soubory zkopíruje)."""
+        for ch in self.list_children(src_id):
+            if ch["id"] in skip_ids:
+                continue
+            if ch.get("mimeType") == FOLDER_MIME:
+                nova = self.create_folder(ch.get("name", ""), dest_id)
+                self._copy_children(ch["id"], nova["id"], skip_ids)
+            else:
+                self.copy_file(ch["id"], dest_id, ch.get("name"))
+
+    def copy_tree(
+        self, src_folder_id: str, dest_parent_id: str, new_name: str, skip_ids: set[str] | None = None
+    ) -> dict:
+        """Zkopíruje celý strom složky pod cíl a přejmenuje kořen na `new_name`.
+
+        Google Drive neumí zkopírovat složku jedním voláním – kopíruje se
+        rekurzivně (složky se zakládají, soubory kopírují). `skip_ids` = ID
+        podpoložek, které se do kopie NEmají zahrnout (typicky vzorové
+        podsložky, které se berou centrálně z „0. vzor“). Vrací {id,name,webViewLink}
+        nové kořenové složky.
+        """
+        skip = set(skip_ids or ())
+        root = self.create_folder(new_name, dest_parent_id)
+        self._copy_children(src_folder_id, root["id"], skip)
+        return root
+
     def strom(self, folder_id: str, hloubka: int = 0, max_hloubka: int = 8) -> list[str]:
         """Rekurzivně vypíše strom složky jako řádky s odsazením (diagnostika vzoru).
 

@@ -19,7 +19,14 @@ import json
 
 from app.konektor import crypto, fronta, google_klient, logika
 from app.konektor.logger import zaloguj
-from app.konektor.models import KonektorJobQueue, KonektorLog, KonektorNastaveni
+from app.konektor.models import (
+    VYCHOZI_KONTEJNER_NABIDKY,
+    VYCHOZI_KONTEJNER_OBJEDNAVKY,
+    VYCHOZI_KONTEJNER_OP,
+    KonektorJobQueue,
+    KonektorLog,
+    KonektorNastaveni,
+)
 from app.konektor.raynet_klient import RaynetClient
 from app.konektor.schemas import (
     KonektorLogOut,
@@ -71,6 +78,9 @@ def _nastaveni_out(n: KonektorNastaveni) -> KonektorNastaveniOut:
         google_shared_drive_id=n.google_shared_drive_id,
         google_root_folder_id=n.google_root_folder_id,
         google_vzor_folder_id=n.google_vzor_folder_id,
+        kontejner_op=n.kontejner_op,
+        kontejner_nabidky=n.kontejner_nabidky,
+        kontejner_objednavky=n.kontejner_objednavky,
         google_subject_email=n.google_subject_email,
         google_sa_json_nastaven=bool(n.google_sa_json_enc),
         sync_model=n.sync_model,
@@ -127,6 +137,10 @@ def uloz_nastaveni(
     n.google_shared_drive_id = vstup.google_shared_drive_id.strip()
     n.google_root_folder_id = vstup.google_root_folder_id.strip()
     n.google_vzor_folder_id = vstup.google_vzor_folder_id.strip()
+    # prázdný název kontejneru = ponech výchozí (jinak by se nedal najít)
+    n.kontejner_op = vstup.kontejner_op.strip() or VYCHOZI_KONTEJNER_OP
+    n.kontejner_nabidky = vstup.kontejner_nabidky.strip() or VYCHOZI_KONTEJNER_NABIDKY
+    n.kontejner_objednavky = vstup.kontejner_objednavky.strip() or VYCHOZI_KONTEJNER_OBJEDNAVKY
     n.google_subject_email = vstup.google_subject_email.strip()
     n.sync_model = vstup.sync_model
     n.template_subfolders = vstup.template_subfolders.strip()
