@@ -18,6 +18,8 @@ from app.logy.middleware import LogovaciMiddleware
 from app.zmeny import models as zmeny_models  # noqa: F401 - registrace modelů
 from app.zmeny.routes import router as zmeny_router
 from app.admin.routes import router as admin_router
+from app.konektor import models as konektor_models  # noqa: F401 - registrace modelů
+from app.konektor.routes import router as konektor_router
 from app.database import Base, engine
 
 Base.metadata.create_all(bind=engine)
@@ -155,6 +157,7 @@ app.include_router(nastaveni_router)
 app.include_router(logy_router)
 app.include_router(zmeny_router)
 app.include_router(admin_router)
+app.include_router(konektor_router)
 
 
 @app.on_event("startup")
@@ -170,6 +173,21 @@ def _zastav_planovac_synchronizace():
     from app.matice.scheduler import zastav_planovac
 
     zastav_planovac()
+
+
+@app.on_event("startup")
+def _spust_konektor_worker():
+    # worker fronty úloh konektoru (Raynet ↔ Google Drive)
+    from app.konektor.scheduler import spust_worker
+
+    spust_worker()
+
+
+@app.on_event("shutdown")
+def _zastav_konektor_worker():
+    from app.konektor.scheduler import zastav_worker
+
+    zastav_worker()
 
 
 @app.get("/health")

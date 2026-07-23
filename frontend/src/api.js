@@ -349,6 +349,61 @@ export function smazLogy(starsiNezDni) {
   return zavolej(`/logy${q}`, { method: "DELETE" });
 }
 
+// ---- Konektor (RAYNET ↔ Google Drive) ----
+export function konektorNastaveni() {
+  return zavolej("/konektor/nastaveni");
+}
+
+export function konektorUlozNastaveni(data) {
+  return zavolej("/konektor/nastaveni", { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function konektorTestSpojeni() {
+  return zavolej("/konektor/test-spojeni", { method: "POST" });
+}
+
+export function konektorLogy({ uroven, hledej, limit } = {}) {
+  const p = new URLSearchParams();
+  if (uroven) p.set("uroven", uroven);
+  if (hledej) p.set("hledej", hledej);
+  if (limit) p.set("limit", String(limit));
+  const q = p.toString();
+  return zavolej(`/konektor/logy${q ? `?${q}` : ""}`);
+}
+
+export function konektorSmazLogy() {
+  return zavolej("/konektor/logy", { method: "DELETE" });
+}
+
+export function konektorVytvorSlozku(companyId) {
+  return zavolej(`/konektor/klient/${companyId}/slozka`, { method: "POST" });
+}
+
+export function konektorReconcile() {
+  return zavolej("/konektor/reconcile", { method: "POST" });
+}
+
+export function konektorWatchStav() {
+  return zavolej("/konektor/watch");
+}
+
+export function konektorWatchRegistruj() {
+  return zavolej("/konektor/watch", { method: "POST" });
+}
+
+export function konektorWatchZrus() {
+  return zavolej("/konektor/watch", { method: "DELETE" });
+}
+
+export function konektorDokumentNaDisk(documentId, companyId) {
+  const q = companyId ? `?company_id=${companyId}` : "";
+  return zavolej(`/konektor/dokument/${documentId}/na-disk${q}`, { method: "POST" });
+}
+
+export function konektorZrcadlit() {
+  return zavolej("/konektor/zrcadlit", { method: "POST" });
+}
+
 // ---- Přehled změn (Pohled 3) ----
 export function nactiZmeny({ od, do: doDatum } = {}) {
   const p = new URLSearchParams();
