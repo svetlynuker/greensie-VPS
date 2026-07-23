@@ -400,7 +400,7 @@ function RucniAkceKarta() {
     setTestOdkaz(null);
     try {
       const v = await konektorDokumentyTestOdkaz();
-      setTestOdkaz(JSON.stringify(v.vytvoreno, null, 2));
+      setTestOdkaz(JSON.stringify(v, null, 2));
     } catch (e) {
       setChyba(e.message);
     } finally {
