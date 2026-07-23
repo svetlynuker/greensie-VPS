@@ -596,21 +596,23 @@ async def webhook_drive(request: Request, db: Session = Depends(get_db)):
                 {"channel_id": kanal})
         return {"prijato": False}
 
-    zarazeno = False
+    zarazeno = []
     if stav and stav != "sync":
-        existuje = (
-            db.query(KonektorJobQueue)
-            .filter(KonektorJobQueue.typ == "drive_zmeny", KonektorJobQueue.status == "pending")
-            .first()
-        )
-        if existuje is None:
-            fronta.zarad(db, "drive_zmeny", {})
-            zarazeno = True
+        # reconcile (Flow B: Disk → deal odkazy) i zrcadlení změn do Dokumentů
+        for typ in ("drive_zmeny", "dms_zmeny"):
+            existuje = (
+                db.query(KonektorJobQueue)
+                .filter(KonektorJobQueue.typ == typ, KonektorJobQueue.status == "pending")
+                .first()
+            )
+            if existuje is None:
+                fronta.zarad(db, typ, {})
+                zarazeno.append(typ)
 
     zaloguj(
         db, "info", "webhook_drive",
         f"Přijat Google Drive push – stav={stav}, kanál={kanal}"
-        + (" → zařazen reconcile" if zarazeno else ""),
+        + (f" → zařazeno: {', '.join(zarazeno)}" if zarazeno else ""),
         {"resource_state": stav, "channel_id": kanal, "zarazeno": zarazeno},
     )
     return {"prijato": True}

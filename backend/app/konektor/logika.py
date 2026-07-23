@@ -730,6 +730,108 @@ def zrcadli_strom(db: Session) -> dict:
     return {"slozek": vytvoreno_slozek, "souboru": vytvoreno_souboru, "preskoceno": preskoceno, "chyb": chyb}
 
 
+# =================== Disk → RN Dokumenty (okamžitě přes watch) ===================
+def _segmenty_v_master(drive: DriveClient, file: dict, master_id: str, cache: dict) -> list[str] | None:
+    """Názvy Disk složek od master folderu (bez něj) k rodičovské složce souboru.
+
+    Vrací seznam segmentů (shora dolů), nebo None když soubor není v master
+    podstromu. Rodiče se cachují, ať se stejná složka nedotazuje opakovaně.
+    """
+    parents = file.get("parents") or []
+    pid = parents[0] if parents else None
+    retez: list[str] = []
+    depth = 0
+    while pid and depth < 40:
+        depth += 1
+        if pid == master_id:
+            return list(reversed(retez))
+        info = cache.get(pid)
+        if info is None:
+            try:
+                info = drive.get_file(pid)
+            except Exception:  # noqa: BLE001 - nedostupný rodič → bereme jako mimo
+                return None
+            cache[pid] = info
+        if info.get("trashed"):
+            return None
+        retez.append(info.get("name", ""))
+        p = info.get("parents") or []
+        pid = p[0] if p else None
+    return None
+
+
+def zrcadli_zmeny_dms(db: Session) -> dict:
+    """Disk → RN Dokumenty OKAMŽITĚ: promítne změny v master folderu do modulu
+    Dokumenty jako odkazy. Čte Drive changes (jen změněné položky, ne full-scan)
+    s vlastním page tokenem (KonektorDriveChangeState id=2). Volá se z watch push.
+
+    Echo suppression: soubory nahrané naším RN→Disk přesunem (origin=raynet) se
+    přeskočí. Idempotence: odkaz se nevytvoří, pokud už v cílové složce je.
+    """
+    n = db.get(KonektorNastaveni, 1)
+    if n is None:
+        raise NastaveniNepripraveno("Nastavení konektoru neexistuje.")
+    master = (n.google_dms_zdroj_folder_id or "").strip()
+    if not master:
+        return {"skip": "bez master složky"}
+    raynet, drive = vytvor_klienty(n)
+
+    stav = db.get(KonektorDriveChangeState, 2)
+    if stav is None:
+        stav = KonektorDriveChangeState(id=2, page_token="")
+        db.add(stav)
+        db.commit()
+    if not stav.page_token:
+        stav.page_token = drive.get_start_page_token(n.google_shared_drive_id)
+        db.commit()
+        zaloguj(db, "info", "dms_zmeny", "Sledování změn pro Dokumenty inicializováno (od teď).")
+        return {"inicializace": True}
+
+    zmeny, novy = drive.list_changes(stav.page_token, n.google_shared_drive_id)
+    cache: dict = {}
+    vytvoreno = 0
+    for ch in zmeny:
+        file = ch.get("file")
+        if ch.get("removed") or not file or file.get("trashed"):
+            continue
+        if file.get("mimeType") == FOLDER_MIME:
+            continue
+        if (file.get("appProperties") or {}).get("origin") == "raynet":
+            continue  # náš vlastní přesun – neduplikovat odkaz
+        segmenty = _segmenty_v_master(drive, file, master, cache)
+        if segmenty is None:
+            continue  # soubor mimo master podstrom
+
+        # zajisti DMS složky po cestě (find-or-create, řízeno path)
+        dms_parent: int | None = None
+        dms_path: str | None = None
+        for seg_name in segmenty:
+            seg = dms_bezpecny_nazev(seg_name)
+            nalez = _dms_najdi_polozku(raynet, dms_path, seg, je_slozka=True)
+            if nalez is not None:
+                dms_parent = nalez["id"]
+                dms_path = nalez.get("path") or f"{dms_path or DMS_KOREN_PATH}/{seg}"
+            else:
+                dms_parent = raynet.create_document_folder(seg_name, dms_parent)
+                dms_path = f"{dms_path or DMS_KOREN_PATH}/{seg}"
+        if dms_parent is None:
+            continue  # soubor přímo v master root – DMS dokument musí být ve složce
+
+        nazev = file.get("name", "")
+        if _dms_najdi_polozku(raynet, dms_path, dms_bezpecny_nazev(nazev), je_slozka=False) is not None:
+            continue  # odkaz už existuje
+        raynet.create_dms_link(nazev, file.get("webViewLink", ""), dms_parent)
+        vytvoreno += 1
+
+    stav.page_token = novy
+    db.commit()
+    if vytvoreno:
+        zaloguj(db, "info", "dms_zmeny",
+                f"Disk → Dokumenty: vytvořeno {vytvoreno} nových odkazů.",
+                {"vytvoreno": vytvoreno, "zmen": len(zmeny)})
+    return {"vytvoreno": vytvoreno, "zmen": len(zmeny)}
+
+
 # =================== RN Dokumenty → Disk (sken) ===================
 def _dms_cesta_na_disk(drive: DriveClient, master_id: str, dms_path: str | None) -> str:
     """Vrátí id Disk složky (v master folderu) odpovídající RN cestě `dms_path`.
