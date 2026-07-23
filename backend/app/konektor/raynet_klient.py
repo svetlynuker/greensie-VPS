@@ -10,6 +10,16 @@ document, file/attachment, webhook) přibudou v dalších fázích.
 
 import requests
 
+# Interní kód entity → skutečný název REST endpointu Raynetu.
+# V konektoru používáme krátké kódy (deal/order), Raynet API má ale
+# /businessCase/ a /salesOrder/ (company a offer se shodují).
+_RESOURCE_ENDPOINT = {
+    "company": "company",
+    "deal": "businessCase",
+    "offer": "offer",
+    "order": "salesOrder",
+}
+
 
 class RaynetClient:
     def __init__(self, instance: str, api_user: str, api_key: str, base_url: str):
@@ -69,8 +79,13 @@ class RaynetClient:
 
     # ---- obecné operace pro hierarchii (company/deal/offer/order) ----
     def get_record(self, resource: str, record_id: int, timeout: int = 20) -> dict:
-        """Detail záznamu daného typu (GET /{resource}/{id}/). Vrací `data`."""
-        url = f"{self.base_url}{resource}/{record_id}/"
+        """Detail záznamu daného typu (GET /{endpoint}/{id}/). Vrací `data`.
+
+        `resource` je interní kód (company/deal/offer/order); na skutečný
+        Raynet endpoint se přeloží přes `_RESOURCE_ENDPOINT`.
+        """
+        endpoint = _RESOURCE_ENDPOINT.get(resource, resource)
+        url = f"{self.base_url}{endpoint}/{record_id}/"
         r = requests.get(url, auth=(self.api_user, self.api_key), headers=self._headers(), timeout=timeout)
         return self._over_odpoved(r, f"Načtení {resource} {record_id}")
 
@@ -82,7 +97,8 @@ class RaynetClient:
         fields = {k: v for k, v in fields.items() if k}
         if not fields:
             return {}
-        url = f"{self.base_url}{resource}/{record_id}/"
+        endpoint = _RESOURCE_ENDPOINT.get(resource, resource)
+        url = f"{self.base_url}{endpoint}/{record_id}/"
         telo = {"customFields": fields}
         r = requests.post(
             url, auth=(self.api_user, self.api_key), headers=self._headers(), json=telo, timeout=timeout

@@ -181,7 +181,9 @@ def _zpracuj_zaznam_pod_op(db, n, raynet, drive, entity: str, resource: str, rec
     if _najdi_ef(db, entity, record_id) is not None:
         return {"skip": True}
     zaznam = raynet.get_record(resource, record_id)
-    deal_id = _vazba_id(zaznam, "deal")
+    # vazba na obch. případ – Raynet ji v detailu nabídky/objednávky vede pod
+    # názvem `businessCase`; tolerantně zkusíme i `deal`.
+    deal_id = _vazba_id(zaznam, "businessCase") or _vazba_id(zaznam, "deal")
     if deal_id is None:
         raise RuntimeError(f"{resource} {record_id} nemá navázaný obchodní případ (deal).")
     op = zajisti_slozku_op(db, raynet, drive, n, deal_id)
