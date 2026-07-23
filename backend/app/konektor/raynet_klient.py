@@ -10,8 +10,10 @@ document, file/attachment, webhook) přibudou v dalších fázích.
 
 import requests
 
-# DMS (modul Dokumenty) nepovoluje v názvech tyto znaky:
-_DMS_ZAKAZANE = set("~!@#$%^&*/'.,")
+# DMS (modul Dokumenty) nepovoluje v názvech tyto znaky. Hláška uvádí
+# ~!@#$%^&*/'., – reálně odmítá i uvozovky (rovné i typografické), proto
+# jsou přidané. Doplňujeme i další „nebezpečné“ znaky pro názvy.
+_DMS_ZAKAZANE = set("~!@#$%^&*/'.," + '"' + "„“”‚‘’" + "<>:|?\\")
 
 
 def dms_bezpecny_nazev(s: str) -> str:
