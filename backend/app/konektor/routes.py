@@ -462,31 +462,42 @@ def dokumenty_test_odkaz(
     vzor = (n.google_vzor_folder_id or "").strip()
     url = f"https://drive.google.com/drive/folders/{vzor}" if vzor else "https://drive.google.com/"
     nm = "TEST odkaz konektor (smaž mě)"
+    link_obj = {"link": url, "linkName": nm}
 
-    # zkoušíme kandidátní tvary; u KAŽDÉHO zaznamenáme výsledek (ať vidíme vzorec)
-    kandidati = [
-        ("link=Map{link,linkName}", {"name": nm, "link": {"link": url, "linkName": nm}}),
-        ("link=Map{url}+linkName", {"name": nm, "link": {"url": url}, "linkName": nm}),
-        ("link=Map{link}+linkName", {"name": nm, "link": {"link": url}, "linkName": nm}),
-        ("link=Map{url,linkName}", {"name": nm, "link": {"url": url, "linkName": nm}}),
-        ("link=str+linkName=str", {"name": nm, "link": url, "linkName": nm}),
-        ("link=Map{link,linkName}+top", {"name": nm, "link": {"link": url, "linkName": nm}, "linkName": nm}),
-    ]
     vysledky = []
+
+    # 1) nejdřív vytvoříme testovací složku (ověří PUT /dms/folder/ a dá folder id)
+    folder_id = None
+    try:
+        folder_id = raynet.create_document_folder("TEST konektor složka (smaž mě)")
+        vysledky.append({"krok": "vytvoření složky", "ok": True, "folder_id": folder_id})
+    except Exception as e:  # noqa: BLE001
+        vysledky.append({"krok": "vytvoření složky", "ok": False, "chyba": str(e)[:400]})
+
+    # 2) odkaz s tvarem link={link,linkName} + doplňující pole (kvůli eq(null))
+    kandidati = [
+        ("folder", {"name": nm, "link": link_obj, "folder": folder_id}),
+        ("folder+category=1", {"name": nm, "link": link_obj, "folder": folder_id, "category": 1}),
+        ("folder+securityLevel=1", {"name": nm, "link": link_obj, "folder": folder_id, "securityLevel": 1}),
+        ("folder+category+security", {"name": nm, "link": link_obj, "folder": folder_id, "category": 1, "securityLevel": 1}),
+        ("category+security(bez folder)", {"name": nm, "link": link_obj, "category": 1, "securityLevel": 1}),
+    ]
     uspesny = None
     for popis, telo in kandidati:
+        if "folder" in popis and folder_id is None:
+            continue  # bez id složky nemá smysl zkoušet folder-varianty
         try:
             data = raynet.put_dms_document(telo)
             vysledky.append({"tvar": popis, "ok": True, "odpoved": data})
             uspesny = popis
-            break  # první úspěch stačí
-        except Exception as e:  # noqa: BLE001 - zaznamenáme chybu a jdeme dál
+            break
+        except Exception as e:  # noqa: BLE001
             vysledky.append({"tvar": popis, "ok": False, "chyba": str(e)[:400]})
 
     zaloguj(db, "info" if uspesny else "warn", "dokumenty_test",
-            f"Test odkazu DMS – úspěšný tvar: {uspesny or 'žádný'}",
+            f"Test odkazu DMS – úspěšný tvar: {uspesny or 'žádný'}, folder_id={folder_id}",
             {"vysledky": vysledky})
-    return {"uspesny": uspesny, "vysledky": vysledky}
+    return {"uspesny": uspesny, "folder_id": folder_id, "vysledky": vysledky}
 
 
 @router.post("/import/rozsah")
