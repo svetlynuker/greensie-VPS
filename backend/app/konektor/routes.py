@@ -465,11 +465,9 @@ def dokumenty_test_odkaz(
 
     # pole `link` chce objekt (Map) – zkusíme kandidátní tvary, první úspěšný vyhrává
     kandidati = [
-        ("link={url}", {"name": nm, "link": {"url": url}}),
-        ("link={href}", {"name": nm, "link": {"href": url}}),
-        ("link={link}", {"name": nm, "link": {"link": url}}),
-        ("link={name,url}", {"name": nm, "link": {"name": nm, "url": url}}),
-        ("link={url,type}", {"name": nm, "link": {"url": url, "type": "URL"}}),
+        ("link={link,linkName}", {"name": nm, "link": {"link": url, "linkName": nm}}),
+        ("top-level link,linkName", {"name": nm, "link": url, "linkName": nm}),
+        ("link={url,linkName}", {"name": nm, "link": {"url": url, "linkName": nm}}),
     ]
     posledni = ""
     for popis, telo in kandidati:
