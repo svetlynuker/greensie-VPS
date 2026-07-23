@@ -314,12 +314,26 @@ async def webhook_raynet(request: Request, db: Session = Depends(get_db)):
     """
     telo = await _telo_jako_text(request)
 
-    # ověření původu: sdílené tajemství v hlavičce X-RAYNETCRM-TToken
+    # ověření původu: sdílené tajemství v hlavičce (tolerantně víc variant názvu)
     n = ziskej_nastaveni(db)
     ocekavany = (n.raynet_webhook_token or "").strip()
-    if ocekavany and request.headers.get("x-raynetcrm-ttoken") != ocekavany:
-        zaloguj(db, "warn", "webhook_raynet", "Odmítnut Raynet webhook – neplatný token.", {})
-        return {"prijato": False}
+    if ocekavany:
+        prijaty = None
+        for h in ("x-raynetcrm-ttoken", "x-raynetcrm-token", "x-raynet-ttoken", "x-raynet-token"):
+            if request.headers.get(h):
+                prijaty = request.headers.get(h)
+                break
+        if (prijaty or "").strip() != ocekavany:
+            # diagnostika: vypíšeme názvy hlaviček (bez hodnot) + hodnoty token-hlaviček
+            token_hlavicky = {
+                k: v for k, v in request.headers.items() if "token" in k.lower()
+            }
+            zaloguj(
+                db, "warn", "webhook_raynet",
+                "Odmítnut Raynet webhook – neplatný token.",
+                {"nazvy_hlavicek": list(request.headers.keys()), "token_hlavicky": token_hlavicky},
+            )
+            return {"prijato": False}
 
     udalost = _parse_raynet_event(telo)
     zaloguj(
