@@ -4,12 +4,12 @@ Most vede přes číslo obchodního případu (OP), které je unikátní a je so
 názvu projektu (konvence „OP-26-0223 – něco"):
 
     Freelo projekt  →  číslo OP z názvu  →  složka OP na Disku (z konektoru)
-                    →  podsložka „6. projekty"  →  odkaz uložený na projekt
+                    →  podsložka „6. projekt"  →  odkaz uložený na projekt
 
 Složku OP nehledáme na Disku naslepo – konektor už pro každý obchodní případ
 (Raynet `deal`) drží její ID a URL v `konektor_entity_folder`. Stačí najít
 záznam, jehož název začíná stejným číslem OP, a v té složce dohledat podsložku
-„6. projekty" (jediné volání Drive API na projekt).
+„6. projekt" (jediné volání Drive API na projekt).
 
 Ruční odkaz (`projekt.disk_rucni == True`) párování NIKDY nepřepíše.
 """
@@ -28,8 +28,8 @@ from app.matice.models import Projekt
 OP_REGEX = re.compile(r"OP-\d{2,}-\d+", re.IGNORECASE)
 
 # Název podsložky pod složkou OP, na kterou vede proklik. Hledá se
-# case-insensitive, takže „6. Projekty" i „6. projekty" projde.
-NAZEV_PODSLOZKY_PROJEKTY = "6. projekty"
+# case-insensitive, takže „6. Projekt" i „6. projekt" projde.
+NAZEV_PODSLOZKY_PROJEKTY = "6. projekt"
 
 
 def vytahni_op(nazev: str) -> str | None:
@@ -80,7 +80,7 @@ def _najdi_podslozku_ci(drive: DriveClient, parent_id: str, nazev: str) -> dict 
 
 
 def sparuj_projekt(db: Session, projekt: Projekt, drive: DriveClient) -> bool:
-    """Zkusí projektu nastavit `disk_url` (odkaz na „6. projekty" pod jeho OP).
+    """Zkusí projektu nastavit `disk_url` (odkaz na „6. projekt" pod jeho OP).
 
     Vrací True, když se odkaz nově nastavil. Ruční odkaz nepřepisuje. Volající
     zajišťuje commit. Jednotlivé kroky, které selžou (chybí OP v názvu, OP není
