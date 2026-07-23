@@ -85,6 +85,7 @@ function NastaveniKarta() {
         google_shared_drive_id: nast.google_shared_drive_id,
         google_root_folder_id: nast.google_root_folder_id,
         google_vzor_folder_id: nast.google_vzor_folder_id,
+        google_dms_zdroj_folder_id: nast.google_dms_zdroj_folder_id,
         kontejner_op: nast.kontejner_op,
         kontejner_nabidky: nast.kontejner_nabidky,
         kontejner_objednavky: nast.kontejner_objednavky,
@@ -226,6 +227,10 @@ function NastaveniKarta() {
         <div>
           <label style={labelStyl}>Kontejner – objednávky (v OP)</label>
           <input style={poleStyl} value={nast.kontejner_objednavky} onChange={(e) => nastav("kontejner_objednavky", e.target.value)} placeholder="5. objednávky" />
+        </div>
+        <div>
+          <label style={labelStyl}>Zdroj pro Dokumenty (DMS) – ID složky</label>
+          <input style={poleStyl} value={nast.google_dms_zdroj_folder_id} onChange={(e) => nastav("google_dms_zdroj_folder_id", e.target.value)} placeholder="obsah této složky se zrcadlí do RN Dokumentů" />
         </div>
         <div>
           <label style={labelStyl}>Impersonovaný uživatel (delegace, volitelné)</label>
