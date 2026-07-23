@@ -241,7 +241,7 @@ class RaynetClient:
         Model odkazů: soubor zůstává na Disku, DMS drží jen odkaz. `folder_id`
         = id nadřazené složky v DMS. Tvar `link` objektu ověřen diagnostikou.
         """
-        telo: dict = {"name": name, "link": {"url": url_value}}
+        telo: dict = {"name": name, "link": {"link": url_value, "linkName": name}}
         if folder_id:
             telo["folder"] = int(folder_id)
         return self.put_dms_document(telo, timeout=timeout)
