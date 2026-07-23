@@ -19,7 +19,7 @@ import json
 
 from app.konektor import crypto, fronta, google_klient, logika
 from app.konektor.logger import zaloguj
-from app.konektor.models import KonektorLog, KonektorNastaveni
+from app.konektor.models import KonektorJobQueue, KonektorLog, KonektorNastaveni
 from app.konektor.raynet_klient import RaynetClient
 from app.konektor.schemas import (
     KonektorLogOut,
@@ -284,18 +284,80 @@ def rucni_vytvor_slozku(
 
 @router.post("/webhooks/drive")
 async def webhook_drive(request: Request, db: Session = Depends(get_db)):
-    """Příjem Google Drive push notifikace (hlavičky X-Goog-*)."""
+    """Příjem Google Drive push notifikace (hlavičky X-Goog-*).
+
+    Ověří channel token, a pokud jde o reálnou změnu (ne úvodní „sync“),
+    zařadí úlohu reconcile (drive_zmeny). Dedup: nekupí víc pending úloh.
+    """
     stav = request.headers.get("x-goog-resource-state")
     kanal = request.headers.get("x-goog-channel-id")
+    token = request.headers.get("x-goog-channel-token")
+
+    ocekavany = logika.webhook_token()
+    if ocekavany and token != ocekavany:
+        zaloguj(db, "warn", "webhook_drive", "Odmítnut push – neplatný channel token.",
+                {"channel_id": kanal})
+        return {"prijato": False}
+
+    zarazeno = False
+    if stav and stav != "sync":
+        existuje = (
+            db.query(KonektorJobQueue)
+            .filter(KonektorJobQueue.typ == "drive_zmeny", KonektorJobQueue.status == "pending")
+            .first()
+        )
+        if existuje is None:
+            fronta.zarad(db, "drive_zmeny", {})
+            zarazeno = True
+
     zaloguj(
-        db,
-        uroven="info",
-        udalost="webhook_drive",
-        zprava=f"Přijat Google Drive push – stav={stav}, kanál={kanal}",
-        kontext={
-            "resource_state": stav,
-            "channel_id": kanal,
-            "resource_id": request.headers.get("x-goog-resource-id"),
-        },
+        db, "info", "webhook_drive",
+        f"Přijat Google Drive push – stav={stav}, kanál={kanal}"
+        + (" → zařazen reconcile" if zarazeno else ""),
+        {"resource_state": stav, "channel_id": kanal, "zarazeno": zarazeno},
     )
     return {"prijato": True}
+
+
+@router.post("/reconcile")
+def rucni_reconcile(
+    _user: User = Depends(vyzaduj_pravo_konektor),
+    db: Session = Depends(get_db),
+):
+    """Ruční spuštění reconcile (Disk → Raynet)."""
+    try:
+        return logika.zpracuj_drive_zmeny(db)
+    except logika.NastaveniNepripraveno as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        zaloguj(db, "error", "reconcile", f"Ruční reconcile selhal: {e}")
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.get("/watch")
+def watch_stav(
+    _user: User = Depends(vyzaduj_pravo_konektor),
+    db: Session = Depends(get_db),
+):
+    return logika.stav_watch(db)
+
+
+@router.post("/watch")
+def watch_registruj(
+    _user: User = Depends(vyzaduj_pravo_konektor),
+    db: Session = Depends(get_db),
+):
+    try:
+        return logika.registruj_watch(db)
+    except logika.NastaveniNepripraveno as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.delete("/watch")
+def watch_zrus(
+    _user: User = Depends(vyzaduj_pravo_konektor),
+    db: Session = Depends(get_db),
+):
+    return logika.zrus_watch(db)

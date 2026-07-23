@@ -110,6 +110,43 @@ class KonektorClientFolderMap(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_ted, onupdate=_ted)
 
 
+class KonektorFileMap(Base):
+    """Mapování dokument (Raynet) ↔ soubor na Disku (spec kap. 7, file_map)."""
+
+    __tablename__ = "konektor_file_map"
+
+    id = Column(Integer, primary_key=True, index=True)
+    raynet_company_id = Column(BigInteger, nullable=True, index=True)
+    raynet_document_id = Column(String, nullable=True, unique=True)  # ID odkaz. dokumentu (TO VERIFY tvar)
+    drive_file_id = Column(String, nullable=False, unique=True)
+    drive_file_url = Column(String, nullable=False, default="", server_default="")
+    file_name = Column(String, nullable=True)
+    content_hash = Column(String, nullable=True)  # jen pro Model B (zrcadlení)
+    last_synced_source = Column(String, nullable=True)  # 'drive' | 'raynet' (echo suppression)
+    state = Column(String, nullable=False, default="active", server_default="active")  # active|trashed
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_ted, onupdate=_ted)
+
+
+class KonektorDriveChannel(Base):
+    """Google Drive push kanál (kvůli obnově; spec kap. 7, drive_channels)."""
+
+    __tablename__ = "konektor_drive_channels"
+
+    channel_id = Column(String, primary_key=True)
+    resource_id = Column(String, nullable=False)
+    expiration = Column(DateTime(timezone=True), nullable=False)
+    page_token = Column(String, nullable=True)
+
+
+class KonektorDriveChangeState(Base):
+    """Uložený page token pro changes.list (spec kap. 7, jeden řádek id=1)."""
+
+    __tablename__ = "konektor_drive_change_state"
+
+    id = Column(Integer, primary_key=True)
+    page_token = Column(String, nullable=False, default="", server_default="")
+
+
 class KonektorProcessedEvent(Base):
     """Idempotence příchozích událostí (spec kap. 7, processed_events).
 

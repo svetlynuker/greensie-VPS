@@ -90,3 +90,33 @@ class RaynetClient:
             url, auth=(self.api_user, self.api_key), headers=self._headers(), json=telo, timeout=timeout
         )
         return self._over_odpoved(r, f"Zápis odkazu do company {company_id}")
+
+    # ---- operace pro FR2a (Flow B, Disk → Raynet) ----
+    def create_link_document(
+        self, company_id: int, name: str, url_value: str, timeout: int = 20
+    ) -> int:
+        """Vytvoří v Raynetu odkazový dokument na soubor na Disku. Vrací jeho id.
+
+        TO VERIFY: přesný tvar PUT /document/document/ (pole pro URL a relaci na
+        company) není zdokumentovaný. Tělo je nejlepší odhad podle konvencí
+        Raynetu; po ověření reálným voláním se upraví.
+        """
+        endpoint = f"{self.base_url}document/document/"
+        telo = {
+            "name": name,
+            "url": url_value,
+            "company": {"id": company_id},
+        }
+        r = requests.put(
+            endpoint, auth=(self.api_user, self.api_key), headers=self._headers(), json=telo, timeout=timeout
+        )
+        data = self._over_odpoved(r, f"Vytvoření odkazového dokumentu pro company {company_id}")
+        return int(data.get("id")) if isinstance(data, dict) and data.get("id") is not None else 0
+
+    def delete_document(self, document_id: str, timeout: int = 20) -> None:
+        """Smaže dokument v Raynetu (DELETE /document/{id}/)."""
+        endpoint = f"{self.base_url}document/{document_id}/"
+        r = requests.delete(
+            endpoint, auth=(self.api_user, self.api_key), headers=self._headers(), timeout=timeout
+        )
+        self._over_odpoved(r, f"Smazání dokumentu {document_id}")

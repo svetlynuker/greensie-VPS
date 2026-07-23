@@ -10,6 +10,10 @@ import {
   konektorLogy as apiKonektorLogy,
   konektorSmazLogy,
   konektorVytvorSlozku,
+  konektorReconcile,
+  konektorWatchStav,
+  konektorWatchRegistruj,
+  konektorWatchZrus,
 } from "../api";
 
 const poleStyl = {
@@ -336,6 +340,78 @@ function RucniAkceKarta() {
   );
 }
 
+/* =================== Karta: Synchronizace Disk → Raynet =================== */
+function SyncDiskKarta({ onChyba }) {
+  const [reconciluje, setReconciluje] = useState(false);
+  const [vysledek, setVysledek] = useState(null);
+  const [watch, setWatch] = useState(null);
+  const [watchBezi, setWatchBezi] = useState(false);
+
+  const nactiWatch = useCallback(() => {
+    konektorWatchStav().then(setWatch).catch(() => setWatch(null));
+  }, []);
+
+  useEffect(() => {
+    nactiWatch();
+  }, [nactiWatch]);
+
+  async function reconcile() {
+    setReconciluje(true);
+    setVysledek(null);
+    try {
+      const v = await konektorReconcile();
+      setVysledek(
+        v.inicializace
+          ? "Sledování změn inicializováno (od teď se sledují nové soubory)."
+          : `Hotovo – vytvořeno ${v.vytvoreno}, aktualizováno ${v.aktualizovano}, smazáno ${v.smazano}.`
+      );
+    } catch (e) {
+      onChyba(e);
+    } finally {
+      setReconciluje(false);
+    }
+  }
+
+  async function prepniWatch() {
+    setWatchBezi(true);
+    try {
+      if (watch?.aktivni) await konektorWatchZrus();
+      else await konektorWatchRegistruj();
+      nactiWatch();
+    } catch (e) {
+      onChyba(e);
+    } finally {
+      setWatchBezi(false);
+    }
+  }
+
+  return (
+    <div className="fm-card" style={{ padding: 16 }}>
+      <strong style={{ fontSize: 15 }}>Synchronizace Disk → Raynet</strong>
+      <p style={{ margin: "4px 0 12px", fontSize: 13, color: "var(--fm-muted)", lineHeight: 1.5 }}>
+        Soubory přidané do složek klientů na Disku se v Raynetu objeví jako odkazové dokumenty.
+        Změny se stahují periodicky (reconcile) a případně okamžitě přes push (watch).
+      </p>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <button className="fm-btn fm-primary" onClick={reconcile} disabled={reconciluje}>
+          {reconciluje ? "Zpracovávám…" : "Spustit reconcile teď"}
+        </button>
+        <button className="fm-btn" onClick={prepniWatch} disabled={watchBezi}>
+          {watchBezi ? "Pracuji…" : watch?.aktivni ? "Vypnout push (watch)" : "Zapnout push (watch)"}
+        </button>
+        <span style={{ fontSize: 13, color: "var(--fm-muted)" }}>
+          {watch == null
+            ? ""
+            : watch.aktivni
+            ? `Push aktivní, platí do ${new Date(watch.expiration).toLocaleString("cs-CZ")}`
+            : "Push neaktivní"}
+        </span>
+      </div>
+      {vysledek && <div style={{ marginTop: 12, fontSize: 13, color: "var(--fm-brand-dk)" }}>{vysledek}</div>}
+    </div>
+  );
+}
+
 /* =================== Panel: Logy konektoru =================== */
 const UROVEN_STYL = {
   debug: { text: "debug", barva: "var(--fm-muted)" },
@@ -514,6 +590,7 @@ export default function Konektor() {
         <h2 style={{ margin: 0, fontSize: 18 }}>Konektor Raynet ↔ Google Disk</h2>
         <NastaveniKarta />
         <RucniAkceKarta />
+        <SyncDiskKarta onChyba={osetriChybu} />
         <LogyPanel onChyba={osetriChybu} />
       </div>
     </Layout>

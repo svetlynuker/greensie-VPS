@@ -73,6 +73,82 @@ class DriveClient:
                 return f
         return None
 
+    def get_file(self, file_id: str) -> dict:
+        """Detail souboru vč. rodičů a příznaku trashed."""
+        return (
+            self.service.files()
+            .get(
+                fileId=file_id,
+                fields="id,name,mimeType,webViewLink,parents,trashed,md5Checksum,appProperties",
+                supportsAllDrives=True,
+            )
+            .execute()
+        )
+
+    # ---- inkrementální změny (changes.list) ----
+    def get_start_page_token(self, drive_id: str) -> str:
+        vysledek = (
+            self.service.changes()
+            .getStartPageToken(driveId=drive_id, supportsAllDrives=True)
+            .execute()
+        )
+        return vysledek.get("startPageToken", "")
+
+    def list_changes(self, page_token: str, drive_id: str) -> tuple[list[dict], str]:
+        """Vrátí (změny, nový_page_token). Prochází všechny stránky změn."""
+        zmeny: list[dict] = []
+        token = page_token
+        novy_token = page_token
+        while token:
+            vysledek = (
+                self.service.changes()
+                .list(
+                    pageToken=token,
+                    driveId=drive_id,
+                    spaces="drive",
+                    includeItemsFromAllDrives=True,
+                    supportsAllDrives=True,
+                    fields=(
+                        "nextPageToken,newStartPageToken,"
+                        "changes(fileId,removed,file(id,name,mimeType,webViewLink,parents,trashed,appProperties))"
+                    ),
+                    pageSize=200,
+                )
+                .execute()
+            )
+            zmeny.extend(vysledek.get("changes", []))
+            if vysledek.get("nextPageToken"):
+                token = vysledek["nextPageToken"]
+            else:
+                novy_token = vysledek.get("newStartPageToken", token)
+                break
+        return zmeny, novy_token
+
+    # ---- push kanály (files/changes.watch) ----
+    def watch_changes(self, page_token: str, drive_id: str, channel_id: str, address: str, token: str, ttl_s: int = 604800) -> dict:
+        """Zaregistruje push kanál na změny Shared Drive → `address` (náš webhook)."""
+        body = {
+            "id": channel_id,
+            "type": "web_hook",
+            "address": address,
+            "token": token,
+            "expiration": None,  # necháme na Google (max ~ týden), řídíme obnovou
+        }
+        return (
+            self.service.changes()
+            .watch(
+                pageToken=page_token,
+                driveId=drive_id,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+                body=body,
+            )
+            .execute()
+        )
+
+    def stop_channel(self, channel_id: str, resource_id: str) -> None:
+        self.service.channels().stop(body={"id": channel_id, "resourceId": resource_id}).execute()
+
 
 def test_spojeni(
     sa_json_str: str,

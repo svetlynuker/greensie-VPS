@@ -15,15 +15,18 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.konektor.logger import zaloguj
-from app.konektor.models import KonektorJobQueue
+from app.konektor.logika import NastaveniNepripraveno
+from app.konektor.models import KonektorJobQueue, KonektorNastaveni
 
 KONTROLA_S = 5  # jak často worker kontroluje frontu
 START_PRODLEVA_S = 10  # počkat po startu, než se rozběhne zbytek backendu
 MAX_POKUSU = 6
 DAVKA = 10  # kolik úloh zpracovat v jednom cyklu
+WATCH_KONTROLA_S = 300  # jak často kontrolovat/obnovovat push kanál
 
 _stop = threading.Event()
 _thread: threading.Thread | None = None
+_dalsi_watch_kontrola: datetime | None = None
 
 
 def _ted() -> datetime:
@@ -37,10 +40,12 @@ def _backoff_s(attempts: int) -> int:
 
 def _zpracuj_job(db: Session, job: KonektorJobQueue) -> None:
     """Vykoná jednu úlohu podle typu. Chyba probublá k retry logice."""
-    from app.konektor.logika import zpracuj_novy_klient
+    from app.konektor.logika import zpracuj_drive_zmeny, zpracuj_novy_klient
 
     if job.typ == "novy_klient":
         zpracuj_novy_klient(db, int(job.payload["company_id"]))
+    elif job.typ == "drive_zmeny":
+        zpracuj_drive_zmeny(db)
     else:
         raise RuntimeError(f"Neznámý typ úlohy: {job.typ}")
 
@@ -62,6 +67,15 @@ def _tik() -> None:
                 job.status = "done"
                 job.last_error = None
                 db.commit()
+            except NastaveniNepripraveno as e:
+                # bez přístupů nemá smysl opakovat – úlohu odložíme jako hotovou
+                db.rollback()
+                job = db.get(KonektorJobQueue, job_id)
+                if job is not None:
+                    job.status = "done"
+                    job.last_error = f"Přeskočeno – {e}"
+                    db.commit()
+                zaloguj(db, "info", "job", f"Úloha {job.typ} #{job_id} přeskočena: {e}", {"job_id": job_id})
             except Exception as e:  # noqa: BLE001 - úlohu nesmí shodit celý worker
                 db.rollback()
                 job = db.get(KonektorJobQueue, job_id)  # po rollbacku znovu načíst
@@ -90,14 +104,76 @@ def _tik() -> None:
         db.close()
 
 
+def _mozna_reconcile() -> None:
+    """Periodický reconcile (changes.list) dle intervalu, jen když je automatika
+    zapnutá. Stav se drží v KonektorNastaveni.posledni_beh/posledni_vysledek."""
+    from app.konektor.logika import zpracuj_drive_zmeny
+
+    db = SessionLocal()
+    try:
+        n = db.get(KonektorNastaveni, 1)
+        if n is None or not n.auto_zapnuto:
+            return
+        ted = _ted()
+        if n.posledni_beh is not None:
+            dalsi = n.posledni_beh + timedelta(minutes=max(5, n.reconcile_interval_min))
+            if ted < dalsi:
+                return
+        try:
+            v = zpracuj_drive_zmeny(db)
+            if v.get("inicializace"):
+                n.posledni_vysledek = "Sledování změn inicializováno (od teď)."
+            else:
+                n.posledni_vysledek = (
+                    f"OK – vytvořeno {v['vytvoreno']}, aktualizováno {v['aktualizovano']}, "
+                    f"smazáno {v['smazano']}"
+                )
+        except NastaveniNepripraveno as e:
+            n.posledni_vysledek = f"Čeká na přístupy: {e}"
+        except Exception as e:  # noqa: BLE001
+            db.rollback()
+            n = db.get(KonektorNastaveni, 1)
+            n.posledni_vysledek = f"Chyba: {e}"
+        n.posledni_beh = _ted()
+        db.commit()
+    finally:
+        db.close()
+
+
+def _mozna_obnov_watch() -> None:
+    """Obnova push kanálu, jen když je automatika zapnutá. Throttluje se."""
+    global _dalsi_watch_kontrola
+    ted = _ted()
+    if _dalsi_watch_kontrola is not None and ted < _dalsi_watch_kontrola:
+        return
+    _dalsi_watch_kontrola = ted + timedelta(seconds=WATCH_KONTROLA_S)
+
+    from app.konektor.logika import obnov_watch_pokud_treba
+
+    db = SessionLocal()
+    try:
+        n = db.get(KonektorNastaveni, 1)
+        if n is None or not n.auto_zapnuto:
+            return
+        try:
+            obnov_watch_pokud_treba(db)
+        except NastaveniNepripraveno:
+            pass
+        except Exception:  # noqa: BLE001 - obnova watch nesmí shodit worker
+            db.rollback()
+    finally:
+        db.close()
+
+
 def _smycka() -> None:
     if _stop.wait(START_PRODLEVA_S):
         return
     while not _stop.is_set():
-        try:
-            _tik()
-        except Exception:  # noqa: BLE001 - vlákno nesmí nikdy spadnout
-            pass
+        for krok in (_tik, _mozna_reconcile, _mozna_obnov_watch):
+            try:
+                krok()
+            except Exception:  # noqa: BLE001 - vlákno nesmí nikdy spadnout
+                pass
         _stop.wait(KONTROLA_S)
 
 

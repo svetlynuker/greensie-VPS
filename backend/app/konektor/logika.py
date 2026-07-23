@@ -7,12 +7,22 @@ odkaz zpět do vlastního pole company v Raynetu.
 Idempotence: pokud už mapování pro company existuje, složky se znovu netvoří.
 """
 
+import os
+import secrets
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy.orm import Session
 
 from app.konektor import crypto
-from app.konektor.google_klient import DriveClient
+from app.konektor.google_klient import FOLDER_MIME, DriveClient
 from app.konektor.logger import zaloguj
-from app.konektor.models import KonektorClientFolderMap, KonektorNastaveni
+from app.konektor.models import (
+    KonektorClientFolderMap,
+    KonektorDriveChangeState,
+    KonektorDriveChannel,
+    KonektorFileMap,
+    KonektorNastaveni,
+)
 from app.konektor.raynet_klient import RaynetClient
 
 
@@ -105,3 +115,240 @@ def zpracuj_novy_klient(db: Session, company_id: int) -> dict:
         {"company_id": company_id, "drive_folder_id": root_id, "odkaz_ok": odkaz_ok},
     )
     return {"drive_folder_id": root_id, "drive_folder_url": root_url, "odkaz_ok": odkaz_ok}
+
+
+# =================== Flow B: Disk → Raynet (FR2a) ===================
+def _resolve_company(drive: DriveClient, file: dict, root_index: dict, cache: dict) -> int | None:
+    """Zjistí, kterému klientovi soubor patří – jde přes rodiče až ke kořenové
+    složce klienta (drive_folder_id v client_folder_map). None = mimo klienty."""
+    to_visit = list(file.get("parents") or [])
+    seen: set[str] = set()
+    depth = 0
+    while to_visit and depth < 30:
+        depth += 1
+        pid = to_visit.pop(0)
+        if pid in root_index:
+            return root_index[pid]
+        if pid in cache:
+            if cache[pid] is not None:
+                return cache[pid]
+            continue
+        if pid in seen:
+            continue
+        seen.add(pid)
+        try:
+            rodic = drive.get_file(pid)
+        except Exception:  # noqa: BLE001 - nedostupný rodič nezastaví ostatní
+            cache[pid] = None
+            continue
+        cache[pid] = None
+        to_visit.extend(rodic.get("parents") or [])
+    return None
+
+
+def zpracuj_drive_zmeny(db: Session) -> dict:
+    """Načte změny ze Shared Drive a promítne je do Raynetu jako odkazové dokumenty.
+
+    Model odkazů (D1): Disk je zdroj obsahu, Raynet drží jen odkaz. Složky a
+    vlastní zápisy konektoru (appProperties.origin=='raynet') se přeskakují.
+    Idempotence: stav sledujeme přes uložený page token; už namapované soubory
+    se znovu nevytvářejí.
+    """
+    n = db.get(KonektorNastaveni, 1)
+    if n is None:
+        raise NastaveniNepripraveno("Nastavení konektoru neexistuje.")
+    raynet, drive = vytvor_klienty(n)
+
+    stav = db.get(KonektorDriveChangeState, 1)
+    if stav is None:
+        stav = KonektorDriveChangeState(id=1, page_token="")
+        db.add(stav)
+        db.commit()
+
+    if not stav.page_token:
+        # první spuštění: začneme sledovat od teď (nevytváříme odkazy zpětně –
+        # historii řeší volitelná migrace F7)
+        stav.page_token = drive.get_start_page_token(n.google_shared_drive_id)
+        db.commit()
+        zaloguj(db, "info", "reconcile", "Sledování změn Disku inicializováno (od teď).",
+                {"page_token_set": True})
+        return {"inicializace": True, "vytvoreno": 0, "smazano": 0, "aktualizovano": 0}
+
+    zmeny, novy_token = drive.list_changes(stav.page_token, n.google_shared_drive_id)
+
+    mapy = db.query(KonektorClientFolderMap).all()
+    root_index = {m.drive_folder_id: m.raynet_company_id for m in mapy}
+    cache: dict = {}
+
+    vytvoreno = smazano = aktualizovano = 0
+
+    for ch in zmeny:
+        file = ch.get("file")
+        file_id = ch.get("fileId")
+
+        # smazání / přesun do koše → odeber odkaz v Raynetu
+        if ch.get("removed") or (file and file.get("trashed")):
+            fm = db.query(KonektorFileMap).filter(KonektorFileMap.drive_file_id == file_id).first()
+            if fm and fm.state != "trashed":
+                if fm.raynet_document_id:
+                    try:
+                        raynet.delete_document(fm.raynet_document_id)
+                    except Exception as e:  # noqa: BLE001
+                        zaloguj(db, "warn", "sync_smazani",
+                                f"Odkaz v Raynetu se nepodařilo smazat: {e}", {"drive_file_id": file_id})
+                fm.state = "trashed"
+                db.commit()
+                smazano += 1
+            continue
+
+        if not file or file.get("mimeType") == FOLDER_MIME:
+            continue  # složky řeší až FR3 (zrcadlení stromu)
+        if (file.get("appProperties") or {}).get("origin") == "raynet":
+            continue  # echo suppression – náš vlastní zápis
+
+        company_id = _resolve_company(drive, file, root_index, cache)
+        if company_id is None:
+            continue  # soubor mimo klientské složky
+
+        url = file.get("webViewLink", "")
+        name = file.get("name", "")
+        fm = db.query(KonektorFileMap).filter(KonektorFileMap.drive_file_id == file["id"]).first()
+
+        if fm and fm.raynet_document_id and fm.state == "active":
+            # už namapováno – jen osvěžíme metadata (odkaz se nemění)
+            fm.drive_file_url = url
+            fm.file_name = name
+            fm.last_synced_source = "drive"
+            db.commit()
+            aktualizovano += 1
+            continue
+
+        doc_id = raynet.create_link_document(company_id, name, url)
+        if fm is None:
+            fm = KonektorFileMap(drive_file_id=file["id"])
+            db.add(fm)
+        fm.raynet_company_id = company_id
+        fm.raynet_document_id = str(doc_id)
+        fm.drive_file_url = url
+        fm.file_name = name
+        fm.last_synced_source = "drive"
+        fm.state = "active"
+        db.commit()
+        vytvoreno += 1
+
+    stav.page_token = novy_token
+    db.commit()
+
+    zaloguj(
+        db, "info", "reconcile",
+        f"Změny Disku zpracovány – vytvořeno {vytvoreno}, aktualizováno {aktualizovano}, smazáno {smazano}.",
+        {"vytvoreno": vytvoreno, "aktualizovano": aktualizovano, "smazano": smazano, "zmen": len(zmeny)},
+    )
+    return {"vytvoreno": vytvoreno, "aktualizovano": aktualizovano, "smazano": smazano, "zmen": len(zmeny)}
+
+
+# =================== Google Drive push (watch) ===================
+def webhook_token() -> str:
+    """Token, kterým Google značí push notifikace (X-Goog-Channel-Token)."""
+    return os.environ.get("KONEKTOR_WEBHOOK_SECRET", "")
+
+
+def public_base_url() -> str:
+    """Veřejná základní URL appky (pro adresu push endpointu)."""
+    return (
+        os.environ.get("PUBLIC_BASE_URL")
+        or os.environ.get("APP_URL")
+        or "https://167-235-254-188.sslip.io"
+    ).rstrip("/")
+
+
+def drive_webhook_address() -> str:
+    return f"{public_base_url()}/api/konektor/webhooks/drive"
+
+
+def _ms_na_datetime(ms) -> datetime:
+    try:
+        return datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc)
+    except (ValueError, TypeError):
+        return datetime.now(timezone.utc) + timedelta(days=7)
+
+
+def registruj_watch(db: Session) -> dict:
+    """Zaregistruje Google Drive push kanál na náš webhook. Vrací info o kanálu."""
+    n = db.get(KonektorNastaveni, 1)
+    if n is None:
+        raise NastaveniNepripraveno("Nastavení konektoru neexistuje.")
+    _, drive = vytvor_klienty(n)
+
+    stav = db.get(KonektorDriveChangeState, 1)
+    if stav is None:
+        stav = KonektorDriveChangeState(id=1, page_token="")
+        db.add(stav)
+        db.commit()
+    if not stav.page_token:
+        stav.page_token = drive.get_start_page_token(n.google_shared_drive_id)
+        db.commit()
+
+    channel_id = "konektor-" + secrets.token_hex(8)
+    resp = drive.watch_changes(
+        stav.page_token, n.google_shared_drive_id, channel_id, drive_webhook_address(), webhook_token()
+    )
+    kanal = KonektorDriveChannel(
+        channel_id=channel_id,
+        resource_id=resp.get("resourceId", ""),
+        expiration=_ms_na_datetime(resp.get("expiration")),
+        page_token=stav.page_token,
+    )
+    db.add(kanal)
+    db.commit()
+    zaloguj(db, "info", "watch", f"Zaregistrován push kanál {channel_id}.",
+            {"channel_id": channel_id, "expiration": kanal.expiration.isoformat()})
+    return {"channel_id": channel_id, "expiration": kanal.expiration.isoformat()}
+
+
+def zrus_watch(db: Session) -> dict:
+    """Zastaví a smaže všechny push kanály."""
+    n = db.get(KonektorNastaveni, 1)
+    kanaly = db.query(KonektorDriveChannel).all()
+    if kanaly and n is not None:
+        try:
+            _, drive = vytvor_klienty(n)
+            for ch in kanaly:
+                try:
+                    drive.stop_channel(ch.channel_id, ch.resource_id)
+                except Exception:  # noqa: BLE001 - kanál mohl už expirovat
+                    pass
+        except NastaveniNepripraveno:
+            pass
+    pocet = len(kanaly)
+    for ch in kanaly:
+        db.delete(ch)
+    db.commit()
+    zaloguj(db, "info", "watch", f"Zrušeno push kanálů: {pocet}.", {"zruseno": pocet})
+    return {"zruseno": pocet}
+
+
+def obnov_watch_pokud_treba(db: Session) -> dict:
+    """Obnoví push kanál, pokud žádný není nebo nejnovější brzy expiruje.
+
+    Volá se z workeru jen když je automatika zapnutá.
+    """
+    ted = datetime.now(timezone.utc)
+    nejnovejsi = (
+        db.query(KonektorDriveChannel).order_by(KonektorDriveChannel.expiration.desc()).first()
+    )
+    if nejnovejsi is not None and nejnovejsi.expiration > ted + timedelta(hours=24):
+        return {"obnoveno": False}
+    zrus_watch(db)
+    registruj_watch(db)
+    return {"obnoveno": True}
+
+
+def stav_watch(db: Session) -> dict:
+    """Informace o aktuálním push kanálu pro UI."""
+    nejnovejsi = (
+        db.query(KonektorDriveChannel).order_by(KonektorDriveChannel.expiration.desc()).first()
+    )
+    if nejnovejsi is None:
+        return {"aktivni": False, "expiration": None}
+    return {"aktivni": True, "channel_id": nejnovejsi.channel_id, "expiration": nejnovejsi.expiration.isoformat()}

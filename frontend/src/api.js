@@ -379,6 +379,22 @@ export function konektorVytvorSlozku(companyId) {
   return zavolej(`/konektor/klient/${companyId}/slozka`, { method: "POST" });
 }
 
+export function konektorReconcile() {
+  return zavolej("/konektor/reconcile", { method: "POST" });
+}
+
+export function konektorWatchStav() {
+  return zavolej("/konektor/watch");
+}
+
+export function konektorWatchRegistruj() {
+  return zavolej("/konektor/watch", { method: "POST" });
+}
+
+export function konektorWatchZrus() {
+  return zavolej("/konektor/watch", { method: "DELETE" });
+}
+
 // ---- Přehled změn (Pohled 3) ----
 export function nactiZmeny({ od, do: doDatum } = {}) {
   const p = new URLSearchParams();
