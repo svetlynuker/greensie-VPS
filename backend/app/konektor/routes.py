@@ -78,6 +78,7 @@ def _nastaveni_out(n: KonektorNastaveni) -> KonektorNastaveniOut:
         google_shared_drive_id=n.google_shared_drive_id,
         google_root_folder_id=n.google_root_folder_id,
         google_vzor_folder_id=n.google_vzor_folder_id,
+        google_dms_zdroj_folder_id=n.google_dms_zdroj_folder_id,
         kontejner_op=n.kontejner_op,
         kontejner_nabidky=n.kontejner_nabidky,
         kontejner_objednavky=n.kontejner_objednavky,
@@ -137,6 +138,7 @@ def uloz_nastaveni(
     n.google_shared_drive_id = vstup.google_shared_drive_id.strip()
     n.google_root_folder_id = vstup.google_root_folder_id.strip()
     n.google_vzor_folder_id = vstup.google_vzor_folder_id.strip()
+    n.google_dms_zdroj_folder_id = vstup.google_dms_zdroj_folder_id.strip()
     # prázdný název kontejneru = ponech výchozí (jinak by se nedal najít)
     n.kontejner_op = vstup.kontejner_op.strip() or VYCHOZI_KONTEJNER_OP
     n.kontejner_nabidky = vstup.kontejner_nabidky.strip() or VYCHOZI_KONTEJNER_NABIDKY

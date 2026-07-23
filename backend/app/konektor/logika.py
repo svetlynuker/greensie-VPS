@@ -617,41 +617,34 @@ def zpracuj_raynet_dokument(db: Session, document_id: str, company_id: int | Non
     return {"drive_file_id": nahrany["id"], "drive_file_url": nahrany.get("webViewLink", "")}
 
 
-# =================== Flow C: zrcadlení stromu (FR3) ===================
-def _zajisti_mirror_slozku(
-    db: Session, raynet: RaynetClient, drive_id: str, name: str, raynet_parent: str | None
-) -> str:
-    """Vrátí raynet_id zrcadlené složky; vytvoří ji, pokud ještě neexistuje."""
-    m = db.get(KonektorTreeMirror, drive_id)
-    if m is not None:
-        return m.raynet_id
-    rid = str(raynet.create_document_folder(name, raynet_parent))
-    db.add(KonektorTreeMirror(drive_id=drive_id, raynet_id=rid, je_slozka=True))
-    db.commit()
-    return rid
-
-
+# =================== Flow C: zrcadlení do modulu Dokumenty (DMS, FR3) ===================
 def zrcadli_strom(db: Session) -> dict:
-    """Zrcadlí strom Shared Drive do modulu Dokumenty v Raynetu (FR3).
+    """Zrcadlí OBSAH zdrojové složky na Disku do modulu Dokumenty (DMS) v Raynetu.
 
-    Složky → složky, soubory → odkazové dokumenty. Idempotentní přes
-    tree_mirror (opakované spuštění jen doplní nové položky). Full walk se
-    spouští na vyžádání; inkrementální údržba je zjednodušená (znovu-spuštění).
+    Zdroj = `google_dms_zdroj_folder_id`; zrcadlí se jeho podsložky a jejich
+    potomci (ne zdrojová složka samotná). Podsložky → složky v Dokumentech
+    (`PUT /dms/folder/`), soubory → odkazy na Disk (`PUT /dms/document/`,
+    pole link). Soubory ležící přímo v kořeni zdroje se přeskočí (DMS dokument
+    musí být ve složce). Idempotentní přes tree_mirror – opakované spuštění jen
+    doplní nové položky (mazání/přejmenování zatím neřeší).
     """
     n = db.get(KonektorNastaveni, 1)
     if n is None:
         raise NastaveniNepripraveno("Nastavení konektoru neexistuje.")
     raynet, drive = vytvor_klienty(n)
 
-    root_drive = n.google_shared_drive_id
-    root_raynet = _zajisti_mirror_slozku(db, raynet, root_drive, "Google Disk", None)
+    zdroj = (n.google_dms_zdroj_folder_id or "").strip()
+    if not zdroj:
+        raise NastaveniNepripraveno("Není nastavena zdrojová složka pro zrcadlení do Dokumentů.")
 
-    vytvoreno_slozek = vytvoreno_souboru = 0
-    fronta = [(root_drive, root_raynet)]
+    vytvoreno_slozek = vytvoreno_souboru = preskoceno = 0
+    # fronta: (drive_folder_id, dms_parent_id) – zpracováváme OBSAH drive_folder_id
+    # do složky dms_parent_id (None = kořen Dokumentů)
+    fronta: list[tuple[str, int | None]] = [(zdroj, None)]
     navstivene: set[str] = set()
 
     while fronta:
-        drive_folder_id, raynet_parent = fronta.pop()
+        drive_folder_id, dms_parent = fronta.pop()
         if drive_folder_id in navstivene:
             continue
         navstivene.add(drive_folder_id)
@@ -661,31 +654,34 @@ def zrcadli_strom(db: Session) -> dict:
             existuje = db.get(KonektorTreeMirror, cid)
             if child.get("mimeType") == FOLDER_MIME:
                 if existuje is None:
-                    rid = str(raynet.create_document_folder(child.get("name", ""), raynet_parent))
-                    db.add(KonektorTreeMirror(drive_id=cid, raynet_id=rid, je_slozka=True))
+                    dms_id = raynet.create_document_folder(child.get("name", ""), dms_parent)
+                    db.add(KonektorTreeMirror(drive_id=cid, raynet_id=str(dms_id), je_slozka=True))
                     db.commit()
                     vytvoreno_slozek += 1
                 else:
-                    rid = existuje.raynet_id
-                fronta.append((cid, rid))
+                    dms_id = int(existuje.raynet_id)
+                fronta.append((cid, int(dms_id)))
             else:
+                if dms_parent is None:
+                    preskoceno += 1  # soubor přímo v kořeni zdroje – nemá kam (DMS chce složku)
+                    continue
                 if existuje is not None:
                     continue
-                did = str(
-                    raynet.create_link_document_in_folder(
-                        child.get("name", ""), child.get("webViewLink", ""), raynet_parent
-                    )
+                doc = raynet.create_dms_link(
+                    child.get("name", ""), child.get("webViewLink", ""), dms_parent
                 )
+                did = str(doc.get("id")) if isinstance(doc, dict) else str(doc)
                 db.add(KonektorTreeMirror(drive_id=cid, raynet_id=did, je_slozka=False))
                 db.commit()
                 vytvoreno_souboru += 1
 
     zaloguj(
         db, "info", "zrcadleni",
-        f"Zrcadlení stromu hotovo – nových složek {vytvoreno_slozek}, souborů {vytvoreno_souboru}.",
-        {"slozek": vytvoreno_slozek, "souboru": vytvoreno_souboru},
+        f"Zrcadlení do Dokumentů hotovo – nových složek {vytvoreno_slozek}, "
+        f"odkazů {vytvoreno_souboru}" + (f", přeskočeno souborů v kořeni {preskoceno}" if preskoceno else "") + ".",
+        {"slozek": vytvoreno_slozek, "souboru": vytvoreno_souboru, "preskoceno": preskoceno},
     )
-    return {"slozek": vytvoreno_slozek, "souboru": vytvoreno_souboru}
+    return {"slozek": vytvoreno_slozek, "souboru": vytvoreno_souboru, "preskoceno": preskoceno}
 
 
 # =================== Google Drive push (watch) ===================

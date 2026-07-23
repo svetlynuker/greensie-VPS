@@ -69,6 +69,9 @@ class KonektorNastaveni(Base):
     google_root_folder_id = Column(String, nullable=False, default="", server_default="")
     # ID vzorové složky („0. vzor“) – kopíruje se jako struktura nového klienta.
     google_vzor_folder_id = Column(String, nullable=False, default="", server_default="")
+    # ID zdrojové složky na Disku, jejíž OBSAH (podsložky + soubory) se zrcadlí
+    # do modulu Dokumenty (DMS) v Raynetu jako odkazy. Prázdné = zrcadlení vypnuto.
+    google_dms_zdroj_folder_id = Column(String, nullable=False, default="", server_default="")
     # názvy kontejnerů ve vzoru (kam se zakládají OP / nabídky / objednávky)
     kontejner_op = Column(String, nullable=False, default=VYCHOZI_KONTEJNER_OP, server_default=VYCHOZI_KONTEJNER_OP)
     kontejner_nabidky = Column(String, nullable=False, default=VYCHOZI_KONTEJNER_NABIDKY, server_default=VYCHOZI_KONTEJNER_NABIDKY)

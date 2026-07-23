@@ -103,6 +103,7 @@ def _lehka_migrace():
             "raynet_webhook_token",
             "google_root_folder_id",
             "google_vzor_folder_id",
+            "google_dms_zdroj_folder_id",
         ):
             conn.execute(
                 text(
