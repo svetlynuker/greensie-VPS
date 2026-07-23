@@ -11,6 +11,7 @@ import {
   konektorSmazLogy,
   konektorVytvorSlozku,
   konektorStromVzoru,
+  konektorDokumentyNahled,
   konektorImportRozsah,
   konektorImportSpustit,
   konektorReconcile,
@@ -345,6 +346,8 @@ function RucniAkceKarta() {
   const [chyba, setChyba] = useState(null);
   const [strom, setStrom] = useState(null);
   const [stromBezi, setStromBezi] = useState(false);
+  const [dokumenty, setDokumenty] = useState(null);
+  const [dokumentyBezi, setDokumentyBezi] = useState(false);
 
   async function vytvor() {
     setBezi(true);
@@ -371,6 +374,20 @@ function RucniAkceKarta() {
       setChyba(e.message);
     } finally {
       setStromBezi(false);
+    }
+  }
+
+  async function nactiDokumenty() {
+    setDokumentyBezi(true);
+    setChyba(null);
+    setDokumenty(null);
+    try {
+      const v = await konektorDokumentyNahled();
+      setDokumenty(JSON.stringify(v.data, null, 2));
+    } catch (e) {
+      setChyba(e.message);
+    } finally {
+      setDokumentyBezi(false);
     }
   }
 
@@ -432,6 +449,34 @@ function RucniAkceKarta() {
             }}
           >
             {strom}
+          </pre>
+        )}
+      </div>
+
+      <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--fm-line)" }}>
+        <strong style={{ fontSize: 14 }}>Diagnostika – struktura Dokumentů v Raynetu</strong>
+        <p style={{ margin: "4px 0 10px", fontSize: 13, color: "var(--fm-muted)", lineHeight: 1.5 }}>
+          Načte kořen modulu Dokumenty z Raynetu (jak vypadají složky a jejich pole). Slouží k přípravě
+          zrcadlení Disk → Dokumenty.
+        </p>
+        <button className="fm-btn" onClick={nactiDokumenty} disabled={dokumentyBezi}>
+          {dokumentyBezi ? "Načítám…" : "Načíst strukturu Dokumentů z RN"}
+        </button>
+        {dokumenty && (
+          <pre
+            style={{
+              marginTop: 12,
+              padding: 12,
+              background: "var(--fm-head)",
+              border: "1px solid var(--fm-line)",
+              borderRadius: 8,
+              fontSize: 12,
+              lineHeight: 1.5,
+              overflowX: "auto",
+              whiteSpace: "pre",
+            }}
+          >
+            {dokumenty}
           </pre>
         )}
       </div>

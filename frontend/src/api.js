@@ -384,6 +384,11 @@ export function konektorStromVzoru(folderId) {
   return zavolej(`/konektor/vzor/strom${q}`, { method: "POST" });
 }
 
+export function konektorDokumentyNahled(folderId) {
+  const q = folderId ? `?folder_id=${encodeURIComponent(folderId)}` : "";
+  return zavolej(`/konektor/dokumenty/nahled${q}`, { method: "POST" });
+}
+
 export function konektorImportRozsah() {
   return zavolej("/konektor/import/rozsah", { method: "POST" });
 }

@@ -197,7 +197,20 @@ class RaynetClient:
         )
         self._over_odpoved(r, f"Smazání dokumentu {document_id}")
 
-    # ---- operace pro FR3 (Flow C, zrcadlení stromu) ----
+    # ---- operace pro FR3 (Flow C, zrcadlení stromu do modulu Dokumenty) ----
+    def list_document_folders(self, parent_id: str | None = None, timeout: int = 30) -> dict | list:
+        """Výpis složek a souborů v modulu Dokumenty (GET /document/folder/).
+
+        Bez `parent_id` vrací kořen. Slouží k diagnostice reálného tvaru dat
+        (názvy polí: id, name, parent, typ…), podle kterého se pak staví
+        zrcadlení. Vrací `data` z obálky (list nebo dict).
+        """
+        url = f"{self.base_url}document/folder/"
+        if parent_id:
+            url += f"?folderId={parent_id}"
+        r = requests.get(url, auth=(self.api_user, self.api_key), headers=self._headers(), timeout=timeout)
+        return self._over_odpoved(r, "Výpis složek dokumentů")
+
     def create_document_folder(self, name: str, parent_id: str | None = None, timeout: int = 20) -> int:
         """Vytvoří složku v modulu Dokumenty (PUT /document/). Vrací id.
 
