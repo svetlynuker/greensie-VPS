@@ -10,6 +10,15 @@ document, file/attachment, webhook) přibudou v dalších fázích.
 
 import requests
 
+
+class RateLimitError(RuntimeError):
+    """Raynet vrátil 429 – vyčerpán denní API limit (viz X-RateLimit-* hlavičky).
+
+    Odlišujeme ji, aby sken/zrcadlení mohly při limitu bezpečně PŘERUŠIT
+    (a nezaložit neúplnou baseline / neúplný sken), ne jen přeskočit položku.
+    """
+
+
 # DMS (modul Dokumenty) nepovoluje v názvech tyto znaky. Hláška uvádí
 # ~!@#$%^&*/'., – reálně odmítá i uvozovky (rovné i typografické), proto
 # jsou přidané. Doplňujeme i další „nebezpečné“ znaky pro názvy.
@@ -80,7 +89,7 @@ class RaynetClient:
         Raynet vrací obálku {"success": bool, "data": ...} (ověřeno v dokumentaci).
         """
         if r.status_code == 429:
-            raise RuntimeError(f"{kontext}: překročen limit požadavků Raynetu (429).")
+            raise RateLimitError(f"{kontext}: vyčerpán denní API limit Raynetu (429).")
         if r.status_code >= 400:
             raise RuntimeError(f"{kontext}: HTTP {r.status_code} – {r.text[:300]}")
         try:
@@ -104,6 +113,26 @@ class RaynetClient:
         url = f"{self.base_url}{endpoint}/{record_id}/"
         r = requests.get(url, auth=(self.api_user, self.api_key), headers=self._headers(), timeout=timeout)
         return self._over_odpoved(r, f"Načtení {resource} {record_id}")
+
+    def zbyva_api(self, timeout: int = 15) -> int | None:
+        """Zjistí zbývající počet denních API callů z hlavičky X-RateLimit-Remaining.
+
+        Stojí 1 call (lehký dotaz na kořen Dokumentů). Vrací int, nebo None když
+        se hodnotu nepodařilo zjistit. Slouží k preventivní kontrole před
+        drahým full-scanem.
+        """
+        try:
+            r = requests.get(
+                self.base_url + "dms/", auth=(self.api_user, self.api_key),
+                headers=self._headers(), timeout=timeout,
+            )
+        except requests.RequestException:
+            return None
+        val = r.headers.get("X-RateLimit-Remaining") or r.headers.get("x-ratelimit-remaining")
+        try:
+            return int(val) if val is not None else None
+        except (ValueError, TypeError):
+            return None
 
     def list_ids(self, resource: str, page_size: int = 50, timeout: int = 30) -> list[int]:
         """Vrátí ID všech záznamů daného typu (stránkuje přes offset/limit).
@@ -287,6 +316,8 @@ class RaynetClient:
             f"{self.base_url}fileHeader/{file_id}/",
             auth=(self.api_user, self.api_key), headers=self._headers(), timeout=timeout,
         )
+        if h.status_code == 429:
+            raise RateLimitError(f"fileHeader {file_id}: vyčerpán denní API limit Raynetu (429).")
         if h.status_code >= 400:
             raise RuntimeError(f"fileHeader {file_id}: HTTP {h.status_code} – {h.text[:200]}")
         hd = h.json()

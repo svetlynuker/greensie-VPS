@@ -29,7 +29,7 @@ from app.konektor.models import (
     KonektorNastaveni,
     KonektorTreeMirror,
 )
-from app.konektor.raynet_klient import RaynetClient, dms_bezpecny_nazev
+from app.konektor.raynet_klient import RateLimitError, RaynetClient, dms_bezpecny_nazev
 
 # entita → (Raynet resource, typ úlohy, klíč id v payloadu) pro hromadný import
 _IMPORT_PLAN = (
@@ -619,6 +619,25 @@ def zpracuj_raynet_dokument(db: Session, document_id: str, company_id: int | Non
 
 # =================== Flow C: zrcadlení do modulu Dokumenty (DMS, FR3) ===================
 DMS_KOREN_PATH = "/Dokumenty"  # prefix cest v modulu Dokumenty
+# Preventivní ochrana API budgetu (denní limit Raynetu 24 000). Full-scan stojí
+# ~1 call/složku (dnes ~3 850); počítáme s rezervou na průchod a s rezervou pro
+# ostatní konektory. Když by po skenu nezbylo aspoň API_REZERVA, sken se nespustí.
+DMS_ODHAD_CALLU = 4500   # odhad callů na jeden full-scan (s rezervou)
+API_REZERVA = 2000       # kolik callů nechat volných pro ostatní konektory
+DMS_SKEN_MIN_API = DMS_ODHAD_CALLU + API_REZERVA  # potřebné minimum před skenem
+
+
+def _api_pod_prahem(db: Session, raynet: RaynetClient, udalost: str) -> int | None:
+    """Vrátí zbývající API cally, pokud jsou POD prahem (a zaloguje kritický
+    stav) – volající pak sken nespustí. None = je dost callů, pokračuj."""
+    zbyva = raynet.zbyva_api()
+    if zbyva is not None and zbyva < DMS_SKEN_MIN_API:
+        zaloguj(db, "error", udalost,
+                f"KRITICKÝ STAV API: zbývá jen {zbyva} callů (potřeba ≥ {DMS_SKEN_MIN_API} = "
+                f"{DMS_ODHAD_CALLU} na sken + {API_REZERVA} rezerva). Sken se nespustil.",
+                {"zbyva": zbyva, "prah": DMS_SKEN_MIN_API})
+        return zbyva
+    return None
 
 
 def _dms_najdi_polozku(raynet: RaynetClient, dms_path: str | None, nazev_ocisteny: str, je_slozka: bool) -> dict | None:
@@ -658,6 +677,11 @@ def zrcadli_strom(db: Session) -> dict:
     zdroj = (n.google_dms_zdroj_folder_id or "").strip()
     if not zdroj:
         raise NastaveniNepripraveno("Není nastavena zdrojová složka pro zrcadlení do Dokumentů.")
+
+    # preventivní kontrola API budgetu (full-scan Disk → Dokumenty je drahý)
+    zbyva = _api_pod_prahem(db, raynet, "zrcadleni")
+    if zbyva is not None:
+        return {"kriticky_api": True, "zbyva": zbyva}
 
     vytvoreno_slozek = vytvoreno_souboru = preskoceno = chyb = 0
     posledni_log = 0
@@ -878,6 +902,11 @@ def dms_sken(db: Session) -> dict:
     raynet, drive = vytvor_klienty(n)
     master = (n.google_dms_zdroj_folder_id or "").strip()
 
+    # preventivní kontrola API budgetu – ať sken nezačne, když by nedoběhl
+    zbyva = _api_pod_prahem(db, raynet, "dms_sken")
+    if zbyva is not None:
+        return {"kriticky_api": True, "zbyva": zbyva}
+
     # --- 1) projít strom a nasbírat fyzické soubory (s cestou jejich složky) ---
     calls = slozky = 0
     fyzicke: list[dict] = []
@@ -891,7 +920,15 @@ def dms_sken(db: Session) -> dict:
         calls += 1
         try:
             data = raynet.list_document_folders(path)
-        except Exception:  # noqa: BLE001 - nedostupnou složku přeskočíme
+        except RateLimitError:
+            # limit → nemáme úplný obraz stromu; nepokračujeme (jinak by baseline
+            # byla neúplná / přesun by minul soubory). Zkusí se až po resetu.
+            zaloguj(db, "warn", "dms_sken",
+                    f"Sken Dokumentů přerušen – vyčerpán API limit Raynetu (po {calls} callech). "
+                    f"Zkusí se znovu po resetu limitu; baseline ani přesun se teď neprovedly.",
+                    {"cally": calls})
+            return {"limit": True, "slozky": slozky, "cally": calls}
+        except Exception:  # noqa: BLE001 - jednu nedostupnou složku přeskočíme
             continue
         for it in (data or []):
             if not isinstance(it, dict):
