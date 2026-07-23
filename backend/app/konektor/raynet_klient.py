@@ -214,17 +214,19 @@ class RaynetClient:
         self._over_odpoved(r, f"Smazání dokumentu {document_id}")
 
     # ---- operace pro FR3 (Flow C, zrcadlení stromu do modulu Dokumenty) ----
-    def list_document_folders(self, parent_id: str | None = None, timeout: int = 30) -> dict | list:
-        """Výpis složek a souborů v modulu Dokumenty/DMS (GET /dms/).
+    def list_document_folders(self, path: str | None = None, timeout: int = 30) -> dict | list:
+        """Výpis obsahu složky v modulu Dokumenty/DMS (GET /dms/).
 
-        Modul Dokumenty má v API prefix `/dms/` (ne `/document/`). Bez
-        `parent_id` vrací kořen. Slouží k diagnostice reálného tvaru dat
-        (názvy polí: id, name, parent, typ, případně url…). Vrací `data`.
+        DMS je path-based: obsah konkrétní složky se získává parametrem
+        `?path=/Dokumenty/…` (NE folderId – ten Raynet odmítá). Bez `path`
+        vrací kořen. Každá položka má `id, name, type(Folder|Document), path`.
         """
         url = f"{self.base_url}dms/"
-        if parent_id:
-            url += f"?folderId={parent_id}"
-        r = requests.get(url, auth=(self.api_user, self.api_key), headers=self._headers(), timeout=timeout)
+        params = {"path": path} if path else None
+        r = requests.get(
+            url, auth=(self.api_user, self.api_key), headers=self._headers(),
+            params=params, timeout=timeout,
+        )
         return self._over_odpoved(r, "Výpis Dokumentů (DMS)")
 
     def create_document_folder(self, name: str, parent_id: str | None = None, timeout: int = 20) -> int:
