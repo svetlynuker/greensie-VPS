@@ -74,6 +74,9 @@ def _zpracuj_job(db: Session, job: KonektorJobQueue) -> None:
     elif job.typ == "dms_sken":
         from app.konektor.logika import dms_sken
         dms_sken(db)
+    elif job.typ == "dms_zmeny":
+        from app.konektor.logika import zrcadli_zmeny_dms
+        zrcadli_zmeny_dms(db)
     else:
         raise RuntimeError(f"Neznámý typ úlohy: {job.typ}")
 
