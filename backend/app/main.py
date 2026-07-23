@@ -127,6 +127,20 @@ def _lehka_migrace():
         conn.execute(
             text("ALTER TABLE konektor_entity_folder ADD COLUMN IF NOT EXISTS kontejnery JSONB")
         )
+
+        # Proklik z Přehledu projektů na složku dokumentů („6. projekty" pod OP).
+        # create_all nové sloupce do existující tabulky `projekty` nepřidá.
+        conn.execute(
+            text("ALTER TABLE projekty ADD COLUMN IF NOT EXISTS disk_url "
+                 "VARCHAR NOT NULL DEFAULT ''")
+        )
+        conn.execute(
+            text("ALTER TABLE projekty ADD COLUMN IF NOT EXISTS disk_rucni "
+                 "BOOLEAN NOT NULL DEFAULT false")
+        )
+        conn.execute(
+            text("ALTER TABLE projekty ADD COLUMN IF NOT EXISTS raynet_deal_id BIGINT")
+        )
         # automatický sken Dokumentů (RN → Disk)
         conn.execute(
             text("ALTER TABLE konektor_nastaveni ADD COLUMN IF NOT EXISTS dms_sken_zapnuto "

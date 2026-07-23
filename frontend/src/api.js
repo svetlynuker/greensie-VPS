@@ -106,6 +106,20 @@ export function nastavZobrazeniProjektu(id, skryty) {
   });
 }
 
+// Ruční odkaz na složku dokumentů projektu (prázdné url = smazat ruční odkaz).
+export function ulozDiskOdkaz(id, url) {
+  return zavolej(`/matice/projekt/${id}/disk`, {
+    method: "PUT",
+    body: JSON.stringify({ url }),
+  });
+}
+
+// Hromadné spárování projektů se složkami na Disku (přes číslo OP v názvu).
+// vse=true přepočítá i projekty, které už odkaz mají (kromě ručních).
+export function sparujDisk(vse = false) {
+  return zavolej(`/matice/disk/sparovat${vse ? "?vse=true" : ""}`, { method: "POST" });
+}
+
 // ---- Finance (Přehled financí – Pohled 2) ----
 export function nactiFinance() {
   return zavolej("/finance");

@@ -21,10 +21,25 @@ class ProjektOut(BaseModel):
     termin: Optional[str] = None
     rucni: bool
     skryty: bool = False
+    # odkaz na složku dokumentů projektu na Disku + příznak ručně vloženého odkazu
+    disk_url: str = ""
+    disk_rucni: bool = False
 
 
 class ZobrazeniVstup(BaseModel):
     skryty: bool
+
+
+class DiskOdkazVstup(BaseModel):
+    # ruční odkaz na složku dokumentů; prázdný řetězec = smazat ruční odkaz
+    # (uvolní projekt zpět pro automatické párování)
+    url: str = ""
+
+
+class DiskParovaniVysledek(BaseModel):
+    zpracovano: int  # kolik projektů se zkusilo spárovat
+    nalezeno: int  # u kolika se odkaz nově nastavil
+    chyba: Optional[str] = None  # vyplněno, když párování nemohlo proběhnout
 
 
 class BunkaOut(BaseModel):
