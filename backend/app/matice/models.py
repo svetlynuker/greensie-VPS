@@ -1,4 +1,5 @@
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Column,
     Date,
@@ -25,6 +26,14 @@ class Projekt(Base):
     rucni = Column(Boolean, nullable=False, default=False, server_default="false")
     skryty = Column(Boolean, nullable=False, default=False, server_default="false")
     poradi = Column(Integer, nullable=False, default=0, server_default="0")
+
+    # Proklik na složku s dokumenty projektu (podsložka „6. projekty" pod OP).
+    # `disk_url` se plní automaticky párováním přes číslo OP z názvu projektu;
+    # `disk_rucni=True` znamená, že odkaz vložil člověk ručně a auto-párování
+    # ho NIKDY nepřepíše. `raynet_deal_id` = jednou spárovaný obchodní případ.
+    disk_url = Column(String, nullable=False, default="", server_default="")
+    disk_rucni = Column(Boolean, nullable=False, default=False, server_default="false")
+    raynet_deal_id = Column(BigInteger, nullable=True)
 
     bunky = relationship("Bunka", back_populates="projekt", cascade="all, delete-orphan")
 

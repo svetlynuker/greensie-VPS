@@ -276,6 +276,54 @@ tr.fm-drop-row td {
   text-decoration: underline;
 }
 
+/* proklik na složku dokumentů projektu na Disku */
+.fm-disk {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 10px;
+}
+
+.fm-disk-link {
+  display: inline-block;
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fm-brand-dk);
+  text-decoration: none;
+}
+
+.fm-disk-link:hover {
+  text-decoration: underline;
+}
+
+.fm-disk-edit {
+  margin-top: 3px;
+  cursor: pointer;
+  color: var(--fm-muted);
+  font-size: 11px;
+}
+
+.fm-disk-edit:hover {
+  color: var(--fm-brand-dk);
+}
+
+/* výzva k ručnímu vložení odkazu, když se složka nenašla automaticky */
+.fm-disk-add {
+  display: inline-block;
+  margin-top: 3px;
+  margin-right: 10px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--fm-muted);
+  border-bottom: 1px dashed var(--fm-muted);
+}
+
+.fm-disk-add:hover {
+  color: var(--fm-brand-dk);
+  border-bottom-color: var(--fm-brand-dk);
+}
+
 .fm-row-hide:hover {
   color: var(--st-crit);
 }

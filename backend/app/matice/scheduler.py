@@ -24,6 +24,7 @@ _thread: threading.Thread | None = None
 
 def _mozna_synchronizuj() -> None:
     # importy uvnitř kvůli cyklu (routes.py importuje modely, my importujeme routes)
+    from app.matice import disk_parovani
     from app.matice.routes import proved_synchronizaci, ziskej_sync_nastaveni
 
     db = SessionLocal()
@@ -51,6 +52,12 @@ def _mozna_synchronizuj() -> None:
                 f"OK – projektů {vysledek.projektu}, nových sloupců {vysledek.sloupcu}, "
                 f"nových buněk {vysledek.bunek_novych}, přepsaných {vysledek.bunek_prepsanych}"
             )
+            # po synchronizaci dohledáme odkazy na složky dokumentů (jen nové/
+            # nespárované projekty). Selhání párování nesmí shodit synchronizaci.
+            try:
+                disk_parovani.sparuj_vsechny(db, jen_nesparovane=True)
+            except Exception:  # noqa: BLE001 - párování je best-effort
+                db.rollback()
         except Exception as e:  # noqa: BLE001 - chybu jen zaznamenáme, app nerušíme
             db.rollback()
             n = ziskej_sync_nastaveni(db)

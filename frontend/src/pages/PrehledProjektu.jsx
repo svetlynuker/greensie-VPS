@@ -17,6 +17,8 @@ import {
   nacistZFreela,
   ulozBarvy,
   nastavZobrazeniProjektu,
+  ulozDiskOdkaz,
+  sparujDisk,
 } from "../api";
 import "../styles/pohled1.css";
 
@@ -155,6 +157,7 @@ export default function PrehledProjektu() {
   const [pridatSloupec, setPridatSloupec] = useState(false);
   const [barvyText, setBarvyText] = useState(null);
   const [barvyStav, setBarvyStav] = useState(null);
+  const [sparujStav, setSparujStav] = useState(null); // null | "bezi" | "ok" | "chyba"
   // per-uživatelské skrytí úkolů/fází (uloženo v prohlížeči dle ID uživatele)
   const [skryteFaze, setSkryteFaze] = useState(() => new Set());
   const [skryteUkoly, setSkryteUkoly] = useState(() => new Set());
@@ -188,6 +191,41 @@ export default function PrehledProjektu() {
     setMatice(d);
     naplnBarvyText(d.barvy);
     return d;
+  }
+
+  // Ruční vložení / úprava / smazání odkazu na složku dokumentů projektu.
+  // Prázdný vstup odkaz smaže a vrátí projekt do automatického párování.
+  async function upravDiskOdkaz(p) {
+    const zadano = window.prompt(
+      "Odkaz na složku dokumentů projektu na Google Disku:\n(prázdné pole odkaz smaže)",
+      p.disk_url || "",
+    );
+    if (zadano === null) return; // uživatel zrušil
+    try {
+      await ulozDiskOdkaz(p.id, zadano.trim());
+      await nactiZnovu();
+    } catch (e) {
+      alert(`Uložení odkazu selhalo: ${e.message}`);
+    }
+  }
+
+  // Hromadné spárování projektů se složkami na Disku (přes číslo OP v názvu).
+  async function spustSparovani() {
+    setSparujStav("bezi");
+    try {
+      const r = await sparujDisk(false);
+      if (r.chyba) {
+        setSparujStav("chyba");
+        alert(r.chyba);
+      } else {
+        setSparujStav("ok");
+        setTimeout(() => setSparujStav(null), 4000);
+      }
+      await nactiZnovu();
+    } catch (e) {
+      setSparujStav("chyba");
+      alert(`Párování selhalo: ${e.message}`);
+    }
   }
 
   useEffect(() => {
@@ -437,6 +475,18 @@ export default function PrehledProjektu() {
                   <button className="fm-btn" onClick={() => setPridatSloupec(true)}>
                     + Sloupec
                   </button>
+                  <button
+                    className="fm-btn fm-ghost"
+                    onClick={spustSparovani}
+                    disabled={sparujStav === "bezi"}
+                    title="Dohledat u projektů složku dokumentů na Disku podle čísla OP v názvu"
+                  >
+                    {sparujStav === "bezi"
+                      ? "Páruji…"
+                      : sparujStav === "ok"
+                        ? "Spárováno ✓"
+                        : "📁 Spárovat s Diskem"}
+                  </button>
                 </>
               )}
               <span className="fm-group">
@@ -640,6 +690,42 @@ export default function PrehledProjektu() {
                         >
                           💰 Finance
                         </Link>
+                      )}
+                      {p.disk_url ? (
+                        <span className="fm-disk">
+                          <a
+                            href={p.disk_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="fm-disk-link"
+                            title="Otevřít složku dokumentů projektu na Disku"
+                          >
+                            📁 Dokumenty
+                          </a>
+                          {muze_editovat && (
+                            <span
+                              className="fm-disk-edit"
+                              title={
+                                p.disk_rucni
+                                  ? "Ručně vložený odkaz – upravit / smazat"
+                                  : "Automaticky nalezený odkaz – upravit / smazat"
+                              }
+                              onClick={() => upravDiskOdkaz(p)}
+                            >
+                              ✎
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        muze_editovat && (
+                          <span
+                            className="fm-disk-add"
+                            title="Automaticky se nenašla složka dokumentů – vlož odkaz ručně"
+                            onClick={() => upravDiskOdkaz(p)}
+                          >
+                            📁 přidat odkaz
+                          </span>
+                        )
                       )}
                       {muze_editovat && (
                         <span

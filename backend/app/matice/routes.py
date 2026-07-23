@@ -6,13 +6,15 @@ from sqlalchemy.orm import Session
 from app.auth.models import User
 from app.auth.permissions import get_current_user
 from app.database import get_db
-from app.matice import freelo
+from app.matice import disk_parovani, freelo
 from app.matice.models import Bunka, NastaveniBarev, NastaveniSynchronizace, Projekt, Sloupec
 from app.matice.permissions import muze_editovat, vyzaduj_editora
 from app.matice.schemas import (
     BarvyOut,
     BunkaOut,
     BunkaVstup,
+    DiskOdkazVstup,
+    DiskParovaniVysledek,
     FazeOut,
     FreeloVstup,
     FreeloVysledek,
@@ -63,6 +65,19 @@ def _barvy_out(b: NastaveniBarev) -> BarvyOut:
     )
 
 
+def _projekt_out(p: Projekt) -> ProjektOut:
+    return ProjektOut(
+        id=p.id,
+        nazev=p.nazev,
+        url=p.url,
+        termin=_date_str(p.termin),
+        rucni=p.rucni,
+        skryty=p.skryty,
+        disk_url=p.disk_url or "",
+        disk_rucni=p.disk_rucni,
+    )
+
+
 # ---- čtení celé matice ----
 @router.get("", response_model=MaticeOut)
 def nacti_matici(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -95,12 +110,7 @@ def nacti_matici(user: User = Depends(get_current_user), db: Session = Depends(g
     return MaticeOut(
         muze_editovat=muze_editovat(user),
         faze=faze,
-        projekty=[
-            ProjektOut(
-                id=p.id, nazev=p.nazev, url=p.url, termin=_date_str(p.termin), rucni=p.rucni, skryty=p.skryty
-            )
-            for p in projekty
-        ],
+        projekty=[_projekt_out(p) for p in projekty],
         bunky=bunky_out,
         barvy=_barvy_out(_ziskej_barvy(db)),
     )
@@ -191,9 +201,7 @@ def pridej_projekt(
     db.add(p)
     db.commit()
     db.refresh(p)
-    return ProjektOut(
-        id=p.id, nazev=p.nazev, url=p.url, termin=_date_str(p.termin), rucni=p.rucni, skryty=p.skryty
-    )
+    return _projekt_out(p)
 
 
 # ---- skrytí / obnovení projektu ze zobrazení ----
@@ -210,9 +218,47 @@ def nastav_zobrazeni_projektu(
     p.skryty = vstup.skryty
     db.commit()
     db.refresh(p)
-    return ProjektOut(
-        id=p.id, nazev=p.nazev, url=p.url, termin=_date_str(p.termin), rucni=p.rucni, skryty=p.skryty
-    )
+    return _projekt_out(p)
+
+
+# ---- proklik na složku dokumentů na Disku ----
+@router.put("/projekt/{projekt_id}/disk", response_model=ProjektOut)
+def uloz_disk_odkaz(
+    projekt_id: int,
+    vstup: DiskOdkazVstup,
+    user: User = Depends(vyzaduj_editora),
+    db: Session = Depends(get_db),
+):
+    """Ruční nastavení/smazání odkazu na složku dokumentů.
+
+    Neprázdné URL → uloží se a projekt se označí `disk_rucni=True` (auto-párování
+    ho už nepřepíše). Prázdné URL → smaže ruční odkaz a vrátí projekt zpět do
+    automatického párování.
+    """
+    p = db.get(Projekt, projekt_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Projekt neexistuje")
+    url = (vstup.url or "").strip()
+    p.disk_url = url
+    p.disk_rucni = bool(url)
+    db.commit()
+    db.refresh(p)
+    return _projekt_out(p)
+
+
+@router.post("/disk/sparovat", response_model=DiskParovaniVysledek)
+def sparuj_disk(
+    vse: bool = False,
+    user: User = Depends(vyzaduj_editora),
+    db: Session = Depends(get_db),
+):
+    """Spáruje projekty s Diskem přes číslo OP v názvu.
+
+    `vse=False` (default) spáruje jen projekty bez odkazu; `vse=True` přepočítá
+    i ty, které odkaz už mají (kromě ručních) – po přesunu složek na Disku.
+    """
+    vysledek = disk_parovani.sparuj_vsechny(db, jen_nesparovane=not vse)
+    return DiskParovaniVysledek(**vysledek)
 
 
 # ---- ruční sloupec (úkol) ----
