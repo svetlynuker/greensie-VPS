@@ -8,12 +8,16 @@
 
 ## 0. Potvrzená rozhodnutí zadavatele (2026-07-23)
 
-| Otázka (kap. 18) | Rozhodnutí |
+| Otázka | Rozhodnutí |
 |---|---|
-| Runtime (R1) | **Node.js v24** (reuse) |
+| **Architektura / runtime (R1)** | **Konektor jako modul uvnitř greensie-app (Python/FastAPI + React)** — NE samostatná Node.js služba. Jeden proces, jedna DB, jednotná auth/práva/logy, webhooky přes stávající Caddy `/api`. |
+| **Config + logy** | **Spravované přímo ve frontendu greensie-app** (nová dlaždice/stránka „Konektor"), dle vzoru admin nastavení + modulu Logy. |
+| **Tajemství (Raynet klíč, Google SA JSON)** | **Editovatelná z UI, write-only, uložená šifrovaně v DB** (nikdy se nezobrazí zpět). Vyžaduje šifrovací klíč v `.env`. |
 | D1 — model synchronizace | **Odkazy** (Model A) — Disk = zdroj obsahu, Raynet drží URL |
 | D2 — Google účet | **Workspace + Shared Drive** — service account + domain-wide delegation |
 | FR3 — rozsah | **Plné zrcadlení stromu** složek + odkazových dokumentů do Raynet Dokumentů |
+
+> **Pozn.:** Rozhodnutí R1 se během F0 změnilo z Node.js na Python-modul právě kvůli požadavku na správu configu + logů přímo ve frontendu greensie-app. Odchylka od původního specu (kap. 3, S1) je vědomá a zdůvodněná níže (sekce 3).
 
 **Stále čeká na zadavatele (blokuje start F1):**
 - Raynet: instance, API uživatel, API klíč (Professional+), potvrzení base URL (`app.raynet.cz` vs `.com`).
@@ -45,13 +49,13 @@
 
 | # | Schopnost | Požadavek | Stav | Nalezeno | Rozhodnutí |
 |---|-----------|-----------|:----:|----------|------------|
-| **S1** | Runtime | Node ≥ 20 **nebo** PHP ≥ 8.1 | ✅ | **Node v24.18.0** + npm 11.16.0; Python 3.11.2 (FastAPI stack). PHP/composer **není**. | **REUSE Node v24** (viz rozhodnutí R1 níže — návrh, ke schválení). Nic neinstalovat. |
-| **S2** | Databáze | relační DB pro stav/mapování | ✅ | **PostgreSQL 15.18** běží, `127.0.0.1:5432`, `postgresql@15-main` active. | **REUSE Postgres** → nová vyhrazená DB `raynet_gdrive_sync` + omezený uživatel. Žádný nový engine, žádné SQLite. |
-| **S3** | Veřejné HTTPS | příchozí webhooky, 443, platný TLS | ✅ | **Caddy v2.11.4** (systemd, běží 9+ dní), poslouchá `:80` a `:443`, auto Let's Encrypt. Importuje `/etc/caddy/sites/*.caddy`. nginx/traefik/apache **není**. | **REUSE Caddy** → přidat nový vhost jako samostatný soubor do `/etc/caddy/sites/`. Nespouštět druhou proxy. |
-| **S4** | Veřejná doména | subdoména s A/AAAA | ✅ | `*.167-235-254-188.sslip.io` řeší wildcard na IP serveru — subdoménu netřeba zřizovat. | Pro MVP **REUSE sslip.io** (např. `raynet-sync.167-235-254-188.sslip.io`). Pro produkci zvážit vlastní `raynet-sync.greensie.cz` (viz otevřená otázka Q7). |
-| **S5** | Scheduler | obnova watch + reconcile | ✅ | **systemd 252** (timery), `atd` běží. cron prázdný. | **REUSE systemd timer** (renew-drive-watch denně, reconcile á 15 min). |
-| **S6** | Process mgmt | trvalý běh + restart | ✅ | **systemd** — vzory `tlakova-crm.service`, `greensie-backend.service` (Restart=always). Docker/pm2 **není**. | **REUSE systemd unit** dle vzoru tlakova-crm (User=dan, EnvironmentFile, NoNewPrivileges, PrivateTmp). |
-| **S7** | Správa tajemství | API klíče, SA JSON | ✅ | Bez vaultu; systemd credentials k dispozici. Precedent: `.env` přes `EnvironmentFile=`. | `.env` (chmod 600) + SA JSON (chmod 600) mimo web root, oboje do `.gitignore`. |
+| **S1** | Runtime | Node ≥ 20 **nebo** PHP ≥ 8.1 | ✅ | **Node v24.18.0**; **Python 3.11.2** (FastAPI stack greensie-app). PHP/composer **není**. | **REUSE Python** — konektor = modul greensie-app (R1). Node se nepoužije. Nic neinstalovat. |
+| **S2** | Databáze | relační DB pro stav/mapování | ✅ | **PostgreSQL 15.18** běží, `127.0.0.1:5432`, `postgresql@15-main` active. | **REUSE stávající greensie DB** → tabulky `konektor_*` (R2). Žádná nová DB, žádný nový engine. |
+| **S3** | Veřejné HTTPS | příchozí webhooky, 443, platný TLS | ✅ | **Caddy v2.11.4** (systemd), poslouchá `:80`/`:443`, auto Let's Encrypt, existující vhost greensie `/api/*` → `:8000`. | **REUSE stávající vhost** — webhooky přes `/api/konektor/webhooks/*`. **Bez nového vhostu.** |
+| **S4** | Veřejná doména | subdoména s A/AAAA | ✅ | `167-235-254-188.sslip.io` už slouží greensie-app. | **REUSE stávající domény** — webhook URL = `https://167-235-254-188.sslip.io/api/konektor/webhooks/...`. |
+| **S5** | Scheduler | obnova watch + reconcile | ✅ | **systemd 252**; navíc greensie-app má **vzor background vlákna** (`matice/scheduler.py`, á 60 s čte nastavení z DB). | **REUSE background vlákno** v FastAPI (renew-watch, reconcile) — dle vzoru matice. Bez samostatného timeru. |
+| **S6** | Process mgmt | trvalý běh + restart | ✅ | **systemd** — konektor poběží uvnitř existující `greensie-backend.service` (Restart=always). | **REUSE `greensie-backend.service`.** Žádný nový unit. |
+| **S7** | Správa tajemství | API klíče, SA JSON | ✅ | Bez vaultu; precedent `.env` přes `python-dotenv`. | Tajemství **šifrovaně v DB** (R4), write-only z UI. Šifrovací klíč `KONEKTOR_ENC_KEY` v `.env` (chmod 600, `.gitignore`). |
 | **S8** | Odchozí síť | HTTPS na Raynet a Google | ✅ | `app.raynetcrm.com` → HTTP 302 (dosažitelný), `www.googleapis.com` → HTTP 404 (dosažitelný, očekávaná odpověď rootu). | OK, firewall nic neblokuje. Ověřit i `app.raynet.cz` dle zvolené instance (Q3). |
 | **S9** | Fronta (volitelné) | serializace + retry | ⚠️ | **Redis není.** | Dle pravidel reuse **nevytahovat Redis kvůli tomuhle** → **DB-backed `job_queue`** tabulka (kap. 7 specu). |
 | **S10** | Git + build | verzování, build | ✅ | Git je (repo greensie-app, aktivní větve), npm 11 pro build. | REUSE. Konektor jako samostatný adresář/modul v repu. |
@@ -60,21 +64,25 @@
 
 ---
 
-## 3. Zvolený runtime a DB (návrh k rozhodnutí)
+## 3. Zvolená architektura, runtime a DB (rozhodnuto)
 
-### R1 — Runtime: **Node.js v24** (doporučeno)
-Server hostuje jak Python (greensie-app), tak Node (tlakova-crm), takže obojí je „domácí". Pro **tento** konektor navrhuji **Node.js**:
-- Google `googleapis` je v Node prvotřídní, výborně udržovaná knihovna (Drive API v3, push kanály, service account).
-- Node v24 už je nainstalované; existuje osvědčený vzor Node systemd služby (`tlakova-crm`).
-- Raynet je čisté REST/JSON — jazykově neutrální, žádná výhoda pro Python.
+### R1 — Runtime: **Python modul uvnitř greensie-app** (rozhodnuto)
+Konektor **není** samostatná služba, ale nový balíček `backend/app/konektor/` ve stávající FastAPI aplikaci + stránka `frontend/src/pages/Konektor.jsx`. Důvody:
+- Zadavatel chce config i logy spravovat přímo ve frontendu greensie-app → konektor patří dovnitř aplikace.
+- greensie-app má hotovou veškerou potřebnou infrastrukturu: modulární vzor `app/<modul>/`, systém práv/dlaždic, DB logy + stránku Logy, vzor „jednořádkové nastavení + poslední běh" (`NastaveniSynchronizace` + karta), scheduler na pozadí (vlákno á 60 s čte nastavení z DB).
+- Jeden runtime, jeden deploy (stávající `greensie-backend.service`), jedna DB, jednotná autentizace/práva/audit — nulová duplicita.
+- Google klient: `google-api-python-client` (Drive API v3, push kanály, service account) — plně dostačuje.
 
-**Alternativa (Python/FastAPI):** konzistence s hlavním stackem greensie-app (stejný jazyk, sdílený tým, sdílený venv vzor). Nevýhoda: Google klient v Pythonu je použitelný, ale méně pohodlný pro push/watch. → **rozhodnutí nechávám na zadavateli (otevřená otázka Q1).**
+**Odchylka od specu (kap. 3, S1):** spec předpokládal samostatnou službu; požadavek na integrované UI ji činí zbytečnou a křehčí. Node se nepoužije.
 
-### R2 — Databáze: **PostgreSQL 15** (reuse)
-Vyhrazená DB `raynet_gdrive_sync` + role s právy jen na ni. Schéma dle kap. 7 specu (Postgres dialekt beze změn). **Pozn.:** založení DB/role vyžaduje `sudo -u postgres psql` (dan má sudo přes heslo) — provede se na začátku F1 se schválením, jde o krok „k doinstalování/nastavení" níže.
+### R2 — Databáze: **stávající greensie DB, tabulky modulu `konektor`** (reuse)
+Konektor přidá vlastní tabulky (prefix `konektor_*`) do **stávající greensie databáze** — ne samostatná DB `raynet_gdrive_sync`. Důvod: FastAPI má jeden connection pool a tabulky musí být čitelné ve stejné DB pro UI. Tvorba schématu přes `create_all` + ruční „lehká migrace" (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`) dle vzoru `main.py` — **žádný nový DB engine ani DB, žádný Alembic.** Datový model specu (kap. 7) se přenese do SQLAlchemy modelů (`konektor_client_folder_map`, `konektor_file_map`, `konektor_processed_events`, `konektor_drive_channels`, `konektor_change_state`, `konektor_job_queue`) + nově `konektor_nastaveni` (jednořádkové) a `konektor_log`.
 
-### R3 — Veřejné HTTPS: **reuse Caddy**
-Nový vhost jako soubor `/etc/caddy/sites/raynet-sync.caddy`, reverse_proxy na lokální port konektoru (např. `127.0.0.1:8010`), veřejně jen `/webhooks/*` a `/healthz`. Caddy vyřeší TLS automaticky. Zápis do `/etc/caddy/` vyžaduje sudo.
+### R3 — Veřejné HTTPS: **reuse stávajícího Caddy vhostu greensie** (bez nového vhostu)
+Webhooky půjdou na stávající doménu greensie přes existující reverse_proxy `/api/*` → `127.0.0.1:8000`: `POST /api/konektor/webhooks/raynet`, `POST /api/konektor/webhooks/drive`. **Žádný nový Caddy vhost ani systemd unit.** Pozor: webhook endpointy musí být v FastAPI vyňaty z JWT auth (ověřují se vlastním sdíleným tajemstvím / Google channel tokenem, ne přihlášeným uživatelem).
+
+### R4 — Tajemství: **šifrovaně v DB, write-only z UI** (rozhodnuto)
+Raynet API klíč a Google SA JSON se zadávají z UI, ukládají šifrovaně (symetricky, `cryptography`/Fernet) do `konektor_nastaveni` a nikdy se nevrací zpět (UI ukazuje jen „nastaveno ✓/✗" + tlačítko Test připojení). **Šifrovací klíč** (`KONEKTOR_ENC_KEY`) žije v `.env` (chmod 600, mimo git) — ne v DB. Bez něj nelze tajemství dešifrovat (rotace = nutnost znovu zadat).
 
 ---
 
@@ -101,17 +109,32 @@ Ověřeno v `https://app.raynetcrm.com/api/doc/index-en.html`.
 
 ## 5. Co je potřeba doinstalovat / nastavit — KE SCHVÁLENÍ
 
-Instalace nových balíků: **žádná není nutná pro runtime** (Node, Postgres, Caddy, systemd — vše je). Následující kroky jsou **konfigurační** a vyžadují sudo — provedou se až po schválení, na začátku F1:
+Rozhodnutí postavit konektor jako modul greensie-app **odstranilo** potřebu nové DB, nového systemd unitu i nového Caddy vhostu. Zbývá minimum:
 
 | # | Akce | Nástroj | Proč | Vyžaduje |
 |---|------|---------|------|----------|
-| 1 | Založit DB `raynet_gdrive_sync` + omezenou roli | `sudo -u postgres psql` | vyhrazený stav konektoru (S2) | sudo (heslo) |
-| 2 | Přidat vhost `/etc/caddy/sites/raynet-sync.caddy` + reload Caddy | sudo, `caddy reload` | veřejné HTTPS pro webhooky (S3) | sudo |
-| 3 | Vytvořit systemd unit `raynet-gdrive-sync.service` + timery | sudo | trvalý běh + scheduler (S5/S6) | sudo |
-| 4 | npm závislosti konektoru (`googleapis`, HTTP framework, pg driver…) | npm (lokálně v adresáři modulu) | běh konektoru | — (bez sudo) |
-| 5 | Adresář na tajemství (`/etc/raynet-gdrive-sync/` nebo v repu mimo git) pro `.env` + SA JSON, chmod 600 | sudo/mkdir | bezpečnost (S7) | dle umístění |
+| 1 | Python balíčky do stávajícího venv: `google-api-python-client`, `google-auth`, `cryptography` (Fernet) | `pip` v `backend/venv` | Google Drive klient + šifrování tajemství | — (bez sudo) |
+| 2 | Přidat `KONEKTOR_ENC_KEY` (a případně `KONEKTOR_WEBHOOK_SECRET`) do `.env` | editace `.env` | šifrování tajemství, ověření webhooků (R4, S7) | — (chmod 600 už je) |
+| 3 | Ověřit/nastavit GRANT pro `greensie_user` na nové tabulky (dědí se z DB) | `psql` | tabulky `konektor_*` (S2) | typicky netřeba sudo |
 
-> **Nové systémové balíky (apt): 0.** Vše kritické je reuse. npm balíky jsou lokální závislosti modulu, ne systémová instalace.
+> **Nové systémové balíky (apt): 0. Nové systemd unity: 0. Nové Caddy vhosty: 0. Nové DB: 0.** Vše je reuse stávající greensie-app infrastruktury. Přibývají jen 3 Python knihovny do existujícího venv a 1–2 řádky do `.env`.
+
+---
+
+## 5b. Integrace UI a config/logy do greensie-app (dle vzorů v kódu)
+
+**Backend** — nový balíček `backend/app/konektor/`:
+- `models.py` — tabulky `konektor_*` (kap. 7 specu) + `konektor_nastaveni` (jednořádkové, vzor `matice/models.py` `NastaveniSynchronizace`) + `konektor_log` (vzor `logy/models.py` `Log`).
+- `schemas.py` — dvojice Out/Vstup (vzor `matice/schemas.py` `SyncNastaveniOut/Vstup`); tajemství jen ve Vstup (write-only), v Out jen boolean „nastaveno".
+- `routes.py` — `APIRouter(prefix="/konektor")`, guard `vyzaduj_pravo_konektor()` (vzor `logy/routes.py`); webhook endpointy bez JWT (vlastní ověření). GET/PUT `/konektor/nastaveni`, GET `/konektor/logy`, `POST /konektor/test-spojeni`.
+- `crypto.py` — Fernet helper (šifrování/dešifrování tajemství klíčem `KONEKTOR_ENC_KEY`).
+- `scheduler.py` — background vlákno (reconcile, renew-watch) dle `matice/scheduler.py`.
+- Registrace: import modelů + `include_router` v `main.py`; nový klíč `"konektor"` do `PRAVA`/`DLAZDICE` v `auth/permissions.py`.
+
+**Frontend**:
+- `src/pages/Konektor.jsx` — stránka: karta Nastavení (vzor `SynchronizaceKarta` v `AdminNastaveni.jsx`) + panel Logy (vzor `Logy.jsx`, filtr + auto-refresh).
+- `src/api.js` — sekce `// ---- Konektor ----` (`konektorNastaveni`, `konektorUlozNastaveni`, `konektorLogy`, `konektorTestSpojeni`).
+- `App.jsx` route `/konektor`, dlaždice v `Rozcestnik.jsx` (`TRASY`/`IKONY`/`PODTITULY`), SVG case v `Ikona.jsx`. UI přes `fm-card`/`fm-btn` a CSS proměnné (žádná nová UI knihovna).
 
 ---
 
@@ -127,6 +150,24 @@ Zatím **chybí, blokuje F1+**:
 ## 7. Bezpečnostní stav
 
 - Pracuji na větvi `raynet-gdrive-konektor` (mimo `main`). ✅
-- `.env` a service-account JSON půjdou do `.gitignore`, chmod 600, mimo web root. (Nastaví se ve F1.)
-- DB uživatel jen na vyhrazenou DB; Google scope jen `drive`; Raynet API uživatel s minimem práv.
-- Před destruktivními akcemi (drop DB, přepis configu) se ptám.
+- Tajemství **šifrovaně v DB** (Fernet), write-only z UI, nikdy se nevrací do frontendu; šifrovací klíč `KONEKTOR_ENC_KEY` jen v `.env` (chmod 600, `.gitignore`).
+- **Webhook endpointy** (`/api/konektor/webhooks/*`) jsou veřejné (bez JWT) → musí mít vlastní ověření: Raynet sdílené tajemství/hlavička (nebo IP allowlist — `TO VERIFY`), Google `X-Goog-Channel-Token`.
+- Přístup ke stránce Konektor jen s právem `konektor` (dlaždice zamčená bez něj); správa tajemství ideálně jen pro `je_admin`.
+- Google scope jen `drive` (ideálně omezený na daný Shared Drive); Raynet API uživatel s minimem práv.
+- Logy nesmí obsahovat tajemství ani obsah dokumentů (platí pro `konektor_log`).
+- Před destruktivními akcemi (drop tabulek, přepis configu) se ptám.
+
+---
+
+## 8. Aktualizovaný plán prací (fáze) — přizpůsobený Python-modulu
+
+MVP = **F0–F3**. Po každé fázi akceptační test (kap. 16 specu).
+
+- **F0 — Inventura** (tento dokument) — hotovo, čeká na schválení + přístupy.
+- **F1 — Skeleton modulu:** balíček `app/konektor/` (modely + lehká migrace tabulek), právo/dlaždice `konektor`, stránka `Konektor.jsx` (prázdná karta Nastavení + panel Logy), `crypto.py`, uložení/šifrování tajemství z UI + `POST /konektor/test-spojeni` (ověří Raynet i Google). Webhook endpointy (zatím jen příjem + zalogování). **Zachytit reálný payload Raynet webhooku.** Akceptace: test-spojení zeleně, config se uloží, logy se zobrazí.
+- **F2 — Flow A (FR1):** company.created → složka + podsložky na Disku + zpětný odkaz do vlastního pole. Akceptace A1.
+- **F3 — Flow B směr Disk→Raynet (FR2a):** Drive push + `changes.list` + odkazové dokumenty; reconcile vlákno. Akceptace A2, A4.
+- **F4 — Flow B směr Raynet→Disk (FR2b):** stažení obsahu (`download body of file`) → upload na Disk. Akceptace A3.
+- **F5 — Flow C (FR3):** plné zrcadlení stromu do Raynet Dokumentů.
+- **F6 — Zpevnění:** echo suppression, idempotence, reconcile, rate-limit (≤ 4 spojení), doladění UI/logů. Akceptace A5, A6.
+- **F7 (volitelná) — Migrace historie** existujících klientů.
