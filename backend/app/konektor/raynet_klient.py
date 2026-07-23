@@ -67,6 +67,28 @@ class RaynetClient:
             raise RuntimeError(f"{kontext}: Raynet vrátil success=false ({telo}).")
         return telo.get("data", {})
 
+    # ---- obecné operace pro hierarchii (company/deal/offer/order) ----
+    def get_record(self, resource: str, record_id: int, timeout: int = 20) -> dict:
+        """Detail záznamu daného typu (GET /{resource}/{id}/). Vrací `data`."""
+        url = f"{self.base_url}{resource}/{record_id}/"
+        r = requests.get(url, auth=(self.api_user, self.api_key), headers=self._headers(), timeout=timeout)
+        return self._over_odpoved(r, f"Načtení {resource} {record_id}")
+
+    def set_custom_fields(self, resource: str, record_id: int, fields: dict, timeout: int = 20) -> dict:
+        """Zapíše vlastní pole záznamu (POST /{resource}/{id}/ s customFields).
+
+        `fields` = {kod_pole: hodnota, …}. Prázdné kódy se vynechají.
+        """
+        fields = {k: v for k, v in fields.items() if k}
+        if not fields:
+            return {}
+        url = f"{self.base_url}{resource}/{record_id}/"
+        telo = {"customFields": fields}
+        r = requests.post(
+            url, auth=(self.api_user, self.api_key), headers=self._headers(), json=telo, timeout=timeout
+        )
+        return self._over_odpoved(r, f"Zápis vlastních polí do {resource} {record_id}")
+
     def get_company(self, company_id: int, timeout: int = 20) -> dict:
         """Načte detail company (GET /company/{id}/). Vrací `data` objekt."""
         url = f"{self.base_url}company/{company_id}/"
@@ -93,24 +115,29 @@ class RaynetClient:
 
     # ---- operace pro FR2a (Flow B, Disk → Raynet) ----
     def create_link_document(
-        self, company_id: int, name: str, url_value: str, timeout: int = 20
+        self,
+        name: str,
+        url_value: str,
+        company_id: int | None = None,
+        deal_id: int | None = None,
+        timeout: int = 20,
     ) -> int:
         """Vytvoří v Raynetu odkazový dokument na soubor na Disku. Vrací jeho id.
 
-        TO VERIFY: přesný tvar PUT /document/document/ (pole pro URL a relaci na
-        company) není zdokumentovaný. Tělo je nejlepší odhad podle konvencí
-        Raynetu; po ověření reálným voláním se upraví.
+        Naváže na company a/nebo deal dle zadaných id. TO VERIFY: přesný tvar
+        PUT /document/document/ (pole pro URL a relaci) není zdokumentovaný –
+        tělo je nejlepší odhad, po ověření reálným voláním se upraví.
         """
         endpoint = f"{self.base_url}document/document/"
-        telo = {
-            "name": name,
-            "url": url_value,
-            "company": {"id": company_id},
-        }
+        telo: dict = {"name": name, "url": url_value}
+        if company_id is not None:
+            telo["company"] = {"id": company_id}
+        if deal_id is not None:
+            telo["deal"] = {"id": deal_id}
         r = requests.put(
             endpoint, auth=(self.api_user, self.api_key), headers=self._headers(), json=telo, timeout=timeout
         )
-        data = self._over_odpoved(r, f"Vytvoření odkazového dokumentu pro company {company_id}")
+        data = self._over_odpoved(r, "Vytvoření odkazového dokumentu")
         return int(data.get("id")) if isinstance(data, dict) and data.get("id") is not None else 0
 
     def delete_document(self, document_id: str, timeout: int = 20) -> None:

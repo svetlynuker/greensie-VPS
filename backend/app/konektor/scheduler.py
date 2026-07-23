@@ -42,6 +42,9 @@ def _zpracuj_job(db: Session, job: KonektorJobQueue) -> None:
     """Vykoná jednu úlohu podle typu. Chyba probublá k retry logice."""
     from app.konektor.logika import (
         zpracuj_drive_zmeny,
+        zpracuj_nova_nabidka,
+        zpracuj_nova_objednavka,
+        zpracuj_novy_deal,
         zpracuj_novy_klient,
         zpracuj_raynet_dokument,
         zrcadli_strom,
@@ -49,6 +52,12 @@ def _zpracuj_job(db: Session, job: KonektorJobQueue) -> None:
 
     if job.typ == "novy_klient":
         zpracuj_novy_klient(db, int(job.payload["company_id"]))
+    elif job.typ == "novy_deal":
+        zpracuj_novy_deal(db, int(job.payload["deal_id"]))
+    elif job.typ == "nova_nabidka":
+        zpracuj_nova_nabidka(db, int(job.payload["offer_id"]))
+    elif job.typ == "nova_objednavka":
+        zpracuj_nova_objednavka(db, int(job.payload["order_id"]))
     elif job.typ == "drive_zmeny":
         zpracuj_drive_zmeny(db)
     elif job.typ == "raynet_dokument":

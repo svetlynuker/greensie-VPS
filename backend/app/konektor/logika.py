@@ -20,6 +20,7 @@ from app.konektor.models import (
     KonektorClientFolderMap,
     KonektorDriveChangeState,
     KonektorDriveChannel,
+    KonektorEntityFolder,
     KonektorFileMap,
     KonektorNastaveni,
     KonektorTreeMirror,
@@ -54,74 +55,198 @@ def vytvor_klienty(n: KonektorNastaveni) -> tuple[RaynetClient, DriveClient]:
     return raynet, drive
 
 
-def _nazev_klienta(data: dict, company_id: int) -> str:
-    # TO VERIFY přesný název pole v detailu company; bereme tolerantně.
-    return (data.get("name") or data.get("companyName") or f"Company {company_id}").strip()
+def _nazev(data: dict, fallback: str) -> str:
+    """Čitelný název záznamu (tolerantně dle běžných polí)."""
+    return (data.get("name") or data.get("companyName") or data.get("subject") or fallback).strip()
+
+
+def _bezpecny_nazev(s: str) -> str:
+    """Očistí název složky – Drive nemá rád lomítka."""
+    return s.replace("/", "-").strip() or "beze-jmena"
+
+
+def _nazev_s_cislem(data: dict, record_id: int) -> str:
+    """Kombinace číslo + název pro nabídku/objednávku (dle zadavatele)."""
+    cislo = (
+        data.get("code")
+        or data.get("number")
+        or data.get("offerNumber")
+        or data.get("orderNumber")
+        or str(record_id)
+    )
+    nazev = data.get("name") or data.get("subject") or ""
+    zaklad = f"{cislo} - {nazev}".strip(" -") or f"zaznam-{record_id}"
+    return _bezpecny_nazev(zaklad)
+
+
+def _vazba_id(data: dict, klic: str) -> int | None:
+    """Vytáhne id navázaného záznamu (deal.company, offer.deal …), tolerantně."""
+    rel = data.get(klic)
+    if isinstance(rel, dict) and rel.get("id") is not None:
+        try:
+            return int(rel["id"])
+        except (ValueError, TypeError):
+            return None
+    alt = data.get(f"{klic}Id")
+    try:
+        return int(alt) if alt is not None else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _slozka_pro_typ(n: KonektorNastaveni, klic: str) -> str:
+    """Najde v šabloně podsložek tu pro daný typ (nabídky/objednávky)."""
+    for s in _podslozky(n):
+        if klic in s.lower():
+            return s
+    return "01_Nabídky" if klic == "nabíd" else "02_Objednávky"
+
+
+def _najdi_ef(db: Session, entity: str, entity_id: int) -> KonektorEntityFolder | None:
+    return (
+        db.query(KonektorEntityFolder)
+        .filter(KonektorEntityFolder.entity == entity, KonektorEntityFolder.entity_id == entity_id)
+        .first()
+    )
+
+
+def _zapis_odkaz(raynet: RaynetClient, resource: str, record_id: int, kody: list[str], url: str) -> tuple[bool, str]:
+    """Zapíše URL do zadaných vlastních polí. Vrací (ok, zpráva) – nekritické."""
+    kody = [k for k in kody if k]
+    if not kody:
+        return True, "bez pole"
+    try:
+        raynet.set_custom_fields(resource, record_id, {k: url for k in kody})
+        return True, "odkaz zapsán"
+    except Exception as e:  # noqa: BLE001
+        return False, f"odkaz NEzapsán: {e}"
+
+
+def zajisti_slozku_zakaznika(db: Session, raynet: RaynetClient, drive: DriveClient, n: KonektorNastaveni, company_id: int) -> KonektorEntityFolder:
+    """Vrátí složku zákazníka; vytvoří ji (+ zapíše odkaz), pokud chybí."""
+    ef = _najdi_ef(db, "company", company_id)
+    if ef is not None:
+        return ef
+    company = raynet.get_record("company", company_id)
+    nazev = _nazev(company, f"Zákazník {company_id}")
+    root = drive.create_folder(_bezpecny_nazev(f"{nazev} [{company_id}]"), n.google_shared_drive_id)
+    ef = KonektorEntityFolder(
+        entity="company", entity_id=company_id,
+        drive_folder_id=root["id"], drive_folder_url=root.get("webViewLink", ""), name=nazev,
+    )
+    db.add(ef)
+    db.commit()
+    ok, zprava = _zapis_odkaz(raynet, "company", company_id, [n.raynet_company_drive_field], ef.drive_folder_url)
+    zaloguj(db, "info" if ok else "warn", "novy_klient",
+            f"Vytvořena složka zákazníka „{nazev}“; {zprava}.",
+            {"company_id": company_id, "drive_folder_id": ef.drive_folder_id})
+    return ef
+
+
+def zajisti_slozku_op(db: Session, raynet: RaynetClient, drive: DriveClient, n: KonektorNastaveni, deal_id: int) -> KonektorEntityFolder:
+    """Vrátí složku obchodního případu; vytvoří ji (+ podsložky + odkaz), pokud chybí.
+    Zajistí i nadřazenou složku zákazníka."""
+    ef = _najdi_ef(db, "deal", deal_id)
+    if ef is not None:
+        return ef
+    deal = raynet.get_record("deal", deal_id)
+    company_id = _vazba_id(deal, "company")
+    if company_id is None:
+        raise RuntimeError(f"Obchodní případ {deal_id} nemá navázanou firmu (company).")
+    zak = zajisti_slozku_zakaznika(db, raynet, drive, n, company_id)
+
+    nazev = _nazev(deal, f"Obchodní případ {deal_id}")
+    op = drive.create_folder(_bezpecny_nazev(f"{nazev} [{deal_id}]"), zak.drive_folder_id)
+    ef = KonektorEntityFolder(
+        entity="deal", entity_id=deal_id,
+        drive_folder_id=op["id"], drive_folder_url=op.get("webViewLink", ""), name=nazev,
+    )
+    db.add(ef)
+    db.commit()
+    for sub in _podslozky(n):
+        drive.create_folder(sub, op["id"])
+    ok, zprava = _zapis_odkaz(
+        raynet, "deal", deal_id, [n.raynet_deal_drive_field, n.raynet_deal_drive_field2], ef.drive_folder_url
+    )
+    zaloguj(db, "info" if ok else "warn", "novy_deal",
+            f"Vytvořena složka obch. případu „{nazev}“ ({len(_podslozky(n))} podsložek); {zprava}.",
+            {"deal_id": deal_id, "company_id": company_id, "drive_folder_id": ef.drive_folder_id})
+    return ef
+
+
+def _zpracuj_zaznam_pod_op(db, n, raynet, drive, entity: str, resource: str, record_id: int, klic_typu: str, pole_kod: str) -> dict:
+    """Společná logika pro nabídku/objednávku: podsložka pod OP + odkaz do pole."""
+    if _najdi_ef(db, entity, record_id) is not None:
+        return {"skip": True}
+    zaznam = raynet.get_record(resource, record_id)
+    deal_id = _vazba_id(zaznam, "deal")
+    if deal_id is None:
+        raise RuntimeError(f"{resource} {record_id} nemá navázaný obchodní případ (deal).")
+    op = zajisti_slozku_op(db, raynet, drive, n, deal_id)
+
+    typ_nazev = _slozka_pro_typ(n, klic_typu)
+    typ_slozka = drive.find_folder(typ_nazev, op.drive_folder_id) or drive.create_folder(typ_nazev, op.drive_folder_id)
+    nazev = _nazev_s_cislem(zaznam, record_id)
+    podslozka = drive.create_folder(nazev, typ_slozka["id"])
+    ef = KonektorEntityFolder(
+        entity=entity, entity_id=record_id,
+        drive_folder_id=podslozka["id"], drive_folder_url=podslozka.get("webViewLink", ""), name=nazev,
+    )
+    db.add(ef)
+    db.commit()
+    ok, zprava = _zapis_odkaz(raynet, resource, record_id, [pole_kod], ef.drive_folder_url)
+    zaloguj(db, "info" if ok else "warn", f"novy_{entity}",
+            f"Vytvořena složka „{nazev}“ v {typ_nazev}; {zprava}.",
+            {f"{entity}_id": record_id, "deal_id": deal_id, "drive_folder_id": ef.drive_folder_id})
+    return {"drive_folder_id": ef.drive_folder_id, "drive_folder_url": ef.drive_folder_url, "odkaz_ok": ok}
 
 
 def zpracuj_novy_klient(db: Session, company_id: int) -> dict:
-    """Vytvoří složku klienta + podsložky a zapíše odkaz do Raynetu.
-
-    Vrací slovník s výsledkem. Idempotentní: existující mapování nepřetváří.
-    Případné chyby probublají volajícímu (worker je zaloguje a zkusí znovu).
-    """
-    existujici = db.get(KonektorClientFolderMap, company_id)
-    if existujici is not None:
-        zaloguj(
-            db, "info", "novy_klient",
-            f"Klient {company_id} už má složku – přeskočeno.",
-            {"company_id": company_id, "drive_folder_id": existujici.drive_folder_id},
-        )
-        return {"skip": True, "drive_folder_id": existujici.drive_folder_id}
-
+    """Flow A – vznik zákazníka → složka zákazníka (bez podsložek; ty jsou pod OP)."""
+    if _najdi_ef(db, "company", company_id) is not None:
+        return {"skip": True}
     n = db.get(KonektorNastaveni, 1)
     if n is None:
         raise NastaveniNepripraveno("Nastavení konektoru neexistuje.")
     raynet, drive = vytvor_klienty(n)
+    ef = zajisti_slozku_zakaznika(db, raynet, drive, n, company_id)
+    return {"drive_folder_id": ef.drive_folder_id, "drive_folder_url": ef.drive_folder_url}
 
-    company = raynet.get_company(company_id)
-    nazev = _nazev_klienta(company, company_id)
 
-    # kořenová složka klienta ve Shared Drive
-    root = drive.create_folder(f"{nazev} [{company_id}]", n.google_shared_drive_id)
-    root_id = root["id"]
-    root_url = root.get("webViewLink", "")
+def zpracuj_novy_deal(db: Session, deal_id: int) -> dict:
+    """Vznik obchodního případu → složka OP + 4 podsložky (+ složka zákazníka)."""
+    if _najdi_ef(db, "deal", deal_id) is not None:
+        return {"skip": True}
+    n = db.get(KonektorNastaveni, 1)
+    if n is None:
+        raise NastaveniNepripraveno("Nastavení konektoru neexistuje.")
+    raynet, drive = vytvor_klienty(n)
+    ef = zajisti_slozku_op(db, raynet, drive, n, deal_id)
+    return {"drive_folder_id": ef.drive_folder_id, "drive_folder_url": ef.drive_folder_url}
 
-    for sub in _podslozky(n):
-        drive.create_folder(sub, root_id)
 
-    mapping = KonektorClientFolderMap(
-        raynet_company_id=company_id,
-        drive_folder_id=root_id,
-        drive_folder_url=root_url,
-        client_name=nazev,
-    )
-    db.add(mapping)
-    db.commit()
+def zpracuj_nova_nabidka(db: Session, offer_id: int) -> dict:
+    """Vznik nabídky → podsložka v 01_Nabídky pod OP + odkaz do pole nabídky."""
+    n = db.get(KonektorNastaveni, 1)
+    if n is None:
+        raise NastaveniNepripraveno("Nastavení konektoru neexistuje.")
+    raynet, drive = vytvor_klienty(n)
+    return _zpracuj_zaznam_pod_op(db, n, raynet, drive, "offer", "offer", offer_id, "nabíd", n.raynet_offer_drive_field)
 
-    # zpětný odkaz do vlastního pole company (nekritické – když selže, zalogujeme)
-    odkaz_ok = True
-    odkaz_zprava = "odkaz zapsán"
-    try:
-        raynet.set_company_drive_field(company_id, n.raynet_company_drive_field, root_url)
-    except Exception as e:  # noqa: BLE001
-        odkaz_ok = False
-        odkaz_zprava = f"odkaz NEzapsán: {e}"
 
-    zaloguj(
-        db,
-        "info" if odkaz_ok else "warn",
-        "novy_klient",
-        f"Vytvořena složka klienta „{nazev}“ ({len(_podslozky(n))} podsložek); {odkaz_zprava}.",
-        {"company_id": company_id, "drive_folder_id": root_id, "odkaz_ok": odkaz_ok},
-    )
-    return {"drive_folder_id": root_id, "drive_folder_url": root_url, "odkaz_ok": odkaz_ok}
+def zpracuj_nova_objednavka(db: Session, order_id: int) -> dict:
+    """Vznik objednávky → podsložka v 02_Objednávky pod OP + odkaz do pole objednávky."""
+    n = db.get(KonektorNastaveni, 1)
+    if n is None:
+        raise NastaveniNepripraveno("Nastavení konektoru neexistuje.")
+    raynet, drive = vytvor_klienty(n)
+    return _zpracuj_zaznam_pod_op(db, n, raynet, drive, "order", "order", order_id, "objedn", n.raynet_order_drive_field)
 
 
 # =================== Flow B: Disk → Raynet (FR2a) ===================
-def _resolve_company(drive: DriveClient, file: dict, root_index: dict, cache: dict) -> int | None:
-    """Zjistí, kterému klientovi soubor patří – jde přes rodiče až ke kořenové
-    složce klienta (drive_folder_id v client_folder_map). None = mimo klienty."""
+def _resolve_deal(drive: DriveClient, file: dict, root_index: dict, cache: dict) -> int | None:
+    """Zjistí, kterému obchodnímu případu soubor patří – jde přes rodiče až ke
+    složce obch. případu (drive_folder_id dealu v entity_folder). None = mimo."""
     to_visit = list(file.get("parents") or [])
     seen: set[str] = set()
     depth = 0
@@ -177,8 +302,11 @@ def zpracuj_drive_zmeny(db: Session) -> dict:
 
     zmeny, novy_token = drive.list_changes(stav.page_token, n.google_shared_drive_id)
 
-    mapy = db.query(KonektorClientFolderMap).all()
-    root_index = {m.drive_folder_id: m.raynet_company_id for m in mapy}
+    # kotvy = složky obchodních případů; soubor v podsložce se přiřadí svému dealu
+    mapy = (
+        db.query(KonektorEntityFolder).filter(KonektorEntityFolder.entity == "deal").all()
+    )
+    root_index = {m.drive_folder_id: m.entity_id for m in mapy}
     cache: dict = {}
 
     vytvoreno = smazano = aktualizovano = 0
@@ -207,9 +335,9 @@ def zpracuj_drive_zmeny(db: Session) -> dict:
         if (file.get("appProperties") or {}).get("origin") == "raynet":
             continue  # echo suppression – náš vlastní zápis
 
-        company_id = _resolve_company(drive, file, root_index, cache)
-        if company_id is None:
-            continue  # soubor mimo klientské složky
+        deal_id = _resolve_deal(drive, file, root_index, cache)
+        if deal_id is None:
+            continue  # soubor mimo složky obchodních případů
 
         url = file.get("webViewLink", "")
         name = file.get("name", "")
@@ -224,11 +352,12 @@ def zpracuj_drive_zmeny(db: Session) -> dict:
             aktualizovano += 1
             continue
 
-        doc_id = raynet.create_link_document(company_id, name, url)
+        doc_id = raynet.create_link_document(name, url, deal_id=deal_id)
         if fm is None:
             fm = KonektorFileMap(drive_file_id=file["id"])
             db.add(fm)
-        fm.raynet_company_id = company_id
+        # do raynet_company_id ukládáme id obch. případu (evidence navázání)
+        fm.raynet_company_id = deal_id
         fm.raynet_document_id = str(doc_id)
         fm.drive_file_url = url
         fm.file_name = name

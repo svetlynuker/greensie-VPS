@@ -14,13 +14,13 @@ Drive push kanály) přibudou až ve fázích F2/F3, kdy se začnou používat.
 
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 
 from app.database import Base
 
-# výchozí šablona podsložek klienta (potvrdí/upraví se v UI, kap. 4 specu)
-VYCHOZI_PODSLOZKY = "01_Nabídky,02_Smlouvy,03_Faktury,04_Ostatní"
+# výchozí podsložky POD OBCHODNÍM PŘÍPADEM (potvrzeno se zadavatelem)
+VYCHOZI_PODSLOZKY = "01_Nabídky,02_Objednávky,03_Fotky,04_Dokumenty"
 # výchozí base URL Raynet API pro české instance (viz INVENTORY, ověření API)
 VYCHOZI_RAYNET_URL = "https://app.raynet.cz/api/v2/"
 
@@ -45,8 +45,13 @@ class KonektorNastaveni(Base):
     raynet_instance = Column(String, nullable=False, default="", server_default="")
     raynet_api_user = Column(String, nullable=False, default="", server_default="")
     raynet_base_url = Column(String, nullable=False, default=VYCHOZI_RAYNET_URL, server_default=VYCHOZI_RAYNET_URL)
-    # kód vlastního pole u company, kam se zapíše odkaz na Drive složku (TO VERIFY)
+    # kódy vlastních polí (typ odkaz/URL) pro proklik na složku na Disku.
+    # U obchodního případu jsou dvě pole – zapisují se obě stejným odkazem.
     raynet_company_drive_field = Column(String, nullable=False, default="", server_default="")
+    raynet_deal_drive_field = Column(String, nullable=False, default="", server_default="")
+    raynet_deal_drive_field2 = Column(String, nullable=False, default="", server_default="")
+    raynet_offer_drive_field = Column(String, nullable=False, default="", server_default="")
+    raynet_order_drive_field = Column(String, nullable=False, default="", server_default="")
     # Raynet API klíč – ŠIFROVANĚ (Fernet), prázdné = nenastaveno
     raynet_api_key_enc = Column(Text, nullable=False, default="", server_default="")
 
@@ -106,6 +111,29 @@ class KonektorClientFolderMap(Base):
     drive_folder_id = Column(String, nullable=False)
     drive_folder_url = Column(String, nullable=False, default="", server_default="")
     client_name = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_ted)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_ted, onupdate=_ted)
+
+
+class KonektorEntityFolder(Base):
+    """Mapování Raynet záznam → jeho složka na Disku, pro všechny úrovně
+    hierarchie (company / deal / offer / order).
+
+    Nahrazuje původní client_folder_map (jen company) – hierarchie zákazník →
+    obchodní případ → nabídka/objednávka potřebuje mapovat všechny úrovně.
+    """
+
+    __tablename__ = "konektor_entity_folder"
+    __table_args__ = (
+        UniqueConstraint("entity", "entity_id", name="uq_konektor_entity"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    entity = Column(String, nullable=False)  # 'company' | 'deal' | 'offer' | 'order'
+    entity_id = Column(BigInteger, nullable=False)
+    drive_folder_id = Column(String, nullable=False, index=True)
+    drive_folder_url = Column(String, nullable=False, default="", server_default="")
+    name = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_ted)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_ted, onupdate=_ted)
 
