@@ -157,7 +157,7 @@ class DriveClient:
             self.service.files()
             .get(
                 fileId=file_id,
-                fields="id,name,mimeType,webViewLink,parents,trashed,md5Checksum,appProperties",
+                fields="id,name,mimeType,webViewLink,parents,trashed,md5Checksum,appProperties,size",
                 supportsAllDrives=True,
             )
             .execute(num_retries=DRIVE_RETRY)

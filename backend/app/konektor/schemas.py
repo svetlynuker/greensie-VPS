@@ -30,6 +30,7 @@ class KonektorNastaveniOut(BaseModel):
     google_dms_zdroj_folder_id: str = ""
     dms_sken_zapnuto: bool = True
     dms_sken_casy: str = "08:00,20:00"
+    dms_presun_zapnuto: bool = False
     kontejner_op: str = ""
     kontejner_nabidky: str = ""
     kontejner_objednavky: str = ""
@@ -65,6 +66,7 @@ class KonektorNastaveniVstup(BaseModel):
     google_dms_zdroj_folder_id: str = ""
     dms_sken_zapnuto: bool = True
     dms_sken_casy: str = "08:00,20:00"
+    dms_presun_zapnuto: bool = False
     kontejner_op: str = ""
     kontejner_nabidky: str = ""
     kontejner_objednavky: str = ""

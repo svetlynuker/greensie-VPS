@@ -731,20 +731,52 @@ def zrcadli_strom(db: Session) -> dict:
 
 
 # =================== RN Dokumenty → Disk (sken) ===================
+def _dms_cesta_na_disk(drive: DriveClient, master_id: str, dms_path: str | None) -> str:
+    """Vrátí id Disk složky (v master folderu) odpovídající RN cestě `dms_path`.
+
+    Cestu spáruje po segmentech: pro každý segment (očištěný RN název) najde na
+    Disku podsložku, jejíž očištěný název odpovídá; chybějící dotvoří. Kořen
+    Dokumentů (`/Dokumenty` nebo prázdné) = přímo master folder.
+    """
+    if not dms_path:
+        return master_id
+    segmenty = [s for s in dms_path.split("/") if s]
+    if segmenty and segmenty[0].strip().lower() == "dokumenty":
+        segmenty = segmenty[1:]
+    parent = master_id
+    for seg in segmenty:
+        nalez = None
+        for f in drive.list_children(parent):
+            if f.get("mimeType") == FOLDER_MIME and dms_bezpecny_nazev(f.get("name", "")) == seg:
+                nalez = f
+                break
+        if nalez is None:
+            nalez = drive.create_folder(seg, parent)
+        parent = nalez["id"]
+    return parent
+
+
 def dms_sken(db: Session) -> dict:
     """Sken modulu Dokumenty (RN → Disk).
 
-    ZATÍM DETEKČNÍ: projde celý strom Dokumentů a najde nové FYZICKÉ soubory
-    (mají `file`, nikoli `link` – náš vlastní odkaz se přeskočí, echo
-    suppression). Nahlásí, kolik jich je a kde, kolik složek prošel a kolik to
-    stálo API callů. Přesun na Disk + nahrazení odkazem (s mazáním originálu)
-    se doplní po ověření stahování obsahu.
+    Projde strom Dokumentů a najde FYZICKÉ soubory (mají `file`, nikoli `link` –
+    náš odkaz se přeskočí, echo suppression).
+
+    - Přesun VYPNUTÝ (`dms_presun_zapnuto=False`): jen DETEKCE – nahlásí počet.
+    - Přesun ZAPNUTÝ, baseline zatím nenastavena: zaznamená stávající soubory
+      jako baseline („staré, neřešit") a NIC nepřesune.
+    - Přesun ZAPNUTÝ, baseline existuje: soubory mimo baseline přesune na Disk
+      a v RN nahradí odkazem. Pořadí je bezpečné: stáhnout → ověřit velikost →
+      nahrát na Disk → ověřit velikost na Disku → teprve pak smazat v RN →
+      vložit odkaz. Když cokoli selže, originál v RN zůstane.
     """
     n = db.get(KonektorNastaveni, 1)
     if n is None:
         raise NastaveniNepripraveno("Nastavení konektoru neexistuje.")
-    raynet, _ = vytvor_klienty(n)
+    raynet, drive = vytvor_klienty(n)
+    master = (n.google_dms_zdroj_folder_id or "").strip()
 
+    # --- 1) projít strom a nasbírat fyzické soubory (s cestou jejich složky) ---
     calls = slozky = 0
     fyzicke: list[dict] = []
     stack: list[str | None] = [None]
@@ -766,16 +798,68 @@ def dms_sken(db: Session) -> dict:
                 slozky += 1
                 if it.get("path"):
                     stack.append(it["path"])
-            elif it.get("type") == "Document":
-                # fyzický soubor nahraný uživatelem = má file a nemá náš link
-                if it.get("file") and not it.get("link"):
-                    fyzicke.append({"id": it.get("id"), "name": it.get("name"), "path": it.get("path")})
+            elif it.get("type") == "Document" and it.get("file") and not it.get("link"):
+                fyzicke.append({
+                    "doc_id": it.get("id"),
+                    "file_id": (it.get("file") or {}).get("id"),
+                    "name": it.get("name"),
+                    "path": path,  # cesta složky, ve které dokument leží
+                })
+
+    # --- 2) režim detekce ---
+    if not n.dms_presun_zapnuto:
+        zaloguj(db, "info", "dms_sken",
+                f"Sken Dokumentů (detekce): {slozky} složek ({calls} API callů), "
+                f"fyzických souborů: {len(fyzicke)}. Přesun je vypnutý.",
+                {"slozky": slozky, "cally": calls, "fyzickych": len(fyzicke)})
+        return {"slozky": slozky, "cally": calls, "fyzickych": len(fyzicke), "presun": False}
+
+    # --- 3) inicializace baseline (stávající soubory se nepřesouvají) ---
+    if n.dms_baseline is None:
+        n.dms_baseline = [f["doc_id"] for f in fyzicke]
+        db.commit()
+        zaloguj(db, "info", "dms_sken",
+                f"Přesun zapnut – baseline nastavena ({len(fyzicke)} stávajících souborů se nebude "
+                f"přesouvat). Přesouvat se budou jen soubory přidané od teď.",
+                {"baseline": len(fyzicke)})
+        return {"slozky": slozky, "cally": calls, "baseline_nastaveno": len(fyzicke)}
+
+    # --- 4) přesun nových souborů (mimo baseline) ---
+    baseline = set(n.dms_baseline or [])
+    presunuto = chyb = 0
+    for f in fyzicke:
+        if f["doc_id"] in baseline or not f.get("file_id"):
+            continue
+        try:
+            detail = raynet.get_dms_document(f["doc_id"])
+            dms_folder_id = (detail.get("folder") or {}).get("id")
+            obsah, fn, ct, sz = raynet.stahni_soubor(f["file_id"])          # stáhnout (+ověří velikost)
+            disk_folder = _dms_cesta_na_disk(drive, master, f["path"])       # cílová Disk složka (1:1)
+            nahrany = drive.upload_file(
+                f["name"], disk_folder, obsah,
+                mime=ct or "application/octet-stream", app_properties={"origin": "raynet"},
+            )
+            g = drive.get_file(nahrany["id"])                                # ověřit velikost NA DISKU
+            if g.get("size") is not None and int(g["size"]) != len(obsah):
+                raise RuntimeError(f"velikost na Disku {g.get('size')} ≠ {len(obsah)} – originál v RN ponechán")
+            raynet.smaz_dms_dokument(f["doc_id"])                            # teprve teď smazat originál
+            if dms_folder_id:
+                raynet.create_dms_link(f["name"], nahrany.get("webViewLink", ""), dms_folder_id)
+            presunuto += 1
+            zaloguj(db, "info", "dms_sken",
+                    f"Přesunut soubor „{f['name']}“ na Disk a v RN nahrazen odkazem.",
+                    {"doc_id": f["doc_id"], "drive_file_id": nahrany["id"], "path": f["path"]})
+        except Exception as e:  # noqa: BLE001 - selhání jednoho souboru nezastaví ostatní
+            chyb += 1
+            zaloguj(db, "warn", "dms_sken",
+                    f"Přesun souboru „{f['name']}“ selhal (originál v RN ponechán): {e}",
+                    {"doc_id": f["doc_id"]})
 
     zaloguj(db, "info", "dms_sken",
-            f"Sken Dokumentů: prošel {slozky} složek ({calls} API callů), "
-            f"nových fyzických souborů k přesunu: {len(fyzicke)}.",
-            {"slozky": slozky, "cally": calls, "fyzickych": len(fyzicke), "ukazka": fyzicke[:50]})
-    return {"slozky": slozky, "cally": calls, "fyzickych": len(fyzicke)}
+            f"Sken Dokumentů hotov: {slozky} složek ({calls} API callů), přesunuto {presunuto}"
+            + (f", chyb {chyb}" if chyb else "") + ".",
+            {"slozky": slozky, "cally": calls, "presunuto": presunuto, "chyb": chyb})
+    return {"slozky": slozky, "cally": calls, "presunuto": presunuto, "chyb": chyb}
 
 
 # =================== Google Drive push (watch) ===================
