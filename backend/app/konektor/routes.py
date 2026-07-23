@@ -417,6 +417,33 @@ def vypis_strom_vzoru(
     return {"folder_id": cil, "radky": radky}
 
 
+@router.post("/dokumenty/nahled")
+def dokumenty_nahled(
+    folder_id: str | None = Query(None, description="ID složky; prázdné = kořen Dokumentů"),
+    _user: User = Depends(vyzaduj_pravo_konektor),
+    db: Session = Depends(get_db),
+):
+    """Diagnostika: načte strukturu modulu Dokumenty z Raynetu (GET /document/folder/).
+
+    Slouží k ověření reálného tvaru dat (názvy polí složek/dokumentů, zda
+    dokument umí odkaz na URL) před stavbou zrcadlení Disk → Dokumenty.
+    """
+    n = ziskej_nastaveni(db)
+    api_key = crypto.desifruj(n.raynet_api_key_enc)
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Raynet API klíč není nastaven.")
+    raynet = RaynetClient(n.raynet_instance, n.raynet_api_user, api_key, n.raynet_base_url)
+    try:
+        data = raynet.list_document_folders(folder_id)
+    except Exception as e:  # noqa: BLE001
+        zaloguj(db, "error", "dokumenty_nahled", f"Načtení Dokumentů z RN selhalo: {e}")
+        raise HTTPException(status_code=502, detail=str(e))
+    nahled = json.dumps(data, ensure_ascii=False, indent=2)
+    zaloguj(db, "info", "dokumenty_nahled", f"Struktura Dokumentů RN:\n{nahled[:3500]}",
+            {"folder_id": folder_id})
+    return {"folder_id": folder_id, "data": data}
+
+
 @router.post("/import/rozsah")
 def import_rozsah(
     _user: User = Depends(vyzaduj_pravo_konektor),
