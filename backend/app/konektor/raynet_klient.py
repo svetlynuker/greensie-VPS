@@ -10,6 +10,20 @@ document, file/attachment, webhook) přibudou v dalších fázích.
 
 import requests
 
+# DMS (modul Dokumenty) nepovoluje v názvech tyto znaky:
+_DMS_ZAKAZANE = set("~!@#$%^&*/'.,")
+
+
+def dms_bezpecny_nazev(s: str) -> str:
+    """Očistí název pro modul Dokumenty – zakázané znaky nahradí mezerou.
+
+    Raynet DMS: „Znaky ~!@#$%^&*/'., nejsou povoleny.“ (platí pro složky
+    i dokumenty). Vícenásobné mezery se sloučí. Netýká se URL odkazu.
+    """
+    ocisteno = "".join(" " if ch in _DMS_ZAKAZANE else ch for ch in (s or ""))
+    return " ".join(ocisteno.split()).strip() or "bez názvu"
+
+
 # Interní kód entity → skutečný název REST endpointu Raynetu.
 # V konektoru používáme krátké kódy (deal/order), Raynet API má ale
 # /businessCase/ a /salesOrder/ (company a offer se shodují).
@@ -218,7 +232,7 @@ class RaynetClient:
         Když parent_id None, vznikne v kořeni.
         """
         endpoint = f"{self.base_url}dms/folder/"
-        telo: dict = {"name": name}
+        telo: dict = {"name": dms_bezpecny_nazev(name)}
         if parent_id:
             telo["parent"] = int(parent_id)
         r = requests.put(
@@ -241,7 +255,8 @@ class RaynetClient:
         Model odkazů: soubor zůstává na Disku, DMS drží jen odkaz. `folder_id`
         = id nadřazené složky v DMS. Tvar `link` objektu ověřen diagnostikou.
         """
-        telo: dict = {"name": name, "link": {"link": url_value, "linkName": name}}
+        bezpecny = dms_bezpecny_nazev(name)
+        telo: dict = {"name": bezpecny, "link": {"link": url_value, "linkName": bezpecny}}
         if folder_id:
             telo["folder"] = int(folder_id)
         return self.put_dms_document(telo, timeout=timeout)
