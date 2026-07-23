@@ -68,6 +68,7 @@ def _nastaveni_out(n: KonektorNastaveni) -> KonektorNastaveniOut:
         raynet_order_drive_field=n.raynet_order_drive_field,
         raynet_api_key_nastaven=bool(n.raynet_api_key_enc),
         google_shared_drive_id=n.google_shared_drive_id,
+        google_root_folder_id=n.google_root_folder_id,
         google_subject_email=n.google_subject_email,
         google_sa_json_nastaven=bool(n.google_sa_json_enc),
         sync_model=n.sync_model,
@@ -121,6 +122,7 @@ def uloz_nastaveni(
     n.raynet_offer_drive_field = vstup.raynet_offer_drive_field.strip()
     n.raynet_order_drive_field = vstup.raynet_order_drive_field.strip()
     n.google_shared_drive_id = vstup.google_shared_drive_id.strip()
+    n.google_root_folder_id = vstup.google_root_folder_id.strip()
     n.google_subject_email = vstup.google_subject_email.strip()
     n.sync_model = vstup.sync_model
     n.template_subfolders = vstup.template_subfolders.strip()

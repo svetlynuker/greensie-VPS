@@ -24,6 +24,7 @@ class KonektorNastaveniOut(BaseModel):
     raynet_api_key_nastaven: bool = False
     # Google (bez JSON – jen příznak)
     google_shared_drive_id: str = ""
+    google_root_folder_id: str = ""
     google_subject_email: str = ""
     google_sa_json_nastaven: bool = False
     # chování
@@ -49,6 +50,7 @@ class KonektorNastaveniVstup(BaseModel):
     raynet_offer_drive_field: str = ""
     raynet_order_drive_field: str = ""
     google_shared_drive_id: str = ""
+    google_root_folder_id: str = ""
     google_subject_email: str = ""
     sync_model: str = "links"
     template_subfolders: str = ""

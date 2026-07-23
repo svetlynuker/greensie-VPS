@@ -129,7 +129,9 @@ def zajisti_slozku_zakaznika(db: Session, raynet: RaynetClient, drive: DriveClie
         return ef
     company = raynet.get_record("company", company_id)
     nazev = _nazev(company, f"Zákazník {company_id}")
-    root = drive.create_folder(_bezpecny_nazev(f"{nazev} [{company_id}]"), n.google_shared_drive_id)
+    # kořen pro zakládání = vyhrazená složka, jinak kořen Shared Drivu
+    parent = n.google_root_folder_id or n.google_shared_drive_id
+    root = drive.create_folder(_bezpecny_nazev(f"{nazev} [{company_id}]"), parent)
     ef = KonektorEntityFolder(
         entity="company", entity_id=company_id,
         drive_folder_id=root["id"], drive_folder_url=root.get("webViewLink", ""), name=nazev,
