@@ -199,27 +199,28 @@ class RaynetClient:
 
     # ---- operace pro FR3 (Flow C, zrcadlení stromu do modulu Dokumenty) ----
     def list_document_folders(self, parent_id: str | None = None, timeout: int = 30) -> dict | list:
-        """Výpis složek a souborů v modulu Dokumenty (GET /document/folder/).
+        """Výpis složek a souborů v modulu Dokumenty/DMS (GET /dms/).
 
-        Bez `parent_id` vrací kořen. Slouží k diagnostice reálného tvaru dat
-        (názvy polí: id, name, parent, typ…), podle kterého se pak staví
-        zrcadlení. Vrací `data` z obálky (list nebo dict).
+        Modul Dokumenty má v API prefix `/dms/` (ne `/document/`). Bez
+        `parent_id` vrací kořen. Slouží k diagnostice reálného tvaru dat
+        (názvy polí: id, name, parent, typ, případně url…). Vrací `data`.
         """
-        url = f"{self.base_url}document/folder/"
+        url = f"{self.base_url}dms/"
         if parent_id:
             url += f"?folderId={parent_id}"
         r = requests.get(url, auth=(self.api_user, self.api_key), headers=self._headers(), timeout=timeout)
-        return self._over_odpoved(r, "Výpis složek dokumentů")
+        return self._over_odpoved(r, "Výpis Dokumentů (DMS)")
 
     def create_document_folder(self, name: str, parent_id: str | None = None, timeout: int = 20) -> int:
-        """Vytvoří složku v modulu Dokumenty (PUT /document/). Vrací id.
+        """Vytvoří složku v modulu Dokumenty (PUT /dms/folder/). Vrací id.
 
-        TO VERIFY tvar (pole parent). Když parent_id None, vznikne v kořeni.
+        Pole: `name`, `parent` (integer id nadřazené složky, nullable).
+        Když parent_id None, vznikne v kořeni.
         """
-        endpoint = f"{self.base_url}document/"
+        endpoint = f"{self.base_url}dms/folder/"
         telo: dict = {"name": name}
         if parent_id:
-            telo["parent"] = {"id": parent_id}
+            telo["parent"] = int(parent_id)
         r = requests.put(
             endpoint, auth=(self.api_user, self.api_key), headers=self._headers(), json=telo, timeout=timeout
         )
