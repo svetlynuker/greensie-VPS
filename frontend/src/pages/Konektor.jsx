@@ -12,6 +12,7 @@ import {
   konektorVytvorSlozku,
   konektorStromVzoru,
   konektorDokumentyNahled,
+  konektorDokumentyTestOdkaz,
   konektorImportRozsah,
   konektorImportSpustit,
   konektorReconcile,
@@ -348,6 +349,8 @@ function RucniAkceKarta() {
   const [stromBezi, setStromBezi] = useState(false);
   const [dokumenty, setDokumenty] = useState(null);
   const [dokumentyBezi, setDokumentyBezi] = useState(false);
+  const [testOdkaz, setTestOdkaz] = useState(null);
+  const [testOdkazBezi, setTestOdkazBezi] = useState(false);
 
   async function vytvor() {
     setBezi(true);
@@ -388,6 +391,20 @@ function RucniAkceKarta() {
       setChyba(e.message);
     } finally {
       setDokumentyBezi(false);
+    }
+  }
+
+  async function zkusOdkaz() {
+    setTestOdkazBezi(true);
+    setChyba(null);
+    setTestOdkaz(null);
+    try {
+      const v = await konektorDokumentyTestOdkaz();
+      setTestOdkaz(JSON.stringify(v.vytvoreno, null, 2));
+    } catch (e) {
+      setChyba(e.message);
+    } finally {
+      setTestOdkazBezi(false);
     }
   }
 
@@ -459,9 +476,14 @@ function RucniAkceKarta() {
           Načte kořen modulu Dokumenty z Raynetu (jak vypadají složky a jejich pole). Slouží k přípravě
           zrcadlení Disk → Dokumenty.
         </p>
-        <button className="fm-btn" onClick={nactiDokumenty} disabled={dokumentyBezi}>
-          {dokumentyBezi ? "Načítám…" : "Načíst strukturu Dokumentů z RN"}
-        </button>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button className="fm-btn" onClick={nactiDokumenty} disabled={dokumentyBezi}>
+            {dokumentyBezi ? "Načítám…" : "Načíst strukturu Dokumentů z RN"}
+          </button>
+          <button className="fm-btn" onClick={zkusOdkaz} disabled={testOdkazBezi}>
+            {testOdkazBezi ? "Zkouším…" : "Zkusit odkaz v Dokumentech (test)"}
+          </button>
+        </div>
         {dokumenty && (
           <pre
             style={{
@@ -477,6 +499,23 @@ function RucniAkceKarta() {
             }}
           >
             {dokumenty}
+          </pre>
+        )}
+        {testOdkaz && (
+          <pre
+            style={{
+              marginTop: 12,
+              padding: 12,
+              background: "var(--fm-head)",
+              border: "1px solid var(--fm-line)",
+              borderRadius: 8,
+              fontSize: 12,
+              lineHeight: 1.5,
+              overflowX: "auto",
+              whiteSpace: "pre",
+            }}
+          >
+            {testOdkaz}
           </pre>
         )}
       </div>
