@@ -395,6 +395,11 @@ export function konektorWatchZrus() {
   return zavolej("/konektor/watch", { method: "DELETE" });
 }
 
+export function konektorDokumentNaDisk(documentId, companyId) {
+  const q = companyId ? `?company_id=${companyId}` : "";
+  return zavolej(`/konektor/dokument/${documentId}/na-disk${q}`, { method: "POST" });
+}
+
 // ---- Přehled změn (Pohled 3) ----
 export function nactiZmeny({ od, do: doDatum } = {}) {
   const p = new URLSearchParams();

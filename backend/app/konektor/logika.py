@@ -247,6 +247,76 @@ def zpracuj_drive_zmeny(db: Session) -> dict:
     return {"vytvoreno": vytvoreno, "aktualizovano": aktualizovano, "smazano": smazano, "zmen": len(zmeny)}
 
 
+# =================== Flow B: Raynet → Disk (FR2b) ===================
+def zpracuj_raynet_dokument(db: Session, document_id: str, company_id: int | None = None) -> dict:
+    """Stáhne dokument nahraný v Raynetu a nahraje ho do složky klienta na Disku.
+
+    Echo suppression: dokumenty, které konektor sám vytvořil (jsou ve file_map
+    jako raynet_document_id), se přeskočí – jinak by vznikla smyčka s Flow B
+    (Disk→Raynet). Na Disk se soubor značí appProperties.origin='raynet'.
+
+    TO VERIFY: tvar detailu dokumentu (name, company, fileId) a endpoint stažení
+    obsahu – parser je tolerantní, doladí se po ověření reálným voláním.
+    """
+    # náš vlastní odkazový dokument? → nestahovat zpět (echo suppression)
+    nas = (
+        db.query(KonektorFileMap)
+        .filter(KonektorFileMap.raynet_document_id == str(document_id))
+        .first()
+    )
+    if nas is not None:
+        zaloguj(db, "info", "raynet_dokument",
+                f"Dokument {document_id} pochází od konektoru – přeskočeno.", {"document_id": document_id})
+        return {"skip": True}
+
+    n = db.get(KonektorNastaveni, 1)
+    if n is None:
+        raise NastaveniNepripraveno("Nastavení konektoru neexistuje.")
+    raynet, drive = vytvor_klienty(n)
+
+    doc = raynet.get_document(document_id)
+    name = doc.get("name") or doc.get("fileName") or f"dokument-{document_id}"
+    cid = company_id
+    if cid is None:
+        rel = doc.get("company")
+        if isinstance(rel, dict):
+            cid = rel.get("id")
+        cid = cid or doc.get("companyId")
+    if cid is None:
+        zaloguj(db, "warn", "raynet_dokument",
+                f"Dokument {document_id} nemá určenou company – přeskočeno.", {"document_id": document_id})
+        return {"skip": True, "duvod": "bez company"}
+
+    mapping = db.get(KonektorClientFolderMap, int(cid))
+    if mapping is None:
+        zaloguj(db, "warn", "raynet_dokument",
+                f"Klient {cid} nemá složku na Disku – dokument {document_id} přeskočen.",
+                {"document_id": document_id, "company_id": cid})
+        return {"skip": True, "duvod": "klient bez složky"}
+
+    file_id = doc.get("fileId") or document_id
+    data = raynet.download_document_body(str(file_id))
+    nahrany = drive.upload_file(
+        name, mapping.drive_folder_id, data, app_properties={"origin": "raynet"}
+    )
+
+    fm = KonektorFileMap(
+        drive_file_id=nahrany["id"],
+        raynet_company_id=int(cid),
+        raynet_document_id=str(document_id),
+        drive_file_url=nahrany.get("webViewLink", ""),
+        file_name=name,
+        last_synced_source="raynet",
+        state="active",
+    )
+    db.add(fm)
+    db.commit()
+    zaloguj(db, "info", "raynet_dokument",
+            f"Dokument „{name}“ z Raynetu nahrán do složky klienta {cid}.",
+            {"document_id": document_id, "company_id": cid, "drive_file_id": nahrany["id"]})
+    return {"drive_file_id": nahrany["id"], "drive_file_url": nahrany.get("webViewLink", "")}
+
+
 # =================== Google Drive push (watch) ===================
 def webhook_token() -> str:
     """Token, kterým Google značí push notifikace (X-Goog-Channel-Token)."""

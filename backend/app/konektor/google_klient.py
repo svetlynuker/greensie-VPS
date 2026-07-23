@@ -73,6 +73,28 @@ class DriveClient:
                 return f
         return None
 
+    def upload_file(
+        self,
+        name: str,
+        parent_id: str,
+        data: bytes,
+        mime: str = "application/octet-stream",
+        app_properties: dict | None = None,
+    ) -> dict:
+        """Nahraje soubor do složky. `app_properties` slouží k echo suppression
+        (origin=raynet → Disk→Raynet směr ho pak přeskočí)."""
+        from googleapiclient.http import MediaInMemoryUpload
+
+        body = {"name": name, "parents": [parent_id]}
+        if app_properties:
+            body["appProperties"] = app_properties
+        media = MediaInMemoryUpload(data, mimetype=mime, resumable=False)
+        return (
+            self.service.files()
+            .create(body=body, media_body=media, fields="id,name,webViewLink", supportsAllDrives=True)
+            .execute()
+        )
+
     def get_file(self, file_id: str) -> dict:
         """Detail souboru vč. rodičů a příznaku trashed."""
         return (

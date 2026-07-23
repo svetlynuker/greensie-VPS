@@ -40,12 +40,18 @@ def _backoff_s(attempts: int) -> int:
 
 def _zpracuj_job(db: Session, job: KonektorJobQueue) -> None:
     """Vykoná jednu úlohu podle typu. Chyba probublá k retry logice."""
-    from app.konektor.logika import zpracuj_drive_zmeny, zpracuj_novy_klient
+    from app.konektor.logika import (
+        zpracuj_drive_zmeny,
+        zpracuj_novy_klient,
+        zpracuj_raynet_dokument,
+    )
 
     if job.typ == "novy_klient":
         zpracuj_novy_klient(db, int(job.payload["company_id"]))
     elif job.typ == "drive_zmeny":
         zpracuj_drive_zmeny(db)
+    elif job.typ == "raynet_dokument":
+        zpracuj_raynet_dokument(db, str(job.payload["document_id"]), job.payload.get("company_id"))
     else:
         raise RuntimeError(f"Neznámý typ úlohy: {job.typ}")
 

@@ -14,6 +14,7 @@ import {
   konektorWatchStav,
   konektorWatchRegistruj,
   konektorWatchZrus,
+  konektorDokumentNaDisk,
 } from "../api";
 
 const poleStyl = {
@@ -412,6 +413,60 @@ function SyncDiskKarta({ onChyba }) {
   );
 }
 
+/* =================== Karta: Raynet → Disk (ruční test) =================== */
+function RaynetNaDiskKarta({ onChyba }) {
+  const [documentId, setDocumentId] = useState("");
+  const [companyId, setCompanyId] = useState("");
+  const [bezi, setBezi] = useState(false);
+  const [vysledek, setVysledek] = useState(null);
+
+  async function stahni() {
+    setBezi(true);
+    setVysledek(null);
+    try {
+      const v = await konektorDokumentNaDisk(documentId, companyId ? Number(companyId) : undefined);
+      setVysledek(
+        v.skip
+          ? `Přeskočeno${v.duvod ? ` (${v.duvod})` : ""}.`
+          : `Nahráno na Disk (${v.drive_file_id}).`
+      );
+    } catch (e) {
+      onChyba(e);
+    } finally {
+      setBezi(false);
+    }
+  }
+
+  return (
+    <div className="fm-card" style={{ padding: 16 }}>
+      <strong style={{ fontSize: 15 }}>Raynet → Disk (ruční test)</strong>
+      <p style={{ margin: "4px 0 12px", fontSize: 13, color: "var(--fm-muted)", lineHeight: 1.5 }}>
+        Stáhne dokument nahraný v Raynetu a nahraje ho do složky klienta na Disku (FR2b). ID company
+        je volitelné – když ho konektor z dokumentu nezjistí, doplň ho ručně.
+      </p>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <input
+          style={{ ...poleStyl, width: 200 }}
+          value={documentId}
+          onChange={(e) => setDocumentId(e.target.value)}
+          placeholder="ID dokumentu v Raynetu"
+        />
+        <input
+          style={{ ...poleStyl, width: 160 }}
+          type="number"
+          value={companyId}
+          onChange={(e) => setCompanyId(e.target.value)}
+          placeholder="ID company (nepovinné)"
+        />
+        <button className="fm-btn fm-primary" onClick={stahni} disabled={bezi || !documentId}>
+          {bezi ? "Stahuji…" : "Stáhnout na Disk"}
+        </button>
+      </div>
+      {vysledek && <div style={{ marginTop: 12, fontSize: 13, color: "var(--fm-brand-dk)" }}>{vysledek}</div>}
+    </div>
+  );
+}
+
 /* =================== Panel: Logy konektoru =================== */
 const UROVEN_STYL = {
   debug: { text: "debug", barva: "var(--fm-muted)" },
@@ -591,6 +646,7 @@ export default function Konektor() {
         <NastaveniKarta />
         <RucniAkceKarta />
         <SyncDiskKarta onChyba={osetriChybu} />
+        <RaynetNaDiskKarta onChyba={osetriChybu} />
         <LogyPanel onChyba={osetriChybu} />
       </div>
     </Layout>

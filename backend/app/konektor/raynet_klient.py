@@ -120,3 +120,30 @@ class RaynetClient:
             endpoint, auth=(self.api_user, self.api_key), headers=self._headers(), timeout=timeout
         )
         self._over_odpoved(r, f"Smazání dokumentu {document_id}")
+
+    # ---- operace pro FR2b (Flow B, Raynet → Disk) ----
+    def get_document(self, document_id: str, timeout: int = 20) -> dict:
+        """Detail dokumentu/přílohy (GET /document/{id}/). Vrací `data`."""
+        endpoint = f"{self.base_url}document/{document_id}/"
+        r = requests.get(
+            endpoint, auth=(self.api_user, self.api_key), headers=self._headers(), timeout=timeout
+        )
+        return self._over_odpoved(r, f"Načtení dokumentu {document_id}")
+
+    def download_document_body(self, file_id: str, timeout: int = 60) -> bytes:
+        """Stáhne binární obsah souboru.
+
+        TO VERIFY: přesná cesta pro „downloading body of file“ není
+        zdokumentovaná – použit nejlepší odhad `/file/{id}/download`. Po ověření
+        se upraví (případně přes downloadUrl z get_document).
+        """
+        endpoint = f"{self.base_url}file/{file_id}/download"
+        r = requests.get(
+            endpoint,
+            auth=(self.api_user, self.api_key),
+            headers={"X-Instance-Name": self.instance},
+            timeout=timeout,
+        )
+        if r.status_code >= 400:
+            raise RuntimeError(f"Stažení obsahu souboru {file_id}: HTTP {r.status_code}")
+        return r.content

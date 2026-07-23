@@ -243,24 +243,72 @@ def _parse_raynet_company_created(telo: str) -> int | None:
     return None
 
 
+def _parse_raynet_document_added(telo: str) -> tuple[int, int | None] | None:
+    """Tolerantně rozpozná přidání dokumentu/přílohy a vrátí (document_id, company_id?).
+
+    TO VERIFY: přesný tvar payloadu není zdokumentovaný.
+    """
+    try:
+        data = json.loads(telo)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    entita = str(data.get("entityName") or data.get("entity") or data.get("object") or "").lower()
+    akce = str(data.get("action") or data.get("event") or data.get("type") or "").lower()
+    if not any(k in entita for k in ("document", "attachment")):
+        return None
+    if not any(k in akce for k in ("create", "created", "new", "insert", "add")):
+        return None
+
+    doc_id = None
+    for klic in ("id", "entityId", "recordId", "objectId", "documentId"):
+        if data.get(klic) is not None:
+            try:
+                doc_id = int(data[klic])
+                break
+            except (ValueError, TypeError):
+                pass
+    if doc_id is None:
+        return None
+
+    company_id = None
+    rel = data.get("company")
+    if isinstance(rel, dict) and rel.get("id") is not None:
+        company_id = rel["id"]
+    company_id = company_id or data.get("companyId")
+    try:
+        company_id = int(company_id) if company_id is not None else None
+    except (ValueError, TypeError):
+        company_id = None
+    return doc_id, company_id
+
+
 @router.post("/webhooks/raynet")
 async def webhook_raynet(request: Request, db: Session = Depends(get_db)):
     """Příjem Raynet webhooku.
 
-    Vždy zaloguje payload (zachycení reálného tvaru). Pokud rozpozná vznik
-    company, zařadí úlohu „novy_klient“ do fronty (Flow A / FR1).
+    Vždy zaloguje payload (zachycení reálného tvaru). Rozpozná vznik company
+    (→ Flow A / FR1) nebo přidání dokumentu (→ Flow B Raynet→Disk / FR2b).
     """
     telo = await _telo_jako_text(request)
     company_id = _parse_raynet_company_created(telo)
+    dokument = _parse_raynet_document_added(telo)
     zaloguj(
         db,
         uroven="info",
         udalost="webhook_raynet",
         zprava=f"Přijat Raynet webhook: {telo}",
-        kontext={"content_type": request.headers.get("content-type"), "company_id": company_id},
+        kontext={
+            "content_type": request.headers.get("content-type"),
+            "company_id": company_id,
+            "document_id": dokument[0] if dokument else None,
+        },
     )
     if company_id is not None:
         fronta.zarad(db, "novy_klient", {"company_id": company_id})
+    if dokument is not None:
+        fronta.zarad(db, "raynet_dokument", {"document_id": dokument[0], "company_id": dokument[1]})
     return {"prijato": True}
 
 
@@ -280,6 +328,24 @@ def rucni_vytvor_slozku(
                 {"company_id": company_id})
         raise HTTPException(status_code=502, detail=str(e))
     return vysledek
+
+
+@router.post("/dokument/{document_id}/na-disk")
+def rucni_dokument_na_disk(
+    document_id: str,
+    company_id: int | None = Query(None),
+    _user: User = Depends(vyzaduj_pravo_konektor),
+    db: Session = Depends(get_db),
+):
+    """Ruční spuštění Flow B Raynet→Disk pro daný dokument (test A3)."""
+    try:
+        return logika.zpracuj_raynet_dokument(db, document_id, company_id)
+    except logika.NastaveniNepripraveno as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        zaloguj(db, "error", "raynet_dokument", f"Ruční stažení dokumentu {document_id} selhalo: {e}",
+                {"document_id": document_id})
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.post("/webhooks/drive")
