@@ -127,6 +127,19 @@ def _lehka_migrace():
         conn.execute(
             text("ALTER TABLE konektor_entity_folder ADD COLUMN IF NOT EXISTS kontejnery JSONB")
         )
+        # automatický sken Dokumentů (RN → Disk)
+        conn.execute(
+            text("ALTER TABLE konektor_nastaveni ADD COLUMN IF NOT EXISTS dms_sken_zapnuto "
+                 "BOOLEAN NOT NULL DEFAULT true")
+        )
+        conn.execute(
+            text("ALTER TABLE konektor_nastaveni ADD COLUMN IF NOT EXISTS dms_sken_casy "
+                 "VARCHAR NOT NULL DEFAULT '08:00,20:00'")
+        )
+        conn.execute(
+            text("ALTER TABLE konektor_nastaveni ADD COLUMN IF NOT EXISTS dms_sken_posledni "
+                 "TIMESTAMPTZ")
+        )
 
 
 _lehka_migrace()

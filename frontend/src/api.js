@@ -426,6 +426,10 @@ export function konektorZrcadlit() {
   return zavolej("/konektor/zrcadlit", { method: "POST" });
 }
 
+export function konektorDmsSken() {
+  return zavolej("/konektor/dms-sken", { method: "POST" });
+}
+
 // ---- Přehled změn (Pohled 3) ----
 export function nactiZmeny({ od, do: doDatum } = {}) {
   const p = new URLSearchParams();

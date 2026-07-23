@@ -21,6 +21,7 @@ import {
   konektorWatchZrus,
   konektorDokumentNaDisk,
   konektorZrcadlit,
+  konektorDmsSken,
 } from "../api";
 
 const poleStyl = {
@@ -86,6 +87,8 @@ function NastaveniKarta() {
         google_root_folder_id: nast.google_root_folder_id,
         google_vzor_folder_id: nast.google_vzor_folder_id,
         google_dms_zdroj_folder_id: nast.google_dms_zdroj_folder_id,
+        dms_sken_zapnuto: nast.dms_sken_zapnuto,
+        dms_sken_casy: nast.dms_sken_casy,
         kontejner_op: nast.kontejner_op,
         kontejner_nabidky: nast.kontejner_nabidky,
         kontejner_objednavky: nast.kontejner_objednavky,
@@ -247,6 +250,21 @@ function NastaveniKarta() {
           onChange={(e) => nastav("google_sa_json", e.target.value)}
           placeholder={nast.google_sa_json_nastaven ? "•••••••• (vlož nový JSON jen pro změnu)" : '{ "type": "service_account", … }'}
         />
+      </div>
+
+      {/* ---- Sken Dokumentů (RN → Disk) ---- */}
+      <div style={{ ...sekceNadpis, marginTop: 14 }}>Sken Dokumentů (Raynet → Disk)</div>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer", marginTop: 4 }}>
+        <input type="checkbox" checked={nast.dms_sken_zapnuto} onChange={(e) => nastav("dms_sken_zapnuto", e.target.checked)} />
+        Automaticky skenovat nové soubory v RN Dokumentech
+      </label>
+      <div style={{ marginTop: 12 }}>
+        <label style={labelStyl}>Časy skenu (HH:MM, oddělené čárkou, čas Praha)</label>
+        <input style={poleStyl} value={nast.dms_sken_casy} onChange={(e) => nastav("dms_sken_casy", e.target.value)} placeholder="08:00,20:00" />
+      </div>
+      <div style={{ marginTop: 6, fontSize: 12, color: "var(--fm-muted)" }}>
+        Poslední sken:{" "}
+        {nast.dms_sken_posledni ? new Date(nast.dms_sken_posledni).toLocaleString("cs-CZ") : "zatím neproběhl"}
       </div>
 
       {/* ---- Chování ---- */}
@@ -607,6 +625,7 @@ function SyncDiskKarta({ onChyba }) {
   const [watch, setWatch] = useState(null);
   const [watchBezi, setWatchBezi] = useState(false);
   const [zrcadli, setZrcadli] = useState(false);
+  const [skenuje, setSkenuje] = useState(false);
 
   const nactiWatch = useCallback(() => {
     konektorWatchStav().then(setWatch).catch(() => setWatch(null));
@@ -663,6 +682,23 @@ function SyncDiskKarta({ onChyba }) {
     }
   }
 
+  async function skenujDokumenty() {
+    setSkenuje(true);
+    setVysledek(null);
+    try {
+      const v = await konektorDmsSken();
+      setVysledek(
+        v.zarazeno
+          ? "Sken Dokumentů zařazen – běží na pozadí, výsledek uvidíš v logu (událost „dms_sken“)."
+          : `Sken se nespustil: ${v.duvod || "už běží"}.`
+      );
+    } catch (e) {
+      onChyba(e);
+    } finally {
+      setSkenuje(false);
+    }
+  }
+
   return (
     <div className="fm-card" style={{ padding: 16 }}>
       <strong style={{ fontSize: 15 }}>Synchronizace Disk → Raynet</strong>
@@ -679,6 +715,9 @@ function SyncDiskKarta({ onChyba }) {
         </button>
         <button className="fm-btn" onClick={zrcadliStrom} disabled={zrcadli} title="FR3: zrcadlí strom Disku do modulu Dokumenty">
           {zrcadli ? "Zrcadlím…" : "Zrcadlit strom do Dokumentů"}
+        </button>
+        <button className="fm-btn" onClick={skenujDokumenty} disabled={skenuje} title="RN → Disk: najde nové soubory nahrané v RN Dokumentech">
+          {skenuje ? "Skenuji…" : "Skenovat Dokumenty teď"}
         </button>
         <span style={{ fontSize: 13, color: "var(--fm-muted)" }}>
           {watch == null
