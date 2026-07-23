@@ -29,7 +29,7 @@ from app.konektor.models import (
     KonektorNastaveni,
     KonektorTreeMirror,
 )
-from app.konektor.raynet_klient import RaynetClient
+from app.konektor.raynet_klient import RaynetClient, dms_bezpecny_nazev
 
 # entita → (Raynet resource, typ úlohy, klíč id v payloadu) pro hromadný import
 _IMPORT_PLAN = (
@@ -618,6 +618,26 @@ def zpracuj_raynet_dokument(db: Session, document_id: str, company_id: int | Non
 
 
 # =================== Flow C: zrcadlení do modulu Dokumenty (DMS, FR3) ===================
+def _dms_najdi_polozku(raynet: RaynetClient, dms_parent: int | None, nazev_ocisteny: str, je_slozka: bool) -> int | None:
+    """Najde v DMS složce (dms_parent, None=kořen) položku daného typu a názvu.
+
+    Řídí se skutečným stavem v Raynetu (ne uloženými id) → odolné vůči smazání
+    složky v RN i vůči duplicitám. Vrací id, nebo None když neexistuje.
+    """
+    try:
+        data = raynet.list_document_folders(dms_parent)
+    except Exception:  # noqa: BLE001 - nedostupný výpis → chováme se jako „nenalezeno“
+        return None
+    typ = "Folder" if je_slozka else "Document"
+    for it in (data or []):
+        if isinstance(it, dict) and it.get("type") == typ and (it.get("name") or "") == nazev_ocisteny:
+            try:
+                return int(it.get("id"))
+            except (ValueError, TypeError):
+                return None
+    return None
+
+
 def zrcadli_strom(db: Session) -> dict:
     """Zrcadlí OBSAH zdrojové složky na Disku do modulu Dokumenty (DMS) v Raynetu.
 
@@ -650,29 +670,22 @@ def zrcadli_strom(db: Session) -> dict:
         navstivene.add(drive_folder_id)
 
         for child in drive.list_children(drive_folder_id):
-            cid = child["id"]
-            existuje = db.get(KonektorTreeMirror, cid)
+            nazev = child.get("name", "")
+            ocisteny = dms_bezpecny_nazev(nazev)
             if child.get("mimeType") == FOLDER_MIME:
-                if existuje is None:
-                    dms_id = raynet.create_document_folder(child.get("name", ""), dms_parent)
-                    db.add(KonektorTreeMirror(drive_id=cid, raynet_id=str(dms_id), je_slozka=True))
-                    db.commit()
+                # najdi-nebo-vytvoř: řídíme se skutečným stavem v DMS (ne uloženými id)
+                dms_id = _dms_najdi_polozku(raynet, dms_parent, ocisteny, je_slozka=True)
+                if dms_id is None:
+                    dms_id = raynet.create_document_folder(nazev, dms_parent)
                     vytvoreno_slozek += 1
-                else:
-                    dms_id = int(existuje.raynet_id)
-                fronta.append((cid, int(dms_id)))
+                fronta.append((child["id"], int(dms_id)))
             else:
                 if dms_parent is None:
                     preskoceno += 1  # soubor přímo v kořeni zdroje – nemá kam (DMS chce složku)
                     continue
-                if existuje is not None:
-                    continue
-                doc = raynet.create_dms_link(
-                    child.get("name", ""), child.get("webViewLink", ""), dms_parent
-                )
-                did = str(doc.get("id")) if isinstance(doc, dict) else str(doc)
-                db.add(KonektorTreeMirror(drive_id=cid, raynet_id=did, je_slozka=False))
-                db.commit()
+                if _dms_najdi_polozku(raynet, dms_parent, ocisteny, je_slozka=False) is not None:
+                    continue  # odkaz už v této složce existuje
+                raynet.create_dms_link(nazev, child.get("webViewLink", ""), dms_parent)
                 vytvoreno_souboru += 1
 
     zaloguj(
