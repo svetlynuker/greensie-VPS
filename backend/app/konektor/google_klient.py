@@ -13,6 +13,9 @@ list, changes a watch přibudou v dalších fázích.
 import json
 
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
+# počet opakování jednotlivých Drive volání při přechodných chybách
+# (HTTP 5xx a rate-limit) – klient je opakuje s exponenciálním backoffem
+DRIVE_RETRY = 5
 
 
 def _build_service(sa_json_str: str, subject_email: str | None = None):
@@ -47,7 +50,7 @@ class DriveClient:
         return (
             self.service.files()
             .create(body=metadata, fields="id,name,webViewLink", supportsAllDrives=True)
-            .execute()
+            .execute(num_retries=DRIVE_RETRY)
         )
 
     def list_children(self, parent_id: str) -> list[dict]:
@@ -62,7 +65,7 @@ class DriveClient:
                 supportsAllDrives=True,
                 pageSize=1000,
             )
-            .execute()
+            .execute(num_retries=DRIVE_RETRY)
         )
         return vysledek.get("files", [])
 
@@ -81,7 +84,7 @@ class DriveClient:
         return (
             self.service.files()
             .copy(fileId=file_id, body=body, fields="id,name,webViewLink", supportsAllDrives=True)
-            .execute()
+            .execute(num_retries=DRIVE_RETRY)
         )
 
     def _copy_children(self, src_id: str, dest_id: str, skip_ids: set[str]) -> None:
@@ -145,7 +148,7 @@ class DriveClient:
         return (
             self.service.files()
             .create(body=body, media_body=media, fields="id,name,webViewLink", supportsAllDrives=True)
-            .execute()
+            .execute(num_retries=DRIVE_RETRY)
         )
 
     def get_file(self, file_id: str) -> dict:
@@ -157,7 +160,7 @@ class DriveClient:
                 fields="id,name,mimeType,webViewLink,parents,trashed,md5Checksum,appProperties",
                 supportsAllDrives=True,
             )
-            .execute()
+            .execute(num_retries=DRIVE_RETRY)
         )
 
     # ---- inkrementální změny (changes.list) ----
@@ -165,7 +168,7 @@ class DriveClient:
         vysledek = (
             self.service.changes()
             .getStartPageToken(driveId=drive_id, supportsAllDrives=True)
-            .execute()
+            .execute(num_retries=DRIVE_RETRY)
         )
         return vysledek.get("startPageToken", "")
 
@@ -189,7 +192,7 @@ class DriveClient:
                     ),
                     pageSize=200,
                 )
-                .execute()
+                .execute(num_retries=DRIVE_RETRY)
             )
             zmeny.extend(vysledek.get("changes", []))
             if vysledek.get("nextPageToken"):
@@ -218,11 +221,11 @@ class DriveClient:
                 includeItemsFromAllDrives=True,
                 body=body,
             )
-            .execute()
+            .execute(num_retries=DRIVE_RETRY)
         )
 
     def stop_channel(self, channel_id: str, resource_id: str) -> None:
-        self.service.channels().stop(body={"id": channel_id, "resourceId": resource_id}).execute()
+        self.service.channels().stop(body={"id": channel_id, "resourceId": resource_id}).execute(num_retries=DRIVE_RETRY)
 
 
 def test_spojeni(
@@ -242,7 +245,7 @@ def test_spojeni(
 
     try:
         service = _build_service(sa_json_str, subject_email or None)
-        drive = service.drives().get(driveId=shared_drive_id).execute()
+        drive = service.drives().get(driveId=shared_drive_id).execute(num_retries=DRIVE_RETRY)
         nazev = drive.get("name", shared_drive_id)
         return True, f"Spojení OK – Shared Drive „{nazev}“."
     except Exception as e:  # noqa: BLE001 - chybu chceme ukázat uživateli čitelně
