@@ -6,6 +6,23 @@
 
 ---
 
+## 0. Potvrzená rozhodnutí zadavatele (2026-07-23)
+
+| Otázka (kap. 18) | Rozhodnutí |
+|---|---|
+| Runtime (R1) | **Node.js v24** (reuse) |
+| D1 — model synchronizace | **Odkazy** (Model A) — Disk = zdroj obsahu, Raynet drží URL |
+| D2 — Google účet | **Workspace + Shared Drive** — service account + domain-wide delegation |
+| FR3 — rozsah | **Plné zrcadlení stromu** složek + odkazových dokumentů do Raynet Dokumentů |
+
+**Stále čeká na zadavatele (blokuje start F1):**
+- Raynet: instance, API uživatel, API klíč (Professional+), potvrzení base URL (`app.raynet.cz` vs `.com`).
+- Google Workspace: service account JSON + zapnutá domain-wide delegation + **ID Shared Drive**.
+- Šablona podsložek (default `01_Nabídky, 02_Smlouvy, 03_Faktury, 04_Ostatní`) + název vlastního pole company pro odkaz na Drive.
+- Potvrzení politiky mazání (default koš + reconcile).
+
+---
+
 ## 1. Souhrn serveru
 
 | Vlastnost | Zjištěno |
