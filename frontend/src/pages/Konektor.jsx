@@ -77,6 +77,7 @@ function NastaveniKarta() {
         raynet_offer_drive_field: nast.raynet_offer_drive_field,
         raynet_order_drive_field: nast.raynet_order_drive_field,
         google_shared_drive_id: nast.google_shared_drive_id,
+        google_root_folder_id: nast.google_root_folder_id,
         google_subject_email: nast.google_subject_email,
         sync_model: nast.sync_model,
         template_subfolders: nast.template_subfolders,
@@ -191,6 +192,10 @@ function NastaveniKarta() {
         <div>
           <label style={labelStyl}>ID Shared Drive</label>
           <input style={poleStyl} value={nast.google_shared_drive_id} onChange={(e) => nastav("google_shared_drive_id", e.target.value)} placeholder="např. 0AB…" />
+        </div>
+        <div>
+          <label style={labelStyl}>Kořenová složka – ID (volitelné)</label>
+          <input style={poleStyl} value={nast.google_root_folder_id} onChange={(e) => nastav("google_root_folder_id", e.target.value)} placeholder="prázdné = kořen Shared Drivu" />
         </div>
         <div>
           <label style={labelStyl}>Impersonovaný uživatel (delegace, volitelné)</label>
