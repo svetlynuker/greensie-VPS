@@ -157,8 +157,9 @@ def zajisti_slozku_op(db: Session, raynet: RaynetClient, drive: DriveClient, n: 
         raise RuntimeError(f"Obchodní případ {deal_id} nemá navázanou firmu (company).")
     zak = zajisti_slozku_zakaznika(db, raynet, drive, n, company_id)
 
-    nazev = _nazev(deal, f"Obchodní případ {deal_id}")
-    op = drive.create_folder(_bezpecny_nazev(f"{nazev} [{deal_id}]"), zak.drive_folder_id)
+    # název složky = číslo OP (Raynet `code`, např. OP-26-0223) + název
+    nazev = _nazev_s_cislem(deal, deal_id)
+    op = drive.create_folder(nazev, zak.drive_folder_id)
     ef = KonektorEntityFolder(
         entity="deal", entity_id=deal_id,
         drive_folder_id=op["id"], drive_folder_url=op.get("webViewLink", ""), name=nazev,
