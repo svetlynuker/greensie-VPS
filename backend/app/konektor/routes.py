@@ -66,6 +66,7 @@ def _nastaveni_out(n: KonektorNastaveni) -> KonektorNastaveniOut:
         raynet_deal_drive_field2=n.raynet_deal_drive_field2,
         raynet_offer_drive_field=n.raynet_offer_drive_field,
         raynet_order_drive_field=n.raynet_order_drive_field,
+        raynet_webhook_token=n.raynet_webhook_token,
         raynet_api_key_nastaven=bool(n.raynet_api_key_enc),
         google_shared_drive_id=n.google_shared_drive_id,
         google_root_folder_id=n.google_root_folder_id,
@@ -121,6 +122,7 @@ def uloz_nastaveni(
     n.raynet_deal_drive_field2 = vstup.raynet_deal_drive_field2.strip()
     n.raynet_offer_drive_field = vstup.raynet_offer_drive_field.strip()
     n.raynet_order_drive_field = vstup.raynet_order_drive_field.strip()
+    n.raynet_webhook_token = vstup.raynet_webhook_token.strip()
     n.google_shared_drive_id = vstup.google_shared_drive_id.strip()
     n.google_root_folder_id = vstup.google_root_folder_id.strip()
     n.google_subject_email = vstup.google_subject_email.strip()
@@ -234,10 +236,11 @@ def _norm_entita(s: str) -> str:
 
 
 def _parse_raynet_event(telo: str) -> dict | None:
-    """Tolerantně rozpozná vznik záznamu a vrátí {kind, id, company_id}.
+    """Rozpozná vznik záznamu z Raynet webhooku a vrátí {kind, id, company_id}.
 
-    TO VERIFY: přesný tvar Raynet webhook payloadu není zdokumentován – parser
-    zkouší běžné názvy polí. Po zachycení reálného payloadu se zpřesní.
+    Reálný tvar (ověřeno 2026-07-23):
+    {"type":"record.created","data":{"entityName":"Company","entityId":505}}
+    Čte primárně z vnořeného `data`; tolerantně padá zpět na kořen.
     """
     try:
         data = json.loads(telo)
@@ -246,36 +249,44 @@ def _parse_raynet_event(telo: str) -> dict | None:
     if not isinstance(data, dict):
         return None
 
-    kind = _norm_entita(str(data.get("entityName") or data.get("entity") or data.get("object") or ""))
-    akce = str(data.get("action") or data.get("event") or data.get("type") or "").lower()
-    if not kind:
-        return None
+    # typ události: "record.created" (top-level), tolerantně i action/event
+    akce = str(data.get("type") or data.get("action") or data.get("event") or "").lower()
     if not any(k in akce for k in ("create", "created", "new", "insert", "add")):
         return None
 
+    vnitrni = data.get("data") if isinstance(data.get("data"), dict) else data
+
+    kind = _norm_entita(
+        str(
+            vnitrni.get("entityName")
+            or vnitrni.get("entity")
+            or vnitrni.get("object")
+            or data.get("entityName")
+            or ""
+        )
+    )
+    if not kind:
+        return None
+
     rid = None
-    for klic in ("id", "entityId", "recordId", "objectId", "documentId"):
-        if data.get(klic) is not None:
-            try:
-                rid = int(data[klic])
-                break
-            except (ValueError, TypeError):
-                pass
-    if rid is None:
-        vnorene = data.get("data")
-        if isinstance(vnorene, dict) and vnorene.get("id") is not None:
-            try:
-                rid = int(vnorene["id"])
-            except (ValueError, TypeError):
-                rid = None
+    for zdroj in (vnitrni, data):
+        for klic in ("entityId", "id", "recordId", "objectId", "documentId"):
+            if zdroj.get(klic) is not None:
+                try:
+                    rid = int(zdroj[klic])
+                    break
+                except (ValueError, TypeError):
+                    pass
+        if rid is not None:
+            break
     if rid is None:
         return None
 
     company_id = None
-    rel = data.get("company")
+    rel = vnitrni.get("company")
     if isinstance(rel, dict):
         company_id = rel.get("id")
-    company_id = company_id or data.get("companyId")
+    company_id = company_id or vnitrni.get("companyId")
     try:
         company_id = int(company_id) if company_id is not None else None
     except (ValueError, TypeError):
@@ -302,6 +313,14 @@ async def webhook_raynet(request: Request, db: Session = Depends(get_db)):
     dokument → Raynet→Disk (Flow B / FR2b).
     """
     telo = await _telo_jako_text(request)
+
+    # ověření původu: sdílené tajemství v hlavičce X-RAYNETCRM-TToken
+    n = ziskej_nastaveni(db)
+    ocekavany = (n.raynet_webhook_token or "").strip()
+    if ocekavany and request.headers.get("x-raynetcrm-ttoken") != ocekavany:
+        zaloguj(db, "warn", "webhook_raynet", "Odmítnut Raynet webhook – neplatný token.", {})
+        return {"prijato": False}
+
     udalost = _parse_raynet_event(telo)
     zaloguj(
         db,

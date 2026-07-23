@@ -52,6 +52,8 @@ class KonektorNastaveni(Base):
     raynet_deal_drive_field2 = Column(String, nullable=False, default="", server_default="")
     raynet_offer_drive_field = Column(String, nullable=False, default="", server_default="")
     raynet_order_drive_field = Column(String, nullable=False, default="", server_default="")
+    # sdílené tajemství pro ověření příchozích Raynet webhooků (hlavička X-RAYNETCRM-TToken)
+    raynet_webhook_token = Column(String, nullable=False, default="", server_default="")
     # Raynet API klíč – ŠIFROVANĚ (Fernet), prázdné = nenastaveno
     raynet_api_key_enc = Column(Text, nullable=False, default="", server_default="")
 

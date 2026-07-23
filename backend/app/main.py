@@ -100,6 +100,7 @@ def _lehka_migrace():
             "raynet_deal_drive_field2",
             "raynet_offer_drive_field",
             "raynet_order_drive_field",
+            "raynet_webhook_token",
             "google_root_folder_id",
         ):
             conn.execute(

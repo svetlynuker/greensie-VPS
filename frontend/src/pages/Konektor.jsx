@@ -76,6 +76,7 @@ function NastaveniKarta() {
         raynet_deal_drive_field2: nast.raynet_deal_drive_field2,
         raynet_offer_drive_field: nast.raynet_offer_drive_field,
         raynet_order_drive_field: nast.raynet_order_drive_field,
+        raynet_webhook_token: nast.raynet_webhook_token,
         google_shared_drive_id: nast.google_shared_drive_id,
         google_root_folder_id: nast.google_root_folder_id,
         google_subject_email: nast.google_subject_email,
@@ -170,6 +171,10 @@ function NastaveniKarta() {
         <div>
           <label style={labelStyl}>Kód pole – odkaz u objednávky</label>
           <input style={poleStyl} value={nast.raynet_order_drive_field} onChange={(e) => nastav("raynet_order_drive_field", e.target.value)} placeholder="např. odkaz_na_d_8ad3b" />
+        </div>
+        <div>
+          <label style={labelStyl}>Webhook token (X-RAYNETCRM-TToken)</label>
+          <input style={poleStyl} value={nast.raynet_webhook_token} onChange={(e) => nastav("raynet_webhook_token", e.target.value)} placeholder="stejný jako v Raynet webhooku" />
         </div>
         <div>
           <label style={labelStyl}>
