@@ -11,6 +11,8 @@ import {
   konektorSmazLogy,
   konektorVytvorSlozku,
   konektorStromVzoru,
+  konektorImportRozsah,
+  konektorImportSpustit,
   konektorReconcile,
   konektorWatchStav,
   konektorWatchRegistruj,
@@ -437,6 +439,78 @@ function RucniAkceKarta() {
   );
 }
 
+/* =================== Karta: Hromadný import z Raynetu =================== */
+function ImportKarta({ onChyba }) {
+  const [rozsah, setRozsah] = useState(null);
+  const [rozsahBezi, setRozsahBezi] = useState(false);
+  const [importBezi, setImportBezi] = useState(false);
+  const [vysledek, setVysledek] = useState(null);
+
+  async function spocitej() {
+    setRozsahBezi(true);
+    setVysledek(null);
+    setRozsah(null);
+    try {
+      setRozsah(await konektorImportRozsah());
+    } catch (e) {
+      onChyba(e);
+    } finally {
+      setRozsahBezi(false);
+    }
+  }
+
+  async function spust() {
+    if (
+      !window.confirm(
+        "Spustit hromadný import? Konektor projde VŠECHNY existující firmy, obchodní případy, " +
+          "nabídky a objednávky v Raynetu a založí pro ně složky na Disku. Průběh uvidíš v logu."
+      )
+    )
+      return;
+    setImportBezi(true);
+    setVysledek(null);
+    try {
+      const v = await konektorImportSpustit();
+      setVysledek(v);
+    } catch (e) {
+      onChyba(e);
+    } finally {
+      setImportBezi(false);
+    }
+  }
+
+  return (
+    <div className="fm-card" style={{ padding: 16 }}>
+      <strong style={{ fontSize: 15 }}>Hromadný import z Raynetu</strong>
+      <p style={{ margin: "4px 0 12px", fontSize: 13, color: "var(--fm-muted)", lineHeight: 1.5 }}>
+        Jednorázově založí složky pro všechna data, která už v Raynetu jsou (firmy → OP → nabídky/objednávky).
+        Zpracovává se na pozadí a je idempotentní – co už složku má, se přeskočí, takže se dá pustit i opakovaně.
+      </p>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <button className="fm-btn" onClick={spocitej} disabled={rozsahBezi || importBezi}>
+          {rozsahBezi ? "Počítám…" : "Spočítat rozsah"}
+        </button>
+        <button className="fm-btn fm-primary" onClick={spust} disabled={importBezi || rozsahBezi}>
+          {importBezi ? "Zařazuji…" : "Spustit import"}
+        </button>
+      </div>
+      {rozsah && (
+        <div style={{ marginTop: 12, fontSize: 13 }}>
+          V Raynetu: <strong>{rozsah.company}</strong> firem, <strong>{rozsah.deal}</strong> obch. případů,{" "}
+          <strong>{rozsah.offer}</strong> nabídek, <strong>{rozsah.order}</strong> objednávek.
+        </div>
+      )}
+      {vysledek && (
+        <div style={{ marginTop: 12, fontSize: 13, color: "var(--fm-brand-dk)" }}>
+          Zařazeno {vysledek.celkem} úloh do fronty (firmy {vysledek.zarazeno.company}, OP{" "}
+          {vysledek.zarazeno.deal}, nabídky {vysledek.zarazeno.offer}, objednávky {vysledek.zarazeno.order}).
+          Průběh sleduj v logu níže.
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* =================== Karta: Synchronizace Disk → Raynet =================== */
 function SyncDiskKarta({ onChyba }) {
   const [reconciluje, setReconciluje] = useState(false);
@@ -758,6 +832,7 @@ export default function Konektor() {
         <h2 style={{ margin: 0, fontSize: 18 }}>Konektor Raynet ↔ Google Disk</h2>
         <NastaveniKarta />
         <RucniAkceKarta />
+        <ImportKarta onChyba={osetriChybu} />
         <SyncDiskKarta onChyba={osetriChybu} />
         <RaynetNaDiskKarta onChyba={osetriChybu} />
         <LogyPanel onChyba={osetriChybu} />

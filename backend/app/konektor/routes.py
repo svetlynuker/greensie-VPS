@@ -417,6 +417,37 @@ def vypis_strom_vzoru(
     return {"folder_id": cil, "radky": radky}
 
 
+@router.post("/import/rozsah")
+def import_rozsah(
+    _user: User = Depends(vyzaduj_pravo_konektor),
+    db: Session = Depends(get_db),
+):
+    """Náhled: kolik firem/OP/nabídek/objednávek je v Raynetu (nic nezakládá)."""
+    try:
+        return logika.spocitej_rozsah(db)
+    except logika.NastaveniNepripraveno as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        zaloguj(db, "error", "import", f"Zjištění rozsahu importu selhalo: {e}")
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.post("/import")
+def import_spustit(
+    _user: User = Depends(vyzaduj_pravo_konektor),
+    db: Session = Depends(get_db),
+):
+    """Zařadí do fronty úlohy pro všechny existující záznamy v Raynetu.
+    Worker je zpracuje na pozadí (sledovatelné v logu)."""
+    try:
+        return logika.naplan_import(db)
+    except logika.NastaveniNepripraveno as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        zaloguj(db, "error", "import", f"Spuštění hromadného importu selhalo: {e}")
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @router.post("/dokument/{document_id}/na-disk")
 def rucni_dokument_na_disk(
     document_id: str,

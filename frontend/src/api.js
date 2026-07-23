@@ -384,6 +384,14 @@ export function konektorStromVzoru(folderId) {
   return zavolej(`/konektor/vzor/strom${q}`, { method: "POST" });
 }
 
+export function konektorImportRozsah() {
+  return zavolej("/konektor/import/rozsah", { method: "POST" });
+}
+
+export function konektorImportSpustit() {
+  return zavolej("/konektor/import", { method: "POST" });
+}
+
 export function konektorReconcile() {
   return zavolej("/konektor/reconcile", { method: "POST" });
 }
