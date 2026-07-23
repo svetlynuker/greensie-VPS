@@ -25,10 +25,19 @@ from app.konektor.models import (
     KonektorDriveChannel,
     KonektorEntityFolder,
     KonektorFileMap,
+    KonektorJobQueue,
     KonektorNastaveni,
     KonektorTreeMirror,
 )
 from app.konektor.raynet_klient import RaynetClient
+
+# entita → (Raynet resource, typ úlohy, klíč id v payloadu) pro hromadný import
+_IMPORT_PLAN = (
+    ("company", "novy_klient", "company_id"),
+    ("deal", "novy_deal", "deal_id"),
+    ("offer", "nova_nabidka", "offer_id"),
+    ("order", "nova_objednavka", "order_id"),
+)
 
 
 class NastaveniNepripraveno(RuntimeError):
@@ -363,6 +372,45 @@ def zpracuj_nova_objednavka(db: Session, order_id: int) -> dict:
         raise NastaveniNepripraveno("Nastavení konektoru neexistuje.")
     raynet, drive = vytvor_klienty(n)
     return _zpracuj_zaznam_pod_op(db, n, raynet, drive, "order", "order", order_id, n.raynet_order_drive_field)
+
+
+# =================== Hromadný import existujících dat z Raynetu ===================
+def spocitej_rozsah(db: Session) -> dict:
+    """Zjistí, kolik firem/OP/nabídek/objednávek je v Raynetu (náhled před importem)."""
+    n = db.get(KonektorNastaveni, 1)
+    if n is None:
+        raise NastaveniNepripraveno("Nastavení konektoru neexistuje.")
+    raynet, _ = vytvor_klienty(n)
+    rozsah = {resource: len(raynet.list_ids(resource)) for resource, _, _ in _IMPORT_PLAN}
+    zaloguj(db, "info", "import", f"Rozsah v Raynetu: {rozsah}", rozsah)
+    return rozsah
+
+
+def naplan_import(db: Session) -> dict:
+    """Zařadí do fronty úlohy pro všechny existující záznamy v Raynetu.
+
+    Worker je zpracuje sekvenčně (respektuje limit spojení) a idempotentně –
+    co už složku má, přeskočí. Lze spouštět opakovaně (dogeneruje jen chybějící).
+    Pořadí (firmy → OP → nabídky → objednávky) je jen orientační; nadřazené
+    složky si každá úroveň v případě potřeby dohledá/vytvoří sama.
+    """
+    n = db.get(KonektorNastaveni, 1)
+    if n is None:
+        raise NastaveniNepripraveno("Nastavení konektoru neexistuje.")
+    raynet, _ = vytvor_klienty(n)
+
+    souhrn: dict = {}
+    for resource, typ, klic in _IMPORT_PLAN:
+        ids = raynet.list_ids(resource)
+        for rid in ids:
+            db.add(KonektorJobQueue(typ=typ, payload={klic: rid}, status="pending"))
+        db.commit()  # commit po každé entitě (jedna dávka)
+        souhrn[resource] = len(ids)
+
+    celkem = sum(souhrn.values())
+    zaloguj(db, "info", "import",
+            f"Hromadný import zařazen do fronty ({celkem} úloh): {souhrn}.", souhrn)
+    return {"zarazeno": souhrn, "celkem": celkem}
 
 
 # =================== Flow B: Disk → Raynet (FR2a) ===================

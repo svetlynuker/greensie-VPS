@@ -89,6 +89,39 @@ class RaynetClient:
         r = requests.get(url, auth=(self.api_user, self.api_key), headers=self._headers(), timeout=timeout)
         return self._over_odpoved(r, f"Načtení {resource} {record_id}")
 
+    def list_ids(self, resource: str, page_size: int = 50, timeout: int = 30) -> list[int]:
+        """Vrátí ID všech záznamů daného typu (stránkuje přes offset/limit).
+
+        Řídí se `totalCount` z obálky; fallback na „poslední stránka je kratší
+        než limit“. Slouží k hromadnému importu existujících dat z Raynetu.
+        """
+        endpoint = _RESOURCE_ENDPOINT.get(resource, resource)
+        ids: list[int] = []
+        offset = 0
+        while True:
+            url = f"{self.base_url}{endpoint}/?offset={offset}&limit={page_size}"
+            r = requests.get(url, auth=(self.api_user, self.api_key), headers=self._headers(), timeout=timeout)
+            if r.status_code >= 400:
+                raise RuntimeError(f"Výpis {resource}: HTTP {r.status_code} – {r.text[:200]}")
+            try:
+                telo = r.json()
+            except ValueError:
+                raise RuntimeError(f"Výpis {resource}: odpověď není JSON.")
+            radky = telo.get("data") or []
+            for row in radky:
+                if isinstance(row, dict) and row.get("id") is not None:
+                    ids.append(int(row["id"]))
+            if not radky:
+                break
+            offset += len(radky)
+            total = telo.get("totalCount")
+            if total is not None:
+                if offset >= int(total):
+                    break
+            elif len(radky) < page_size:
+                break
+        return ids
+
     def set_custom_fields(self, resource: str, record_id: int, fields: dict, timeout: int = 20) -> dict:
         """Zapíše vlastní pole záznamu (POST /{resource}/{id}/ s customFields).
 
