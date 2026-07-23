@@ -389,6 +389,10 @@ export function konektorDokumentyNahled(folderId) {
   return zavolej(`/konektor/dokumenty/nahled${q}`, { method: "POST" });
 }
 
+export function konektorDokumentyTestOdkaz() {
+  return zavolej("/konektor/dokumenty/test-odkaz", { method: "POST" });
+}
+
 export function konektorImportRozsah() {
   return zavolej("/konektor/import/rozsah", { method: "POST" });
 }

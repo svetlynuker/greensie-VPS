@@ -444,6 +444,33 @@ def dokumenty_nahled(
     return {"folder_id": folder_id, "data": data}
 
 
+@router.post("/dokumenty/test-odkaz")
+def dokumenty_test_odkaz(
+    _user: User = Depends(vyzaduj_pravo_konektor),
+    db: Session = Depends(get_db),
+):
+    """Diagnostika: zkusí založit v Dokumentech (DMS) jednu položku typu ODKAZ.
+
+    Ověří, že DMS dokument umí být odkaz na URL (pole `link`). Vytvoří testovací
+    záznam v kořeni Dokumentů – po ověření ho smaž v Raynetu.
+    """
+    n = ziskej_nastaveni(db)
+    api_key = crypto.desifruj(n.raynet_api_key_enc)
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Raynet API klíč není nastaven.")
+    raynet = RaynetClient(n.raynet_instance, n.raynet_api_user, api_key, n.raynet_base_url)
+    vzor = (n.google_vzor_folder_id or "").strip()
+    url = f"https://drive.google.com/drive/folders/{vzor}" if vzor else "https://drive.google.com/"
+    try:
+        data = raynet.create_dms_link("TEST odkaz konektor (smaž mě)", url)
+    except Exception as e:  # noqa: BLE001
+        zaloguj(db, "error", "dokumenty_test", f"Test odkazu v Dokumentech selhal: {e}")
+        raise HTTPException(status_code=502, detail=str(e))
+    zaloguj(db, "info", "dokumenty_test",
+            f"Test odkazu v Dokumentech OK: {json.dumps(data, ensure_ascii=False)[:1500]}")
+    return {"vytvoreno": data}
+
+
 @router.post("/import/rozsah")
 def import_rozsah(
     _user: User = Depends(vyzaduj_pravo_konektor),
