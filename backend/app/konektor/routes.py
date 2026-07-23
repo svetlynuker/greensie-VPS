@@ -62,6 +62,10 @@ def _nastaveni_out(n: KonektorNastaveni) -> KonektorNastaveniOut:
         raynet_api_user=n.raynet_api_user,
         raynet_base_url=n.raynet_base_url,
         raynet_company_drive_field=n.raynet_company_drive_field,
+        raynet_deal_drive_field=n.raynet_deal_drive_field,
+        raynet_deal_drive_field2=n.raynet_deal_drive_field2,
+        raynet_offer_drive_field=n.raynet_offer_drive_field,
+        raynet_order_drive_field=n.raynet_order_drive_field,
         raynet_api_key_nastaven=bool(n.raynet_api_key_enc),
         google_shared_drive_id=n.google_shared_drive_id,
         google_subject_email=n.google_subject_email,
@@ -112,6 +116,10 @@ def uloz_nastaveni(
     n.raynet_api_user = vstup.raynet_api_user.strip()
     n.raynet_base_url = vstup.raynet_base_url.strip()
     n.raynet_company_drive_field = vstup.raynet_company_drive_field.strip()
+    n.raynet_deal_drive_field = vstup.raynet_deal_drive_field.strip()
+    n.raynet_deal_drive_field2 = vstup.raynet_deal_drive_field2.strip()
+    n.raynet_offer_drive_field = vstup.raynet_offer_drive_field.strip()
+    n.raynet_order_drive_field = vstup.raynet_order_drive_field.strip()
     n.google_shared_drive_id = vstup.google_shared_drive_id.strip()
     n.google_subject_email = vstup.google_subject_email.strip()
     n.sync_model = vstup.sync_model
@@ -207,12 +215,27 @@ async def _telo_jako_text(request: Request) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-def _parse_raynet_company_created(telo: str) -> int | None:
-    """Tolerantní parser: z payloadu se pokusí rozpoznat vznik company a její id.
+def _norm_entita(s: str) -> str:
+    """Normalizuje název entity z webhooku na náš kód (tolerantně)."""
+    s = s.lower()
+    if "account" in s or "company" in s:
+        return "company"
+    if "businesscase" in s or "deal" in s:
+        return "deal"
+    if "salesorder" in s or "order" in s:
+        return "order"
+    if "offer" in s:
+        return "offer"
+    if "document" in s or "attachment" in s:
+        return "document"
+    return ""
+
+
+def _parse_raynet_event(telo: str) -> dict | None:
+    """Tolerantně rozpozná vznik záznamu a vrátí {kind, id, company_id}.
 
     TO VERIFY: přesný tvar Raynet webhook payloadu není zdokumentován – parser
-    je záměrně tolerantní (zkouší běžné názvy polí). Po zachycení reálného
-    payloadu se zpřesní.
+    zkouší běžné názvy polí. Po zachycení reálného payloadu se zpřesní.
     """
     try:
         data = json.loads(telo)
@@ -221,94 +244,78 @@ def _parse_raynet_company_created(telo: str) -> int | None:
     if not isinstance(data, dict):
         return None
 
-    entita = str(data.get("entityName") or data.get("entity") or data.get("object") or "").lower()
+    kind = _norm_entita(str(data.get("entityName") or data.get("entity") or data.get("object") or ""))
     akce = str(data.get("action") or data.get("event") or data.get("type") or "").lower()
-    if "company" not in entita:
-        return None
-    if not any(k in akce for k in ("create", "created", "new", "insert")):
-        return None
-
-    for klic in ("id", "entityId", "recordId", "objectId"):
-        if data.get(klic) is not None:
-            try:
-                return int(data[klic])
-            except (ValueError, TypeError):
-                pass
-    vnorene = data.get("data")
-    if isinstance(vnorene, dict) and vnorene.get("id") is not None:
-        try:
-            return int(vnorene["id"])
-        except (ValueError, TypeError):
-            return None
-    return None
-
-
-def _parse_raynet_document_added(telo: str) -> tuple[int, int | None] | None:
-    """Tolerantně rozpozná přidání dokumentu/přílohy a vrátí (document_id, company_id?).
-
-    TO VERIFY: přesný tvar payloadu není zdokumentovaný.
-    """
-    try:
-        data = json.loads(telo)
-    except (ValueError, TypeError):
-        return None
-    if not isinstance(data, dict):
-        return None
-    entita = str(data.get("entityName") or data.get("entity") or data.get("object") or "").lower()
-    akce = str(data.get("action") or data.get("event") or data.get("type") or "").lower()
-    if not any(k in entita for k in ("document", "attachment")):
+    if not kind:
         return None
     if not any(k in akce for k in ("create", "created", "new", "insert", "add")):
         return None
 
-    doc_id = None
+    rid = None
     for klic in ("id", "entityId", "recordId", "objectId", "documentId"):
         if data.get(klic) is not None:
             try:
-                doc_id = int(data[klic])
+                rid = int(data[klic])
                 break
             except (ValueError, TypeError):
                 pass
-    if doc_id is None:
+    if rid is None:
+        vnorene = data.get("data")
+        if isinstance(vnorene, dict) and vnorene.get("id") is not None:
+            try:
+                rid = int(vnorene["id"])
+            except (ValueError, TypeError):
+                rid = None
+    if rid is None:
         return None
 
     company_id = None
     rel = data.get("company")
-    if isinstance(rel, dict) and rel.get("id") is not None:
-        company_id = rel["id"]
+    if isinstance(rel, dict):
+        company_id = rel.get("id")
     company_id = company_id or data.get("companyId")
     try:
         company_id = int(company_id) if company_id is not None else None
     except (ValueError, TypeError):
         company_id = None
-    return doc_id, company_id
+
+    return {"kind": kind, "id": rid, "company_id": company_id}
+
+
+# entita → (typ úlohy, klíč id v payloadu)
+_JOB_DLE_ENTITY = {
+    "company": ("novy_klient", "company_id"),
+    "deal": ("novy_deal", "deal_id"),
+    "offer": ("nova_nabidka", "offer_id"),
+    "order": ("nova_objednavka", "order_id"),
+}
 
 
 @router.post("/webhooks/raynet")
 async def webhook_raynet(request: Request, db: Session = Depends(get_db)):
     """Příjem Raynet webhooku.
 
-    Vždy zaloguje payload (zachycení reálného tvaru). Rozpozná vznik company
-    (→ Flow A / FR1) nebo přidání dokumentu (→ Flow B Raynet→Disk / FR2b).
+    Vždy zaloguje payload (zachycení reálného tvaru). Podle typu záznamu zařadí
+    úlohu: firma/obch. případ/nabídka/objednávka → tvorba složek (Flow A),
+    dokument → Raynet→Disk (Flow B / FR2b).
     """
     telo = await _telo_jako_text(request)
-    company_id = _parse_raynet_company_created(telo)
-    dokument = _parse_raynet_document_added(telo)
+    udalost = _parse_raynet_event(telo)
     zaloguj(
         db,
         uroven="info",
         udalost="webhook_raynet",
         zprava=f"Přijat Raynet webhook: {telo}",
-        kontext={
-            "content_type": request.headers.get("content-type"),
-            "company_id": company_id,
-            "document_id": dokument[0] if dokument else None,
-        },
+        kontext={"content_type": request.headers.get("content-type"), "rozpoznano": udalost},
     )
-    if company_id is not None:
-        fronta.zarad(db, "novy_klient", {"company_id": company_id})
-    if dokument is not None:
-        fronta.zarad(db, "raynet_dokument", {"document_id": dokument[0], "company_id": dokument[1]})
+    if udalost:
+        kind = udalost["kind"]
+        rid = udalost["id"]
+        if kind in _JOB_DLE_ENTITY:
+            typ, klic = _JOB_DLE_ENTITY[kind]
+            fronta.zarad(db, typ, {klic: rid})
+        elif kind == "document":
+            fronta.zarad(db, "raynet_dokument", {"document_id": rid, "company_id": udalost["company_id"]})
     return {"prijato": True}
 
 

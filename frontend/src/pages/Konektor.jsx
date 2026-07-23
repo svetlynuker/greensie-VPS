@@ -72,6 +72,10 @@ function NastaveniKarta() {
         raynet_api_user: nast.raynet_api_user,
         raynet_base_url: nast.raynet_base_url,
         raynet_company_drive_field: nast.raynet_company_drive_field,
+        raynet_deal_drive_field: nast.raynet_deal_drive_field,
+        raynet_deal_drive_field2: nast.raynet_deal_drive_field2,
+        raynet_offer_drive_field: nast.raynet_offer_drive_field,
+        raynet_order_drive_field: nast.raynet_order_drive_field,
         google_shared_drive_id: nast.google_shared_drive_id,
         google_subject_email: nast.google_subject_email,
         sync_model: nast.sync_model,
@@ -147,8 +151,24 @@ function NastaveniKarta() {
           <input style={poleStyl} value={nast.raynet_base_url} onChange={(e) => nastav("raynet_base_url", e.target.value)} placeholder="https://app.raynet.cz/api/v2/" />
         </div>
         <div>
-          <label style={labelStyl}>Kód vlastního pole (odkaz na Disk)</label>
-          <input style={poleStyl} value={nast.raynet_company_drive_field} onChange={(e) => nastav("raynet_company_drive_field", e.target.value)} placeholder="např. Disk_slozka_ab12c" />
+          <label style={labelStyl}>Kód pole – odkaz u firmy</label>
+          <input style={poleStyl} value={nast.raynet_company_drive_field} onChange={(e) => nastav("raynet_company_drive_field", e.target.value)} placeholder="např. odkaz_na_d_84d75" />
+        </div>
+        <div>
+          <label style={labelStyl}>Kód pole – odkaz u obch. případu (1)</label>
+          <input style={poleStyl} value={nast.raynet_deal_drive_field} onChange={(e) => nastav("raynet_deal_drive_field", e.target.value)} placeholder="např. odkaz_na_d_619cd" />
+        </div>
+        <div>
+          <label style={labelStyl}>Kód pole – odkaz u obch. případu (2)</label>
+          <input style={poleStyl} value={nast.raynet_deal_drive_field2} onChange={(e) => nastav("raynet_deal_drive_field2", e.target.value)} placeholder="např. odkaz_na_d_2b3c4" />
+        </div>
+        <div>
+          <label style={labelStyl}>Kód pole – odkaz u nabídky</label>
+          <input style={poleStyl} value={nast.raynet_offer_drive_field} onChange={(e) => nastav("raynet_offer_drive_field", e.target.value)} placeholder="např. odkaz_na_d_154a6" />
+        </div>
+        <div>
+          <label style={labelStyl}>Kód pole – odkaz u objednávky</label>
+          <input style={poleStyl} value={nast.raynet_order_drive_field} onChange={(e) => nastav("raynet_order_drive_field", e.target.value)} placeholder="např. odkaz_na_d_8ad3b" />
         </div>
         <div>
           <label style={labelStyl}>

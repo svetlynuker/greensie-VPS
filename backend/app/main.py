@@ -93,6 +93,21 @@ def _lehka_migrace():
             )
         )
 
+        # Konektor: hierarchie zákazník → obch. případ → nabídka/objednávka.
+        # Nové kódy vlastních polí – create_all je do existující tabulky nepřidá.
+        for sloupec in (
+            "raynet_deal_drive_field",
+            "raynet_deal_drive_field2",
+            "raynet_offer_drive_field",
+            "raynet_order_drive_field",
+        ):
+            conn.execute(
+                text(
+                    f"ALTER TABLE konektor_nastaveni ADD COLUMN IF NOT EXISTS {sloupec} "
+                    "VARCHAR NOT NULL DEFAULT ''"
+                )
+            )
+
 
 _lehka_migrace()
 
