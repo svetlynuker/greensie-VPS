@@ -44,6 +44,7 @@ def _zpracuj_job(db: Session, job: KonektorJobQueue) -> None:
         zpracuj_drive_zmeny,
         zpracuj_novy_klient,
         zpracuj_raynet_dokument,
+        zrcadli_strom,
     )
 
     if job.typ == "novy_klient":
@@ -52,6 +53,8 @@ def _zpracuj_job(db: Session, job: KonektorJobQueue) -> None:
         zpracuj_drive_zmeny(db)
     elif job.typ == "raynet_dokument":
         zpracuj_raynet_dokument(db, str(job.payload["document_id"]), job.payload.get("company_id"))
+    elif job.typ == "zrcadleni":
+        zrcadli_strom(db)
     else:
         raise RuntimeError(f"Neznámý typ úlohy: {job.typ}")
 

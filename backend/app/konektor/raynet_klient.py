@@ -121,6 +121,37 @@ class RaynetClient:
         )
         self._over_odpoved(r, f"Smazání dokumentu {document_id}")
 
+    # ---- operace pro FR3 (Flow C, zrcadlení stromu) ----
+    def create_document_folder(self, name: str, parent_id: str | None = None, timeout: int = 20) -> int:
+        """Vytvoří složku v modulu Dokumenty (PUT /document/). Vrací id.
+
+        TO VERIFY tvar (pole parent). Když parent_id None, vznikne v kořeni.
+        """
+        endpoint = f"{self.base_url}document/"
+        telo: dict = {"name": name}
+        if parent_id:
+            telo["parent"] = {"id": parent_id}
+        r = requests.put(
+            endpoint, auth=(self.api_user, self.api_key), headers=self._headers(), json=telo, timeout=timeout
+        )
+        data = self._over_odpoved(r, f"Vytvoření složky dokumentů „{name}“")
+        return int(data.get("id")) if isinstance(data, dict) and data.get("id") is not None else 0
+
+    def create_link_document_in_folder(
+        self, name: str, url_value: str, parent_id: str, timeout: int = 20
+    ) -> int:
+        """Vytvoří odkazový dokument v dané složce dokumentů (pro zrcadlení stromu).
+
+        TO VERIFY tvar (url + parent).
+        """
+        endpoint = f"{self.base_url}document/document/"
+        telo = {"name": name, "url": url_value, "parent": {"id": parent_id}}
+        r = requests.put(
+            endpoint, auth=(self.api_user, self.api_key), headers=self._headers(), json=telo, timeout=timeout
+        )
+        data = self._over_odpoved(r, f"Vytvoření odkazu ve stromu „{name}“")
+        return int(data.get("id")) if isinstance(data, dict) and data.get("id") is not None else 0
+
     # ---- operace pro FR2b (Flow B, Raynet → Disk) ----
     def get_document(self, document_id: str, timeout: int = 20) -> dict:
         """Detail dokumentu/přílohy (GET /document/{id}/). Vrací `data`."""

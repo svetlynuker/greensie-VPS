@@ -400,6 +400,21 @@ def rucni_reconcile(
         raise HTTPException(status_code=502, detail=str(e))
 
 
+@router.post("/zrcadlit")
+def rucni_zrcadlit(
+    _user: User = Depends(vyzaduj_pravo_konektor),
+    db: Session = Depends(get_db),
+):
+    """Ruční spuštění zrcadlení stromu Disku do modulu Dokumenty (FR3)."""
+    try:
+        return logika.zrcadli_strom(db)
+    except logika.NastaveniNepripraveno as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        zaloguj(db, "error", "zrcadleni", f"Ruční zrcadlení stromu selhalo: {e}")
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @router.get("/watch")
 def watch_stav(
     _user: User = Depends(vyzaduj_pravo_konektor),

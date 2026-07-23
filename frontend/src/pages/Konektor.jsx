@@ -15,6 +15,7 @@ import {
   konektorWatchRegistruj,
   konektorWatchZrus,
   konektorDokumentNaDisk,
+  konektorZrcadlit,
 } from "../api";
 
 const poleStyl = {
@@ -347,6 +348,7 @@ function SyncDiskKarta({ onChyba }) {
   const [vysledek, setVysledek] = useState(null);
   const [watch, setWatch] = useState(null);
   const [watchBezi, setWatchBezi] = useState(false);
+  const [zrcadli, setZrcadli] = useState(false);
 
   const nactiWatch = useCallback(() => {
     konektorWatchStav().then(setWatch).catch(() => setWatch(null));
@@ -386,6 +388,19 @@ function SyncDiskKarta({ onChyba }) {
     }
   }
 
+  async function zrcadliStrom() {
+    setZrcadli(true);
+    setVysledek(null);
+    try {
+      const v = await konektorZrcadlit();
+      setVysledek(`Zrcadlení hotovo – nových složek ${v.slozek}, souborů ${v.souboru}.`);
+    } catch (e) {
+      onChyba(e);
+    } finally {
+      setZrcadli(false);
+    }
+  }
+
   return (
     <div className="fm-card" style={{ padding: 16 }}>
       <strong style={{ fontSize: 15 }}>Synchronizace Disk → Raynet</strong>
@@ -399,6 +414,9 @@ function SyncDiskKarta({ onChyba }) {
         </button>
         <button className="fm-btn" onClick={prepniWatch} disabled={watchBezi}>
           {watchBezi ? "Pracuji…" : watch?.aktivni ? "Vypnout push (watch)" : "Zapnout push (watch)"}
+        </button>
+        <button className="fm-btn" onClick={zrcadliStrom} disabled={zrcadli} title="FR3: zrcadlí strom Disku do modulu Dokumenty">
+          {zrcadli ? "Zrcadlím…" : "Zrcadlit strom do Dokumentů"}
         </button>
         <span style={{ fontSize: 13, color: "var(--fm-muted)" }}>
           {watch == null

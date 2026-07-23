@@ -147,6 +147,22 @@ class KonektorDriveChangeState(Base):
     page_token = Column(String, nullable=False, default="", server_default="")
 
 
+class KonektorTreeMirror(Base):
+    """Zrcadlení stromu Disku do modulu Dokumenty v Raynetu (FR3, Flow C).
+
+    Mapuje položku na Disku (složku i soubor) na její protějšek v Raynet
+    Dokumentech. Odděleno od file_map (FR2a k company) – FR3 je celkový obraz
+    obsahu Disku ve stromu. `drive_id` unikátní → brání duplicitám.
+    """
+
+    __tablename__ = "konektor_tree_mirror"
+
+    drive_id = Column(String, primary_key=True)
+    raynet_id = Column(String, nullable=False)
+    je_slozka = Column(Boolean, nullable=False, default=False, server_default="false")
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_ted, onupdate=_ted)
+
+
 class KonektorProcessedEvent(Base):
     """Idempotence příchozích událostí (spec kap. 7, processed_events).
 

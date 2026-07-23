@@ -400,6 +400,10 @@ export function konektorDokumentNaDisk(documentId, companyId) {
   return zavolej(`/konektor/dokument/${documentId}/na-disk${q}`, { method: "POST" });
 }
 
+export function konektorZrcadlit() {
+  return zavolej("/konektor/zrcadlit", { method: "POST" });
+}
+
 // ---- Přehled změn (Pohled 3) ----
 export function nactiZmeny({ od, do: doDatum } = {}) {
   const p = new URLSearchParams();
