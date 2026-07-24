@@ -36,8 +36,22 @@ const CESTY = {
     </>
   ),
 
+  manual: (
+    <>
+      <path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z" />
+      <path d="M8 7h7M8 11h7" />
+    </>
+  ),
+
   // UI drobnosti
   sipka: <path d="M7 17 17 7M9 7h8v8" />,
+  napoveda: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.2 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.6 2.3-2.6 4" />
+      <path d="M12 17.5h.01" />
+    </>
+  ),
   zamek: (
     <>
       <rect x="5" y="11" width="14" height="9" rx="2" />

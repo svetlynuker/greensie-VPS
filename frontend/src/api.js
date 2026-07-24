@@ -43,6 +43,11 @@ export function zmenHeslo(nove_heslo) {
   return zavolej("/auth/heslo", { method: "PUT", body: JSON.stringify({ nove_heslo }) });
 }
 
+// ---- Manuál (znalostní báze v UI) ----
+export function nactiManual() {
+  return zavolej("/manual");
+}
+
 // ---- Matice (Přehled projektů) ----
 async function zavolej(cesta, moznosti = {}) {
   const token = getToken();
