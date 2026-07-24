@@ -9,7 +9,7 @@ kde běží, jak k ní teče požadavek z prohlížeče a jaké procesy a služb
 adminovi a údržbě. Návody k jednotlivým modulům (dlaždicím) jsou ve složce
 [`../moduly/`](../moduly/).
 
-> 📸 SCREENSHOT: přihlašovací obrazovka na veřejné adrese https://167-235-254-188.sslip.io
+> 📸 SCREENSHOT: přihlašovací obrazovka na veřejné adrese https://app.greensie.cz
 
 ---
 
@@ -35,12 +35,20 @@ Caddy, viz níže).
 | Operační systém | Debian 12 |
 | Uživatel, pod kterým appka běží | `dan` |
 | Kořen projektu (git repo) | `~/projects/greensie-app` (`/home/dan/projects/greensie-app`) |
-| Veřejná adresa | `https://167-235-254-188.sslip.io` |
+| Veřejná adresa | `https://app.greensie.cz` |
+| Náhradní adresa (alias) | `https://167-235-254-188.sslip.io` |
+| IP serveru | `167.235.254.188` |
 
-**Proč taková adresa:** `sslip.io` je služba, která pro jakoukoli IP adresu vrátí doménu ve tvaru
-`<ip-s-pomlckami>.sslip.io`. Díky tomu má server platné doménové jméno bez kupování domény, a Caddy
-si k němu umí zdarma vytáhnout HTTPS certifikát od Let's Encrypt. IP serveru je tedy
-**167.235.254.188** (v adrese zapsaná s pomlčkami místo teček).
+**Hlavní adresa (od 24. 7. 2026):** `app.greensie.cz` — subdoména firemní domény. V DNS je pro ni
+`A` záznam mířící na IP serveru **167.235.254.188**. Samotná `greensie.cz` (firemní web) míří jinam
+a appky se netýká.
+
+**Náhradní adresa:** `167-235-254-188.sslip.io` byla původní adresa, než existovala subdoména.
+`sslip.io` je služba, která pro jakoukoli IP vrátí doménu ve tvaru `<ip-s-pomlckami>.sslip.io` —
+server tak měl platné doménové jméno bez kupování domény. Adresa **zůstává funkční** a servíruje
+tu samou appku, protože na ni míří starší odkazy v už odeslaných e-mailech a jsou pod ní
+registrované push kanály Google Drive (konektor). Obě jména jsou v `deploy/Caddyfile` v jednom
+bloku, takže Caddy si vytáhne certifikát od Let's Encrypt pro každé z nich.
 
 ---
 
@@ -49,7 +57,7 @@ si k němu umí zdarma vytáhnout HTTPS certifikát od Let's Encrypt. IP serveru
 **Produkce:**
 
 ```
-        https://167-235-254-188.sslip.io   (HTTPS 443, certifikát Let's Encrypt)
+        https://app.greensie.cz            (HTTPS 443, certifikát Let's Encrypt)
                         │
                         ▼
              ┌────────────────────┐
@@ -72,7 +80,7 @@ si k němu umí zdarma vytáhnout HTTPS certifikát od Let's Encrypt. IP serveru
     └──────────────┘
 ```
 
-1. Prohlížeč jde na `https://167-235-254-188.sslip.io`.
+1. Prohlížeč jde na `https://app.greensie.cz` (nebo na náhradní `https://167-235-254-188.sslip.io`).
 2. Požadavek přijme **Caddy** (webový server / reverzní proxy) na portu 443. Caddy zajišťuje HTTPS
    (sám si obnovuje certifikát od Let's Encrypt) a komprimuje odpovědi (`encode zstd gzip`).
 3. Caddy se rozhodne podle cesty (`deploy/Caddyfile`):
@@ -194,7 +202,8 @@ Kromě routerů `main.py` při startu:
 2. spustí **`_lehka_migrace()`** — idempotentní `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, které
    doplní nové sloupce do už existujících tabulek (`create_all` je sám nepřidá);
 3. naplní **seed data** (`_seed_sazby`, `_seed_baterie`) — idempotentně, ruční úpravy nepřepisuje;
-4. nastaví **CORS** (povolené originy jen `http://localhost:5173` a `https://167-235-254-188.sslip.io`);
+4. nastaví **CORS** (povolené originy jen `http://localhost:5173`, `https://app.greensie.cz`
+   a `https://167-235-254-188.sslip.io`);
 5. přidá logovací middleware a vystaví **`GET /health`** → `{"stav": "ok"}` (kontrola, že backend žije).
 
 ---
@@ -239,9 +248,17 @@ Podrobný postup nasazení je v [nasazeni.md](nasazeni.md).
 
 ## Poznámky a úskalí (k ověření / nezřejmé)
 
-- **Adresa je vázaná na IP.** Doména `167-235-254-188.sslip.io` je odvozená od IP serveru. Při
-  změně IP (nový VPS) je nutné upravit adresu v `deploy/Caddyfile` i v seznamu povolených CORS
-  originů v `backend/app/main.py`, jinak přestane fungovat HTTPS i volání API.
+- **Dvě adresy, jeden vhost.** Hlavní je `app.greensie.cz` (DNS `A` záznam u registrátora domény
+  greensie.cz), náhradní `167-235-254-188.sslip.io` je odvozená od IP serveru. Při **změně IP**
+  (nový VPS) je nutné přepsat DNS záznam `app.greensie.cz` a náhradní sslip adresu v
+  `deploy/Caddyfile` i v seznamu povolených CORS originů v `backend/app/main.py`, jinak přestane
+  fungovat HTTPS i volání API.
+- **Caddyfile se nasazuje deployem.** `deploy/update.sh` kopíruje `deploy/Caddyfile` do
+  `/etc/caddy/Caddyfile` a až pak reloaduje Caddy. Ruční editace `/etc/caddy/Caddyfile` na serveru
+  se tedy **příštím deployem přepíše** — měnit se má vždy soubor v repu.
+- **Vhosty jiných projektů.** `/etc/caddy/Caddyfile` importuje `/etc/caddy/sites/*.caddy` (např.
+  `crm.tlakovaceta.cz`). Ten `import` řádek musí zůstat v `deploy/Caddyfile`, jinak deploy Greensie
+  smaže vhosty ostatních projektů na serveru.
 - **Backend běží jednoprocesově** (uvicorn bez `--workers`). Při vyšší zátěži může blokovat — viz
   poznámka v paměti projektu o plánu vyčlenit konektory do samostatných procesů (kvůli chybám 502).
 - **`.env` musí být v kořeni repa**, ne v `backend/`. Cesta se počítá relativně z

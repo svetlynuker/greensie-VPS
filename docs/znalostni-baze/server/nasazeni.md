@@ -4,7 +4,7 @@
 > **Kdo to dělá:** Dan (má na serveru `sudo`) · **Kód:** `deploy/update.sh`, `deploy/Caddyfile`, `deploy/greensie-backend.service`
 
 Jak dostat novou verzi kódu na produkci — tj. z odladěného a slitého (merged) kódu na GitHubu
-udělat běžící appku na adrese **https://167-235-254-188.sslip.io**.
+udělat běžící appku na adrese **https://app.greensie.cz**.
 
 Nasazení má **dva kroky, které jdou po sobě**:
 
@@ -45,7 +45,7 @@ sudo bash deploy/update.sh
 
 - `sudo` si **vyžádá heslo** — spouští ho Dan sám (skript zasahuje do `/var/www` a systemd služeb).
 - Skript je „ukecaný": vypisuje, u kterého kroku je (`==> …`). Poslední řádek je
-  `HOTOVO. Nová verze běží na https://167-235-254-188.sslip.io`.
+  `HOTOVO. Nová verze běží na https://app.greensie.cz`.
 - Skript má `set -euo pipefail` — při **jakékoli chybě se okamžitě zastaví** a HOTOVO se nevypíše.
   Když HOTOVO nevidíš, nasazení **neproběhlo celé** (viz „Rollback").
 
@@ -89,12 +89,12 @@ Kroky v tomto pořadí:
 
 ### Rychlá kontrola z prohlížeče / curlem
 
-- Otevři **https://167-235-254-188.sslip.io** a projdi změnu, kvůli které ses nasazoval.
+- Otevři **https://app.greensie.cz** a projdi změnu, kvůli které ses nasazoval.
   (Občas je potřeba tvrdý refresh `Ctrl+Shift+R`, aby prohlížeč nezobrazil starý frontend z cache.)
 - **Health check backendu** — přes Caddy (ten `/api` odřízne a pošle na backend):
 
 ```bash
-curl -s https://167-235-254-188.sslip.io/api/health
+curl -s https://app.greensie.cz/api/health
 ```
 
 Očekávaný výstup: `{"stav":"ok"}`. Případně backend napřímo na serveru:

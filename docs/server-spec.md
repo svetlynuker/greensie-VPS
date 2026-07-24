@@ -65,7 +65,7 @@ Aplikace se skládá ze čtyř hlavních částí:
 ### Tok požadavků (produkce)
 
 ```
-                          https://167-235-254-188.sslip.io
+                              https://app.greensie.cz
                                        │
                                        ▼  (HTTPS 443, Let's Encrypt)
                           ┌────────────────────────────┐
@@ -105,7 +105,7 @@ Při každém spuštění backendu se v tomto pořadí provede:
    - `technologie`: přidá `extra JSONB NOT NULL DEFAULT '{}'` (hodnoty vlastních sloupců katalogu).
    - `sazby_distributoru`: přidá `je_modelovy_odhad BOOLEAN NOT NULL DEFAULT false`.
 4. **`_seed_sazby()`** – idempotentně naplní `sazby_distributoru` výchozími daty **ČEZ** (viz [kap. 6.5](#65-seed-data-sazby-distributorů)). Vkládá jen chybějící řádky, ruční úpravy nepřepíše.
-5. **Vytvoření `FastAPI(title="Greensie")` + CORS** – povolené originy `http://localhost:5173` (vývoj) a `https://167-235-254-188.sslip.io` (produkce); `allow_credentials=True`, `allow_methods=["*"]`, `allow_headers=["*"]`.
+5. **Vytvoření `FastAPI(title="Greensie")` + CORS** – povolené originy `http://localhost:5173` (vývoj), `https://app.greensie.cz` a `https://167-235-254-188.sslip.io` (produkce); `allow_credentials=True`, `allow_methods=["*"]`, `allow_headers=["*"]`.
 6. **Registrace routerů:** `auth`, `matice`, `finance`, `nabidkovac`, `nastaveni`, `admin`.
 7. **Health check** – `GET /health` → `{"stav": "ok"}`.
 
@@ -146,7 +146,7 @@ Transakční e-maily přes SMTP, výchozí poskytovatel **Seznam.cz** (`automat@
 ### Nasazení
 
 - **systemd** (`deploy/greensie-backend.service`): služba `greensie-backend`, startuje po `network.target` + `postgresql.service`, běží pod uživatelem `dan`, `ExecStart` = `backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000`, `Restart=always`, `RestartSec=3`.
-- **Caddy** (`deploy/Caddyfile`): doména `167-235-254-188.sslip.io` (sslip.io → IP 167.235.254.188), automatický Let's Encrypt certifikát, `encode zstd gzip`, `handle_path /api/*` → `reverse_proxy localhost:8000` (odřízne prefix `/api`), zbytek → statický frontend (`root /var/www/greensie`, `try_files {path} /index.html` kvůli SPA routingu).
+- **Caddy** (`deploy/Caddyfile`): domény `app.greensie.cz` (hlavní) a `167-235-254-188.sslip.io` (náhradní, sslip.io → IP 167.235.254.188) v jednom vhostu, automatický Let's Encrypt certifikát, `encode zstd gzip`, `handle_path /api/*` → `reverse_proxy localhost:8000` (odřízne prefix `/api`), zbytek → statický frontend (`root /var/www/greensie`, `try_files {path} /index.html` kvůli SPA routingu).
 - **`deploy/install.sh`** (jednorázově, root): zastaví dev servery, nainstaluje Caddy, nakopíruje frontend do `/var/www/greensie`, nasadí Caddyfile (`caddy validate` + restart), nasadí systemd službu, nastaví `ufw` (porty 22/80/443), zkontroluje stav. Neřeší venv/pip/build.
 - **`deploy/update.sh`** (nová verze, root): `pip install -r requirements.txt`, `npm install`, `npm run build`, kopie `dist/` do `/var/www/greensie`, `systemctl restart greensie-backend`, `systemctl reload caddy`.
 

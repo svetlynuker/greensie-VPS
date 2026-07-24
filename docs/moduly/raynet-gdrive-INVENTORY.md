@@ -35,7 +35,7 @@
 | Kernel | 6.1.0-48-amd64 |
 | Uživatel | `dan` (uid 1000), ve skupině `sudo` (sudo **vyžaduje heslo** — ne NOPASSWD) |
 | Veřejná IP | `167.235.254.188` |
-| Doména | `167-235-254-188.sslip.io` (wildcard přes sslip.io — `*.167-235-254-188.sslip.io` → tato IP) |
+| Doména | `app.greensie.cz` (hlavní, od 2026-07-24); `167-235-254-188.sslip.io` ponechána jako náhradní |
 | CPU / RAM | 2 jádra / 3,8 GB (volných ~2,1 GB), **žádný swap** |
 | Disk `/` | 75 GB, volných 67 GB (8 % využito) |
 
@@ -52,7 +52,7 @@
 | **S1** | Runtime | Node ≥ 20 **nebo** PHP ≥ 8.1 | ✅ | **Node v24.18.0**; **Python 3.11.2** (FastAPI stack greensie-app). PHP/composer **není**. | **REUSE Python** — konektor = modul greensie-app (R1). Node se nepoužije. Nic neinstalovat. |
 | **S2** | Databáze | relační DB pro stav/mapování | ✅ | **PostgreSQL 15.18** běží, `127.0.0.1:5432`, `postgresql@15-main` active. | **REUSE stávající greensie DB** → tabulky `konektor_*` (R2). Žádná nová DB, žádný nový engine. |
 | **S3** | Veřejné HTTPS | příchozí webhooky, 443, platný TLS | ✅ | **Caddy v2.11.4** (systemd), poslouchá `:80`/`:443`, auto Let's Encrypt, existující vhost greensie `/api/*` → `:8000`. | **REUSE stávající vhost** — webhooky přes `/api/konektor/webhooks/*`. **Bez nového vhostu.** |
-| **S4** | Veřejná doména | subdoména s A/AAAA | ✅ | `167-235-254-188.sslip.io` už slouží greensie-app. | **REUSE stávající domény** — webhook URL = `https://167-235-254-188.sslip.io/api/konektor/webhooks/...`. |
+| **S4** | Veřejná doména | subdoména s A/AAAA | ✅ | `app.greensie.cz` slouží greensie-app (dřív `167-235-254-188.sslip.io`, ta zůstává funkční kvůli už registrovaným push kanálům). | **REUSE stávající domény** — webhook URL = `https://app.greensie.cz/api/konektor/webhooks/...`. |
 | **S5** | Scheduler | obnova watch + reconcile | ✅ | **systemd 252**; navíc greensie-app má **vzor background vlákna** (`matice/scheduler.py`, á 60 s čte nastavení z DB). | **REUSE background vlákno** v FastAPI (renew-watch, reconcile) — dle vzoru matice. Bez samostatného timeru. |
 | **S6** | Process mgmt | trvalý běh + restart | ✅ | **systemd** — konektor poběží uvnitř existující `greensie-backend.service` (Restart=always). | **REUSE `greensie-backend.service`.** Žádný nový unit. |
 | **S7** | Správa tajemství | API klíče, SA JSON | ✅ | Bez vaultu; precedent `.env` přes `python-dotenv`. | Tajemství **šifrovaně v DB** (R4), write-only z UI. Šifrovací klíč `KONEKTOR_ENC_KEY` v `.env` (chmod 600, `.gitignore`). |
