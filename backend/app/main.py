@@ -212,7 +212,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",  # lokální vývoj
-        "https://167-235-254-188.sslip.io",  # produkce
+        "https://app.greensie.cz",  # produkce – hlavní adresa
+        "https://167-235-254-188.sslip.io",  # produkce – původní adresa
     ],
     allow_credentials=True,
     allow_methods=["*"],
