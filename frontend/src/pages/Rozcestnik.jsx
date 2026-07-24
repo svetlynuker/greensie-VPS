@@ -13,6 +13,7 @@ const TRASY = {
   admin: "/admin",
   logy: "/logy",
   konektor: "/konektor",
+  manual: "/manual",
 };
 
 // Vzhled dlaždic: ikona + podtitulek dle klíče modulu.
@@ -24,6 +25,7 @@ const IKONY = {
   admin: "admin",
   logy: "logy",
   konektor: "konektor",
+  manual: "manual",
 };
 const PODTITULY = {
   projekty: "Matice úkolů a fází ze Freela",
@@ -33,6 +35,7 @@ const PODTITULY = {
   admin: "Uživatelé, skupiny a oprávnění",
   logy: "Provoz serveru, chyby a kdo co udělal",
   konektor: "Synchronizace klientů a dokumentů s Google Diskem",
+  manual: "Návody k obsluze appky – modul po modulu",
 };
 
 // Nedostupné (zamčené) a zatím rozpracované dlaždice vedou sem.

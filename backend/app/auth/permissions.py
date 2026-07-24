@@ -74,7 +74,12 @@ DLAZDICE = [
     {"klic": "admin", "nazev": "Admin nastavení"},
     {"klic": "logy", "nazev": "Logy"},
     {"klic": "konektor", "nazev": "Konektor Raynet ↔ Disk"},
+    {"klic": "manual", "nazev": "Manuál"},
 ]
+
+# Dlaždice bez potřeby práva – vidí a otevře je každý přihlášený (nápověda).
+# Nemají klíč v PRAVA, protože se nepřidělují; jsou vždy odemčené.
+DLAZDICE_VZDY_OTEVRENE = {"manual"}
 
 # Katalog přidělitelných práv (skupinám i jednotlivcům). Otevírací práva mají
 # stejný klíč jako dlaždice; ostatní jsou akční práva.
@@ -123,7 +128,11 @@ def dlazdice_pro(user: User) -> list[DlazdiceOut]:
     """Všechny dlaždice + příznak, zda je uživatel smí otevřít."""
     prava = prava_uzivatele(user)
     return [
-        DlazdiceOut(klic=d["klic"], nazev=d["nazev"], muze_otevrit=d["klic"] in prava)
+        DlazdiceOut(
+            klic=d["klic"],
+            nazev=d["nazev"],
+            muze_otevrit=d["klic"] in DLAZDICE_VZDY_OTEVRENE or d["klic"] in prava,
+        )
         for d in DLAZDICE
     ]
 

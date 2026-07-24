@@ -20,6 +20,7 @@ from app.zmeny.routes import router as zmeny_router
 from app.admin.routes import router as admin_router
 from app.konektor import models as konektor_models  # noqa: F401 - registrace modelů
 from app.konektor.routes import router as konektor_router
+from app.manual.routes import router as manual_router
 from app.database import Base, engine
 
 Base.metadata.create_all(bind=engine)
@@ -227,6 +228,7 @@ app.include_router(logy_router)
 app.include_router(zmeny_router)
 app.include_router(admin_router)
 app.include_router(konektor_router)
+app.include_router(manual_router)
 
 
 @app.on_event("startup")

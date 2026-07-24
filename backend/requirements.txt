@@ -11,6 +11,8 @@ python-multipart==0.0.9
 pydantic==2.7.4
 xlrd==2.0.2
 openpyxl==3.1.5
+# Manuál (znalostní báze v UI) – převod Markdown → HTML
+markdown==3.7
 # Konektor RAYNET ↔ Google Drive
 cryptography==49.0.0
 google-api-python-client==2.198.0
