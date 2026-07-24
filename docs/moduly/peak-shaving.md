@@ -9,7 +9,7 @@ Navazuje na `docs/METODIKA-peak-shaving.md` a promptové zadání
 16. 7. 2026, bughunt PS-1). Všechny ceny **bez DPH**. Výpočet je čistě
 deterministický (žádní AI agenti za běhu).
 
-Stav: nasazeno na produkci (`https://167-235-254-188.sslip.io`), poslední krok
+Stav: nasazeno na produkci (`https://app.greensie.cz`), poslední krok
 (PR #9 – návratnost dle modelů) se nasazuje ručně přes `deploy/update.sh`.
 
 ---
@@ -327,7 +327,7 @@ kompatibilita), `upozorneni`. Každá varianta nese `ekonomika_2026` (s rozpadem
 
 - **Bez CI.** Produkce běží z checkoutu `/home/dan/projects/greensie-app`.
 - Postup: merge PR → `git pull origin main` v checkoutu → `sudo bash deploy/update.sh` (build frontendu do `/var/www/greensie`, restart `greensie-backend` + reload Caddy).
-- Backend: systemd `greensie-backend`, uvicorn na `127.0.0.1:8000`. Frontend: Caddy z `/var/www/greensie`. Veřejně: `https://167-235-254-188.sslip.io`.
+- Backend: systemd `greensie-backend`, uvicorn na `127.0.0.1:8000`. Frontend: Caddy z `/var/www/greensie`. Veřejně: `https://app.greensie.cz`.
 - **`update.sh` nedělá `pip install`** → `xlrd`/`openpyxl` byly doinstalované ručně do venv (a jsou v `requirements.txt` pro čistý build).
 - DB migrace + seed běží při startu backendu (idempotentně).
 

@@ -27,7 +27,7 @@ Aplikace čte konfiguraci z proměnných prostředí (na serveru z `.env`). Rozl
 |---|---|---|---|
 | `DATABASE_URL` | Připojovací řetězec k PostgreSQL (SQLAlchemy `create_engine`). | **Ano** | — (bez ní start selže) |
 | `SECRET_KEY` | Tajný klíč pro podpis přihlašovacích **JWT tokenů** (`HS256`, `backend/app/auth/permissions.py`). | **Ano** | — (bez ní start selže) |
-| `APP_URL` | Veřejná adresa aplikace — vkládá se do e-mailů (přihlašovací odkaz) a používá jako fallback pro konektor. | Ne | `https://167-235-254-188.sslip.io` |
+| `APP_URL` | Veřejná adresa aplikace — vkládá se do e-mailů (přihlašovací odkaz) a používá jako fallback pro konektor. | Ne | `https://app.greensie.cz` |
 
 ### E-maily (SMTP) — viz `backend/app/mailer.py`
 
@@ -58,7 +58,7 @@ Aplikace čte konfiguraci z proměnných prostředí (na serveru z `.env`). Rozl
 |---|---|---|---|
 | `KONEKTOR_ENC_KEY` | **Šifrovací klíč (Fernet)** pro tajemství konektoru (Raynet API klíč, Google service-account JSON) — ta se do DB ukládají **zašifrovaná**. Klíč žije jen v `.env`, ne v DB. | Ano pro konektor³ | — (bez něj nelze uložit ani přečíst tajemství) |
 | `KONEKTOR_WEBHOOK_SECRET` | Token pro ověření push notifikací z Google Drive (`X-Goog-Channel-Token`). | Ne | `""` |
-| `PUBLIC_BASE_URL` | Veřejná URL pro adresu webhook endpointu; když chybí, použije se `APP_URL`, jinak vestavěná výchozí. | Ne | fallback → `APP_URL` → `https://167-235-254-188.sslip.io` |
+| `PUBLIC_BASE_URL` | Veřejná URL pro adresu webhook endpointu; když chybí, použije se `APP_URL`, jinak vestavěná výchozí. | Ne | fallback → `APP_URL` → `https://app.greensie.cz` |
 
 > ³ **Ztráta `KONEKTOR_ENC_KEY` = nutnost všechna tajemství konektoru zadat znovu.** Tajemství jsou
 > v UI „write-only" (dají se zadat/přepsat, ale nikdy nevrátit zpět; UI ukazuje jen příznak „nastaveno").
@@ -161,9 +161,9 @@ založeným uživatelům (jednorázové heslo + přihlašovací odkaz).
 ## Poznámky a úskalí (k ověření / nezřejmé)
 - **`.env` v kořeni repa, ne v `backend/`.** `database.py` ho hledá o tři úrovně výš
   (`parent.parent.parent / ".env"`). Na to pozor při ruční editaci na serveru.
-- **Vestavěná výchozí URL** `https://167-235-254-188.sslip.io` je v kódu na dvou místech
+- **Vestavěná výchozí URL** `https://app.greensie.cz` je v kódu na dvou místech
   (`mailer.py` a `konektor/logika.py`) jako fallback, když není `APP_URL` / `PUBLIC_BASE_URL`.
-  Po přechodu na vlastní doménu je vhodné `APP_URL` nastavit, ať odkazy v e-mailech sedí.
+  Od přechodu na vlastní doménu (24. 7. 2026) tedy odkazy v e-mailech sedí i bez `APP_URL` v `.env`.
 - **`SMTP_HESLO` bez startovní kontroly:** aplikace nastartuje i bez něj, chyba se projeví až
   při pokusu o odeslání. Doporučeno ověřit `email_nastaven()` po nasazení.
 - **`GRANT CREATE ON SCHEMA public`** není v kódu — je to provozní krok na straně DB serveru;

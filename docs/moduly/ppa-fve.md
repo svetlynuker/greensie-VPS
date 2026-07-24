@@ -11,7 +11,7 @@ návratnost (payback, IRR, NPV). Výrobu FVE si appka **sama simuluje** (nenahr�
 se bere z nahraného 15min profilu. Velikost FVE **navrhuje appka sama podle nejlepší
 ekonomiky**. Všechny ceny **bez DPH**, výpočet je čistě deterministický.
 
-Stav: nasazeno na produkci (`https://167-235-254-188.sslip.io`).
+Stav: nasazeno na produkci (`https://app.greensie.cz`).
 
 ---
 

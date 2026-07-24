@@ -33,7 +33,15 @@ chown -R caddy:caddy "${WEB}"
 echo "==> Restartuji backend…"
 systemctl restart greensie-backend
 
-echo "==> Restartuji Caddy…"
+# Konfiguraci Caddy je nutné nasadit ze repa, ne jen reloadovat. NEMAZAT:
+# `systemctl reload caddy` načte /etc/caddy/Caddyfile — kdyby se sem nová verze
+# nezkopírovala, reload by vrátil STAROU konfiguraci a změna vhostu z repa
+# (např. přidání domény app.greensie.cz) by se ztratila.
+# Validace běží nad souborem v repu ještě PŘED kopií, aby chybný Caddyfile
+# nepřepsal funkční konfiguraci na serveru.
+echo "==> Nasazuji konfiguraci Caddy…"
+caddy validate --config "${PROJEKT}/deploy/Caddyfile" --adapter caddyfile
+cp "${PROJEKT}/deploy/Caddyfile" /etc/caddy/Caddyfile
 systemctl reload caddy
 
-echo "HOTOVO. Nová verze běží na https://167-235-254-188.sslip.io"
+echo "HOTOVO. Nová verze běží na https://app.greensie.cz"
