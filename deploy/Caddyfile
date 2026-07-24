@@ -1,7 +1,15 @@
 # Greensie – konfigurace webového serveru Caddy
-# Caddy si na této adrese sám vytáhne a obnovuje HTTPS certifikát (Let's Encrypt).
+# Caddy si na těchto adresách sám vytáhne a obnovuje HTTPS certifikát (Let's Encrypt).
 
-167-235-254-188.sslip.io {
+# Vhosty dalších projektů na tomto serveru (CRM Tlaková četa aj.).
+# POZOR: tento import musí zůstat, install.sh tímto souborem přepisuje /etc/caddy/Caddyfile.
+import /etc/caddy/sites/*.caddy
+
+# Appka je dostupná pod oběma jmény:
+#   app.greensie.cz          – hlavní adresa (DNS A záznam míří na tento server)
+#   167-235-254-188.sslip.io – původní adresa, ponechána kvůli starým odkazům
+#                              a už registrovaným Google Drive webhookům
+app.greensie.cz, 167-235-254-188.sslip.io {
 	# Komprese odpovědí
 	encode zstd gzip
 
@@ -17,5 +25,12 @@
 		root * /var/www/greensie
 		try_files {path} /index.html
 		file_server
+	}
+
+	header {
+		# Prohlížeč si zapamatuje, že sem chodí jen přes HTTPS.
+		Strict-Transport-Security "max-age=31536000"
+		# Interní appka nemá co dělat ve výsledcích vyhledávačů.
+		X-Robots-Tag "noindex, nofollow"
 	}
 }

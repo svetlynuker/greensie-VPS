@@ -1012,7 +1012,7 @@ def public_base_url() -> str:
     return (
         os.environ.get("PUBLIC_BASE_URL")
         or os.environ.get("APP_URL")
-        or "https://167-235-254-188.sslip.io"
+        or "https://app.greensie.cz"
     ).rstrip("/")
 
 

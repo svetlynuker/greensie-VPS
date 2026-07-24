@@ -16,7 +16,7 @@ import smtplib
 import ssl
 from email.message import EmailMessage
 
-VYCHOZI_APP_URL = "https://167-235-254-188.sslip.io"
+VYCHOZI_APP_URL = "https://app.greensie.cz"
 
 
 def app_url() -> str:
