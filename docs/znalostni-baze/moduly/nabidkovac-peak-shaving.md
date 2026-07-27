@@ -2,7 +2,7 @@
 
 > **Kde to je:** uvnitř modulu **Nabídkovač**, v detailu nabídky **typu `peak_shaving`** (jen pro **VN/VVN**, na NN appka peak shaving nenabízí)
 > **Kdo smí otevřít:** kdokoli s právem `nabidkovac` (OZ, vedení, admin) · sazby distributorů a výpočtová nastavení edituje jen `nabidkovac_katalog` (vedení/admin)
-> **Kód:** frontend `frontend/src/components/PeakShavingPanel.jsx` (+ `components/GrafOdberu.jsx`, admin `pages/NabidkovacKatalog.jsx`), backend `backend/app/nabidkovac/` (jádro `peak_shaving.py`)
+> **Kód:** frontend `frontend/src/components/PeakShavingPanel.jsx` (+ `components/GrafOdberu.jsx`, `components/GrafPrubehu.jsx`, admin `pages/NabidkovacKatalog.jsx`), backend `backend/app/nabidkovac/` (jádro `peak_shaving.py`)
 
 Kalkulátor, který z **15minutového profilu odběru** spočítá, jaká bateriová úložiště (peak shaving) klientovi na VN/VVN nejvíc snížíme platby distributorovi za rezervovanou kapacitu – a za jak dlouho se investice vrátí. Ekonomiku počítá pro **dnešní tarif (2026)** i pro **novou strukturu ERÚ (2027, zatím modelový odhad)** a doporučí konkrétní baterii z katalogu.
 
@@ -31,7 +31,7 @@ Panel je rozdělený do tří kroků shora dolů:
 1. **Krok 1 – Profil odběru.** Nahraný soubor se spotřebou se tlačítkem „načte" (naparsuje) do appky. Nad tlačítkem vidíš stav: kolik intervalů se načetlo, od kdy do kdy a jaká je špička.
 2. **Krok 2 – Parametry odběrného místa.** Formulář: distributor, napěťová hladina, rezervovaná kapacita, volitelná pole a výběr baterií do výpočtu. Dole tlačítko **Spočítat peak shaving**.
    Ručně zadané hodnoty se **pamatují u nabídky** – když se do ní vrátíš (i po zavření prohlížeče), jsou předvyplněné podle posledního výpočtu, resp. podle toho, co jsi naposled psal. Nejsou zamčené: cokoli přepíšeš, přepsané zůstane.
-3. **Krok 3 – Výsledek.** Objeví se po výpočtu: přepínač roku, dlaždice s hlavními čísly (KPI), návratnost dle modelů, ekonomika 2026 vs. 2027 vedle sebe, graf měsíčních maxim, citlivost návrhu, rozpis po letech a srovnání variant.
+3. **Krok 3 – Výsledek.** Objeví se po výpočtu: přepínač roku, dlaždice s hlavními čísly (KPI), návratnost dle modelů, ekonomika 2026 vs. 2027 vedle sebe, graf měsíčních maxim, **průběh v čase (nitkový graf se zoomem)**, citlivost návrhu, rozpis po letech a srovnání variant.
 
 > 📸 SCREENSHOT: tři kroky panelu s očíslovanými popisky (profil / parametry / výsledek)
 
@@ -123,6 +123,36 @@ Najetím myší na sloupec se ukáže přesná hodnota. Graf se překreslí podl
 
 > 📸 SCREENSHOT: graf měsíčních maxim se čtyřmi prvky legendy (bez baterie / s baterií / rezervace nyní / rezervace nová)
 
+#### Graf „Průběh v čase" (nitkový graf)
+Zatímco graf měsíčních maxim ukazuje **výsledek**, tenhle ukazuje **děj**: co se v odběrném místě odehrává minutu po minutě celý rok. Otevřeš ho tlačítkem **„Zobrazit průběh v čase"** (načítá se na vyžádání – je to celoroční 15minutová simulace, pár vteřin).
+
+Graf má tři pásy nad sebou a společnou časovou osu:
+- **horní pás – odběr (kW):** šedá nitka = odběr **bez baterie** (co by teklo ze sítě dnes), zelená nitka = odběr **ze sítě po instalaci baterie**. Rozdíl mezi nimi je přesně to, co baterie v tu chvíli kryje. Tečkovaná čára = strop, který baterie drží, čárkované čáry = sjednaná rezervace dnes a po instalaci.
+- **prostřední pás – výkon baterie (kW):** nad nulou baterie **vybíjí** (kryje špičku), pod nulou se **nabíjí** ze sítě.
+- **spodní pás – stav nabití (%):** kolik energie v baterii zbývá. Když se blíží nule ve chvíli špičky, je návrh na hraně.
+
+**Přiblížení (zoom).** Začíná se na celém roce. Přibližovat jde čtyřmi způsoby:
+- **kolečkem myši** (přibližuje k místu, kde máš kurzor),
+- **tažením myši** vybereš výsek, který se roztáhne přes celý graf,
+- **tlačítky Rok / Měsíc / Týden / Den / 6 hodin / 15 min**,
+- **klikem do přehledové lišty** dole (celý rok v malém, zvýrazněný obdélník = co je právě vidět).
+
+Posouvat jde šipkami **← →** nebo tažením se **Shiftem**, dvojklik oddálí, **Celý rok** vrátí výchozí pohled. Pod grafem je vždy napsáno, jaký úsek koukáš a **kolik času představuje jeden bod** – při plném přiblížení „15 min (přesné hodnoty)".
+
+> **Proč nejde přehlédnout špičku.** Při pohledu na celý rok se do jednoho bodu grafu vejde skoro celý den, takže se nekreslí jen průměr, ale i **pásmo od minima po maximum** (světlejší plocha kolem nitky). Špička tak zůstane vidět i z dálky – přiblížením se pásmo zužuje, až při 15 minutách splyne s nitkou a čteš přesné naměřené hodnoty. Najetím myší se ukáže bublina s hodnotami pod kurzorem.
+
+**Události.** Pod grafem je seznam vypíchnutých okamžiků roku – **kliknutím na řádek se graf přiblíží přesně na ten moment**:
+- **Špičky** – roční a měsíční maximum odběru (bez baterie i po baterii; to druhé je hodnota, za kterou se v daném měsíci platí),
+- **Sedla** – roční a měsíční minima (výchozí je vypnuté, ať seznam nezahltí),
+- **Baterie** – nejsilnější vybíjení a nabíjení, nejhlubší vybití (nejnižší stav nabití) a nejdelší souvislé vybíjení,
+- **Překročení** – měsíce, kdy odběr ze sítě přesáhl sjednanou rezervaci (nejdražší okamžiky roku).
+
+Kategorie se zapínají a vypínají tlačítky s barevnou tečkou; zapnuté události se zároveň kreslí jako body přímo v grafu.
+
+Graf respektuje přepínač roku: **2026** ukazuje držení jednoho ročního stropu, **2027** srážení špičky zvlášť v každém měsíci (proto se v něm tečkovaný strop mění po měsících). Při přepnutí roku nebo kliknutí na jinou variantu se simulace přepočítá.
+
+> 📸 SCREENSHOT: nitkový graf přiblížený na jeden zimní den – špička ráno, zelená nitka sražená na strop, pod ní vybíjení baterie a klesající stav nabití
+
 #### Citlivost návrhu
 Věta pod grafem: co by se stalo, kdyby byl profil o **±5 %** silnější/slabší – jestli by nasazená rezerva RK zvládla i „silnější rok", nebo by hrozily měsíční dokupy/pokuty. Je to rychlá kontrola, jak moc je návrh „na hraně".
 
@@ -209,12 +239,15 @@ Podrobné vzorce (simulace baterie, fair baseline 2026, dvousložkový tarif 202
 | `POST /dokumenty/{id}/zpracuj-profil` | `nabidkovac` | naparsuje XLS/XLSX/CSV → `spotreba_profil` (nahradí celý profil) |
 | `GET /nabidky/{id}/peak-shaving/profil-souhrn` | `nabidkovac` | počet intervalů, rozsah (od/do), špička `max_kw` |
 | `POST /nabidky/{id}/peak-shaving/vypocet` | `nabidkovac` | spustí výpočet, uloží do `navrhovana_reseni` |
+| `GET /nabidky/{id}/peak-shaving/prubeh` | `nabidkovac` | 15min průběh pro nitkový graf (na vyžádání, neukládá se) |
 | `GET /sazby` | `nabidkovac` | přehled sazeb (načítá i panel pro validaci) |
 | `POST/PUT/DELETE /sazby[/{id}]` | `nabidkovac_katalog` | správa sazeb |
 | `GET/POST/PUT/DELETE /katalog-sloupce`, `/technologie` | čte `nabidkovac`, edituje `nabidkovac_katalog` | katalog + vlastní sloupce |
 
 **Vstup výpočtu:** `{ distributor, napetova_hladina, rezervovana_kapacita_kw }` + volitelně `cena_energie_kc_mwh`, `rezervovany_prikon_kw`, `uvazovat_snizeni_rp`, `max_vykon_stridace_kw`, `baterie_ids` (ruční výběr produktů z katalogu; prázdné = celý katalog).
 **Výstup (`popis_json`):** `vstup`, `sazby`, `max_navratnost_roky`, `doporucena`, `varianty` (**všechny** spočítané varianty seřazené dle NPV; `graf` a `citlivost_stropu` nese jen první trojice), `graf`, `citlivost_stropu`, `upozorneni`. Každá varianta nese `ekonomika_2026`, `ekonomika_2027`, NPV/IRR a návratnosti.
+
+**Průběh v čase:** `GET /nabidky/{id}/peak-shaving/prubeh?varianta=N&rok=2026|2027` vrátí rozepsanou 15minutovou simulaci (odběr, odběr ze sítě, výkon baterie ±, stav nabití), schodovitý strop, referenční čáry, souhrn energií a seznam událostí. **Neukládá se** do řešení (~35 000 hodnot na variantu a rok) – počítá se na vyžádání (~0,1 s) ze stejné fyziky jako ekonomika. Odpověď má ~1,2 MB, gzipem (`GZipMiddleware`) ~250 kB. Volá ji FE po otevření sekce „Průběh v čase".
 
 **Dopočet varianty:** `POST /nabidky/{id}/peak-shaving/varianta-detail` s `{ "index": N }` (pořadí ve `varianty`) dopočítá graf + citlivost pro variantu mimo první trojici a uloží je do řešení. Volá ho FE při kliknutí na řádek srovnání.
 
@@ -231,8 +264,9 @@ backend/app/main.py  – create_all + _lehka_migrace + seed při startu
 frontend/src/
   components/PeakShavingPanel.jsx  – panel výpočtu + výsledek (OZ)
   components/GrafOdberu.jsx        – SVG graf měsíčních maxim (bez knihovny)
+  components/GrafPrubehu.jsx       – nitkový graf průběhu se zoomem rok → 15 min (bez knihovny)
   pages/NabidkovacKatalog.jsx      – admin: sazby, katalog, výpočtová nastavení
-  api.js                           – helpery peakShavingVypocet, profilZpracuj, peakShavingProfilSouhrn, sazby*
+  api.js                           – helpery peakShavingVypocet, profilZpracuj, peakShavingProfilSouhrn, peakShavingPrubeh, sazby*
 ```
 
 ### Časté potíže / co dělat, když…
@@ -255,9 +289,10 @@ frontend/src/
 - **Cena energie pro ztráty** je jen manažerské nastavení (default 3 000 Kč/MWh bez DPH); panel OZ ji nezadává, i když ji API umí přijmout.
 - **Počáteční nabití baterie** v simulaci = plná (zjednodušení v1). EOL derating a vlastní spotřeba PCS se zatím neaplikují.
 - **Poznámka k načítání profilu:** načtení **nahradí celý** profil nabídky napříč dokumenty (poslední vyhrává) – ne jen řádky z daného souboru.
-- Komponenta `PeakShavingPanel.jsx` importuje z komponent jen `GrafOdberu.jsx` (žádný `CvdToggle`); barvy grafu řeší CSS tokeny `--c-*` kvůli tmavému režimu a kompenzaci červeno-zelené vady.
+- Komponenta `PeakShavingPanel.jsx` importuje z komponent `GrafOdberu.jsx` a `GrafPrubehu.jsx` (žádný `CvdToggle`); barvy grafů řeší CSS tokeny `--c-*` kvůli tmavému režimu a kompenzaci červeno-zelené vady.
+- Nitkový graf průběhu si celoroční řady stahuje jednou a slévá je do ~900 košů (min/max/průměr) až v prohlížeči – zoom je proto okamžitý, bez dalšího volání serveru. Model 2027 se simuluje **po měsících se startem od plné baterie**, stejně jako `ekonomika_2027`; kdyby se simuloval průběžně, ukazoval by graf na začátku měsíce překročení stropu, které v ekonomice není.
 
 ## Odkazy
 - Technický souhrn (odvození vzorců, seed, historie PR): [`docs/moduly/peak-shaving.md`](../../moduly/peak-shaving.md)
 - Nadřazený modul: [Nabídkovač](nabidkovac.md)
-- Kód backend: `backend/app/nabidkovac/` (jádro `peak_shaving.py`) · frontend: `frontend/src/components/PeakShavingPanel.jsx`, `GrafOdberu.jsx`, `pages/NabidkovacKatalog.jsx`, `api.js`
+- Kód backend: `backend/app/nabidkovac/` (jádro `peak_shaving.py`) · frontend: `frontend/src/components/PeakShavingPanel.jsx`, `GrafOdberu.jsx`, `GrafPrubehu.jsx`, `pages/NabidkovacKatalog.jsx`, `api.js`

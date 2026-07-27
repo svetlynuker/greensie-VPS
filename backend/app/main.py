@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import inspect, text
 
 from app.auth import models  # noqa: F401 - registrace modelů před create_all
@@ -203,6 +204,11 @@ _seed_sazby()
 _seed_baterie()
 
 app = FastAPI(title="Greensie")
+
+# Komprese odpovědí: většina API vrací pár kB (nekomprimuje se), ale průběh
+# peak shavingu posílá celoroční 15min řady (~1 MB JSON) – gzip z toho udělá
+# desetinu. Přidáno jako nejvnitřnější vrstva, aby logování i CORS zůstaly nad ním.
+app.add_middleware(GZipMiddleware, minimum_size=4096)
 
 # Logovací middleware přidáváme PŘED CORS, aby CORS zůstal nejkrajnější
 # vrstvou (jinak by se hlavičky nemusely dostat na chybové odpovědi).
