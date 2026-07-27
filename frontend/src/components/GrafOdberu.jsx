@@ -21,7 +21,18 @@ function topRoundRect(x, y, w, h, r) {
   );
 }
 
-export default function GrafOdberu({ mesice, bezBaterie, sBaterii, rpSoucasna, rpNova }) {
+// `popisSoucasna` / `popisNova` – co ta referenční čára znamená. V roce 2026 se
+// platí za rezervovanou kapacitu, v roce 2027 za rezervovaný příkon ze smlouvy
+// o připojení; graf musí kreslit i pojmenovat hodnotu zobrazeného roku.
+export default function GrafOdberu({
+  mesice,
+  bezBaterie,
+  sBaterii,
+  rpSoucasna,
+  rpNova,
+  popisSoucasna = "rezervovaná kapacita nyní",
+  popisNova = "nová rezervovaná kapacita",
+}) {
   const W = 760;
   const H = 260;
   const L = 46;
@@ -47,8 +58,8 @@ export default function GrafOdberu({ mesice, bezBaterie, sBaterii, rpSoucasna, r
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 12, marginBottom: 6 }}>
         <span><span style={{ display: "inline-block", width: 12, height: 12, borderRadius: 3, background: "var(--c-before)", verticalAlign: "middle", marginRight: 4 }} />bez baterie</span>
         <span><span style={{ display: "inline-block", width: 12, height: 12, borderRadius: 3, background: "var(--c-after)", verticalAlign: "middle", marginRight: 4 }} />s baterií</span>
-        <span><span style={{ display: "inline-block", width: 14, height: 0, borderTop: "2px dashed var(--c-refnow)", verticalAlign: "middle", marginRight: 4 }} />rezervace nyní ({kwLabel(rpSoucasna)})</span>
-        <span><span style={{ display: "inline-block", width: 14, height: 0, borderTop: "2px dashed var(--c-refnew)", verticalAlign: "middle", marginRight: 4 }} />rezervace nová ({kwLabel(rpNova)})</span>
+        <span><span style={{ display: "inline-block", width: 14, height: 0, borderTop: "2px dashed var(--c-refnow)", verticalAlign: "middle", marginRight: 4 }} />{popisSoucasna} ({kwLabel(rpSoucasna)})</span>
+        <span><span style={{ display: "inline-block", width: 14, height: 0, borderTop: "2px dashed var(--c-refnew)", verticalAlign: "middle", marginRight: 4 }} />{popisNova} ({kwLabel(rpNova)})</span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", maxWidth: "100%" }} role="img">
         {/* osy Y – mřížka + popisky */}

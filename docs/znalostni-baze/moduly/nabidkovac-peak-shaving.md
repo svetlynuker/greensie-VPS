@@ -4,7 +4,7 @@
 > **Kdo smí otevřít:** kdokoli s právem `nabidkovac` (OZ, vedení, admin) · sazby distributorů a výpočtová nastavení edituje jen `nabidkovac_katalog` (vedení/admin)
 > **Kód:** frontend `frontend/src/components/PeakShavingPanel.jsx` (+ `components/GrafOdberu.jsx`, `components/GrafPrubehu.jsx`, admin `pages/NabidkovacKatalog.jsx`), backend `backend/app/nabidkovac/` (jádro `peak_shaving.py`)
 
-Kalkulátor, který z **15minutového profilu odběru** spočítá, jaká bateriová úložiště (peak shaving) klientovi na VN/VVN nejvíc snížíme platby distributorovi za rezervovanou kapacitu – a za jak dlouho se investice vrátí. Ekonomiku počítá pro **dnešní tarif (2026)** i pro **novou strukturu ERÚ (2027, zatím modelový odhad)** a doporučí konkrétní baterii z katalogu.
+Kalkulátor, který z **15minutového profilu odběru** spočítá, jaká bateriová úložiště (peak shaving) klientovi na VN/VVN nejvíc snížíme platby distributorovi za rezervovanou kapacitu – a za jak dlouho se investice vrátí. Ekonomiku, NPV i doporučení počítá na **nové struktuře ERÚ (2027, zatím modelový odhad)** – co se dnes nabízí, se instaluje a spouští už v ní. Dnešní tarif (2026) zůstává jen jako informativní srovnání „co by to bylo teď". Výsledkem je doporučená konkrétní baterie z katalogu.
 
 > 📸 SCREENSHOT: celý panel „Peak shaving – výpočet" v detailu nabídky – od načtení profilu přes vstupy až po výsledek
 
@@ -43,18 +43,35 @@ Legenda „kdo vidí": **(vše)** = každý, kdo nabídku otevře (má právo `n
 | **Načíst profil: `<název souboru>`** | krok 1 | Tlačítko pro každý nahraný podklad (typ „spotřeba" nebo „jiný"). Klik naparsuje 15min profil do appky. **Nahrazuje celý dosavadní profil nabídky** (poslední vyhrává). Bez načteného profilu nejde počítat. | vše |
 | **Distributor** | krok 2 | Výběr provozovatele distribuční soustavy: **ČEZ Distribuce / EG.D / PRE distribuce**. Určuje, které sazby se do výpočtu použijí. | vše |
 | **Napěťová hladina** | krok 2 | **VN** nebo **VVN**. Spolu s distributorem vybírá sazbu. (NN appka nenabízí.) | vše |
-| **Sjednaná rezervovaná kapacita (kW)** | krok 2 | Kolik RK má klient **dnes sjednáno** – opsat **z faktury**. Je to výchozí stav, proti kterému se počítá úspora. Povinné, musí být > 0. | vše |
-| **Rezervovaný příkon (kW, volit.)** | krok 2 | Hodnota **ze smlouvy o připojení** (dlouhodobá, bývá ≥ RK). Používá se v modelu **2027**. Když ho nevyplníš, dosadí se současná RK a výstup upozorní, že skutečný příkon bývá vyšší. | vše |
+| **Sjednaná rezervovaná kapacita (kW)** | krok 2 | Kolik RK má klient **dnes sjednáno** – opsat **z faktury**. Je to výchozí stav, proti kterému se počítá úspora. Řídí celý model **2026**. Povinné, musí být > 0. | vše |
+| **Rezervovaný příkon (kW, volit.)** | krok 2 | Hodnota **ze smlouvy o připojení** (dlouhodobá, bývá výrazně ≥ RK). Řídí celý model **2027**. Necháš-li prázdné, počítá se **RP = RK** – appka to napíše pod políčkem i v tabulce 2027 a přidá upozornění. Není to neutrální volba: skutečný RP bývá vyšší, takže náklad 2027 i úspora vyjdou podhodnocené (viz „RK vs. RP" níže). | vše |
 | **Max. výkon střídače (kW, volit.)** | krok 2 | Ruční strop AC výkonu baterie. Hodí se u modulárních baterií, kde s počtem kusů roste kapacita, ale výkon drží sdílený střídač (PCS). Prázdné = neomezuje. | vše |
 | **„V modelu 2027 uvažovat snížení rezervovaného příkonu…"** (zaškrtávátko) | krok 2 | Když zaškrtneš, model 2027 hledá **nejlevnější RP** – stejným optimalizátorem jako u varianty bez baterie. RP proto může skončit i **pod nejvyšší měsíční špičkou**, pokud se v tom měsíci vyplatí zaplatit překročení (viz „Vědomé překročení RP" níže). Je to **jednosměrná změna smlouvy o připojení** – zpětné navýšení je zpoplatněné. Ve výchozím stavu vypnuto (poctivý default bez změny smlouvy). | vše |
 | **Baterie do výpočtu: Všechny / Jen ručně vybrané** (přepínač) | krok 2 | *Všechny* = celý dostupný katalog (výchozí). *Jen ručně vybrané* rozbalí seznam s hledáním a zaškrtávátky – počítají se pak jen označené produkty, což výpočet zrychlí. Tlačítka *Označit zobrazené* / *Zrušit výběr*. | vše |
 | **Spočítat peak shaving** | krok 2 | Spustí výpočet. Aktivní, jen když je **načtený profil**, **kladná RK**, **existují sazby 2026** pro zvolenou kombinaci distributor/hladina a (při ručním výběru) je **označená aspoň jedna baterie**. | vše |
-| **Zobrazit rok: 2026 / 2027** (přepínač) | krok 3, výsledek | Přepíná, pro který rok se ukazují dlaždice, návratnost, graf a sloupec ve srovnání variant. **2027 je výchozí**; když ekonomika 2027 chybí (nejsou sazby), tlačítko 2027 je zakázané a vše spadne na 2026. | vše |
+| **Zobrazit rok: 2026 / 2027** (přepínač) | krok 3, výsledek | Přepíná, pro který rok se ukazují dlaždice, prostá návratnost, graf a sloupec ve srovnání variant. **2027 je výchozí**; když ekonomika 2027 chybí (nejsou sazby), tlačítko 2027 je zakázané a vše spadne na 2026. Pozor: ekonomika, NPV i doporučení jedou vždy na modelu 2027 — karta 2026 je jen informativní srovnání „co by to bylo dnes". | vše |
+| **Počítat návratnost z: Celá úspora / Jen přínos baterie** (přepínač) | krok 3, výsledek | Volí, z čeho se počítá **NPV, reálná návratnost a doporučení** (viz „Dvě čtení návratnosti" níže). Obě varianty jsou spočítané dopředu, přepnutí **nic nepřepočítává** — okamžitě se překreslí dlaždice NPV, řádek „Reálně", tabulka po letech, odznaky „nedoporučeno" i pořadí ve srovnání variant. Volba se pamatuje v prohlížeči. Výchozí je **Celá úspora**. | vše |
 | **Řádek ve „Srovnání variant"** | krok 3, tabulka | Klik na řádek **překreslí celý detail** (dlaždice, ekonomika, grafy, citlivost) pro danou variantu. `◄` = právě zobrazená. | vše |
 | **Záhlaví sloupce ve srovnání** | krok 3, tabulka | Klik **seřadí** tabulku podle toho sloupce (druhý klik obrátí směr): baterie (abecedně), výkon, nová rezervace, úspora, cena, návratnost, NPV. Prázdné hodnoty padají na konec. Odkaz *zpět na doporučené pořadí* vrátí výchozí řazení dle NPV. | vše |
 | **Zobrazit všechny baterie (N)** | krok 3, nad tabulkou | Rozbalí srovnání z 3 nejlepších na **celý spočítaný katalog** (řazeno dle NPV) – pro manažerské rozhodnutí. Zpět tlačítkem *Zobrazit jen 3 nejlepší*. | vše |
 
 > 📸 SCREENSHOT: formulář parametrů odběrného místa s vyplněnými poli a tlačítkem „Spočítat peak shaving"
+
+#### Rezervovaná kapacita vs. rezervovaný příkon – nejčastější záměna
+Nejsou to varianty téhož čísla, jsou to **dvě různé hodnoty, které platí současně**, a každá krmí jiný rok. Vyplňuj proto **obě**.
+
+| | Rezervovaná kapacita (RK) | Rezervovaný příkon (RP) |
+|---|---|---|
+| **Co to je** | roční distribuční **produkt** – co si klient každý rok sjednává | **technický limit přípojky** ze smlouvy o připojení |
+| **Kde to najdeš** | na **faktuře** za distribuci (Kč/kW/rok) | ve **smlouvě o připojení** |
+| **Typická hodnota** | nižší – klient ji drží u sebe co nejtěsněji | výrazně vyšší než RK |
+| **Jak se mění** | každý rok (snížení až po 12 měsících od poslední změny), lze dokupovat měsíční RK | **jednosměrně** – zpětné navýšení je zpoplatněné (příloha 2 vyhlášky 16/2016 Sb.) |
+| **Když se překročí** | pokuta 1,5× měsíční sazba | sazba za překročení dle NTS |
+| **Řídí v appce** | celý model **2026**, KPI „Nová rez. kapacita", čáry v grafu měsíčních maxim v režimu 2026 | celý model **2027**, KPI „Rezervovaný příkon", čáry v grafu v režimu 2027 |
+
+RP existuje i dnes – jen se za něj dnes neplatí distribuční složka (platí se za RK). Od NTS 2027 se to překlopí: kapacitní složka se počítá z **RP**, k tomu se platí naměřené měsíční maximum, a roční/měsíční produkt „rezervovaná kapacita" v dnešní podobě odpadá.
+
+> ⚠️ **Prázdné políčko RP zkazí i výběr baterie, ne jen kartu 2027.** NPV a reálná návratnost, podle kterých se vybírá vítěz a doporučení, počítají rok 1 na tarifu 2026 a roky 2–10 v NTS 2027. Na reálné nabídce (RK 339 kW, špičky 310–372 kW) se změnou samotného políčka RP z „nezadáno" (→ 339) na skutečných 560 kW posunulo NPV z **−540 tis. na +188 tis. Kč** a reálná návratnost z „nevrátí se" na **6,0 let**. Nezadaný RP tedy vypadá jako opatrný odhad, ale je to nejhorší možný: RP = RK znamená „přípojka nemá vůbec žádnou rezervu".
 
 > ℹ️ **Cena energie pro ocenění ztrát** (3 000 Kč/MWh bez DPH) se v tomto panelu **nezadává** – je to manažerské nastavení v Katalogu (viz „Pro admina"). API ho umí přijmout, ale formulář ho nenabízí.
 
@@ -71,18 +88,29 @@ Ukazují se pro rok zvolený přepínačem:
 | Dlaždice | Co znamená |
 |---|---|
 | **Roční úspora (rok)** | Kolik klient ušetří za rok. U 2026 je pod tím rozpad „z toho bez investice X" (viz níže). U 2027 je to modelový odhad NTS. |
-| **Návratnost (rok)** | Za kolik let se baterie zaplatí. Počítá se z **přínosu baterie**, ne z celkové úspory (viz upozornění níže). Vedle je práh doporučení. |
+| **Návratnost (rok)** | Prostá návratnost zvoleného roku („cena ÷ úspora jednoho roku"). Pod tím je **reálná návratnost, která rozhoduje o doporučení**: celý horizont v NTS 2027, včetně O&M a degradace úspor. Bývá delší než prostá návratnost – právě proto, že O&M a degradaci nezametá pod stůl. |
 | **Nová rez. kapacita** (rok 2026) | Jaká RK bude po instalaci baterie sjednaná. Pod tím fyzický „strop" baterie a rezerva. |
 | **Rezervovaný příkon** (rok 2027) | Rezervovaný příkon v modelu 2027 (případně jeho snížení, když je zaškrtnuté). |
 | **Baterie** | Doporučená baterie a počet kusů, její celkový výkon / kapacita a cena. |
 | **NPV (N let)** | Čistá současná hodnota investice na horizontu (default 10 let), případně IRR. **Právě NPV řídí výběr doporučené varianty.** |
 
-> ⚠️ **Proč se návratnost počítá jen z „přínosu baterie" a ne z celé úspory:** část úspory klient získá i **bez investice** – stačí si u distributora zoptimalizovat sjednanou RK (tzv. „audit RK zdarma"). Do návratnosti baterie se proto započítává jen to, co přinese **navíc sama baterie**. Dlaždice „Roční úspora 2026" proto rozlišuje „z toho bez investice X".
+#### Dvě čtení návratnosti – přepínač „Počítat návratnost z"
+Část úspory klient získá i **bez investice** – stačí si u distributora zoptimalizovat sjednanou rezervaci (tzv. „audit RK zdarma"). Otázka „vyplácí se baterie?" má proto dvě legitimní odpovědi a appka počítá **obě** – přepínačem nad dlaždicemi si vybíráš, která řídí NPV, reálnou návratnost, odznaky „nedoporučeno" i pořadí variant.
+
+| Volba | Co počítá | Kdy ji použít |
+|---|---|---|
+| **Celá úspora** (výchozí) | celý rozdíl proti dnešnímu stavu – „dnešní faktura → faktura po instalaci", včetně úspory ze souběžné úpravy rezervace | když se klientovi prodává **projekt jako celek** a úpravu rezervace děláte v rámci něj |
+| **Jen přínos baterie** | jen to, co přinese sama baterie nad rámec toho, co jde získat i bez investice | když chceš vědět, jestli se vyplácí **samotná investice** – přísnější a obhajitelnější před klientem, který si rezervaci umí snížit sám |
+
+Rozdíl obou = řádek „Úspora hned bez investice" v kartě roku. Na nabídce „hydra" (BESS 100/330 za 1,5 mil. Kč, RP 560 kW): **Celá úspora** → NPV +421 tis. Kč, IRR 14,1 %, reálná návratnost 5,1 roku; **Jen přínos baterie** → NPV −386 tis. Kč, IRR 1,7 %, 9,1 roku. Obě čísla jsou správně – liší se tím, co počítáš jako zásluhu baterie.
+
+> ℹ️ Přepnutí **nic nepřepočítává** (obě sady spočetl server dopředu) a **nemění uložený výsledek** – je to jen způsob zobrazení. Volba se pamatuje v prohlížeči, ne u nabídky.
 
 #### Návratnost investice dle modelu
-Malá tabulka se dvěma řádky:
-- **Model 2026 (dnešní tarif)** – návratnost podle dnes platných sazeb. **Podle něj se řídí výběr varianty.**
-- **Model 2027 (nová struktura ERÚ)** – návratnost podle odhadu nové tarifní struktury. **Modelový odhad, ne finální cena** (závazný výměr ERÚ vyjde ~11/2026). Sleva „AKU" se na peak-shavingovou baterii **nevztahuje** (baterie uvnitř odběru nic nevrací do sítě).
+Tabulka se třemi řádky:
+- **Model 2027 (nová struktura ERÚ)** – prostá návratnost „cena ÷ roční úspora 2027". **Modelový odhad, ne finální cena** (závazný výměr ERÚ vyjde ~11/2026). Sleva „AKU" se na peak-shavingovou baterii **nevztahuje** (baterie uvnitř odběru nic nevrací do sítě).
+- **Model 2026 (dnešní tarif)** – jen **informativně**, do rozhodování nevstupuje. Co se dnes nabízí, se instaluje a spouští už v NTS 2027, takže rok na starém tarifu nikdo neodžije.
+- **Reálně (celý horizont v NTS 2027)** – **tohle číslo rozhoduje o doporučení.** Vychází ze stejného cash flow jako NPV (včetně O&M a degradace úspor), takže je delší než prostá návratnost, a odpovídá řádku ◄ v tabulce „Ekonomika po letech".
 
 #### Ekonomika – porovnání let (dvě karty vedle sebe)
 Aktivní (zvýrazněná) je karta roku podle přepínače.
@@ -116,12 +144,15 @@ Optimalizace tohle hledá sama a řádek *… z toho vědomé překročení RP* 
 Sloupcový graf po měsících:
 - **modrý sloupec „bez baterie"** = naměřené měsíční maximum odběru,
 - **zelený sloupec „s baterií"** = maximum po srážce baterií (u 2026 držení jednoho ročního stropu, u 2027 srážení po měsících co nejhlouběji),
-- **čárkovaná čára „rezervace nyní"** = dnešní sjednaná RK,
-- **čárkovaná čára „rezervace nová"** = RK/RP po instalaci.
+- **čárkované čáry** = sjednaná hodnota dnes a po instalaci, **v jednotkách zobrazeného roku**:
+  - rok **2026** → „rezervovaná kapacita nyní" / „nová rezervovaná kapacita" (RK),
+  - rok **2027** → „rezervovaný příkon nyní" / „rezervovaný příkon po instalaci" (RP).
 
 Najetím myší na sloupec se ukáže přesná hodnota. Graf se překreslí podle přepínače roku i podle vybrané varianty.
 
-> 📸 SCREENSHOT: graf měsíčních maxim se čtyřmi prvky legendy (bez baterie / s baterií / rezervace nyní / rezervace nová)
+> ℹ️ **Proč jsou ty dvě nové hodnoty různé.** Nová **RK** (rok 2026) = fyzický strop baterie + bezpečnostní rezerva (default 5 %). Nové **RP** (rok 2027) může být klidně **nižší**: v NTS se kapacitní složka platí 12× za rok, takže se vyplatí posadit RP i pod nejvyšší měsíční špičku a v jednom dvou měsících zaplatit překročení. Na nabídce „hydra" tak vyšla nová RK **328 kW**, ale nové RP **291 kW** – obojí správně, jen pro jiný tarif. Do 27. 7. 2026 graf kreslil vždy RK, i když byly sloupce z modelu 2027, takže to vypadalo jako rozpor mezi grafem a tabulkou.
+
+> 📸 SCREENSHOT: graf měsíčních maxim se čtyřmi prvky legendy (bez baterie / s baterií / sjednaná hodnota nyní / po instalaci)
 
 #### Graf „Průběh v čase" (nitkový graf)
 Zatímco graf měsíčních maxim ukazuje **výsledek**, tenhle ukazuje **děj**: co se v odběrném místě odehrává minutu po minutě celý rok. Otevřeš ho tlačítkem **„Zobrazit průběh v čase"** (načítá se na vyžádání – je to celoroční 15minutová simulace, pár vteřin).
@@ -160,7 +191,7 @@ Věta pod grafem: co by se stalo, kdyby byl profil o **±5 %** silnější/slab�
 Tabulka rok po roce na celém horizontu (default 10 let): tarif toho roku, přínos baterie, O&M (údržba), cash-flow roku, kumulovaná úspora a kumulované cash-flow. Řádek označený `◄` = rok, kdy se investice **poprvé vrátí**. Poslední hodnota „Kum. disk. CF" = NPV varianty.
 
 #### Srovnání variant
-Tabulka zvažovaných baterií. První řádek = doporučená (dle NPV). Kliknutím na jiný řádek se celý výše popsaný detail přepočítá pro tu variantu. Varianta nad prahem návratnosti nese odznak **„nedoporučeno"**.
+Tabulka zvažovaných baterií. První řádek = doporučená (dle NPV). Kliknutím na jiný řádek se celý výše popsaný detail přepočítá pro tu variantu. Varianta, jejíž **reálná** návratnost přeleze firemní práh, nese odznak **„nedoporučeno"** – i když prostá návratnost 2027 vypadá pod prahem. Do 27. 7. 2026 rozhodovala jen prostá návratnost modelu 2026, takže dobrá ekonomika 2027 na odznak neměla vliv.
 
 Výchozí zobrazení jsou **3 nejlepší varianty**, ale spočítané jsou všechny baterie, které šly do výpočtu (jedna nejlepší konfigurace počtu kusů za produkt). Tlačítkem **„Zobrazit všechny baterie (N)"** nad tabulkou rozbalíš celý seznam – pro manažerské rozhodnutí, kdy nejde jen o nejvyšší NPV (dostupnost, preferovaný dodavatel, velikost investice). Zpátky se přepneš tlačítkem **„Zobrazit jen 3 nejlepší"**.
 
@@ -170,7 +201,7 @@ Výchozí zobrazení jsou **3 nejlepší varianty**, ale spočítané jsou všec
 
 ### Jak na…
 - **Spočítat peak shaving od nuly:** nahraj profil v Podkladech → v kroku 1 klikni **Načíst profil** → v kroku 2 vyber **distributora** a **hladinu**, opiš **RK z faktury** → **Spočítat peak shaving**.
-- **Zohlednit model 2027 se snížením příkonu:** vyplň **Rezervovaný příkon** ze smlouvy, zaškrtni **„uvažovat snížení RP"**, spočítej a přepni nahoře na **2027**.
+- **Zohlednit model 2027 se snížením příkonu:** vyplň **Rezervovaný příkon** ze smlouvy, zaškrtni **„uvažovat snížení RP"**, spočítej a přepni nahoře na **2027**. (Bez vyplněného RP se dosadí RK a celý model 2027 vyjde podhodnocený – viz „RK vs. RP" výše.)
 - **Porovnat víc baterií:** po výpočtu klikej na řádky ve **Srovnání variant** – detail se pro každou překreslí. Chceš-li vidět celý katalog, ne jen 3 nejlepší, klikni na **„Zobrazit všechny baterie (N)"**.
 - **Počítat jen vybrané baterie:** v kroku 2 přepni na **Jen ručně vybrané**, v seznamu zaškrtni produkty (jde v nich hledat) a spočítej. Výběr se pamatuje do dalšího výpočtu.
 - **Seřadit srovnání po svém:** klikni na záhlaví sloupce (cena, návratnost, výkon…) – druhý klik obrátí směr, odkaz *zpět na doporučené pořadí* vrátí NPV.
@@ -217,7 +248,7 @@ Konstanty jsou v `peak_shaving.py`; manažerské parametry ve **výpočtových n
 | Využitelná kapacita | konstanta | 85 % jmenovité | SOC okno 10–95 % |
 | Rezerva RK nad stropem | `ps_rezerva_rk_procenta` | 5 % | polštář na meziroční variabilitu, servis, jinou zimu |
 | Cena energie (ocenění ztrát) | `ps_cena_energie_kc_mwh` | 3 000 Kč/MWh | oceňuje ztráty cyklování; snižuje úsporu |
-| Práh doporučené návratnosti | `max_navratnost_roky_peak_shaving` | 5 let | nad ním se varianta označí „nedoporučeno" |
+| Práh doporučené návratnosti | `max_navratnost_roky_peak_shaving` | 5 let | poměřuje se s **reálnou** návratností (rok 1 tarif 2026, dál NTS 2027, vč. O&M a degradace); nad ním se varianta označí „nedoporučeno" |
 | Diskontní sazba (NPV) | `ps_diskontni_sazba` | 8 % | pro NPV/IRR |
 | Horizont NPV | `ps_horizont_npv_roky` | 10 let | délka ekonomiky po letech |
 | O&M (údržba) | `ps_oam_procenta_capex_rok` | 2 % CAPEX/rok | provozní náklady |

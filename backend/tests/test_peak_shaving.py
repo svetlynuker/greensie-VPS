@@ -499,19 +499,31 @@ class TestNpvBaterie:
         assert n.degradace_uspor_procenta_rok == 1.5
 
     def test_jednoduchy_pripad_bez_diskontu(self):
-        # horizont 2, bez diskontu/O&M/degradace: NPV = přínos26 + přínos27 − cena
+        # horizont 2, bez diskontu/O&M/degradace: NPV = 2× přínos 2027 − cena
         n = ps.NastaveniNpv(diskontni_sazba=0.0, horizont_roky=2,
                             oam_procenta_capex_rok=0.0, degradace_uspor_procenta_rok=0.0)
         npv, irr, cf, pouzit = ps._npv_baterie(500_000.0, 300_000.0, 400_000.0, n)
-        assert cf == [300_000.0, 400_000.0]
-        assert npv == pytest.approx(200_000.0)
+        assert cf == [400_000.0, 400_000.0]
+        assert npv == pytest.approx(300_000.0)
         assert pouzit is True
 
-    def test_rok1_model_2026_dalsi_roky_2027(self):
+    def test_cely_horizont_jede_na_modelu_2027(self):
+        # Rozhodnuto 27. 7. 2026: co se dnes nabízí, se instaluje a spouští už
+        # v NTS – rok na tarifu 2026 nikdo neodžije, do CF tedy nevstupuje.
         n = ps.NastaveniNpv(diskontni_sazba=0.0, horizont_roky=3,
                             oam_procenta_capex_rok=0.0, degradace_uspor_procenta_rok=0.0)
         _, _, cf, _ = ps._npv_baterie(0.0, 100.0, 250.0, n)
-        assert cf == [100.0, 250.0, 250.0]
+        assert cf == [250.0, 250.0, 250.0]
+
+    def test_prinos_2026_je_jen_fallback_bez_sazeb_2027(self):
+        n = ps.NastaveniNpv(diskontni_sazba=0.0, horizont_roky=3,
+                            oam_procenta_capex_rok=0.0, degradace_uspor_procenta_rok=0.0)
+        # Se sazbami 2027 se hodnota 2026 vůbec nepoužije…
+        _, _, cf_s, _ = ps._npv_baterie(0.0, 999_999.0, 250.0, n)
+        assert cf_s == [250.0, 250.0, 250.0]
+        # …bez nich drží celý horizont.
+        _, _, cf_bez, _ = ps._npv_baterie(0.0, 100.0, None, n)
+        assert cf_bez == [100.0, 100.0, 100.0]
 
     def test_oam_a_degradace_snizuji_cf(self):
         n = ps.NastaveniNpv(diskontni_sazba=0.0, horizont_roky=2,
@@ -537,11 +549,11 @@ class TestRokyCashFlow:
         _, _, cf, pouzit = ps._npv_baterie(500.0, 100.0, 250.0, n)
         roky = ps._roky_cash_flow(500.0, cf, n, pouzit)
         assert [r["rok"] for r in roky] == [1, 2, 3]
-        assert [r["model"] for r in roky] == ["2026", "2027", "2027"]
-        assert [r["cf_kc"] for r in roky] == [100.0, 250.0, 250.0]
-        assert roky[-1]["uspora_kum_kc"] == pytest.approx(600.0)
+        assert [r["model"] for r in roky] == ["2027", "2027", "2027"]
+        assert [r["cf_kc"] for r in roky] == [250.0, 250.0, 250.0]
+        assert roky[-1]["uspora_kum_kc"] == pytest.approx(750.0)
         # kum. CF = kum. úspora − investice
-        assert roky[-1]["cf_kum_kc"] == pytest.approx(100.0)
+        assert roky[-1]["cf_kum_kc"] == pytest.approx(250.0)
 
     def test_kumulovany_diskontovany_cf_konci_na_npv(self):
         n = ps.NastaveniNpv()  # defaulty: diskont 8 %, O&M 2 % CAPEX, degradace 1,5 %
@@ -549,9 +561,9 @@ class TestRokyCashFlow:
         roky = ps._roky_cash_flow(1_000_000.0, cf, n, pouzit)
         assert len(roky) == n.horizont_roky
         assert roky[-1]["cf_kum_disk_kc"] == pytest.approx(npv, abs=0.01)
-        # přínos = CF + O&M; O&M = 2 % z CAPEX; rok 1 bez degradace
+        # přínos = CF + O&M; O&M = 2 % z CAPEX; rok 1 bez degradace, model 2027
         assert roky[0]["oam_kc"] == pytest.approx(20_000.0)
-        assert roky[0]["prinos_kc"] == pytest.approx(180_000.0)
+        assert roky[0]["prinos_kc"] == pytest.approx(240_000.0)
 
     def test_bez_sazeb_2027_je_cely_horizont_2026(self):
         n = ps.NastaveniNpv(diskontni_sazba=0.0, horizont_roky=3,
@@ -903,3 +915,409 @@ class TestPrubehPoMesicich:
         p = ps.prubeh_po_mesicich(self.PROFIL, self.MESICE, stropy, 100.0, 200.0, 0.25, 0.88)
         for site, m in zip(p["site_kw"], self.MESICE):
             assert site <= stropy[m] + 1e-6
+
+
+# ------------------------------------------- oprava 27. 7. 2026: fér baseline
+class TestBaselineBezInvestice:
+    """Baseline bez investice = levnější z {nedělat nic, optimalizovat}.
+
+    Rezerva RK (PS-6) navyšuje cílová maxima optimalizace, ale dnešní stav ji
+    nenese (je to naměřený fakt). U zákazníka, který dnes vědomě riskuje pokuty,
+    proto umí optimalizace vyjít DRÁŽ – „úspora bez investice" pak nesmí vyjít
+    záporně a přínos baterie se musí počítat proti dnešnímu nákladu.
+    """
+
+    CENA_ROCNI = 3030.78
+    CENA_MESICNI = 281.823
+    # Tvar odběru „hydry": RK 339 kW sjednaná pod maximy (340–372 kW).
+    MAXIMA = {1: 340.0, 2: 336.0, 3: 324.0, 4: 355.0, 5: 372.0, 6: 366.0,
+              7: 352.0, 8: 372.0, 9: 320.0, 10: 316.0, 11: 310.0, 12: 322.0}
+
+    def _ek(self, rezerva, strop=312.79):
+        profil, mesice = [], []
+        for m, maximum in sorted(self.MAXIMA.items()):
+            profil += [200.0, maximum]
+            mesice += [m, m]
+        return ps.ekonomika_2026(
+            profil,
+            mesice,
+            rezervovana_kapacita_kw=339.0,
+            cena_rezervace_kc_kw_rok=self.CENA_ROCNI,
+            cena_prekroceni_kc_kw=ps.pokuta_prekroceni_rk_kc_kw(self.CENA_MESICNI),
+            strop_kw=strop,
+            cena_mesicni_rk_kc_kw_mesic=self.CENA_MESICNI,
+            rezerva_rk_procenta=rezerva,
+        )
+
+    def test_rezerva_muze_zdrazit_optimalizaci_nad_dnesni_stav(self):
+        # Předpoklad testu: s 5% rezervou je optimalizace RK dražší než dnešní RK.
+        ek = self._ek(rezerva=5.0)
+        assert ek.naklad_optimalni_bez_baterie > ek.soucasny_naklad_celkem
+
+    def test_uspora_bez_investice_neni_nikdy_zaporna(self):
+        for rezerva in (0.0, 5.0, 15.0):
+            ek = self._ek(rezerva=rezerva)
+            assert ek.uspora_bez_investice >= 0.0
+
+    def test_baseline_je_levnejsi_z_obou_variant(self):
+        ek = self._ek(rezerva=5.0)
+        assert ek.naklad_baseline_bez_investice == pytest.approx(
+            min(ek.soucasny_naklad_celkem, ek.naklad_optimalni_bez_baterie)
+        )
+        # Dražší optimalizace → baseline zůstává dnešní stav.
+        assert ek.naklad_baseline_bez_investice == pytest.approx(ek.soucasny_naklad_celkem)
+
+    def test_prinos_baterie_se_meri_proti_baseline(self):
+        ek = self._ek(rezerva=5.0)
+        assert ek.prinos_baterie == pytest.approx(
+            ek.naklad_baseline_bez_investice
+            - ek.novy_naklad_rezervace
+            - ek.naklad_ztrat_baterie
+        )
+
+    def test_rozpad_uspory_zustava_konzistentni(self):
+        for rezerva in (0.0, 5.0):
+            ek = self._ek(rezerva=rezerva)
+            assert ek.rocni_uspora == pytest.approx(
+                ek.uspora_bez_investice + ek.prinos_baterie
+            )
+
+    def test_levnejsi_optimalizace_se_pouzije(self):
+        # Bez rezervy je optimalizace RK levnější než dnešní stav → baseline = ona.
+        ek = self._ek(rezerva=0.0)
+        assert ek.naklad_optimalni_bez_baterie < ek.soucasny_naklad_celkem
+        assert ek.naklad_baseline_bez_investice == pytest.approx(
+            ek.naklad_optimalni_bez_baterie
+        )
+        assert ek.uspora_bez_investice > 0.0
+
+
+class TestSymetrieRezervy2027:
+    """Baseline 2027 nese rezervu stejně jako scénář s baterií.
+
+    Dřív se baseline optimalizovala nad naměřenými maximy bez rezervy, zatímco
+    scénář s baterií nad maximy × (1 + rezerva) → přínos baterie systematicky
+    podhodnocený (nesymetrická opatrnost).
+    """
+
+    PROFIL = [100.0] * 8 + [200.0] * 8
+    MESICE = [1] * 8 + [2] * 8
+
+    def _ek(self, rezerva, rp_ze_smlouvy=300.0):
+        return ps.ekonomika_2027(
+            self.PROFIL,
+            self.MESICE,
+            rp_ze_smlouvy,  # RP ze smlouvy (default předimenzovaný)
+            rp_ze_smlouvy,
+            0.0,  # baterie 0 kW – zajímá nás jen volba RP
+            0.0,
+            P2027_CEZ_VN,
+            optimalizovat_rp=True,
+            rezerva_rk_procenta=rezerva,
+        )
+
+    def test_rezerva_zvedne_baseline_rp(self):
+        # Únorové maximum 200 kW → bez rezervy RP 200, s 5% rezervou 210.
+        assert self._ek(0.0)["optimalni_rp_bez_baterie_kw"] == pytest.approx(200.0)
+        assert self._ek(5.0)["optimalni_rp_bez_baterie_kw"] == pytest.approx(210.0)
+
+    def test_baseline_rp_odpovida_optimalizaci_nad_navysenymi_maximy(self):
+        rezerva = 5.0
+        ek = self._ek(rezerva)
+        raw = ps._mesicni_maxima(self.PROFIL, self.MESICE)
+        faktor = 1.0 + rezerva / 100.0
+        _, rp = ps.optimalizuj_rp_2027({m: v * faktor for m, v in raw.items()}, P2027_CEZ_VN)
+        assert ek["optimalni_rp_bez_baterie_kw"] == pytest.approx(rp)
+        # Náklad se počítá nad SKUTEČNÝMI maximy – špička se platí za naměřené M.
+        naklad, _, _ = ps._rocni_naklad_2027(rp, raw, P2027_CEZ_VN)
+        assert ek["naklad_optimalni_bez_baterie"] == pytest.approx(naklad)
+
+    def test_baseline_bere_levnejsi_z_obou_variant(self):
+        ek = self._ek(5.0)
+        assert ek["naklad_baseline_bez_investice"] == pytest.approx(
+            min(ek["soucasny_rocni_naklad"], ek["naklad_optimalni_bez_baterie"])
+        )
+        assert ek["uspora_optimalizaci_bez_baterie"] >= 0.0
+
+    def test_dnesni_rp_zustane_baseline_kdyz_je_levnejsi(self):
+        # RP ze smlouvy 200 kW = optimum bez rezervy; s 5% rezervou by
+        # optimalizace navrhla 210 kW, což je dráž → baseline zůstane dnešní stav.
+        ek = self._ek(5.0, rp_ze_smlouvy=200.0)
+        assert ek["naklad_optimalni_bez_baterie"] > ek["soucasny_rocni_naklad"]
+        assert ek["naklad_baseline_bez_investice"] == pytest.approx(
+            ek["soucasny_rocni_naklad"]
+        )
+        assert ek["uspora_optimalizaci_bez_baterie"] == pytest.approx(0.0)
+
+    def test_rozpad_uspory_zustava_konzistentni(self):
+        for rezerva in (0.0, 5.0):
+            ek = self._ek(rezerva)
+            assert ek["uspora_optimalizaci_bez_baterie"] + ek["prinos_baterie"] == pytest.approx(
+                ek["rocni_uspora"]
+            )
+
+
+class TestPaybackRidiDoporuceni:
+    """Doporučení se řídí reálnou návratností z kombinovaného cash flow.
+
+    Dřív rozhodovala prostá návratnost modelu 2026, takže varianta s výbornou
+    ekonomikou 2027 (a slabým rokem 2026) vyšla „nedoporučeno", i když se
+    investice reálně vrátí dřív než za firemní práh.
+    """
+
+    NPV = ps.NastaveniNpv(
+        diskontni_sazba=0.08, horizont_roky=10,
+        oam_procenta_capex_rok=0.0, degradace_uspor_procenta_rok=0.0,
+    )
+
+    def test_payback_interpoluje_zlomek_roku(self):
+        # Investice 1000, přínos 400/rok → 2,5 roku.
+        assert ps._payback_z_cash_flow(1000.0, [400.0] * 10) == pytest.approx(2.5)
+
+    def test_payback_presne_na_konci_roku(self):
+        assert ps._payback_z_cash_flow(1000.0, [500.0] * 4) == pytest.approx(2.0)
+
+    def test_bez_navratu_v_horizontu_vraci_none(self):
+        assert ps._payback_z_cash_flow(1000.0, [50.0] * 10) is None
+
+    def test_zaporne_cash_flow_neprojde(self):
+        assert ps._payback_z_cash_flow(1000.0, [-100.0] * 10) is None
+
+    def _varianta(self, parametry_2027):
+        # Profil s jednou špičkou v měsíci: baterie ji srazí.
+        profil, mesice = [], []
+        for m in range(1, 13):
+            profil += [200.0] * 6 + [400.0] + [200.0] * 5
+            mesice += [m] * 12
+        baterie = ps.Baterie(
+            id=1, nazev="BESS", vykon_kw=200.0, kapacita_kwh=400.0,
+            cena_kc=1_000_000.0, ucinnost_rt=1.0,
+        )
+        return ps.spocti_variantu(
+            baterie,
+            1,
+            profil,
+            mesice,
+            rezervovana_kapacita_kw=400.0,
+            cena_rezervace_kc_kw_rok=3030.78,
+            cena_prekroceni_kc_kw=ps.pokuta_prekroceni_rk_kc_kw(281.823),
+            max_navratnost_roky=5.0,
+            parametry_2027=parametry_2027,
+            cena_energie_kc_mwh=0.0,
+            rezerva_rk_procenta=0.0,
+            cena_mesicni_rk_kc_kw_mesic=281.823,
+            npv_nastaveni=self.NPV,
+        )
+
+    def test_varianta_nese_payback(self):
+        v = self._varianta(P2027_CEZ_VN)
+        assert v.payback_roky is not None
+        assert v.payback_roky > 0
+
+    def test_payback_odpovida_cash_flow_z_tabulky(self):
+        # Musí souhlasit s řádkem ◄ v tabulce „Ekonomika po letech" (cf_kum_kc).
+        v = self._varianta(P2027_CEZ_VN)
+        prvni_kladny = next(r["rok"] for r in v.roky if r["cf_kum_kc"] >= 0)
+        assert prvni_kladny - 1 <= v.payback_roky <= prvni_kladny
+
+    def test_doporuceni_se_ridi_paybackem_ne_rokem_2026(self):
+        v = self._varianta(P2027_CEZ_VN)
+        assert v.doporuceno is (v.payback_roky is not None and v.payback_roky <= 5.0)
+
+    def test_silny_rok_2027_neprepadne_kvuli_slabemu_2026(self):
+        # Model 2027 přináší mnohem víc než 2026 → reálná návratnost je kratší
+        # než ta z modelu 2026 a doporučení nesmí viset na roce 2026.
+        v = self._varianta(P2027_CEZ_VN)
+        if v.navratnost_2027 is not None and v.navratnost_2026 is not None:
+            if v.navratnost_2027 < v.navratnost_2026:
+                assert v.payback_roky < v.navratnost_2026
+
+    def test_bez_sazeb_2027_se_pocita_cely_horizont_dle_2026(self):
+        v = self._varianta(None)
+        assert v.npv_pouzit_model_2027 is False
+        # Bez sazeb 2027 je payback ≈ prostá návratnost 2026 (bez O&M a degradace).
+        assert v.payback_roky == pytest.approx(v.navratnost_2026, rel=0.02)
+
+
+# ------------------- rozhodnuto 27. 7. 2026: rozhoduje jen model NTS 2027
+class TestJenModel2027Rozhoduje:
+    """Model 2026 je informativní – NPV, výběr i doporučení jedou na 2027.
+
+    Co se dnes nabízí, se instaluje a spouští už v NTS 2027, takže rok na
+    starém tarifu nikdo neodžije.
+    """
+
+    NPV = ps.NastaveniNpv(
+        diskontni_sazba=0.0, horizont_roky=10,
+        oam_procenta_capex_rok=0.0, degradace_uspor_procenta_rok=0.0,
+    )
+
+    def _profil(self):
+        profil, mesice = [], []
+        for m in range(1, 13):
+            profil += [200.0] * 6 + [400.0] + [200.0] * 5
+            mesice += [m] * 12
+        return profil, mesice
+
+    def _varianta(self, **kw):
+        profil, mesice = self._profil()
+        baterie = ps.Baterie(
+            id=1, nazev="BESS", vykon_kw=200.0, kapacita_kwh=400.0,
+            cena_kc=1_000_000.0, ucinnost_rt=1.0,
+        )
+        parametry = {
+            "rezervovana_kapacita_kw": 400.0,
+            "cena_rezervace_kc_kw_rok": 3030.78,
+            "cena_prekroceni_kc_kw": ps.pokuta_prekroceni_rk_kc_kw(281.823),
+            "max_navratnost_roky": 5.0,
+            "parametry_2027": P2027_CEZ_VN,
+            "cena_energie_kc_mwh": 0.0,
+            "rezerva_rk_procenta": 0.0,
+            "cena_mesicni_rk_kc_kw_mesic": 281.823,
+            "npv_nastaveni": self.NPV,
+        }
+        parametry.update(kw)
+        return ps.spocti_variantu(baterie, 1, profil, mesice, **parametry)
+
+    def test_vsechny_roky_cash_flow_jsou_2027(self):
+        v = self._varianta()
+        assert {r["model"] for r in v.roky} == {"2027"}
+
+    def test_cash_flow_stoji_na_rocni_uspore_2027(self):
+        # Rozhodnuto 27. 7. 2026: projekt se prodává jako celek „dnešní faktura
+        # → faktura po instalaci", takže do CF jde celá úspora 2027, ne jen
+        # přínos baterie. Rozpad zůstává vidět v kartě 2027.
+        v = self._varianta()
+        assert v.roky[0]["prinos_kc"] == pytest.approx(
+            v.ekonomika_2027["rocni_uspora"], abs=0.01
+        )
+
+    def test_zmena_ekonomiky_2026_neovlivni_npv(self):
+        # Jiná dnešní RK mění celou ekonomiku 2026, NPV ne – to jede výhradně
+        # na modelu 2027, kde je RP dané smlouvou o připojení.
+        a = self._varianta(rezervovana_kapacita_kw=400.0, rezervovany_prikon_kw=600.0)
+        b = self._varianta(rezervovana_kapacita_kw=520.0, rezervovany_prikon_kw=600.0)
+        assert a.rocni_uspora_2026 != b.rocni_uspora_2026  # model 2026 se liší…
+        assert a.npv_kc == pytest.approx(b.npv_kc)  # …NPV ne
+        assert a.payback_roky == pytest.approx(b.payback_roky)
+        assert a.doporuceno == b.doporuceno
+
+    def test_npv_sedi_na_rucni_vypocet_z_uspory_2027(self):
+        # Bez diskontu, O&M i degradace: NPV = horizont × úspora 2027 − cena.
+        v = self._varianta()
+        ocekavane = self.NPV.horizont_roky * v.ekonomika_2027["rocni_uspora"] - v.cena_celkem_kc
+        assert v.npv_kc == pytest.approx(ocekavane, abs=0.01)
+
+    def test_bez_sazeb_2027_spadne_na_model_2026(self):
+        v = self._varianta(parametry_2027=None)
+        assert v.npv_pouzit_model_2027 is False
+        assert {r["model"] for r in v.roky} == {"2026"}
+
+    def test_tie_break_je_realna_navratnost(self):
+        # Řadicí klíč: NPV sestupně, pak reálná návratnost – ne model 2026.
+        v = self._varianta()
+        assert v._radici_klic()[1] == (
+            v.payback_roky if v.payback_roky is not None else float("inf")
+        )
+
+
+class TestObaZakladyNpv:
+    """Obě varianty základu NPV se počítají vždy – UI mezi nimi jen přepíná."""
+
+    NPV = ps.NastaveniNpv(
+        diskontni_sazba=0.0, horizont_roky=10,
+        oam_procenta_capex_rok=0.0, degradace_uspor_procenta_rok=0.0,
+    )
+
+    def _varianta(self, **kw):
+        profil, mesice = [], []
+        for m in range(1, 13):
+            profil += [200.0] * 6 + [400.0] + [200.0] * 5
+            mesice += [m] * 12
+        baterie = ps.Baterie(
+            id=1, nazev="BESS", vykon_kw=200.0, kapacita_kwh=400.0,
+            cena_kc=1_000_000.0, ucinnost_rt=1.0,
+        )
+        parametry = {
+            "rezervovana_kapacita_kw": 400.0,
+            "cena_rezervace_kc_kw_rok": 3030.78,
+            "cena_prekroceni_kc_kw": ps.pokuta_prekroceni_rk_kc_kw(281.823),
+            "max_navratnost_roky": 5.0,
+            "parametry_2027": P2027_CEZ_VN,
+            "cena_energie_kc_mwh": 0.0,
+            "rezerva_rk_procenta": 0.0,
+            "cena_mesicni_rk_kc_kw_mesic": 281.823,
+            "npv_nastaveni": self.NPV,
+            "rezervovany_prikon_kw": 600.0,  # ať je co optimalizovat i bez baterie
+            "uvazovat_snizeni_rp": True,
+        }
+        parametry.update(kw)
+        return ps.spocti_variantu(baterie, 1, profil, mesice, **parametry)
+
+    def test_vystup_nese_obe_sady(self):
+        v = self._varianta()
+        assert set(v.npv_varianty) == set(ps.ZAKLADY_NPV)
+        for sada in v.npv_varianty.values():
+            for klic in ("npv_kc", "irr", "payback_roky", "doporuceno", "roky"):
+                assert klic in sada
+
+    def test_kazda_sada_sedi_na_svuj_zaklad(self):
+        v = self._varianta()
+        h = self.NPV.horizont_roky
+        assert v.npv_varianty["uspora"]["npv_kc"] == pytest.approx(
+            h * v.ekonomika_2027["rocni_uspora"] - v.cena_celkem_kc, abs=0.01
+        )
+        assert v.npv_varianty["prinos_baterie"]["npv_kc"] == pytest.approx(
+            h * v.ekonomika_2027["prinos_baterie"] - v.cena_celkem_kc, abs=0.01
+        )
+
+    def test_prisnejsi_zaklad_neni_nikdy_vyhodnejsi(self):
+        # Přínos baterie ≤ celá úspora (liší se o úsporu bez investice).
+        v = self._varianta()
+        assert (
+            v.npv_varianty["prinos_baterie"]["npv_kc"] <= v.npv_varianty["uspora"]["npv_kc"] + 1e-6
+        )
+
+    def test_vychozi_zaklad_se_propise_do_plochych_poli(self):
+        v = self._varianta()
+        assert v.zaklad_npv == ps.VYCHOZI_ZAKLAD_NPV
+        vychozi = v.npv_varianty[ps.VYCHOZI_ZAKLAD_NPV]
+        assert v.npv_kc == pytest.approx(vychozi["npv_kc"])
+        assert v.doporuceno == vychozi["doporuceno"]
+        assert v.roky == vychozi["roky"]
+
+    def test_volba_zakladu_prepne_ploche_hodnoty(self):
+        v = self._varianta(zaklad_npv=ps.ZAKLAD_NPV_PRINOS_BATERIE)
+        assert v.zaklad_npv == ps.ZAKLAD_NPV_PRINOS_BATERIE
+        assert v.npv_kc == pytest.approx(v.npv_varianty["prinos_baterie"]["npv_kc"])
+        # Druhá sada zůstává k dispozici pro přepínač v UI.
+        assert v.npv_varianty["uspora"]["npv_kc"] != pytest.approx(v.npv_kc)
+
+    def test_neznamy_zaklad_spadne_na_vychozi(self):
+        v = self._varianta(zaklad_npv="nesmysl")
+        assert v.zaklad_npv == ps.VYCHOZI_ZAKLAD_NPV
+
+    def test_zaklad_ridi_poradi_variant(self):
+        # Řadicí klíč staví na plochém NPV → volba základu může změnit vítěze.
+        profil, mesice = [], []
+        for m in range(1, 13):
+            profil += [200.0] * 6 + [400.0] + [200.0] * 5
+            mesice += [m] * 12
+        katalog = [
+            ps.Baterie(id=1, nazev="Malý", vykon_kw=30.0, kapacita_kwh=100.0,
+                       cena_kc=300_000.0, ucinnost_rt=1.0),
+            ps.Baterie(id=2, nazev="Velký", vykon_kw=190.0, kapacita_kwh=600.0,
+                       cena_kc=2_400_000.0, ucinnost_rt=1.0),
+        ]
+        for zaklad in ps.ZAKLADY_NPV:
+            vysledek = ps.vyber_reseni(
+                katalog, profil, mesice, 400.0, 3030.78,
+                ps.pokuta_prekroceni_rk_kc_kw(281.823),
+                max_navratnost_roky=100.0, max_pocet_kusu=1,
+                parametry_2027=P2027_CEZ_VN, cena_energie_kc_mwh=0.0,
+                rezerva_rk_procenta=0.0, cena_mesicni_rk_kc_kw_mesic=281.823,
+                npv_nastaveni=self.NPV, zaklad_npv=zaklad,
+            )
+            npv_vitez = vysledek.doporucena.npv_kc
+            assert all(v.npv_kc <= npv_vitez + 1e-6 for v in vysledek.varianty)
+            assert all(v.zaklad_npv == zaklad for v in vysledek.varianty)
