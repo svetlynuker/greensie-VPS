@@ -189,14 +189,28 @@ současný_náklad        = náklad_rezervace_před + náklad_překročení_pře
 # v optimu se pokuty neplatí. C(R) je po částech lineární → grid-search
 # přes unikátní měsíční maxima (cílová maxima × (1 + rezerva RK)).
 C(R) = R × roční_sazba + Σ_m max(0, M_m − R) × měsíční_sazba
-náklad_optimální_bez_baterie = min_R C(R)          nad historickými maximy
-úspora_bez_investice = současný_náklad − náklad_optimální_bez_baterie
+náklad_optimální_bez_baterie = min_R C(R)          nad historickými maximy × (1+rezerva)
+náklad_baseline_bez_investice = min(současný_náklad, náklad_optimální_bez_baterie)
+úspora_bez_investice = současný_náklad − náklad_baseline_bez_investice
 
 # S baterií: tentýž optimalizátor nad maximy sraženými na strop baterie.
 náklad_s_baterií = min_R C(R)                      nad min(M_m, strop) × (1+rezerva)
-přínos_baterie   = náklad_optimální_bez_baterie − náklad_s_baterií − ztráty_cyklování
+přínos_baterie   = náklad_baseline_bez_investice − náklad_s_baterií − ztráty_cyklování
 roční_úspora_2026 = úspora_bez_investice + přínos_baterie
 ```
+
+> **Oprava 27. 7. 2026 — baseline nesmí být dražší než „nedělat nic".** Optimalizace
+> nese bezpečnostní rezervu nad naměřená maxima (PS-6), současný náklad ji nenese (je to
+> naměřený fakt). U zákazníka, který dnes vědomě riskuje pokuty, proto umí optimalizovaná
+> RK vyjít **dráž** než dnešní stav — a „úspora hned bez investice" pak vycházela záporně
+> (u nabídky „hydra": RK 339 kW, maxima 310–372 kW → optimalizace 1 094 091 Kč vs. dnešní
+> 1 079 431 Kč, tj. −14 660 Kč). Zároveň se přínos baterie počítal proti nafouknutému
+> základu. Nově je baseline **levnější z {nechat RK jak je, přeoptimalizovat ji}**
+> (`naklad_baseline_bez_investice`), takže úspora bez investice nikdy nevyjde záporná
+> a přínos baterie se měří proti tomu, co zákazník reálně udělá, když nic nekoupí.
+> Celková roční úspora se nemění, jen se přerozdělí mezi obě složky (u „hydry" přínos
+> baterie z 98 371 na 83 711 Kč, tj. na celou roční úsporu). UI to vysvětlí poznámkou
+> pod řádkem „Úspora hned bez investice".
 **Návratnost baterie i výběr varianty se počítá z PŘÍNOSU BATERIE** (rozhodnuto
 16. 7. 2026) — úspora z pouhého snížení RK je prodejní artefakt „audit RK
 zdarma“ a klient ji získá bez investice. `nova_rezervovana_kapacita_kw` je
@@ -223,6 +237,15 @@ kde `M` = naměřené měsíční maximum, `RP` = rezervovaný příkon.
 (dlouhodobá, typicky ≥ RK; v lednu 2027 se převezme ze smlouvy) — není to roční
 produkt jako RK. OZ ho může zadat (nepovinné pole); bez něj se použije současná
 RK s upozorněním, že skutečný RP bývá vyšší.
+
+> **Oprava 27. 7. 2026 — symetrie rezervy v baseline 2027.** Baseline (optimalizace RP bez
+> baterie) se hledala nad naměřenými maximy **bez rezervy**, zatímco scénář s baterií nad
+> maximy × (1 + rezerva) → baseline byla umělé levnější a přínos baterie systematicky
+> podhodnocený (u „hydry" baseline RP 366 kW / 921 864 Kč místo 384 kW / 954 485 Kč, tj.
+> přínos baterie o 32,6 tis. Kč/rok nižší). Nově se rezerva uplatní na **volbu RP** v obou
+> scénářích stejně, náklad se ale počítá nad **skutečnými** maximy — složka „špička" se
+> platí za naměřené `M`, ne za sjednanou hodnotu. Stejně jako u roku 2026 je baseline
+> `min(nechat RP ze smlouvy, optimalizovat)`.
 
 **Dva scénáře:**
 - **Bez peak shavingu:** `RP` = zadaný rezervovaný příkon (fallback současná RK), `M` = naměřené měsíční maximum z profilu.
@@ -266,20 +289,35 @@ u míst s velkým exportem (kombinace PPA + baterie, fáze 2).
 - Pro každý produkt z katalogu (`typ = baterie`, dostupný, s výkonem i kapacitou) × počet kusů 1–5.
 - Kus s celkovým výkonem/kapacitou/cenou = jednotka × počet.
 - Vybere se nejlepší počet kusů (přidání kusu, které už nezlepší řadicí klíč, ukončí hledání).
-- **Výběr vítěze řídí NPV na horizontu životnosti** (PS-8: tarif 2026 platí jen
-  do konce roku — baterie kupovaná v H2 2026 prožije životnost v NTS 2027+):
+- **Výběr vítěze řídí NPV na horizontu životnosti**, celý horizont na modelu
+  2027 (rozhodnuto 27. 7. 2026 — co se dnes nabízí, se instaluje a spouští už
+  v NTS, takže rok na tarifu 2026 nikdo neodžije; model 2026 zůstává jen jako
+  informativní srovnání a jako fallback, když sazby 2027 nejsou v sazebníku):
   ```
-  CF_rok1  = přínos_baterie(model 2026) − O&M
-  CF_rok2+ = přínos(model 2027, bez AKU) × (1 − degradace_úspor)^(rok−1) − O&M
-  NPV      = −cena + Σ CF_k / (1 + diskont)^k        (NPV/IRR sdílené s PPA modulem)
+  CF_rok = základ(model 2027, bez AKU) × (1 − degradace_úspor)^(rok−1) − O&M
+  NPV    = −cena + Σ CF_k / (1 + diskont)^k          (NPV/IRR sdílené s PPA modulem)
   ```
+  **Základ CF si volí OZ přepínačem v UI** (`ZAKLADY_NPV`, výstup nese obě sady
+  v `npv_varianty`, takže přepnutí nic nepřepočítává):
+  | Základ | Co počítá | Kdy dává smysl |
+  |---|---|---|
+  | `uspora` (výchozí) | celá roční úspora 2027 proti dnešnímu stavu | ekonomika projektu jako celku („dnešní faktura → faktura po instalaci"), včetně úspory ze souběžné úpravy RK/RP |
+  | `prinos_baterie` | jen přínos baterie proti bezinvestiční baseline (PS-7) | přísnější pohled na samotnou investici — co přinese baterie nad rámec toho, co jde získat i bez ní |
+
+  Rozdíl obou základů = „úspora hned bez investice". Na nabídce „hydra"
+  (BESS 100/330 za 1,5 mil. Kč, RP 560 kW ze smlouvy): `uspora` → NPV +421 tis.
+  Kč, IRR 14,1 %, reálná návratnost 5,1 roku; `prinos_baterie` → NPV −386 tis.
+  Kč, IRR 1,7 %, reálná návratnost 9,1 roku. Volba mění i pořadí variant
+  a odznak „nedoporučeno" — pořadí ze serveru odpovídá výchozímu základu,
+  po přepnutí ho FE přeřadí podle téhož klíče (NPV, tie-break reálná návratnost).
   Defaulty (rozhodnuto 16. 7. 2026, manažerské nastavení): diskont **8 %**
   (`ps_diskontni_sazba`), horizont **10 let** (`ps_horizont_npv_roky`), O&M
   **2 % CAPEX/rok** (`ps_oam_procenta_capex_rok`), degradace úspor
   **1,5 %/rok** (`ps_degradace_uspor_procenta_rok`). Bez sazeb 2027 se
   konzervativně použije model 2026 pro celý horizont (příznak
-  `npv_pouzit_model_2027`). Dokud platí modelový odhad NTS, je NPV modelové.
-- Práh: pokud nejlepší varianta má prostou návratnost > `max_navratnost_roky_peak_shaving`
+  `npv_pouzit_model_2027`, u obou základů). Dokud platí modelový odhad NTS,
+  je NPV modelové.
+- Práh: pokud nejlepší varianta má **reálnou** návratnost > `max_navratnost_roky_peak_shaving`
   (výchozí 5 let), vrátí se stejně, ale označená `doporuceno = false`.
 
 **Prostá návratnost = cena_baterie_celkem / přínos_daného_modelu** (`None`, když
@@ -288,6 +326,22 @@ přínos ≤ 0) — zobrazuje se doplňkově (PS-9). Dvě návratnosti:
 |---|---|
 | **2026** | **přínos baterie** proti optimalizované RK (PS-7) |
 | **2027** | úspora 2027 (jediný model — bez slevy AKU, viz 4.6 / bughunt PS-3) |
+
+**Reálná návratnost (`payback_roky`)** = rok, kdy kumulované CF z NPV modelu poprvé
+pokryje investici (lineární interpolace v rámci roku); `None` = v horizontu se nevrátí.
+Počítá se pro oba základy zvlášť (`npv_varianty[…]["payback_roky"]`).
+
+> **Oprava 27. 7. 2026 — doporučení nesmí viset na jednom roce.** Práh se poměřoval
+> s prostou návratností **modelu 2026**, takže varianta s výbornou ekonomikou 2027
+> a slabým rokem 2026 vyšla „nedoporučeno" — a naopak si OZ nemohl srovnat, proč se
+> vítěz vybírá dle NPV, ale doporučuje dle roku 2026. Nově rozhoduje `payback_roky`
+> z **téhož cash flow, ze kterého se počítá NPV** (celý horizont NTS 2027, včetně O&M
+> a degradace úspor). Je to konzistentní s řádkem ◄ v tabulce „Ekonomika po letech".
+>
+> Pozor na rozdíl proti prosté návratnosti: u „hydry" (BESS 100/330 za 1,5 mil. Kč,
+> RP 560 kW ze smlouvy) dává prostá návratnost 2027 **4,5 roku**, ale reálně
+> **5,1 roku** — prostá návratnost ignoruje O&M (30 tis. Kč/rok = 9 % úspory)
+> i degradaci úspor.
 
 Starší uložené výsledky nesou pole `navratnost_2027_optim`/`navratnost_2027_konzerv`
 a `*_bez_aku` — FE u nich zobrazuje konzervativní hodnoty.

@@ -939,6 +939,8 @@ def _varianta_json(v: peak_shaving.Varianta) -> dict:
         "navratnost_2027": (
             round(v.navratnost_2027, 2) if v.navratnost_2027 is not None else None
         ),
+        # Reálná návratnost z kombinovaného cash flow – řídí `doporuceno`.
+        "payback_roky": (round(v.payback_roky, 2) if v.payback_roky is not None else None),
         # NPV na horizontu životnosti (PS-8/PS-9) – řídí výběr vítěze.
         "npv_kc": round(v.npv_kc, 2),
         "irr": round(v.irr, 4) if v.irr is not None else None,
@@ -947,6 +949,21 @@ def _varianta_json(v: peak_shaving.Varianta) -> dict:
         # Rozpis cash flow po letech (hodnoty zaokrouhluje už _roky_cash_flow).
         "roky": v.roky,
         "doporuceno": v.doporuceno,
+        # Obě varianty základu NPV – FE mezi nimi přepíná bez přepočtu.
+        "zaklad_npv": v.zaklad_npv,
+        "npv_varianty": {
+            klic: {
+                "npv_kc": round(x["npv_kc"], 2),
+                "irr": round(x["irr"], 4) if x["irr"] is not None else None,
+                "payback_roky": (
+                    round(x["payback_roky"], 2) if x["payback_roky"] is not None else None
+                ),
+                "doporuceno": x["doporuceno"],
+                "pouzit_model_2027": x["pouzit_model_2027"],
+                "roky": x["roky"],
+            }
+            for klic, x in (v.npv_varianty or {}).items()
+        },
         "ekonomika_2026": {
             k: (round(x, 2) if isinstance(x, float) else x) for k, x in v.ekonomika_2026.items()
         },
@@ -1026,8 +1043,17 @@ def _detail_varianty(
         interval_h,
         vj["ucinnost_rt"],
     )
+    # Referenční čáry grafu. Rok 2026 se platí z rezervované kapacity (RK),
+    # rok 2027 z rezervovaného příkonu (RP) ze smlouvy o připojení – jsou to
+    # jiná čísla z jiných optimalizací, takže graf nese obě sady a frontend
+    # kreslí tu, která patří k zobrazenému roku (dřív kreslil vždy RK, i když
+    # sloupce byly z modelu 2027 – oprava 27. 7. 2026).
     graf["rp_soucasna_kw"] = round(rezervovana_kapacita_kw, 2)
     graf["rp_nova_kw"] = round(vj["nova_rezervovana_kapacita_kw"], 2)
+    ek27 = vj.get("ekonomika_2027") or {}
+    if ek27.get("status") == "spocitano":
+        graf["rp_soucasna_2027_kw"] = _num(ek27.get("rp_soucasny_kw"))
+        graf["rp_nova_2027_kw"] = _num(ek27.get("rp_novy_kw"))
     return {
         "graf": graf,
         "citlivost_stropu": peak_shaving.citlivost_stropu(

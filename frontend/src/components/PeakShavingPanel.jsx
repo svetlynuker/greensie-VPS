@@ -82,7 +82,12 @@ const SLOUPCE_SROVNANI = [
     hodnota: (v, i, je2027) =>
       je2027 ? v.navratnost_2027 ?? v.navratnost_2027_konzerv ?? null : v.navratnost_roky ?? null,
   },
-  { klic: "npv", nazev: "NPV", vychoziSmer: "desc", hodnota: (v) => v.npv_kc ?? null },
+  {
+    klic: "npv",
+    nazev: "NPV",
+    vychoziSmer: "desc",
+    hodnota: (v, i, je2027, zaklad) => npvDleZakladu(v, zaklad).npv_kc ?? null,
+  },
 ];
 
 const DISTRIB = [
@@ -109,7 +114,22 @@ function fmtDatumCas(s) {
   return m ? `${m[3]}.${m[2]}.${m[1]}` : "—";
 }
 
-function VariantaRadek({ v, vybrana, rok, onVyber }) {
+// Hodnoty NPV/návratnosti pro zvolený základ. Starší uložené výsledky
+// `npv_varianty` nemají – tam se použijí plochá pole (jediná, která existují).
+function npvDleZakladu(v, zaklad) {
+  const z = v?.npv_varianty?.[zaklad];
+  if (z) return z;
+  return {
+    npv_kc: v?.npv_kc,
+    irr: v?.irr,
+    payback_roky: v?.payback_roky,
+    doporuceno: v?.doporuceno,
+    pouzit_model_2027: v?.npv_pouzit_model_2027,
+    roky: v?.roky,
+  };
+}
+
+function VariantaRadek({ v, vybrana, rok, zakladNpv, onVyber }) {
   // Úspora a návratnost dle přepínače roku (2027 = NTS odhad; starší uložené
   // výsledky nesou rocni_uspora_bez_aku / navratnost_2027_konzerv – PS-3).
   const je2027 = rok === 2027;
@@ -119,6 +139,7 @@ function VariantaRadek({ v, vybrana, rok, onVyber }) {
   const navratnost = je2027
     ? v.navratnost_2027 ?? v.navratnost_2027_konzerv
     : v.navratnost_roky;
+  const npv = npvDleZakladu(v, zakladNpv);
   return (
     <tr
       onClick={onVyber}
@@ -130,7 +151,7 @@ function VariantaRadek({ v, vybrana, rok, onVyber }) {
     >
       <td>
         {vybrana ? "◄ " : ""}{v.nazev} × {v.pocet_kusu}
-        {!v.doporuceno && (
+        {!npv.doporuceno && (
           <span className="nb-badge" style={{ marginLeft: 6, color: "var(--st-crit)" }}>nedoporučeno</span>
         )}
       </td>
@@ -139,8 +160,62 @@ function VariantaRadek({ v, vybrana, rok, onVyber }) {
       <td>{kc(uspora)}</td>
       <td>{kc(v.cena_celkem_kc)}</td>
       <td>{roky(navratnost)}</td>
-      <td>{v.npv_kc != null ? kc(v.npv_kc) : "—"}</td>
+      <td>{npv.npv_kc != null ? kc(npv.npv_kc) : "—"}</td>
     </tr>
+  );
+}
+
+// Z čeho se počítá NPV, reálná návratnost a doporučení. Obě sady spočítal
+// backend (`npv_varianty`), přepínač jen volí, kterou uživatel vidí – žádný
+// přepočet, žádné volání serveru.
+const ZAKLADY_NPV = [
+  {
+    klic: "uspora",
+    nazev: "Celá úspora",
+    popis:
+      "Celý rozdíl proti dnešnímu stavu („dnešní faktura → faktura po instalaci“), " +
+      "včetně úspory ze souběžné úpravy rezervace. Ekonomika projektu jako celku.",
+  },
+  {
+    klic: "prinos_baterie",
+    nazev: "Jen přínos baterie",
+    popis:
+      "Jen to, co přinese sama baterie nad rámec toho, co klient získá i bez investice " +
+      "(pouhou úpravou rezervace). Přísnější pohled na samotnou investici.",
+  },
+];
+
+function ZakladNpvPrepinac({ zaklad, onZmena }) {
+  const btn = { padding: "3px 12px", fontSize: 12, lineHeight: 1.5 };
+  return (
+    <span
+      role="group"
+      aria-label="Z čeho počítat návratnost a NPV"
+      style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+    >
+      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--fm-muted)" }}>
+        Počítat návratnost z
+      </span>
+      <span style={{ display: "inline-flex" }}>
+        {ZAKLADY_NPV.map((z, i) => (
+          <button
+            key={z.klic}
+            type="button"
+            className="fm-btn"
+            aria-pressed={zaklad === z.klic}
+            onClick={() => onZmena(z.klic)}
+            title={z.popis}
+            style={{
+              ...btn,
+              borderRadius: i === 0 ? "9px 0 0 9px" : "0 9px 9px 0",
+              marginLeft: i === 0 ? 0 : -1,
+            }}
+          >
+            {z.nazev}
+          </button>
+        ))}
+      </span>
+    </span>
   );
 }
 
@@ -214,6 +289,22 @@ export default function PeakShavingPanel({ nabidka }) {
   const [dopocitava, setDopocitava] = useState(false);
   // Rok zobrazených hodnot (dlaždice, graf, srovnání) – default 2027 (NTS).
   const [rokZobrazeni, setRokZobrazeni] = useState(2027);
+  // Základ NPV/návratnosti – volba OZ, pamatuje se per prohlížeč (bez přepočtu).
+  const [zakladNpv, setZakladNpv] = useState(() => {
+    try {
+      const s = localStorage.getItem("gs-ps-zaklad-npv");
+      return ZAKLADY_NPV.some((z) => z.klic === s) ? s : "uspora";
+    } catch {
+      return "uspora";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("gs-ps-zaklad-npv", zakladNpv);
+    } catch {
+      // plné/zakázané úložiště nesmí shodit panel
+    }
+  }, [zakladNpv]);
   // Graf průběhu (15min řady) se stahuje zvlášť a až na vyžádání – je to
   // ~35 tisíc hodnot na variantu a rok. Cache podle varianty a roku.
   const [prubehOtevren, setPrubehOtevren] = useState(false);
@@ -350,8 +441,32 @@ export default function PeakShavingPanel({ nabidka }) {
   const ma2027 = ek27?.status === "spocitano";
   const rok = ma2027 ? rokZobrazeni : 2026;
   const je2027 = rok === 2027;
+  // NPV / reálná návratnost / doporučení dle zvoleného základu (bez přepočtu).
+  const npvDop = npvDleZakladu(dop, zakladNpv);
+  const zakladPopis = ZAKLADY_NPV.find((z) => z.klic === zakladNpv);
   const uspora2027 = ek27?.rocni_uspora_bez_aku ?? ek27?.rocni_uspora;
   const rpNovy2027 = ek27?.rp_novy_kw ?? ek27?.rezervovana_kapacita_kw;
+  // Rezervovaný příkon OZ nezadal → model 2027 jede na RK (fallback RP = RK).
+  const rpZeSmlouvy = vysledek?.vstup?.rezervovany_prikon_kw ?? null;
+  const rpJeFallbackRk = ma2027 && !rpZeSmlouvy;
+
+  // Referenční čáry grafu měsíčních maxim patří k zobrazenému roku: 2026 se
+  // platí z rezervované kapacity, 2027 z rezervovaného příkonu (jiná čísla,
+  // jiná optimalizace). Starší uložené výsledky nesou jen sadu 2026 – tam se
+  // hodnoty doberou z ekonomiky 2027, kterou varianta má vždy.
+  const refCaryGrafu = je2027
+    ? {
+        rpSoucasna: graf?.rp_soucasna_2027_kw ?? ek27?.rp_soucasny_kw ?? graf?.rp_soucasna_kw,
+        rpNova: graf?.rp_nova_2027_kw ?? rpNovy2027 ?? graf?.rp_nova_kw,
+        popisSoucasna: "rezervovaný příkon nyní",
+        popisNova: "rezervovaný příkon po instalaci",
+      }
+    : {
+        rpSoucasna: graf?.rp_soucasna_kw,
+        rpNova: graf?.rp_nova_kw,
+        popisSoucasna: "rezervovaná kapacita nyní",
+        popisNova: "nová rezervovaná kapacita",
+      };
 
   // Průběh v čase: stáhne se po otevření sekce a pak při každé změně varianty
   // nebo roku (jiný model = jiná simulace). Jednou stažené se drží v paměti.
@@ -377,15 +492,25 @@ export default function PeakShavingPanel({ nabidka }) {
     };
   }, [prubehOtevren, prubehKlic, vysledek, prubehy, nabidka.id, vybranyIdx, rok]);
 
-  // Srovnání variant: bez zvoleného sloupce zůstává pořadí ze serveru (dle NPV
-  // sestupně). Každý řádek si nese původní index – ten drží odkaz na variantu
+  // Srovnání variant: bez zvoleného sloupce se řadí dle NPV zvoleného základu
+  // (tie-break reálná návratnost – stejný klíč jako na serveru). Při výchozím
+  // základu to dá přesně pořadí ze serveru; po přepnutí se přeřadí bez
+  // přepočtu. Každý řádek si nese původní index – ten drží odkaz na variantu
   // pro detail i pro dopočet grafu na serveru.
   const sloupecRazeni = SLOUPCE_SROVNANI.find((s) => s.klic === razeni.klic) || null;
   const serazeneVarianty = varianty.map((v, i) => ({ v, i }));
-  if (sloupecRazeni) {
+  if (!sloupecRazeni) {
     serazeneVarianty.sort((a, b) => {
-      const x = sloupecRazeni.hodnota(a.v, a.i, je2027);
-      const y = sloupecRazeni.hodnota(b.v, b.i, je2027);
+      const x = npvDleZakladu(a.v, zakladNpv);
+      const y = npvDleZakladu(b.v, zakladNpv);
+      const rozdilNpv = (y.npv_kc ?? -Infinity) - (x.npv_kc ?? -Infinity);
+      if (rozdilNpv) return rozdilNpv;
+      return (x.payback_roky ?? Infinity) - (y.payback_roky ?? Infinity);
+    });
+  } else {
+    serazeneVarianty.sort((a, b) => {
+      const x = sloupecRazeni.hodnota(a.v, a.i, je2027, zakladNpv);
+      const y = sloupecRazeni.hodnota(b.v, b.i, je2027, zakladNpv);
       if (x == null && y == null) return a.i - b.i;
       if (x == null) return 1; // prázdné hodnoty vždy na konec
       if (y == null) return -1;
@@ -472,7 +597,20 @@ export default function PeakShavingPanel({ nabidka }) {
         </div>
         <div>
           <label className="nb-label">Rezervovaný příkon (kW, volit.)</label>
-          <input className="nb-pole" value={rezPrikon} onChange={(e) => setRezPrikon(e.target.value)} inputMode="decimal" placeholder="ze smlouvy o připojení; pro model 2027" />
+          <input
+            className="nb-pole"
+            value={rezPrikon}
+            onChange={(e) => setRezPrikon(e.target.value)}
+            inputMode="decimal"
+            placeholder={rezOk ? `nezadáno → použije se RK ${rezKap}` : "ze smlouvy o připojení; pro model 2027"}
+          />
+          {/* Prázdné pole není neutrální volba: RP ze smlouvy o připojení bývá
+              výrazně vyšší než RK, takže fallback podhodnotí náklad 2027 i úsporu. */}
+          <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 2 }}>
+            Ze smlouvy o připojení; řídí model 2027. Necháš-li prázdné, počítá se{" "}
+            <b>RP = RK{rezOk ? ` (${rezKap} kW)` : ""}</b> — skutečný příkon bývá vyšší, náklad 2027
+            i úspora pak vyjdou podhodnocené.
+          </div>
         </div>
         <div>
           <label className="nb-label">Max. výkon střídače (kW, volit.)</label>
@@ -624,13 +762,16 @@ export default function PeakShavingPanel({ nabidka }) {
                       alternativa — doporučená je {varianty[0]?.nazev} × {varianty[0]?.pocet_kusu}
                     </span>
                   )}
-                  {!dop.doporuceno && (
+                  {!npvDop.doporuceno && (
                     <span className="nb-badge" style={{ marginLeft: 8, color: "var(--st-crit)" }}>
                       nad prahem {vysledek.max_navratnost_roky}&nbsp;let – nedoporučeno
                     </span>
                   )}
                 </h4>
-                <RokPrepinac rok={rok} ma2027={ma2027} onZmena={setRokZobrazeni} />
+                <span style={{ display: "inline-flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+                  <ZakladNpvPrepinac zaklad={zakladNpv} onZmena={setZakladNpv} />
+                  <RokPrepinac rok={rok} ma2027={ma2027} onZmena={setRokZobrazeni} />
+                </span>
               </div>
               {/* KPI přehled doporučené varianty — hlavní čísla na první pohled */}
               <div className="gs-kpis" style={{ marginBottom: 12 }}>
@@ -655,11 +796,15 @@ export default function PeakShavingPanel({ nabidka }) {
                     )}
                   </div>
                   <div className="gs-kpi-sub">
-                    {je2027
-                      ? `z úspory 2027 · práh ${vysledek.max_navratnost_roky} let`
-                      : dop.prinos_baterie_2026_kc != null
-                        ? `z přínosu baterie · práh ${vysledek.max_navratnost_roky} let`
-                        : `práh doporučení ${vysledek.max_navratnost_roky} let`}
+                    {/* Práh doporučení se poměřuje s reálnou návratností
+                        z kombinovaného cash flow, ne s prostou návratností
+                        jednoho roku – ať je jasné, které číslo rozhoduje. */}
+                    {je2027 ? "z úspory 2027" : "z přínosu baterie"}
+                    {npvDop.payback_roky === undefined
+                      ? ` · práh ${vysledek.max_navratnost_roky} let`
+                      : npvDop.payback_roky === null
+                        ? ` · reálně se v horizontu nevrátí (práh ${vysledek.max_navratnost_roky} let)`
+                        : ` · reálně ${roky(npvDop.payback_roky)} – to rozhoduje (práh ${vysledek.max_navratnost_roky} let)`}
                   </div>
                 </div>
                 {je2027 ? (
@@ -667,11 +812,17 @@ export default function PeakShavingPanel({ nabidka }) {
                     <div className="gs-kpi-label">Rezervovaný příkon</div>
                     <div className="gs-kpi-value">{kw(rpNovy2027)}</div>
                     <div className="gs-kpi-sub">
-                      {ek27?.mesicu_s_prekrocenim_rp > 0
-                        ? `snížení z ${kw(ek27.rp_soucasny_kw)} · záměrně pod špičku, překročení v ${ek27.mesicu_s_prekrocenim_rp} měs.`
-                        : ek27?.rp_soucasny_kw != null && rpNovy2027 !== ek27.rp_soucasny_kw
-                        ? `snížení z ${kw(ek27.rp_soucasny_kw)} · platí se RP + měsíční maxima`
-                        : "beze změny smlouvy · platí se RP + měsíční maxima"}
+                      {/* „snížení" jen když nové RP je opravdu nižší – optimalizace
+                          nad maximy + rezervou umí vyjít i vyšší než dnešní RP. */}
+                      {ek27?.rp_soucasny_kw == null || rpNovy2027 === ek27.rp_soucasny_kw
+                        ? "beze změny smlouvy · platí se RP + měsíční maxima"
+                        : `${rpNovy2027 < ek27.rp_soucasny_kw ? "snížení" : "navýšení"} z ${kw(ek27.rp_soucasny_kw)}${
+                            rpZeSmlouvy ? "" : " (= RK, příkon ze smlouvy nezadán)"
+                          } · ${
+                            ek27?.mesicu_s_prekrocenim_rp > 0
+                              ? `záměrně pod špičku, překročení v ${ek27.mesicu_s_prekrocenim_rp} měs.`
+                              : "platí se RP + měsíční maxima"
+                          }`}
                     </div>
                   </div>
                 ) : (
@@ -694,13 +845,17 @@ export default function PeakShavingPanel({ nabidka }) {
                     {kw(dop.celkovy_vykon_kw)} / {dop.celkova_kapacita_kwh?.toLocaleString("cs-CZ")} kWh · {kc(dop.cena_celkem_kc)}
                   </div>
                 </div>
-                {dop.npv_kc != null && (
+                {npvDop.npv_kc != null && (
                   <div className="gs-kpi">
                     <div className="gs-kpi-label">NPV ({dop.npv_horizont_roky} let)</div>
-                    <div className="gs-kpi-value">{kc(dop.npv_kc)}</div>
+                    <div className="gs-kpi-value">{kc(npvDop.npv_kc)}</div>
                     <div className="gs-kpi-sub">
-                      {dop.irr != null ? `IRR ${Math.round(dop.irr * 100)} % · ` : ""}
-                      {dop.npv_pouzit_model_2027 ? "rok 1 tarif 2026, dál NTS 2027" : "celý horizont model 2026"}
+                      {npvDop.irr != null ? `IRR ${Math.round(npvDop.irr * 100)} % · ` : ""}
+                      {npvDop.pouzit_model_2027 === false
+                        ? "chybí sazby 2027 → model 2026"
+                        : "celý horizont NTS 2027"}
+                      {" · z "}
+                      {zakladNpv === "prinos_baterie" ? "přínosu baterie" : "celé úspory"}
                       {" · řídí výběr varianty"}
                     </div>
                   </div>
@@ -712,14 +867,44 @@ export default function PeakShavingPanel({ nabidka }) {
                   <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Návratnost investice dle modelu</div>
                   <table className="nb-table">
                     <tbody>
-                      <tr><td>Model 2026 (dnešní tarif)</td><td><b>{roky(dop.navratnost_2026 ?? dop.navratnost_roky)}</b></td></tr>
                       {/* Starší uložené výsledky nesou navratnost_2027_konzerv (PS-3). */}
-                      <tr><td>Model 2027 (nová struktura ERÚ)</td><td>{roky(dop.navratnost_2027 ?? dop.navratnost_2027_konzerv)}</td></tr>
+                      <tr><td>Model 2027 (nová struktura ERÚ) — z celé roční úspory</td><td>{roky(dop.navratnost_2027 ?? dop.navratnost_2027_konzerv)}</td></tr>
+                      <tr>
+                        <td style={{ color: "var(--fm-muted)" }}>
+                          Model 2026 (dnešní tarif) — jen informativně, do rozhodování nevstupuje
+                        </td>
+                        <td style={{ color: "var(--fm-muted)" }}>{roky(dop.navratnost_2026 ?? dop.navratnost_roky)}</td>
+                      </tr>
+                      {npvDop.payback_roky !== undefined && (
+                        <tr>
+                          <td>
+                            <b>Reálně (celý horizont v NTS 2027)</b>
+                            <div style={{ fontSize: 11, color: "var(--fm-muted)" }}>
+                              z {zakladNpv === "prinos_baterie" ? "přínosu baterie" : "celé roční úspory"},
+                              vč. O&amp;M a degradace úspor — <b>tohle rozhoduje o doporučení</b>
+                            </div>
+                          </td>
+                          <td>
+                            <b>
+                              {npvDop.payback_roky === null
+                                ? `nevrátí se do ${dop.npv_horizont_roky ?? 10} let`
+                                : roky(npvDop.payback_roky)}
+                            </b>
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                   <div style={{ fontSize: 11, color: "color-mix(in srgb, var(--st-warn) 72%, var(--ink))", marginTop: 4 }}>
-                    Výběr varianty se řídí modelem 2026. Hodnoty 2027 jsou modelový odhad (závazný výměr ERÚ ~11/2026).
-                    Sleva AKU se dle definice ERÚ na peak-shavingovou baterii bez exportu nevztahuje.
+                    Vítěznou variantu vybírá NPV, práh doporučení se poměřuje s reálnou návratností —
+                    obojí počítá <b>celý horizont v NTS 2027</b>, protože co se dnes nabízí, se
+                    instaluje a spouští už v nové struktuře. Základem je{" "}
+                    <b>{zakladPopis?.nazev?.toLowerCase()}</b> ({zakladPopis?.popis}) — přepínač je
+                    nad dlaždicemi, obě varianty jsou spočítané, přepnutí nic nepřepočítává. Reálné
+                    číslo je delší než prostá návratnost proto, že odečítá O&amp;M a degradaci
+                    úspor. Hodnoty 2027 jsou
+                    modelový odhad (závazný výměr ERÚ ~11/2026). Sleva AKU se dle definice ERÚ na
+                    peak-shavingovou baterii bez exportu nevztahuje.
                   </div>
                 </div>
               </div>
@@ -728,7 +913,15 @@ export default function PeakShavingPanel({ nabidka }) {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12, marginBottom: 12 }}>
                 {/* Rok 2026 */}
                 <div className="fm-card" style={{ padding: 14, ...(je2027 ? {} : kartaAktivni) }}>
-                  <div style={{ fontWeight: 600, marginBottom: 8 }}>Rok 2026</div>
+                  <div style={{ fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    Rok 2026
+                    <span
+                      className="nb-badge"
+                      title="Instalace i spuštění spadá už do NTS 2027 – tahle karta je jen srovnání „co by to bylo dnes“"
+                    >
+                      informativní
+                    </span>
+                  </div>
                   {dop.ekonomika_2026?.uspora_bez_investice != null ? (
                     /* Rozpad úspory (PS-7): audit RK zdarma + přínos baterie. */
                     <table className="nb-table">
@@ -747,6 +940,25 @@ export default function PeakShavingPanel({ nabidka }) {
                           </td>
                         </tr>
                         <tr><td><b>Úspora hned bez investice</b></td><td><b>{kc(dop.ekonomika_2026.uspora_bez_investice)}</b></td></tr>
+                        {/* Optimalizace nese bezpečnostní rezervu nad naměřená maxima,
+                            dnešní RK ne – s drahou rezervou umí vyjít dráž než nedělat nic.
+                            Pak je baseline dnešní stav a přínos baterie se počítá proti němu. */}
+                        {dop.ekonomika_2026.naklad_optimalni_bez_baterie >
+                          dop.ekonomika_2026.soucasny_naklad_celkem && (
+                          <tr>
+                            <td colSpan={2} style={{ fontSize: 11, color: "var(--fm-muted)" }}>
+                              Optimalizovaná RK (s rezervou {dop.rezerva_rk_procenta ?? 0} % nad
+                              naměřená maxima) by byla o{" "}
+                              {kc(
+                                dop.ekonomika_2026.naklad_optimalni_bez_baterie -
+                                  dop.ekonomika_2026.soucasny_naklad_celkem
+                              )}{" "}
+                              dražší než dnešní stav — zákazník dnes vědomě riskuje pokuty a vyplácí
+                              se mu to. Bez investice tedy nemá co ušetřit a přínos baterie se počítá
+                              proti dnešnímu nákladu.
+                            </td>
+                          </tr>
+                        )}
                         <tr>
                           <td>Náklad s baterií</td>
                           <td>
@@ -776,9 +988,10 @@ export default function PeakShavingPanel({ nabidka }) {
                     </table>
                   )}
                   <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 6 }}>
-                    Návratnost baterie se počítá z jejího přínosu proti optimalizované RK
-                    (kombinace roční + měsíční RK) — úsporu z pouhého snížení RK klient
-                    získá i bez investice.
+                    Čísla dnešního tarifu slouží jen jako srovnávací základ — ekonomika,
+                    NPV i doporučení jedou na modelu 2027. Přínos baterie se i tady měří
+                    proti optimalizované RK: úsporu z pouhého snížení RK klient získá
+                    i bez investice.
                   </div>
                 </div>
 
@@ -798,7 +1011,18 @@ export default function PeakShavingPanel({ nabidka }) {
                         <tbody>
                           {/* Starší uložené výsledky (před PS-3) nesou *_bez_aku – zobrazí se
                               konzervativní čísla; sleva AKU pro BTM baterii neexistuje. */}
-                          <tr><td>Roční náklad dnes (RP {kw(dop.ekonomika_2027.rp_soucasny_kw)})</td><td>{kc(dop.ekonomika_2027.soucasny_rocni_naklad)}</td></tr>
+                          <tr>
+                            <td>
+                              Roční náklad dnes (RP {kw(dop.ekonomika_2027.rp_soucasny_kw)})
+                              {rpJeFallbackRk && (
+                                <div style={{ fontSize: 11, color: "color-mix(in srgb, var(--st-warn) 72%, var(--ink))" }}>
+                                  příkon ze smlouvy nezadán → dosazena RK. Skutečný RP bývá vyšší,
+                                  náklad 2027 i úspora jsou tak podhodnocené.
+                                </div>
+                              )}
+                            </td>
+                            <td>{kc(dop.ekonomika_2027.soucasny_rocni_naklad)}</td>
+                          </tr>
                           {/* Třetí výpočet: nejlevnější RP bez baterie (fér baseline 2027). */}
                           {dop.ekonomika_2027.naklad_optimalni_bez_baterie != null && (
                             <>
@@ -812,6 +1036,18 @@ export default function PeakShavingPanel({ nabidka }) {
                                 </td>
                               </tr>
                               <tr><td><b>Úspora hned bez investice</b></td><td><b>{kc(dop.ekonomika_2027.uspora_optimalizaci_bez_baterie)}</b></td></tr>
+                              {/* Stejná úvaha jako u roku 2026: optimalizace nese rezervu,
+                                  dnešní RP ze smlouvy ne – může vyjít dráž než nechat vše být. */}
+                              {dop.ekonomika_2027.naklad_optimalni_bez_baterie >
+                                dop.ekonomika_2027.soucasny_rocni_naklad && (
+                                <tr>
+                                  <td colSpan={2} style={{ fontSize: 11, color: "var(--fm-muted)" }}>
+                                    Optimalizované RP (s rezervou {dop.rezerva_rk_procenta ?? 0} %) by
+                                    bylo dražší než dnešní příkon ze smlouvy — bez investice není co
+                                    ušetřit, přínos baterie se počítá proti dnešnímu nákladu.
+                                  </td>
+                                </tr>
+                              )}
                             </>
                           )}
                           <tr><td>Roční náklad s peak shavingem</td><td>{kc(dop.ekonomika_2027.novy_rocni_naklad_bez_aku ?? dop.ekonomika_2027.novy_rocni_naklad)}</td></tr>
@@ -841,7 +1077,11 @@ export default function PeakShavingPanel({ nabidka }) {
                               <td>
                                 {kw(dop.ekonomika_2027.rp_soucasny_kw)}
                                 {dop.ekonomika_2027.rp_novy_kw !== dop.ekonomika_2027.rp_soucasny_kw
-                                  ? ` → ${kw(dop.ekonomika_2027.rp_novy_kw)} (snížení)`
+                                  ? ` → ${kw(dop.ekonomika_2027.rp_novy_kw)} (${
+                                      dop.ekonomika_2027.rp_novy_kw < dop.ekonomika_2027.rp_soucasny_kw
+                                        ? "snížení"
+                                        : "navýšení"
+                                    })`
                                   : " (beze změny smlouvy)"}
                               </td>
                             </tr>
@@ -878,8 +1118,7 @@ export default function PeakShavingPanel({ nabidka }) {
                       mesice={graf.mesice}
                       bezBaterie={graf.bez_baterie_kw}
                       sBaterii={je2027 ? graf.s_baterii_2027_kw : graf.s_baterii_2026_kw}
-                      rpSoucasna={graf.rp_soucasna_kw}
-                      rpNova={graf.rp_nova_kw}
+                      {...refCaryGrafu}
                     />
                   </div>
                 </>
@@ -961,10 +1200,10 @@ export default function PeakShavingPanel({ nabidka }) {
                 </div>
               )}
 
-              {dop.roky?.length > 0 ? (
+              {npvDop.roky?.length > 0 ? (
                 <>
                   <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>
-                    Ekonomika po letech (horizont {dop.npv_horizont_roky ?? dop.roky.length} let)
+                    Ekonomika po letech (horizont {dop.npv_horizont_roky ?? npvDop.roky.length} let)
                   </h4>
                   <div className="nb-scroll">
                     <table className="nb-table">
@@ -972,7 +1211,7 @@ export default function PeakShavingPanel({ nabidka }) {
                         <tr>
                           <th>Rok</th>
                           <th>Tarif</th>
-                          <th>Přínos baterie</th>
+                          <th>Roční úspora</th>
                           <th>O&M</th>
                           <th>CF roku</th>
                           <th>Kum. úspora</th>
@@ -981,9 +1220,9 @@ export default function PeakShavingPanel({ nabidka }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {dop.roky.map((r, i) => {
+                        {npvDop.roky.map((r, i) => {
                           // ◄ = rok, kdy kumulovaný CF poprvé pokryje investici.
-                          const paybackRok = r.cf_kum_kc >= 0 && (i === 0 || dop.roky[i - 1].cf_kum_kc < 0);
+                          const paybackRok = r.cf_kum_kc >= 0 && (i === 0 || npvDop.roky[i - 1].cf_kum_kc < 0);
                           return (
                             <tr
                               key={r.rok}
@@ -1004,8 +1243,8 @@ export default function PeakShavingPanel({ nabidka }) {
                     </table>
                   </div>
                   <div style={{ fontSize: 11, color: "var(--fm-muted)", margin: "4px 0 14px" }}>
-                    Přínos baterie = úspora proti optimalizované RK (rok 1 dle tarifu 2026, dál model
-                    NTS 2027), klesá degradací úspor; CF roku = přínos − O&M. Řádek ◄ = kumulovaný CF
+                    Roční úspora = celý rozdíl proti dnešnímu stavu v modelu NTS 2027 (celý
+                    horizont), klesá degradací úspor; CF roku = úspora − O&M. Řádek ◄ = kumulovaný CF
                     poprvé pokryje investici; poslední „Kum. disk. CF“ = NPV varianty.
                   </div>
                 </>
@@ -1083,6 +1322,7 @@ export default function PeakShavingPanel({ nabidka }) {
                             key={`${v.baterie_id}-${v.pocet_kusu}`}
                             v={v}
                             rok={rok}
+                            zakladNpv={zakladNpv}
                             vybrana={i === vybranyIdx}
                             onVyber={() => vyberVariantu(i)}
                           />
@@ -1107,7 +1347,10 @@ export default function PeakShavingPanel({ nabidka }) {
                         )
                       </>
                     ) : (
-                      <> (teď doporučené pořadí dle NPV)</>
+                      <>
+                        {" "}(teď doporučené pořadí dle NPV z{" "}
+                        {zakladNpv === "prinos_baterie" ? "přínosu baterie" : "celé úspory"})
+                      </>
                     )}
                     .
                     {!vsechnyVarianty && varianty.length > POCET_TOP_VARIANT && (

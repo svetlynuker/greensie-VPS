@@ -47,11 +47,25 @@ VYCHOZI_CENA_ENERGIE_KC_MWH = 3000.0
 # 5–15 %; default 5 % (manažerský parametr `ps_rezerva_rk_procenta`).
 VYCHOZI_REZERVA_RK_PROCENTA = 5.0
 
-# NPV ekonomika baterie (audit PS-8/PS-9, rozhodnuto 16. 7. 2026): baterie
-# kupovaná v H2 2026 prožije životnost v NTS 2027+ → cash flow = rok 1 přínos
-# dle modelu 2026, roky 2+ dle modelu 2027 (bez AKU); vítěz se řadí dle NPV.
+# NPV ekonomika baterie (audit PS-8/PS-9, rozhodnuto 16. 7. 2026): vítěz se
+# řadí dle NPV. Od 27. 7. 2026 jede cash flow CELÝ HORIZONT na modelu 2027
+# (bez AKU) – co se dnes nabízí, se instaluje a spouští už v NTS, takže rok na
+# tarifu 2026 nikdo neodžije. Model 2026 zůstává jen jako informativní srovnání
+# „co by to bylo dnes" a jako fallback, když sazby 2027 nejsou v sazebníku.
 VYCHOZI_PS_DISKONT = 0.08
 VYCHOZI_PS_HORIZONT_ROKY = 10
+
+# Z čeho se počítá NPV / reálná návratnost / doporučení (rozhodnuto 27. 7. 2026):
+# obojí se počítá vždy a OZ si v UI přepíná, které chce vidět.
+#  - `uspora`  – celá roční úspora proti dnešnímu stavu („dnešní faktura →
+#                faktura po instalaci"); projekt se klientovi prodává jako celek,
+#                takže se počítá i úspora ze souběžné úpravy RK/RP,
+#  - `prinos_baterie` – jen to, co přinese sama baterie nad rámec toho, co jde
+#                získat bez investice (PS-7, přísnější pohled).
+ZAKLAD_NPV_USPORA = "uspora"
+ZAKLAD_NPV_PRINOS_BATERIE = "prinos_baterie"
+ZAKLADY_NPV = (ZAKLAD_NPV_USPORA, ZAKLAD_NPV_PRINOS_BATERIE)
+VYCHOZI_ZAKLAD_NPV = ZAKLAD_NPV_USPORA
 VYCHOZI_PS_OAM_PROCENTA_CAPEX = 2.0  # O&M % z CAPEX za rok
 VYCHOZI_PS_DEGRADACE_USPOR_PROCENTA = 1.5  # pokles přínosu %/rok (degradace baterie)
 
@@ -443,6 +457,9 @@ class Ekonomika2026:
     baterie“ (proti optimalizované RK). `naklad_ztrat_baterie` (PS-5) snižuje
     přínos baterie. Rezerva RK (PS-6) je promítnutá v obou optimalizacích
     (cílová maxima × (1 + rezerva)).
+
+    Baseline bez investice je `min(dnešní stav, optimalizovaná RK)` – viz
+    `naklad_baseline_bez_investice` (oprava 27. 7. 2026).
     """
 
     # Dnešní stav (RK zadaná OZ, pokuty za překročení dle profilu).
@@ -453,6 +470,8 @@ class Ekonomika2026:
     naklad_optimalni_bez_baterie: float
     optimalni_rk_bez_baterie_kw: float
     dokupy_bez_baterie_pocet_mesicu: int
+    # Skutečná bezinvestiční alternativa = levnější z {nedělat nic, optimalizovat}.
+    naklad_baseline_bez_investice: float
     uspora_bez_investice: float
     # S baterií: optimální kombinace RK nad maximy sraženými na strop.
     novy_naklad_rezervace: float
@@ -499,14 +518,20 @@ def ekonomika_2026(
     """Ekonomika 2026 s fair baseline (kap. 4.1–4.4 + audit PS-7).
 
     1. Dnešní stav: RK zadaná OZ + pokuty za překročení (kap. 4.1).
-    2. Fair baseline: optimální kombinace roční + měsíční RK nad historickými
-       maximy (bez investice) → „úspora hned bez investice“.
+    2. Fair baseline: levnější z {nechat dnešní RK, optimální kombinace roční +
+       měsíční RK nad historickými maximy} → „úspora hned bez investice“.
     3. S baterií: tentýž optimalizátor nad maximy sraženými na strop baterie
        → „přínos baterie“ = baseline − náklad s baterií − ztráty cyklování.
 
     Rezerva RK (PS-6) navyšuje cílová maxima obou optimalizací (strop je
-    z jednoho historického roku). Chybí-li měsíční sazba RK, odvodí se
-    z pokuty (pokuta = 1,5× měsíční RK dle bodu 4.24).
+    z jednoho historického roku). Dnešní stav ji nenese – je to naměřený fakt,
+    ne návrh, co sjednat. Kvůli tomu může optimalizace vyjít DRÁŽ než dnešní
+    stav (zákazník dnes vědomě riskuje pokuty); baseline proto bere levnější
+    z obou variant, jinak by „úspora bez investice“ vyšla záporně a přínos
+    baterie by se počítal proti nafouknutému základu (oprava 27. 7. 2026).
+
+    Chybí-li měsíční sazba RK, odvodí se z pokuty (pokuta = 1,5× měsíční RK
+    dle bodu 4.24).
     """
     rez, prekr = vychozi_rocni_naklad_2026(
         profil_kw,
@@ -534,8 +559,11 @@ def ekonomika_2026(
         cena_mesicni_rk_kc_kw_mesic,
     )
 
-    uspora_bez_investice = soucasny_celkem - opt_bez.naklad_kc
-    prinos_baterie = opt_bez.naklad_kc - opt_s.naklad_kc - naklad_ztrat_baterie
+    # Bezinvestiční alternativa = to, co zákazník reálně udělá, když nic nekoupí:
+    # levnější z {nechat RK jak je, přeoptimalizovat ji}.
+    naklad_baseline = min(soucasny_celkem, opt_bez.naklad_kc)
+    uspora_bez_investice = soucasny_celkem - naklad_baseline
+    prinos_baterie = naklad_baseline - opt_s.naklad_kc - naklad_ztrat_baterie
     return Ekonomika2026(
         soucasny_naklad_rezervace=rez,
         soucasny_naklad_prekroceni=prekr,
@@ -543,6 +571,7 @@ def ekonomika_2026(
         naklad_optimalni_bez_baterie=opt_bez.naklad_kc,
         optimalni_rk_bez_baterie_kw=opt_bez.rocni_rk_kw,
         dokupy_bez_baterie_pocet_mesicu=len(opt_bez.dokupy_kw),
+        naklad_baseline_bez_investice=naklad_baseline,
         uspora_bez_investice=uspora_bez_investice,
         novy_naklad_rezervace=opt_s.naklad_kc,
         nova_rezervovana_kapacita_kw=opt_s.rocni_rk_kw,
@@ -694,7 +723,13 @@ def ekonomika_2027(
       naměřenými maximy, bez jakékoli investice (`optimalizuj_rp_2027`) –
       protějšek „optimalizace RK bez baterie" z modelu 2026. Přínos baterie se
       pak počítá proti této fér baseline, ne proti (často předimenzovanému)
-      současnému RP. Počítá se vždy, informativně.
+      současnému RP. Počítá se vždy, informativně. Rezerva RK (PS-6) se do
+      volby RP promítá STEJNĚ jako u scénáře s baterií (oprava 27. 7. 2026 –
+      dřív se baseline optimalizovala bez rezervy, takže vyšla umělé levnější
+      a přínos baterie byl podhodnocený); náklad se pak počítá nad skutečnými
+      maximy, protože složka „špička" se platí za naměřené M, ne za sjednané.
+      Baseline je nakonec levnější z {nechat RP ze smlouvy, optimalizovat} –
+      optimalizace s rezervou může vyjít dráž než nechat vše být.
     - S peak shavingem: RP = jedna roční hodnota (v NTS ji nelze měnit po měsících),
       M = měsíční maximum PO baterii, sražené co nejhlouběji v každém měsíci
       (kap. 4.6 „srážej co to dá“). RP se přes rok nemění – mění se jen M.
@@ -732,7 +767,15 @@ def ekonomika_2027(
 
     # Optimalizace RP bez baterie (třetí výpočet): fér baseline pro rok 2027 –
     # nejlevnější RP nad naměřenými maximy, bez investice (protějšek RK 2026).
-    naklad_opt_bez, rp_opt_bez = optimalizuj_rp_2027(raw, parametry)
+    # Rezerva se uplatní na volbu RP (stejně jako u scénáře s baterií), náklad
+    # se ale počítá nad skutečnými maximy – špička se platí za naměřené M.
+    faktor_rezervy = 1.0 + max(0.0, rezerva_rk_procenta) / 100.0
+    _, rp_opt_bez = optimalizuj_rp_2027(
+        {m: v * faktor_rezervy for m, v in raw.items()}, parametry
+    )
+    naklad_opt_bez, _, _ = _rocni_naklad_2027(rp_opt_bez, raw, parametry)
+    # Bezinvestiční alternativa = levnější z {nechat RP ze smlouvy, optimalizovat}.
+    naklad_baseline = min(soucasny, naklad_opt_bez)
 
     # S peak shavingem: po měsících srazit M co nejhlouběji (kap. 4.6)
     # + sečíst nabíjení pro ocenění ztrát (PS-5).
@@ -753,7 +796,6 @@ def ekonomika_2027(
     # historického roku), náklad se ale počítá nad skutečnými maximy.
     rp_pouzity = nova_rezervovana_kapacita_kw
     if optimalizovat_rp and mesicni_po:
-        faktor_rezervy = 1.0 + max(0.0, rezerva_rk_procenta) / 100.0
         _, rp_opt = optimalizuj_rp_2027(
             {m: v * faktor_rezervy for m, v in mesicni_po.items()}, parametry
         )
@@ -778,8 +820,10 @@ def ekonomika_2027(
         # to zatím nemění – slouží informativně.
         "naklad_optimalni_bez_baterie": naklad_opt_bez,
         "optimalni_rp_bez_baterie_kw": rp_opt_bez,
-        "uspora_optimalizaci_bez_baterie": soucasny - naklad_opt_bez,
-        "prinos_baterie": naklad_opt_bez - novy_naklad_s_baterii,
+        # Skutečná bezinvestiční alternativa = levnější z {nic, optimalizovat}.
+        "naklad_baseline_bez_investice": naklad_baseline,
+        "uspora_optimalizaci_bez_baterie": soucasny - naklad_baseline,
+        "prinos_baterie": naklad_baseline - novy_naklad_s_baterii,
         "novy_rocni_naklad": novy_naklad_s_baterii,
         "naklad_ztrat_baterie": naklad_ztrat,
         "rocni_uspora": soucasny - novy - naklad_ztrat,
@@ -1025,22 +1069,53 @@ def _npv_baterie(
 ) -> tuple[float, float | None, list[float], bool]:
     """NPV/IRR baterie na horizontu životnosti (audit PS-8/PS-9).
 
-    Cash flow: rok 1 = přínos dle modelu 2026 (tarif platí do konce 2026),
-    roky 2+ = přínos dle modelu 2027 (NTS). Bez sazeb 2027 se konzervativně
-    použije model 2026 pro celý horizont (a příznak to hlásí). Přínos klesá
-    degradací úspor, O&M = % z CAPEX ročně. NPV/IRR sdílí vzorce s PPA modulem.
-    Vrací (npv, irr, cash_flow, pouzit_model_2027).
+    Cash flow jede **celý horizont na modelu 2027** (rozhodnuto 27. 7. 2026):
+    baterie se dnes instaluje a spouští už do NTS, takže rok na tarifu 2026
+    reálně nikdo neodžije. Dřív se rok 1 počítal dle modelu 2026 – to nadsazovalo
+    nebo podsazovalo první rok podle toho, jak předimenzovanou RK klient měl.
+
+    `prinos_2026_kc` slouží už jen jako fallback, když sazby 2027 nejsou
+    v sazebníku (pak jede celý horizont na 2026 a příznak to hlásí).
+
+    Přínos klesá degradací úspor, O&M = % z CAPEX ročně. NPV/IRR sdílí vzorce
+    s PPA modulem. Vrací (npv, irr, cash_flow, pouzit_model_2027).
     """
     from app.nabidkovac.ppa_fve import _irr, _npv  # sdílené finanční vzorce (PS-9)
 
     pouzit_2027 = prinos_2027_kc is not None
+    zaklad = prinos_2027_kc if pouzit_2027 else prinos_2026_kc
     oam = cena_kc * max(0.0, n.oam_procenta_capex_rok) / 100.0
     degradace = max(0.0, n.degradace_uspor_procenta_rok) / 100.0
-    cf: list[float] = []
-    for rok in range(1, max(1, n.horizont_roky) + 1):
-        zaklad = prinos_2026_kc if (rok == 1 or not pouzit_2027) else prinos_2027_kc
-        cf.append(zaklad * (1.0 - degradace) ** (rok - 1) - oam)
+    cf = [
+        zaklad * (1.0 - degradace) ** (rok - 1) - oam
+        for rok in range(1, max(1, n.horizont_roky) + 1)
+    ]
     return _npv(cf, cena_kc, n.diskontni_sazba), _irr(cf, cena_kc), cf, pouzit_2027
+
+
+def _payback_z_cash_flow(cena_kc: float, cf: list[float]) -> float | None:
+    """Reálná návratnost v letech z cash flow `_npv_baterie` (oprava 27. 7. 2026).
+
+    Prostá návratnost „cena / úspora jednoho roku" neodpovídá tomu, co baterie
+    skutečně prožije: k úspoře patří ještě O&M a degradace úspor. Doporučení
+    (`doporuceno`) se proto řídí tímhle číslem – stejným cash flow, ze kterého
+    se počítá NPV a které FE ukazuje v tabulce „Ekonomika po letech" (řádek ◄).
+    Dřív rozhodovala jen návratnost modelu 2026, takže varianta s výbornou
+    ekonomikou 2027 vyšla „nedoporučeno".
+
+    Vrací zlomek roku (lineární interpolace v rámci roku, kdy CF překlopí do
+    plusu), nebo None, když se investice v horizontu nevrátí.
+    """
+    kum = -cena_kc
+    for rok, cf_rok in enumerate(cf, start=1):
+        if kum + cf_rok >= 0:
+            # Chybí `-kum` z letošního CF → zlomek roku (CF > 0, jinak by se
+            # podmínka nesplnila při kum < 0).
+            if cf_rok > 0:
+                return rok - 1 + (-kum) / cf_rok
+            return float(rok)
+        kum += cf_rok
+    return None
 
 
 def _roky_cash_flow(
@@ -1069,9 +1144,9 @@ def _roky_cash_flow(
         radky.append(
             {
                 "rok": rok,
-                # Rok 1 jede na tarifu 2026 (platí do konce roku), dál NTS 2027;
-                # bez sazeb 2027 konzervativně model 2026 celý horizont.
-                "model": "2027" if (rok > 1 and pouzit_2027) else "2026",
+                # Celý horizont jede na NTS 2027 (instalace i spuštění už spadá
+                # do nové struktury); bez sazeb 2027 fallback na model 2026.
+                "model": "2027" if pouzit_2027 else "2026",
                 "prinos_kc": round(cf_rok + oam, 2),
                 "oam_kc": round(oam, 2),
                 "cf_kc": round(cf_rok, 2),
@@ -1134,10 +1209,13 @@ class Varianta:
     prinos_baterie_2026: float
     rocni_uspora_2026: float  # celkem vs. dnešní stav
     navratnost_roky: float | None  # None = přínos ≤ 0 (nekonečná návratnost)
-    # Návratnost podle jednotlivých modelů (kap. 4.5/4.6). Od PS-7 se počítá
-    # z PŘÍNOSU BATERIE (proti optimalizované RK), ne z celkové úspory.
-    navratnost_2026: float | None  # dle přínosu baterie 2026
+    # Prosté návratnosti podle modelů – od 27. 7. 2026 už jen INFORMATIVNÍ,
+    # rozhodování (výběr i doporučení) na nich nestojí.
+    navratnost_2026: float | None  # dle přínosu baterie 2026 (historické srovnání)
     navratnost_2027: float | None  # dle úspory 2027 (jediný model, bez slevy AKU – PS-3)
+    # Reálná návratnost z cash flow modelu 2027 (vč. O&M a degradace) –
+    # tohle číslo řídí `doporuceno` i tie-break při shodném NPV.
+    payback_roky: float | None
     # NPV na horizontu životnosti (audit PS-8/PS-9) – řídí výběr vítěze.
     npv_kc: float
     irr: float | None
@@ -1148,13 +1226,20 @@ class Varianta:
     ekonomika_2026: dict
     ekonomika_2027: dict
     doporuceno: bool
+    # Obě varianty základu NPV (`ZAKLADY_NPV`) – počítají se vždy obě a OZ si
+    # v UI přepíná, kterou vidí; pole výše nesou tu výchozí (`zaklad_npv`).
+    # Klíč → {npv_kc, irr, payback_roky, doporuceno, roky}.
+    npv_varianty: dict = field(default_factory=dict)
+    zaklad_npv: str = VYCHOZI_ZAKLAD_NPV
 
     def _radici_klic(self) -> tuple:
-        # Vítěze řadí NPV na horizontu životnosti (PS-8: tarif 2026 platí jen
-        # do konce roku); prostá návratnost je jen sekundární tie-break.
+        # Vítěze řadí NPV na horizontu životnosti (celý horizont na NTS 2027);
+        # tie-break je reálná návratnost z téhož cash flow – ne prostá
+        # návratnost modelu 2026, ta už do rozhodování nevstupuje vůbec
+        # (rozhodnuto 27. 7. 2026).
         return (
             -self.npv_kc,
-            self.navratnost_roky if self.navratnost_roky is not None else float("inf"),
+            self.payback_roky if self.payback_roky is not None else float("inf"),
         )
 
 
@@ -1193,12 +1278,17 @@ def spocti_variantu(
     cena_mesicni_rk_kc_kw_mesic: float | None = None,
     npv_nastaveni: NastaveniNpv | None = None,
     max_vykon_stridace_kw: float | None = None,
+    zaklad_npv: str = VYCHOZI_ZAKLAD_NPV,
 ) -> Varianta:
     """Spočítá jednu variantu (produkt × počet kusů): kap. 4.2–4.6 + PS-4…9.
 
     `max_vykon_stridace_kw` (ruční OZ override): u modulárních baterií roste
     kapacita s počtem kusů, ale AC výkon bývá omezen sdíleným/pevným
     střídačem (PCS) – bez zadání se počítá jen ze štítkového výkonu produktu.
+
+    `zaklad_npv` (`ZAKLADY_NPV`) říká, která ze dvou vždy spočítaných variant
+    NPV se propíše do plochých polí a řídí výběr vítěze; obě zůstávají
+    k dispozici v `npv_varianty` pro přepínač v UI.
     """
     vykon = baterie.vykon_kw * pocet_kusu
     # AC strop reálných střídačů z katalogu (na kus × počet); u modulárních
@@ -1267,19 +1357,53 @@ def spocti_variantu(
         rezerva_rk_procenta=rezerva_rk_procenta,
     )
 
-    # Návratnost dle modelu 2027 (jediný model – bez slevy AKU, PS-3).
-    if ek_2027.get("status") == "spocitano":
-        prinos_2027 = ek_2027.get("rocni_uspora", 0.0)
-        navratnost_2027 = _navratnost(cena, prinos_2027)
-    else:
-        prinos_2027 = None
-        navratnost_2027 = None
+    # Prostá návratnost 2027 (jediný model – bez slevy AKU, PS-3), informativní.
+    spocitano_2027 = ek_2027.get("status") == "spocitano"
+    navratnost_2027 = (
+        _navratnost(cena, ek_2027.get("rocni_uspora", 0.0)) if spocitano_2027 else None
+    )
 
-    # NPV na horizontu životnosti (PS-8/PS-9): rok 1 = model 2026, dál 2027.
+    # NPV na horizontu životnosti (PS-8/PS-9): celý horizont na modelu 2027.
+    # Počítají se OBĚ varianty základu (rozhodnuto 27. 7. 2026) – OZ si v UI
+    # přepíná, jestli chce ekonomiku celého projektu („dnešní faktura → faktura
+    # po instalaci", tj. včetně úspory ze souběžné úpravy RK/RP), nebo přísnější
+    # pohled jen na to, co přinese sama baterie (PS-7). Bez sazeb 2027 se obě
+    # větve konzervativně počítají z modelu 2026.
     nast_npv = npv_nastaveni or NastaveniNpv()
-    npv, irr, cf, npv_pouzit_2027 = _npv_baterie(cena, ek.prinos_baterie, prinos_2027, nast_npv)
+    zaklady = {
+        ZAKLAD_NPV_USPORA: (
+            ek.rocni_uspora,
+            ek_2027.get("rocni_uspora", 0.0) if spocitano_2027 else None,
+        ),
+        ZAKLAD_NPV_PRINOS_BATERIE: (
+            ek.prinos_baterie,
+            ek_2027.get("prinos_baterie", 0.0) if spocitano_2027 else None,
+        ),
+    }
+    npv_varianty: dict[str, dict] = {}
+    for klic, (zaklad_2026, zaklad_2027) in zaklady.items():
+        npv_k, irr_k, cf_k, pouzit_2027_k = _npv_baterie(
+            cena, zaklad_2026, zaklad_2027, nast_npv
+        )
+        # Doporučení řídí REÁLNÁ návratnost z cash flow (vč. O&M a degradace),
+        # ne prostá návratnost „cena / úspora jednoho roku". Model 2026 do
+        # rozhodování nevstupuje vůbec (rozhodnuto 27. 7. 2026).
+        payback_k = _payback_z_cash_flow(cena, cf_k)
+        npv_varianty[klic] = {
+            "npv_kc": npv_k,
+            "irr": irr_k,
+            "payback_roky": payback_k,
+            "doporuceno": payback_k is not None and payback_k <= max_navratnost_roky,
+            "pouzit_model_2027": pouzit_2027_k,
+            "roky": _roky_cash_flow(cena, cf_k, nast_npv, pouzit_2027_k),
+        }
 
-    doporuceno = navratnost is not None and navratnost <= max_navratnost_roky
+    vychozi = npv_varianty[zaklad_npv if zaklad_npv in npv_varianty else VYCHOZI_ZAKLAD_NPV]
+    npv = vychozi["npv_kc"]
+    irr = vychozi["irr"]
+    payback = vychozi["payback_roky"]
+    doporuceno = vychozi["doporuceno"]
+    npv_pouzit_2027 = vychozi["pouzit_model_2027"]
     return Varianta(
         baterie_id=baterie.id,
         nazev=baterie.nazev,
@@ -1298,14 +1422,17 @@ def spocti_variantu(
         navratnost_roky=navratnost,
         navratnost_2026=navratnost,
         navratnost_2027=navratnost_2027,
+        payback_roky=payback,
         npv_kc=npv,
         irr=irr,
         npv_horizont_roky=nast_npv.horizont_roky,
         npv_pouzit_model_2027=npv_pouzit_2027,
-        roky=_roky_cash_flow(cena, cf, nast_npv, npv_pouzit_2027),
+        roky=vychozi["roky"],
         ekonomika_2026=ek.__dict__,
         ekonomika_2027=ek_2027,
         doporuceno=doporuceno,
+        npv_varianty=npv_varianty,
+        zaklad_npv=zaklad_npv if zaklad_npv in npv_varianty else VYCHOZI_ZAKLAD_NPV,
     )
 
 
@@ -1328,16 +1455,22 @@ def vyber_reseni(
     cena_mesicni_rk_kc_kw_mesic: float | None = None,
     npv_nastaveni: NastaveniNpv | None = None,
     max_vykon_stridace_kw: float | None = None,
+    zaklad_npv: str = VYCHOZI_ZAKLAD_NPV,
 ) -> VysledekPeakShaving:
     """Kap. 4.5 + PS-8/PS-9: projede produkty × počty kusů, vítěze řadí dle NPV.
 
     Pro každý produkt zkoušíme počty kusů 1..N a bereme jen ten nejlepší počet
     (další kusy už jen prodražují – přírůstek úspory je omezený tím, že strop
     nemůže klesnout pod fyzikální minimum profilu). Vítěz = nejvyšší NPV na
-    horizontu životnosti (rok 1 model 2026, roky 2+ model 2027); prostá
-    návratnost z přínosu baterie je sekundární tie-break a řídí práh
-    `max_navratnost_roky` (nedosažení prahu variantu neskryje, jen ji označí
-    `doporuceno = False` – kap. 4.5).
+    horizontu životnosti (celý horizont na modelu 2027 – rozhodnuto
+    27. 7. 2026), tie-break reálná návratnost. Práh `max_navratnost_roky` se
+    poměřuje s REÁLNOU návratností z téhož cash flow (`payback_roky`), ne
+    s prostou návratností jednoho roku – nedosažení prahu variantu neskryje,
+    jen ji označí `doporuceno = False` (kap. 4.5).
+
+    `zaklad_npv` volí, která ze dvou vždy spočítaných variant NPV řídí pořadí
+    a doporučení (viz `ZAKLADY_NPV`); druhá zůstává v `npv_varianty`, takže si
+    ji OZ může v UI zobrazit bez přepočtu.
     """
     vysledek = VysledekPeakShaving()
     if not profil_kw:
@@ -1370,6 +1503,7 @@ def vyber_reseni(
                 cena_mesicni_rk_kc_kw_mesic,
                 npv_nastaveni,
                 max_vykon_stridace_kw,
+                zaklad_npv,
             )
             if nejlepsi is None or v._radici_klic() < nejlepsi._radici_klic():
                 nejlepsi = v
@@ -1384,8 +1518,15 @@ def vyber_reseni(
     if nejlepsi_za_produkt:
         vysledek.doporucena = nejlepsi_za_produkt[0]
         if not vysledek.doporucena.doporuceno:
+            payback = vysledek.doporucena.payback_roky
             vysledek.upozorneni.append(
-                f"Nejlepší nalezená varianta má návratnost přes {max_navratnost_roky:g} let "
-                "(firemní práh) – označeno jako nedoporučeno."
+                (
+                    f"Nejlepší nalezená varianta se vrátí za {payback:.1f} let"
+                    if payback is not None
+                    else "Nejlepší nalezená varianta se v horizontu NPV vůbec nevrátí"
+                )
+                + f" – nad firemním prahem {max_navratnost_roky:g} let, označeno jako "
+                "nedoporučeno. (Návratnost je z cash flow modelu NTS 2027, "
+                "vč. O&M a degradace úspor.)"
             )
     return vysledek
