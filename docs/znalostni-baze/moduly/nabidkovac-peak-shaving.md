@@ -290,7 +290,7 @@ frontend/src/
 - **Počáteční nabití baterie** v simulaci = plná (zjednodušení v1). EOL derating a vlastní spotřeba PCS se zatím neaplikují.
 - **Poznámka k načítání profilu:** načtení **nahradí celý** profil nabídky napříč dokumenty (poslední vyhrává) – ne jen řádky z daného souboru.
 - Komponenta `PeakShavingPanel.jsx` importuje z komponent `GrafOdberu.jsx` a `GrafPrubehu.jsx` (žádný `CvdToggle`); barvy grafů řeší CSS tokeny `--c-*` kvůli tmavému režimu a kompenzaci červeno-zelené vady.
-- Nitkový graf průběhu si celoroční řady stahuje jednou a slévá je do ~900 košů (min/max/průměr) až v prohlížeči – zoom je proto okamžitý, bez dalšího volání serveru. Model 2027 se simuluje **po měsících se startem od plné baterie**, stejně jako `ekonomika_2027`; kdyby se simuloval průběžně, ukazoval by graf na začátku měsíce překročení stropu, které v ekonomice není.
+- Nitkový graf průběhu si celoroční řady stahuje jednou a slévá je do košů (jeden na pixel šířky, min/max/průměr) až v prohlížeči – zoom je proto okamžitý, bez dalšího volání serveru. Datové řady kreslí **canvas** (`grafPrubehuData.js`), popisky a interakce leží v SVG nad ním; všechny vstupy (kolečko, tažení, pohyb myši) se slévají do jednoho překreslení na snímek. Čistě SVG verze při zoomu zadrhávala – každé překreslení znamenalo ~150 kB textu cest do DOM. Model 2027 se simuluje **po měsících se startem od plné baterie**, stejně jako `ekonomika_2027`; kdyby se simuloval průběžně, ukazoval by graf na začátku měsíce překročení stropu, které v ekonomice není.
 
 ## Odkazy
 - Technický souhrn (odvození vzorců, seed, historie PR): [`docs/moduly/peak-shaving.md`](../../moduly/peak-shaving.md)
