@@ -643,3 +643,219 @@ class TestKatalogoveParametry:
     def test_ac_strop_rovny_jmenovitemu_nema_vliv(self):
         v = self._varianta(2, max_vykon_stridacu_kw=60.0)
         assert v.celkovy_vykon_kw == 120.0
+
+
+# ------------------- revize baseline a symetrie modelů (26. 7. 2026)
+class TestBaselineRevize:
+    """Fér baseline nesmí být dražší než nic nedělat; 2026 a 2027 musí mít
+    stejný jmenovatel návratnosti.
+
+    Dřív: rezerva RK (PS-6) se aplikovala na optimalizaci, ale dnešní stav se
+    počítal bez rezervy → u klienta s úsporně sjednanou RK vyšla „úspora hned
+    bez investice“ záporná. A do NPV šel pro rok 1 přínos baterie (proti
+    optimalizované RK), pro roky 2+ celková úspora 2027 (proti dnešnímu RP),
+    takže karta a tabulka po letech ukazovaly pro totéž různá čísla.
+    """
+
+    CENA_ROCNI = 3030.78
+    CENA_MESICNI = 281.823
+    NTS = {
+        "t1_kapacita_kc_kw_mesic": 190.133,
+        "t1_spicka_kc_kw_mesic": 19.013,
+        "t2_kapacita_kc_kw_mesic": 22.743,
+        "t2_spicka_kc_kw_mesic": 227.429,
+        "sazba_prekroceni_kc_kw_mesic": 761.0,
+    }
+
+    def _profil(self):
+        """12 měsíců: základ 600, pracovní špička 950, letní 1250, jedna 1500."""
+        profil, mesice = [], []
+        for m in range(1, 13):
+            spicka = 1250.0 if m in (6, 7, 8) else 950.0
+            if m == 7:
+                spicka = 1500.0
+            profil += [600.0] * 8 + [spicka] * 4
+            mesice += [m] * 12
+        return profil, mesice
+
+    def _varianta(self, rk, **kw):
+        profil, mesice = self._profil()
+        baterie = ps.Baterie(
+            id=1, nazev="BESS", vykon_kw=300.0, kapacita_kwh=660.0,
+            cena_kc=4_851_422.0, ucinnost_rt=0.95,
+        )
+        return ps.spocti_variantu(
+            baterie, 1, profil, mesice,
+            rezervovana_kapacita_kw=rk,
+            cena_rezervace_kc_kw_rok=self.CENA_ROCNI,
+            cena_prekroceni_kc_kw=ps.pokuta_prekroceni_rk_kc_kw(self.CENA_MESICNI),
+            max_navratnost_roky=5.0, interval_h=1.0,
+            cena_mesicni_rk_kc_kw_mesic=self.CENA_MESICNI,
+            rezerva_rk_procenta=5.0,
+            **kw,
+        )
+
+    @pytest.mark.parametrize("rk", [950.0, 1000.0, 1500.0, 1800.0])
+    def test_uspora_bez_investice_nikdy_neni_zaporna(self, rk):
+        ek = self._varianta(rk).ekonomika_2026
+        assert ek["uspora_bez_investice"] >= 0.0
+        assert ek["naklad_baseline"] <= ek["soucasny_naklad_celkem"] + 1e-9
+
+    def test_baseline_je_lepsi_z_dnesniho_a_optimalizovaneho(self):
+        ek = self._varianta(1800.0).ekonomika_2026
+        assert ek["naklad_baseline"] == pytest.approx(
+            min(ek["soucasny_naklad_celkem"], ek["naklad_optimalni_bez_baterie"])
+        )
+
+    def test_priznak_kdy_optimalizace_rk_nepomuze(self):
+        # Klient s dobře sjednanou RK (na úrovni běžného měsíčního maxima) a
+        # vyšší rezervou (praxe 5–15 %): optimalizace s rezervou je dražší než
+        # nechat smlouvu být. Appka to musí říct příznakem, ne zápornou úsporou.
+        profil, mesice = self._profil()
+        baterie = ps.Baterie(
+            id=1, nazev="BESS", vykon_kw=300.0, kapacita_kwh=660.0,
+            cena_kc=4_851_422.0, ucinnost_rt=0.95,
+        )
+        v = ps.spocti_variantu(
+            baterie, 1, profil, mesice,
+            rezervovana_kapacita_kw=950.0,
+            cena_rezervace_kc_kw_rok=self.CENA_ROCNI,
+            cena_prekroceni_kc_kw=ps.pokuta_prekroceni_rk_kc_kw(self.CENA_MESICNI),
+            max_navratnost_roky=5.0, interval_h=1.0,
+            cena_mesicni_rk_kc_kw_mesic=self.CENA_MESICNI,
+            rezerva_rk_procenta=15.0,
+        )
+        ek = v.ekonomika_2026
+        assert ek["naklad_optimalni_bez_baterie"] > ek["soucasny_naklad_celkem"]
+        assert ek["optimalizace_rk_pomuze"] is False
+        assert ek["uspora_bez_investice"] == pytest.approx(0.0)
+        assert ek["naklad_baseline"] == pytest.approx(ek["soucasny_naklad_celkem"])
+
+    def test_rozpad_uspory_zustava_konzistentni(self):
+        ek = self._varianta(1800.0).ekonomika_2026
+        assert ek["rocni_uspora"] == pytest.approx(
+            ek["uspora_bez_investice"] + ek["prinos_baterie"]
+        )
+
+    @pytest.mark.parametrize("snizeni", [False, True])
+    def test_navratnosti_2026_a_2027_maji_stejny_jmenovatel(self, snizeni):
+        v = self._varianta(
+            1800.0, parametry_2027=self.NTS, je_modelovy_2027=True,
+            rezervovany_prikon_kw=2000.0, uvazovat_snizeni_rp=snizeni,
+        )
+        assert v.navratnost_2026 == pytest.approx(v.cena_celkem_kc / v.prinos_baterie_2026)
+        prinos_2027 = v.ekonomika_2027["prinos_baterie"]
+        assert prinos_2027 > 0
+        assert v.navratnost_2027 == pytest.approx(v.cena_celkem_kc / prinos_2027)
+
+    def test_baseline_2027_optimalizuje_rp_jen_kdyz_se_rp_meni(self):
+        bez = self._varianta(
+            1800.0, parametry_2027=self.NTS, rezervovany_prikon_kw=2000.0,
+            uvazovat_snizeni_rp=False,
+        ).ekonomika_2027
+        se = self._varianta(
+            1800.0, parametry_2027=self.NTS, rezervovany_prikon_kw=2000.0,
+            uvazovat_snizeni_rp=True,
+        ).ekonomika_2027
+        # RP se nemění → baseline drží dnešní RP (symetricky se scénářem)
+        assert bez["baseline_optimalizuje_rp"] is False
+        assert bez["naklad_baseline"] == pytest.approx(bez["soucasny_rocni_naklad"])
+        # RP se snižuje → baseline smí RP optimalizovat taky
+        assert se["baseline_optimalizuje_rp"] is True
+        assert se["naklad_baseline"] <= se["soucasny_rocni_naklad"] + 1e-9
+
+    def test_tabulka_po_letech_ukazuje_prinos_baterie_v_obou_modelech(self):
+        v = self._varianta(
+            1800.0, parametry_2027=self.NTS, je_modelovy_2027=True,
+            rezervovany_prikon_kw=2000.0,
+        )
+        oam = v.cena_celkem_kc * ps.VYCHOZI_PS_OAM_PROCENTA_CAPEX / 100.0
+        assert v.roky[0]["model"] == "2026"
+        assert v.roky[0]["prinos_kc"] == pytest.approx(v.prinos_baterie_2026, abs=0.01)
+        assert v.roky[1]["model"] == "2027"
+        # rok 2 = přínos 2027 po jednom roku degradace úspor
+        ocekavany = v.ekonomika_2027["prinos_baterie"] * (
+            1.0 - ps.VYCHOZI_PS_DEGRADACE_USPOR_PROCENTA / 100.0
+        )
+        assert v.roky[1]["prinos_kc"] == pytest.approx(ocekavany, abs=0.02)
+        assert v.roky[1]["oam_kc"] == pytest.approx(oam, abs=0.01)
+
+
+# ----------- nákupní vs. prodejní cena baterie (revize 26. 7. 2026)
+class TestNakupniAProdejniCena:
+    """Peak shaving investuje KLIENT, takže jeho ekonomika jde z PRODEJNÍ ceny.
+
+    Ceník BESS má nákupní (dealer) cenu v `cena_kc` a doporučenou prodejní
+    v `extra.doporucena_cena_kc` (marže 10 %). Dřív se všude počítalo z
+    `cena_kc`, takže nabídka ukazovala cenu, za kterou baterii nakupujeme,
+    a slibovala klientovi návratnost o ~11 % lepší, než jakou dostane.
+    """
+
+    CENA_ROCNI = 3030.78
+    CENA_MESICNI = 281.823
+    NAKUPNI = 1_800_000.0
+    PRODEJNI = 2_000_000.0  # marže 200 tis. = 10 % z prodejní
+
+    def _profil(self):
+        profil, mesice = [], []
+        for m in range(1, 13):
+            profil += [200.0] * 6 + [400.0] + [200.0] * 5
+            mesice += [m] * 12
+        return profil, mesice
+
+    def _varianta(self, pocet=1, prodejni=PRODEJNI):
+        profil, mesice = self._profil()
+        baterie = ps.Baterie(
+            id=1, nazev="BESS", vykon_kw=100.0, kapacita_kwh=300.0,
+            cena_kc=self.NAKUPNI, ucinnost_rt=1.0, prodejni_cena_kc=prodejni,
+        )
+        return ps.spocti_variantu(
+            baterie, pocet, profil, mesice,
+            rezervovana_kapacita_kw=400.0,
+            cena_rezervace_kc_kw_rok=self.CENA_ROCNI,
+            cena_prekroceni_kc_kw=ps.pokuta_prekroceni_rk_kc_kw(self.CENA_MESICNI),
+            max_navratnost_roky=5.0, interval_h=0.25,
+            cena_mesicni_rk_kc_kw_mesic=self.CENA_MESICNI,
+        )
+
+    def test_investice_klienta_je_prodejni_cena(self):
+        v = self._varianta()
+        assert v.cena_celkem_kc == pytest.approx(self.PRODEJNI)
+        assert v.nakupni_cena_celkem_kc == pytest.approx(self.NAKUPNI)
+        assert v.marze_kc == pytest.approx(self.PRODEJNI - self.NAKUPNI)
+
+    def test_ceny_se_nasobi_poctem_kusu(self):
+        v = self._varianta(pocet=3)
+        assert v.cena_celkem_kc == pytest.approx(3 * self.PRODEJNI)
+        assert v.nakupni_cena_celkem_kc == pytest.approx(3 * self.NAKUPNI)
+        assert v.marze_kc == pytest.approx(3 * (self.PRODEJNI - self.NAKUPNI))
+
+    def test_navratnost_se_pocita_z_prodejni_ceny(self):
+        v = self._varianta()
+        assert v.prinos_baterie_2026 > 0
+        assert v.navratnost_roky == pytest.approx(self.PRODEJNI / v.prinos_baterie_2026)
+        # a je delší, než kdyby se počítala z nákupní ceny
+        assert v.navratnost_roky > self.NAKUPNI / v.prinos_baterie_2026
+
+    def test_chybejici_prodejni_cena_spadne_na_nakupni(self):
+        v = self._varianta(prodejni=None)
+        assert v.cena_celkem_kc == pytest.approx(self.NAKUPNI)
+        assert v.marze_kc == pytest.approx(0.0)
+
+    def test_nekladna_prodejni_cena_spadne_na_nakupni(self):
+        v = self._varianta(prodejni=0.0)
+        assert v.cena_celkem_kc == pytest.approx(self.NAKUPNI)
+
+    def test_npv_jede_z_prodejni_ceny(self):
+        drazsi = self._varianta(prodejni=self.PRODEJNI)
+        bez_marze = self._varianta(prodejni=self.NAKUPNI)
+        # Vyšší investice klienta → nižší NPV. Rozdíl je marže PLUS diskontovaný
+        # rozdíl O&M, protože O&M se počítá jako % z investice.
+        assert drazsi.npv_kc < bez_marze.npv_kc
+        marze = self.PRODEJNI - self.NAKUPNI
+        n = ps.NastaveniNpv()
+        oam_rocne = marze * n.oam_procenta_capex_rok / 100.0
+        anuita = sum(1.0 / (1.0 + n.diskontni_sazba) ** t for t in range(1, n.horizont_roky + 1))
+        assert bez_marze.npv_kc - drazsi.npv_kc == pytest.approx(
+            marze + oam_rocne * anuita, rel=0.001
+        )

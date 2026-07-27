@@ -79,17 +79,52 @@ _MAX_POMER_VYROBA_SPOTREBA = 3.0
 # (audit PPA-2) – normované měsíční hodnoty ze SARAH3, součet přesně 1000
 # (celočíselná řada z rešerše by sečetla 1001). Zimní půlrok tvoří 30,4 %
 # ročního výnosu (dřívější ilustrativní tabulka jen 26,5 % – moc „letní“).
+#
+# POZOR: tahle řada platí JEN pro 35°/jih. Sezónní rozdělení se s orientací
+# výrazně mění (revize 26. 7. 2026) – používá se `_MESICNI_TAB` níž, tady
+# zůstává referenční uzel (drží kalibraci z auditu PPA-2 a testy na ni sahají).
 _MESICNI_VYNOS = {
     1: 30.6, 2: 51.8, 3: 84.9, 4: 113.7, 5: 120.9, 6: 123.1,
     7: 124.6, 8: 114.9, 9: 98.5, 10: 72.0, 11: 36.0, 12: 29.0,
 }
 _SUMA_MESICNI = sum(_MESICNI_VYNOS.values())  # = 1000
 
+# Měsíční rozdělení výnosu podle ORIENTACE (revize 26. 7. 2026).
+# Dřív se pro všechny sklony i azimuty používala jedna řada kalibrovaná na
+# 35°/jih, takže model tvrdil zimní půlrok 30,4 % i pro plochou střechu
+# (reálně 23,1 %) a pro V/Z pole (24,3 %) – u ploché střechy nadhodnocoval
+# prosinec o ~42 % relativně.
+#
+# Zdroj: docs/reserze_kalkulator/pvgis-data.csv, PVGIS v5.3 (SARAH3),
+# střed ČR (49,8 N; 15,5 E), ztráty 14 % – měsíční E_m normované na součet
+# 1000. Klíč = (sklon, |azimut|) přesně na uzlech interpolační mřížky;
+# u roviny je azimut irelevantní (stejná řada ve všech sloupcích).
+# V komentářích podíl zimního půlroku (X–III) pro kontrolu.
+_MESICNI_TAB = {
+    (0, 0): (20.3, 38.7, 76.0, 117.4, 139.7, 148.5, 147.3, 124.3, 91.6, 55.4, 24.1, 16.7),  # zima 23,1 %
+    (0, 45): (20.3, 38.7, 76.0, 117.4, 139.7, 148.5, 147.3, 124.3, 91.6, 55.4, 24.1, 16.7),
+    (0, 90): (20.3, 38.7, 76.0, 117.4, 139.7, 148.5, 147.3, 124.3, 91.6, 55.4, 24.1, 16.7),
+    (0, 180): (20.3, 38.7, 76.0, 117.4, 139.7, 148.5, 147.3, 124.3, 91.6, 55.4, 24.1, 16.7),
+    (15, 0): (25.4, 45.2, 80.5, 115.6, 130.3, 135.7, 136.0, 119.7, 95.1, 63.7, 30.0, 22.8),  # zima 26,8 %
+    (15, 45): (23.9, 43.5, 79.6, 116.0, 132.5, 139.4, 139.1, 120.5, 94.3, 61.7, 28.4, 21.1),  # zima 25,8 %
+    (15, 90): (20.6, 39.4, 76.7, 116.9, 138.6, 147.8, 146.8, 123.3, 91.8, 56.2, 24.7, 17.2),  # zima 23,5 %
+    (15, 180): (16.2, 30.3, 68.6, 118.2, 151.6, 164.7, 161.9, 129.3, 85.3, 43.5, 17.9, 12.5),  # zima 18,9 %
+    (35, 0): (30.6, 51.8, 84.9, 113.7, 120.9, 123.1, 124.6, 114.9, 98.5, 72.0, 36.0, 29.0),  # zima 30,4 % (= _MESICNI_VYNOS)
+    (35, 45): (27.5, 48.4, 83.1, 114.8, 125.1, 129.5, 131.0, 117.0, 97.0, 68.0, 32.8, 25.8),  # zima 28,6 %
+    (35, 90): (21.4, 41.0, 78.2, 116.5, 136.1, 145.1, 144.7, 122.0, 92.5, 58.2, 25.9, 18.4),  # zima 24,3 %
+    (35, 180): (19.5, 30.8, 53.7, 107.0, 162.2, 184.7, 177.8, 126.2, 65.0, 37.1, 20.6, 15.4),  # zima 17,7 %
+    (60, 0): (36.3, 59.0, 90.0, 111.6, 110.6, 109.2, 112.4, 109.6, 102.1, 81.1, 42.4, 35.7),  # zima 34,4 %
+    (60, 45): (31.2, 53.3, 86.8, 113.2, 118.0, 120.0, 122.6, 113.2, 99.5, 74.2, 37.3, 30.7),  # zima 31,4 %
+    (60, 90): (21.7, 42.3, 79.5, 116.1, 134.2, 142.3, 143.1, 120.8, 93.9, 60.1, 26.7, 19.3),  # zima 25,0 %
+    (60, 180): (23.2, 37.2, 64.1, 96.4, 152.5, 184.0, 172.5, 111.4, 70.4, 45.6, 24.5, 18.2),  # zima 21,3 %
+}
+
 # Korekce orientace k_orient(azimut, sklon), METODIKA kap. 4.1. Řádky = sklon,
 # sloupce = |azimut| (0 = jih, 45 = JV/JZ, 90 = V/Z, 180 = sever). Bilineární
 # interpolace mezi uzly. Kalibrováno PVGIS v5.3, střed ČR (audit PPA-2) –
 # hlavní opravy proti dřívější ilustrativní tabulce: sever 35° 0,66 → 0,54,
 # sever 60° 0,50 → 0,34, horizontála 0,88 → 0,85, strmý jih 0,91 → 0,94.
+# Ověřeno proti pvgis-data.csv: všech 13 uzlů sedí do ±1 %.
 _ORIENT_SKLONY = [0, 15, 35, 60]
 _ORIENT_AZIMUTY = [0, 45, 90, 180]
 _ORIENT_TAB = {
@@ -98,6 +133,43 @@ _ORIENT_TAB = {
     35: [1.00, 0.94, 0.80, 0.54],
     60: [0.94, 0.87, 0.70, 0.34],
 }
+
+# Nejvyšší sklon, pro který má appka PVGIS kalibraci. Nad ním se hodnoty
+# klipují na uzel 60° – u svislé plochy (fasáda, solární plot) to nadhodnocuje
+# výnos (svislý jih je reálně ~0,70 vůči 35°/jih, ne 0,94), proto route
+# přidává upozornění (revize 26. 7. 2026).
+SKLON_KALIBROVANY_MAX = 60.0
+
+# Podíl přímé (beam) složky na ročním ozáření v ČR – zbytek je difuze.
+# Řídí tvar dne v `_tvar_na_plose`: přímá složka sleduje úhel dopadu na
+# plochu (a tedy azimut), difuzní jen výšku slunce a viditelnou část oblohy.
+# Roční úroveň výroby tím NEurčuje (tu drží `k_orient`), jen rozdělení v čase.
+PODIL_PRIMEHO = 0.55
+
+# Denní proměnlivost výroby (revize 26. 7. 2026). Bezmračný model rozdělil
+# měsíční energii rovnoměrně na všechny dny, takže špička výroby byla jen
+# ~49 % kWp (reálně 75–85 % za jasného dne). Protože samospotřeba
+# `Σ min(V_i, S_i)` je konkávní, vyhlazený profil ji SYSTEMATICKY nadhodnocuje
+# (naměřeno +1,6 až +25,9 % podle tvaru zátěže) a naopak podstřeluje ořez u
+# rezervovaného výkonu dodávky (8–20×). Model proto rozděluje dny měsíce na
+# jasné / polojasné / zatažené se zachováním MĚSÍČNÍ energie – roční i měsíční
+# výnos zůstává na PVGIS kalibraci, mění se jen rozptyl mezi dny.
+#
+# Podíl jasných dnů po měsících podle klimatologie ČR (ČHMÚ – v zimě převažuje
+# zataženo); faktory jsou zvolené tak, aby špičkový výkon 35°/jih vycházel
+# ~0,78 kW/kWp, tj. na úrovni reálné FVE za jasného dne.
+DENNI_PROMENLIVOST = True
+_PODIL_JASNYCH = {
+    1: 0.14, 2: 0.19, 3: 0.24, 4: 0.29, 5: 0.32, 6: 0.33,
+    7: 0.36, 8: 0.36, 9: 0.31, 10: 0.24, 11: 0.13, 12: 0.11,
+}
+_PODIL_ZATAZENYCH = {
+    1: 0.50, 2: 0.44, 3: 0.38, 4: 0.32, 5: 0.28, 6: 0.27,
+    7: 0.24, 8: 0.24, 9: 0.29, 10: 0.38, 11: 0.52, 12: 0.55,
+}
+_FAKTOR_JASNO = 1.60
+_FAKTOR_POLOJASNO = 1.00
+_FAKTOR_ZATAZENO = 0.40
 
 
 # ----------------------------------------------------- korekce orientace
@@ -114,21 +186,48 @@ def _interp1(x: float, xs: list, ys: list) -> float:
     return ys[-1]
 
 
+def _azimut_do_rozsahu(azimut_st: float) -> float:
+    """|azimut| v rozsahu 0–180° (jih = 0, symetricky V i Z)."""
+    a = abs(azimut_st) % 360
+    return 360 - a if a > 180 else a
+
+
 def korekce_orientace(azimut_st: float, sklon_st: float) -> float:
     """Bilineární interpolace faktoru orientace z tabulky (kap. 4.1).
 
     Azimut je symetrický kolem jihu (východ i západ = |azimut|). Vrací číslo
     v (0;1], = 1,0 pro jih a sklon ~35°.
     """
-    a = abs(azimut_st) % 360
-    if a > 180:
-        a = 360 - a
+    a = _azimut_do_rozsahu(azimut_st)
     # Nejdřív interpoluj po sklonu (pro každý azimutový sloupec), pak po azimutu.
     pri_sklonu = []
     for j in range(len(_ORIENT_AZIMUTY)):
         ys = [_ORIENT_TAB[s][j] for s in _ORIENT_SKLONY]
         pri_sklonu.append(_interp1(sklon_st, _ORIENT_SKLONY, ys))
     return _interp1(a, _ORIENT_AZIMUTY, pri_sklonu)
+
+
+def mesicni_podily(azimut_st: float, sklon_st: float) -> dict[int, float]:
+    """Podíl každého měsíce na ročním výnosu pro danou orientaci (revize 26. 7. 2026).
+
+    Bilineární interpolace `_MESICNI_TAB` (PVGIS v5.3) stejnou mřížkou jako
+    `korekce_orientace`. Vrací {měsíc: podíl}, součet = 1,0.
+
+    Proč to nejde brát z jedné řady: sezónní rozdělení se s orientací mění
+    zásadně – zimní půlrok tvoří 23,1 % výnosu u ploché střechy, 30,4 % u
+    35°/jih a 34,4 % u strmého jihu. Dřív model používal 30,4 % pro všechno.
+    """
+    a = _azimut_do_rozsahu(azimut_st)
+    podily: dict[int, float] = {}
+    for m in range(1, 13):
+        # nejdřív po sklonu (pro každý azimutový uzel), pak po azimutu
+        pri_sklonu = [
+            _interp1(sklon_st, _ORIENT_SKLONY, [_MESICNI_TAB[(s, az)][m - 1] for s in _ORIENT_SKLONY])
+            for az in _ORIENT_AZIMUTY
+        ]
+        podily[m] = _interp1(a, _ORIENT_AZIMUTY, pri_sklonu)
+    suma = sum(podily.values()) or 1.0
+    return {m: v / suma for m, v in podily.items()}
 
 
 # -------------------------------------------------------- solární geometrie
@@ -175,10 +274,82 @@ def _slunecni_okno(den_v_roce: int, lat_deg: float) -> tuple[float, float]:
 
 
 def _tvar_produkce(t_h: float, t_vychod: float, t_zapad: float) -> float:
-    """Clear-sky tvar produkce v solárním čase t (kap. 4.1): sinusová zvonovina."""
+    """Clear-sky tvar produkce v solárním čase t (kap. 4.1): sinusová zvonovina.
+
+    Ponecháno pro srovnání a testy; produkční cesta jde přes `_tvar_na_plose`,
+    která na rozdíl od téhle zvonoviny respektuje AZIMUT plochy.
+    """
     if t_zapad <= t_vychod or t_h <= t_vychod or t_h >= t_zapad:
         return 0.0
     return math.sin(math.pi * (t_h - t_vychod) / (t_zapad - t_vychod))
+
+
+def _deklinace(den_v_roce: int) -> float:
+    """Deklinace Slunce (rad) pro daný den v roce (Cooperův vztah, kap. 4.1)."""
+    return math.radians(23.45 * math.sin(math.radians(360.0 * (284 + den_v_roce) / 365.0)))
+
+
+def _slunce(den_v_roce: int, t_solarni_h: float, lat_rad: float) -> tuple[float, float]:
+    """Poloha Slunce: (sin výšky nad obzorem, azimut v rad od jihu, kladný k západu).
+
+    Standardní solární geometrie. Když je Slunce pod obzorem, vrací (0, 0).
+    """
+    de = _deklinace(den_v_roce)
+    omega = math.radians(15.0 * (t_solarni_h - 12.0))  # hodinový úhel
+    sin_alfa = math.sin(lat_rad) * math.sin(de) + math.cos(lat_rad) * math.cos(de) * math.cos(omega)
+    if sin_alfa <= 0.0:
+        return 0.0, 0.0
+    cos_alfa = math.sqrt(max(1e-12, 1.0 - sin_alfa * sin_alfa))
+    sin_gs = math.cos(de) * math.sin(omega) / cos_alfa
+    cos_gs = (sin_alfa * math.sin(lat_rad) - math.sin(de)) / (cos_alfa * math.cos(lat_rad))
+    return sin_alfa, math.atan2(sin_gs, cos_gs)
+
+
+def _tvar_na_plose(sin_alfa: float, azimut_slunce_rad: float, sklon_rad: float, azimut_rad: float) -> float:
+    """Relativní tvar výroby na orientované ploše (revize 26. 7. 2026).
+
+    Dřív se používala symetrická zvonovina centrovaná na solární poledne bez
+    ohledu na azimut, takže západní i východní pole „vyrábělo“ v poledne.
+    Reálně má západní pole špičku odpoledne a východní ráno – u kombinace
+    orientace a tvaru zátěže to vychylovalo samospotřebu o +8,8 až +14,3 %.
+
+    Model: přímá složka sleduje úhel dopadu na plochu (a tedy azimut),
+    difuzní jen výšku Slunce a viditelnou část oblohy `(1 + cos β)/2`.
+    Váhu drží `PODIL_PRIMEHO`. Vrací relativní číslo ≥ 0 – ABSOLUTNÍ úroveň
+    výroby určuje `korekce_orientace` a měrný výnos, tady jde jen o rozdělení
+    energie v čase (výsledek se normalizuje na denní energii).
+    """
+    if sin_alfa <= 0.0:
+        return 0.0
+    cos_alfa = math.sqrt(max(0.0, 1.0 - sin_alfa * sin_alfa))
+    cos_theta = (
+        cos_alfa * math.sin(sklon_rad) * math.cos(azimut_slunce_rad - azimut_rad)
+        + sin_alfa * math.cos(sklon_rad)
+    )
+    primy = cos_theta if cos_theta > 0.0 else 0.0
+    difuzni = sin_alfa * (1.0 + math.cos(sklon_rad)) / 2.0
+    return PODIL_PRIMEHO * primy + (1.0 - PODIL_PRIMEHO) * difuzni
+
+
+def _denni_faktor(rok: int, den_v_roce: int, mesic: int) -> float:
+    """Faktor jasnosti dne (jasno / polojasno / zataženo) – deterministický.
+
+    Rozděluje dny měsíce podle klimatologie ČR (`_PODIL_JASNYCH`,
+    `_PODIL_ZATAZENYCH`). Deterministicky z (rok, den) – stejný profil dá vždy
+    stejný výsledek, takže výpočet zůstává reprodukovatelný (kap. 1 SPEC:
+    deterministický výpočet). Měsíční energii to nemění, o normalizaci se
+    stará `simuluj_vyrobu`.
+    """
+    # Jednoduchý deterministický mix (LCG krok) – nezávislý na verzi Pythonu.
+    x = (rok * 366 + den_v_roce) * 1103515245 + 12345
+    u = ((x >> 8) % 100000) / 100000.0
+    p_jasno = _PODIL_JASNYCH.get(mesic, 0.25)
+    p_zatazeno = _PODIL_ZATAZENYCH.get(mesic, 0.35)
+    if u < p_jasno:
+        return _FAKTOR_JASNO
+    if u < p_jasno + p_zatazeno:
+        return _FAKTOR_ZATAZENO
+    return _FAKTOR_POLOJASNO
 
 
 def simuluj_vyrobu(
@@ -188,49 +359,88 @@ def simuluj_vyrobu(
     sklon_st: float,
     azimut_st: float,
     merny_vynos_kwh_kwp: float = VYCHOZI_MERNY_VYNOS_KWH_KWP,
+    denni_promenlivost: bool | None = None,
 ) -> list[float]:
     """Simulace výroby FVE (rok 1, bez degradace) zarovnaná na časy `casy` (kap. 4.1).
 
-    Roční výnos `E_rok = kWp × měrný_výnos × korekce_orientace` se rozdělí po
-    měsících (tabulka `_MESICNI_VYNOS`), měsíc na dny (podle počtu dní přítomných
-    v profilu) a den na intervaly clear-sky křivkou. Časové značky profilu jsou
-    v lokálním čase ČR – v okně letního času se tvar dne vyhodnocuje v `t − 1 h`
-    (SELČ → SEČ ~ solární čas; audit PPA-3). Vrací kWh za interval.
+    Roční výnos `E_rok = kWp × měrný_výnos × korekce_orientace` se rozdělí:
+    1. po měsících podle ORIENTACE (`mesicni_podily`, PVGIS v5.3),
+    2. měsíc na KALENDÁŘNÍ dny s faktorem jasnosti dne (`_denni_faktor`),
+    3. den na intervaly podle úhlu dopadu na plochu (`_tvar_na_plose` – tvar
+       dne tedy respektuje azimut, západní pole má špičku odpoledne).
+
+    Časové značky profilu jsou v lokálním čase ČR – v okně letního času se
+    geometrie vyhodnocuje v `t − 1 h` (SELČ → SEČ ~ solární čas; audit PPA-3).
+    Vrací kWh za interval.
+
+    Revize 26. 7. 2026 (proti původní verzi):
+    - tvar dne bere azimut (dřív symetrická zvonovina pro všechny orientace),
+    - měsíční rozdělení podle orientace (dřív jedna řada pro 35°/jih),
+    - dny měsíce mají různou jasnost (dřív všechny stejné – vyhlazený profil
+      nadhodnocoval samospotřebu a podstřeloval ořez),
+    - `E_den` se dělí KALENDÁŘNÍMI dny měsíce, ne dny přítomnými v profilu
+      (díry v datech dřív nafukovaly výrobu – 1,9 % děr = +2,9 % výroby).
+      Chybějící dny tak správně nepřinesou žádnou výrobu.
+
+    `denni_promenlivost=False` vypne rozptyl mezi dny (vyhlazený model jako
+    dřív) – hodí se na srovnání a pro testy.
     """
     n = len(casy)
     if n == 0 or kwp <= 0:
         return [0.0] * n
 
     e_rok = kwp * merny_vynos_kwh_kwp * korekce_orientace(azimut_st, sklon_st)
+    podily = mesicni_podily(azimut_st, sklon_st)
+    promenlivost = DENNI_PROMENLIVOST if denni_promenlivost is None else denni_promenlivost
 
-    # Kolik různých dní profil obsahuje v každém měsíci (pro rozpuštění E_měsíc).
-    dny_v_mesici: dict[int, set] = {}
-    for c in casy:
-        dny_v_mesici.setdefault(c.month, set()).add((c.year, c.timetuple().tm_yday))
+    lat_rad = math.radians(lat_deg)
+    sklon_rad = math.radians(sklon_st)
+    # Znaménko azimutu tady ZÁLEŽÍ (kladný = k západu) – na rozdíl od roční
+    # korekce orientace, která je symetrická kolem jihu.
+    azimut_rad = math.radians(azimut_st)
 
-    # Tvar produkce pro každý interval + součet tvaru v rámci dne (na normalizaci).
+    # Tvar výroby pro každý interval + součet tvaru v rámci dne (na normalizaci).
     tvar = [0.0] * n
     klic_dne: list[tuple] = [None] * n  # type: ignore[list-item]
     soucet_dne: dict[tuple, float] = {}
+    mesic_dne: dict[tuple, int] = {}
     for i, c in enumerate(casy):
         yday = c.timetuple().tm_yday
-        t_vychod, t_zapad = _slunecni_okno(yday, lat_deg)
         t_h = c.hour + c.minute / 60.0 + c.second / 3600.0
         if _je_letni_cas(c):
             t_h -= 1.0  # SELČ → SEČ: v létě je solární poledne ~13:00 lokálního času
-        g = _tvar_produkce(t_h, t_vychod, t_zapad)
+        sin_alfa, azimut_slunce = _slunce(yday, t_h, lat_rad)
+        g = _tvar_na_plose(sin_alfa, azimut_slunce, sklon_rad, azimut_rad)
         tvar[i] = g
         kd = (c.year, yday)
         klic_dne[i] = kd
         soucet_dne[kd] = soucet_dne.get(kd, 0.0) + g
+        mesic_dne[kd] = c.month
+
+    # Dny seskupené po kalendářním měsíci (rok+měsíc, ať 13měsíční profil
+    # nezdvojí energii stejného čísla měsíce ze dvou let).
+    dny_mesice: dict[tuple, list] = {}
+    for kd, m in mesic_dne.items():
+        dny_mesice.setdefault((kd[0], m), []).append(kd)
+
+    # Energie jednoho dne: měsíční energie krácená pokrytím měsíce, rozdělená
+    # mezi přítomné dny podle jejich jasnosti (měsíční suma zůstává zachovaná).
+    e_dne: dict[tuple, float] = {}
+    for (rok, m), klice in dny_mesice.items():
+        kalendarnich_dni = calendar.monthrange(rok, m)[1]
+        e_mesic = e_rok * podily[m] * (len(klice) / kalendarnich_dni)
+        faktory = {
+            kd: (_denni_faktor(kd[0], kd[1], m) if promenlivost else 1.0) for kd in klice
+        }
+        suma_faktoru = sum(faktory.values()) or 1.0
+        for kd in klice:
+            e_dne[kd] = e_mesic * faktory[kd] / suma_faktoru
 
     out = [0.0] * n
-    for i, c in enumerate(casy):
-        frakce = _MESICNI_VYNOS[c.month] / _SUMA_MESICNI
-        pocet_dni = len(dny_v_mesici[c.month]) or 1
-        e_den = e_rok * frakce / pocet_dni
-        s = soucet_dne[klic_dne[i]]
-        out[i] = (e_den * tvar[i] / s) if s > 0 else 0.0
+    for i in range(n):
+        kd = klic_dne[i]
+        s = soucet_dne[kd]
+        out[i] = (e_dne[kd] * tvar[i] / s) if s > 0 else 0.0
     return out
 
 
@@ -437,6 +647,16 @@ class Komponenta:
     cena_kc: float
 
 
+# Fyzikálně přípustný výkon jedné položky katalogu (kW). Panel: 50 W – 1,5 kW
+# (dnešní moduly 400–700 W). Střídač: 1 kW – 2 MW. Slouží k odfiltrování
+# překlepů v jednotkách: panel „550 Wp“ zadaný jako `vykon_kw = 550` má cenu
+# za kW 1000× nižší, takže by ho výběr „nejlevnější dle Kč/kW“ VŽDY vybral a
+# jediný špatný řádek katalogu by zlevnil CAPEX o desítky procent
+# (revize 26. 7. 2026).
+_ROZSAH_PANEL_KW = (0.05, 1.5)
+_ROZSAH_INVERTOR_KW = (1.0, 2000.0)
+
+
 def capex_komponenty(
     kwp: float,
     panely: list[Komponenta],
@@ -445,35 +665,62 @@ def capex_komponenty(
 ) -> tuple[float, dict]:
     """CAPEX poskládaný z nejlevnějších komponent katalogu (kap. 3.4, režim `komponenty`).
 
-    Vybere nejlevnější dostupný panel a invertor (dle ceny za kW). Počet =
-    zaokrouhleno nahoru na pokrytí kWp. BOS (montáž/konstrukce/kabeláž) =
-    `kWp × ostatni_kc_kwp`. Vrací (CAPEX, rozpad). Když chybí panel/invertor,
-    dá do rozpadu `chybi` a tu složku počítá jako 0.
+    Vybere nejlevnější dostupný panel a invertor (dle ceny za kW) z položek,
+    které mají fyzikálně přípustný výkon. Počet = zaokrouhleno nahoru na
+    pokrytí kWp. BOS (montáž/konstrukce/kabeláž) = `kWp × ostatni_kc_kwp`.
+    Vrací (CAPEX, rozpad). Když chybí panel/invertor, dá do rozpadu `chybi`
+    a tu složku počítá jako 0; položky mimo rozsah jde do `preskocene`,
+    ať je v UI vidět, že katalog má chybu v jednotkách.
     """
     rozpad: dict = {"rezim": "komponenty"}
     capex = 0.0
+    preskocene: list[str] = []
 
-    def _nejlevnejsi(polozky: list[Komponenta]) -> Komponenta | None:
-        pouzitelne = [k for k in polozky if k.vykon_kw > 0 and k.cena_kc > 0]
+    def _nejlevnejsi(polozky: list[Komponenta], rozsah: tuple[float, float]) -> Komponenta | None:
+        pouzitelne = []
+        for k in polozky:
+            if k.cena_kc <= 0 or k.vykon_kw <= 0:
+                continue
+            if not (rozsah[0] <= k.vykon_kw <= rozsah[1]):
+                preskocene.append(
+                    f"{k.nazev} ({k.vykon_kw:g} kW mimo {rozsah[0]:g}–{rozsah[1]:g} kW)"
+                )
+                continue
+            pouzitelne.append(k)
         return min(pouzitelne, key=lambda k: k.cena_kc / k.vykon_kw) if pouzitelne else None
 
-    panel = _nejlevnejsi(panely)
+    panel = _nejlevnejsi(panely, _ROZSAH_PANEL_KW)
     if panel is not None:
         pocet = math.ceil(kwp / panel.vykon_kw)
         cena = pocet * panel.cena_kc
         capex += cena
-        rozpad["panely"] = {"nazev": panel.nazev, "pocet": pocet, "cena_kc": round(cena, 2)}
+        rozpad["panely"] = {
+            "nazev": panel.nazev,
+            "pocet": pocet,
+            "cena_kc": round(cena, 2),
+            # Instalovaný výkon panelů – ať je v UI vidět, že poskládaná
+            # sestava odpovídá požadovanému kWp.
+            "vykon_kw": round(pocet * panel.vykon_kw, 2),
+        }
     else:
         rozpad["panely"] = {"chybi": True}
 
-    invertor = _nejlevnejsi(invertory)
+    invertor = _nejlevnejsi(invertory, _ROZSAH_INVERTOR_KW)
     if invertor is not None:
         pocet = math.ceil(kwp / invertor.vykon_kw)
         cena = pocet * invertor.cena_kc
         capex += cena
-        rozpad["invertory"] = {"nazev": invertor.nazev, "pocet": pocet, "cena_kc": round(cena, 2)}
+        rozpad["invertory"] = {
+            "nazev": invertor.nazev,
+            "pocet": pocet,
+            "cena_kc": round(cena, 2),
+            "vykon_kw": round(pocet * invertor.vykon_kw, 2),
+        }
     else:
         rozpad["invertory"] = {"chybi": True}
+
+    if preskocene:
+        rozpad["preskocene"] = preskocene
 
     ostatni = kwp * (ostatni_kc_kwp or 0.0)
     capex += ostatni
@@ -725,10 +972,15 @@ def kandidatni_velikosti(
     if max_kwp and max_kwp > 0:
         cap = min(cap, max_kwp)
     krok = max(1, round(cap / pocet))
-    kandidati = sorted({k for k in range(krok, int(cap) + 1, krok) if k >= 1})
-    # Limit menší než 1 kWp: zaokrouhlení na celé kWp nic menšího nenabízí –
-    # vrať aspoň nejmenší smysluplnou velikost 1 kWp.
-    return kandidati or [1]
+    kandidati = {k for k in range(krok, int(cap) + 1, krok) if k >= 1}
+    # Malé velikosti musí být v mřížce vždy (revize 26. 7. 2026). Nejmenší
+    # kandidát byl dřív rovnou `krok`, tedy u velké spotřeby desítky až stovky
+    # kWp – menší FVE se nikdy nezkusila, i když byla optimální. Cena za kWp
+    # se navíc ladí v adminu podle nákupu, takže se optimum posouvá.
+    for k in (1, 2, 3, 5, 8, 13, 21, 34, 55):
+        if k <= cap:
+            kandidati.add(k)
+    return sorted(kandidati) or [1]
 
 
 def vyber_velikost(
@@ -751,13 +1003,46 @@ def vyber_velikost(
         base1 = simuluj_vyrobu(
             casy, 1.0, sablona.lat, sablona.sklon_st, sablona.azimut_st, sablona.merny_vynos_kwh_kwp
         )
-    vysledky: list[dict] = []
-    for kwp in kwp_kandidati:
+
+    spocitane: dict[int, dict] = {}
+
+    def _spocti(kwp: int) -> dict | None:
         if kwp <= 0:
-            continue
+            return None
+        if kwp in spocitane:
+            return spocitane[kwp]
         capex, rozpad = capex_fn(kwp)
-        vstup = dataclasses.replace(sablona, kwp=float(kwp), capex_kc=float(capex), capex_rozpad=rozpad)
-        vyroba1 = [x * kwp for x in base1]
-        vysledky.append(spocti_ppa(vstup, casy, spotreba_kwh, vyroba_rok1_override=vyroba1))
-    vysledky.sort(key=_skore_ekonomiky)
+        vstup = dataclasses.replace(
+            sablona, kwp=float(kwp), capex_kc=float(capex), capex_rozpad=rozpad
+        )
+        r = spocti_ppa(vstup, casy, spotreba_kwh, vyroba_rok1_override=[x * kwp for x in base1])
+        spocitane[kwp] = r
+        return r
+
+    kandidati = sorted({k for k in kwp_kandidati if k > 0})
+    for kwp in kandidati:
+        _spocti(kwp)
+    if not spocitane:
+        return []
+
+    # Druhý, jemný průchod okolo vítěze hrubé mřížky (revize 26. 7. 2026).
+    # Jeden výpočet velikosti stojí ~0,06 s, takže zjemnění je prakticky
+    # zdarma a doporučená velikost přestává být artefaktem kroku mřížky.
+    nejlepsi = min(spocitane.values(), key=_skore_ekonomiky)
+    stred = int(round(nejlepsi["kwp"]))
+    i = kandidati.index(stred) if stred in kandidati else -1
+    dolni = kandidati[i - 1] if i > 0 else 1
+    horni = kandidati[i + 1] if 0 <= i < len(kandidati) - 1 else max(kandidati)
+    jemny_krok = max(1, (horni - dolni) // 12)
+    for kwp in range(max(1, dolni), horni + 1, jemny_krok):
+        _spocti(kwp)
+
+    vysledky = sorted(spocitane.values(), key=_skore_ekonomiky)
+    # Optimum na kraji rozsahu znamená, že kritérium „nejvyšší NPV“ nemá
+    # vnitřní optimum (marginální kWp se buď vždy vyplatí, nebo nikdy) –
+    # velikost pak neurčuje ekonomika, ale hranice mřížky. Příznak si bere
+    # route a dá o tom vědět obchodníkovi.
+    vitez = int(round(vysledky[0]["kwp"]))
+    vsechny = sorted(spocitane)
+    vysledky[0]["optimum_na_hranici"] = vitez in (vsechny[0], vsechny[-1])
     return vysledky

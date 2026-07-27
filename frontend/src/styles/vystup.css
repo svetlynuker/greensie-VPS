@@ -141,4 +141,45 @@
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
   .vy-blok { break-inside: avoid; }
+
+  /* Zástupné texty patří jen do editoru – do nabídky pro zákazníka se
+     nesmí vytisknout „Graf se zobrazí po spuštění výpočtu.“ apod. */
+  .vy-prazdno { display: none !important; }
+
+  /* Rámeček „MÍSTO PRO LOGO“ je zástupka pro branding, ne obsah nabídky –
+     do PDF, které jde zákazníkovi, nepatří. Až se logo doplní jako obrázek,
+     tohle pravidlo se odstraní. */
+  .vy-logo { display: none !important; }
+
+  /* Dlouhá tabulka přes víc stran: hlavička se opakuje, řádky se netrhají. */
+  .vy-tabulka thead { display: table-header-group; }
+  .vy-tabulka tr, .vy-karta { break-inside: avoid; }
+
+  /* List nabídky je vždy bílý papír. Text a pozadí `.vystup-sheet` jsou
+     natvrdo světlé, ale GRAFY berou barvy z tokenů `--c-*`, takže v tmavém
+     režimu appky se dřív tiskly téměř černé sloupce (#3a453f) a černá
+     mřížka (#232d28). Tady je proto vracíme na světlou sadu.
+     Kompenzace barvosleposti (data-cvd) se ZACHOVÁVÁ – je to přístupnost,
+     ne dekorace, a hodí se i na papíře. */
+  .vystup-sheet {
+    --surface: #ffffff; /* obrys segmentů stohovaného sloupce */
+    --muted: #78847d;
+    --c-before: #c4cdc7;
+    --c-axis: #4b5852;
+    /* Světlá mřížka #e9edea má na papíře kontrast ~1,2:1 a v tisku zmizí. */
+    --c-grid: #ccd5d0;
+  }
+  :root[data-theme="dark"] .vystup-sheet {
+    --c-after: #2f9e44;
+    --c-export: #1971c2;
+    --c-orez: #e8590c;
+    --c-refnew: #d97706;
+    --c-refnow: #78847d;
+  }
+  :root[data-theme="dark"][data-cvd="on"] .vystup-sheet {
+    --c-after: #2a78d6;
+    --c-export: #eda100;
+    --c-orez: #d55e00;
+    --c-refnew: #d97706;
+  }
 }

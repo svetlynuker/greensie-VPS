@@ -13,6 +13,14 @@ deterministický výpočet bez AI agentů za běhu, ceny **bez DPH**, práva `na
 (OZ používá) / `nabidkovac_katalog` (vedení/admin edituje katalog a nastavení), SVG grafy
 bez knihovny.
 
+> **Revize 26. 7. 2026 (druhý audit):** simulace výroby přepracovaná —  denní křivka podle
+> úhlu dopadu (tedy i azimutu), měsíční rozdělení podle orientace, denní proměnlivost
+> oblačnosti a dělení kalendářními dny (kap. 4.1). Roční výnos zůstává na PVGIS kalibraci
+> z auditu PPA-2. Dopad: samospotřeba a s ní úspora klienta i výnos investora klesají
+> o ~9–25 % podle orientace a tvaru zátěže (dosavadní čísla byla nadhodnocená), ořez u
+> rezervovaného výkonu dodávky naopak roste. Nálezy a měření:
+> `docs/reserze_kalkulator/bughunt/revize-2026-07-26.md`.
+>
 > **Stav implementace (v1 – nasazuje se):** metodika je zdrojová, kód na ni navazuje.
 > Vědomé odchylky/zjednodušení oproti níže popsanému, s dokumentovaným defaultem:
 > - **Bez tabulky `profil_vyroby_fve` (kap. 3.1)** – výroba se deterministicky přepočítá při
@@ -213,34 +221,74 @@ E_rok = kWp × merny_vynos_kwh_kwp(lokalita) × k_orient(azimut, sklon)
   hodnota.) Hlavní opravy proti dřívější ilustrativní tabulce: sever 35° 0,66 → 0,54,
   sever 60° 0,50 → 0,34, horizontála 0,88 → 0,85, strmý jih 0,91 → 0,94.
 
-**Krok 2 – rozdělení do měsíců** dle PVGIS v5.3 (SARAH3, střed ČR, 35°/jih — bughunt PPA-2):
+**Krok 2 – rozdělení do měsíců** dle PVGIS v5.3 (SARAH3, střed ČR) — **podle ORIENTACE**
+(revize 26. 7. 2026, dřív jedna řada pro všechny orientace). Referenční uzel 35°/jih:
 
 | měs | led | úno | bře | dub | kvě | čvn | čvc | srp | zář | říj | lis | pro |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | kWh/kWp (z 1000) | 30,6 | 51,8 | 84,9 | 113,7 | 120,9 | 123,1 | 124,6 | 114,9 | 98,5 | 72,0 | 36,0 | 29,0 |
 
-Měsíční podíl = hodnota / 1000. `E_měsíc = E_rok × podíl_měsíc`. Zimní půlrok (říj–bře)
-tvoří 30,4 % ročního výnosu.
+Měsíční podíl = hodnota / 1000. `E_měsíc = E_rok × podíl_měsíc(orientace)`.
 
-**Krok 3 – rozdělení dne (denní křivka, clear-sky):** pro daný den v roce `n` a zeměpisnou
-šířku `φ`:
-```
-δ   = 23,45° × sin(360° × (284 + n) / 365)          # deklinace Slunce
-ω_s = arccos(−tan(φ) × tan(δ))                       # hodinový úhel východu/západu (°)
-t_východ = 12 − ω_s/15 ;  t_západ = 12 + ω_s/15      # solární čas (h)
-g(t) = max(0, sin(π × (t − t_východ) / (t_západ − t_východ)))   # tvar produkce
-```
-Energie intervalu `i` (solární čas `t_i`) daného dne:
-```
-V_i = E_den × g(t_i) / Σ_j g(t_j)      # E_den = E_měsíc / počet_dní_v_měsíci
-```
-Tím vznikne 15min (nebo hodinový) profil, jehož roční součet = `E_rok`.
+Sezónní rozdělení se s orientací mění zásadně, takže se interpoluje ze stejné mřížky jako
+`k_orient` (tabulka `_MESICNI_TAB`, zdroj `docs/reserze_kalkulator/pvgis-data.csv`).
+Podíl zimního půlroku (X–III) na ročním výnosu:
 
-⚠️ **Zjednodušení v1:** clear-sky zvonovina bez denní proměnlivosti počasí – reálná výroba je
-„zubatější", ale pro odhad **samospotřeby** (kap. 4.3) na měsíční/roční úrovni to stačí; na
-15min špičky se to hodí hůř. **Letní čas je ošetřen** (bughunt PPA-3): v okně SELČ se tvar
-dne vyhodnocuje v `t − 1 h`, takže špička výroby padne na ~13:00 lokálního času; jemnější
-korekce délky ((λ−15°)×4 min) a časové rovnice (±15 min) zůstávají zanedbané.
+| sklon \ azimut | jih | JV/JZ | V/Z | sever |
+|---|---|---|---|---|
+| 0° (rovina) | 23,1 % | 23,1 % | 23,1 % | 23,1 % |
+| 15° | 26,8 % | 25,8 % | 23,5 % | 18,9 % |
+| 35° | **30,4 %** | 28,6 % | 24,3 % | 17,7 % |
+| 60° | 34,4 % | 31,4 % | 25,0 % | 21,3 % |
+
+Dřív model tvrdil 30,4 % pro každou orientaci, takže u ploché střechy nadhodnocoval
+prosinec o ~42 % relativně a u V/Z pole zimu o ~25 %.
+
+**Krok 3 – rozdělení dne podle ÚHLU DOPADU na plochu** (revize 26. 7. 2026). Původní
+symetrická zvonovina centrovaná na solární poledne ignorovala azimut, takže západní i
+východní pole „vyrábělo" v poledne — u kombinace orientace a tvaru zátěže to vychylovalo
+samospotřebu o +8,8 až +14,3 %. Nově se počítá poloha Slunce a úhel dopadu:
+```
+δ   = 23,45° × sin(360° × (284 + n) / 365)              # deklinace
+ω   = 15° × (t − 12)                                     # hodinový úhel (solární čas)
+sin α = sin φ · sin δ + cos φ · cos δ · cos ω             # výška Slunce
+γ_s   = atan2(cos δ · sin ω / cos α, (sin α · sin φ − sin δ)/(cos α · cos φ))   # azimut Slunce
+cos θ = cos α · sin β · cos(γ_s − γ_p) + sin α · cos β    # úhel dopadu na plochu
+g     = P · max(0, cos θ) + (1 − P) · sin α · (1 + cos β)/2
+```
+`β` = sklon, `γ_p` = azimut plochy (kladný k západu), `P` = `PODIL_PRIMEHO` = 0,55 (podíl
+přímé složky na ročním ozáření v ČR; difuzní člen drží výrobu i na severní straně).
+Výsledek určuje jen ROZDĚLENÍ energie v čase — absolutní úroveň drží `k_orient` a měrný
+výnos. Špička dne tak vychází: jih 13:00, JV 11:45, východ 11:00, JZ 14:15, západ 15:00
+(letní čas).
+
+**Krok 4 – denní proměnlivost (oblačnost)** (revize 26. 7. 2026). Dřív dostaly všechny dny
+měsíce stejnou energii, takže špičkový výkon vycházel jen ~49 % kWp (reálná FVE dává za
+jasného dne 75–85 %). Protože samospotřeba `Σ min(V_i, S_i)` je **konkávní**, vyhlazený
+profil ji podle Jensenovy nerovnosti systematicky NADHODNOCUJE (naměřeno +1,6 až +25,9 %
+podle tvaru zátěže) a naopak podstřeluje ořez u rezervovaného výkonu dodávky (8–20×).
+Dny se proto rozdělují na jasné / polojasné / zatažené podle klimatologie ČR
+(`_PODIL_JASNYCH`, `_PODIL_ZATAZENYCH`) s faktory 1,60 / 1,00 / 0,40:
+```
+E_den = E_měsíc × f_den / Σ_{dny v měsíci} f_den      # měsíční energie zůstává zachovaná
+V_i   = E_den × g(t_i) / Σ_{j ve stejném dni} g(t_j)
+```
+Rozdělení je **deterministické** z (rok, den v roce) — stejný profil dá vždy stejný
+výsledek (kap. 1 SPEC). Roční i měsíční výnos zůstává na PVGIS kalibraci; mění se jen
+rozptyl mezi dny. Špičkový výkon 35°/jih vychází 81 % kWp. Parametrem
+`denni_promenlivost=False` lze vyhlazený model zapnout pro srovnání.
+
+**`E_den` se dělí KALENDÁŘNÍMI dny měsíce**, ne dny přítomnými v profilu (revize
+26. 7. 2026). Dřív se energie chybějících dnů přesypala do dnů přítomných, takže 1,9 %
+děr (což projde validací SP-1) nafouklo výrobu o 2,9 %. Chybějící dny nově správně
+nepřinesou žádnou výrobu.
+
+⚠️ **Zjednodušení, která zůstávají:** **letní čas je ošetřen** (bughunt PPA-3) — v okně
+SELČ se geometrie vyhodnocuje v `t − 1 h`; jemnější korekce délky ((λ−15°)×4 min) a
+časové rovnice (±15 min) zůstávají zanedbané (dopad na samospotřebu ±2,8 %). Nad sklonem
+60° (`SKLON_KALIBROVANY_MAX`) končí PVGIS mřížka — hodnoty se klipují a route na to
+upozorňuje, protože u svislé plochy je výnos nadhodnocený (svislý jih je reálně ~0,70
+vůči 35°/jih, klipnutá hodnota 0,94).
 
 **Rozlišení:** navrhuji počítat **hodinově** (8 760 hodnot – levné, PVGIS-kompatibilní) a pro
 párování s 15min spotřebou hodnotu hodiny rovnoměrně rozdělit na 4 čtvrthodiny (`V_15 =
@@ -382,6 +430,14 @@ uvnitř roku pro desetinnou hodnotu, obdoba návratnosti u peak shavingu).
 NPV = −CAPEX + Σ_{t=1..N} cf_t / (1 + r)^t
 IRR = r*, pro které NPV = 0        # numericky (bisekce/Newton), obdoba binárního hledání v PS
 ```
+
+**Vypořádání na konci kontraktu – ROZHODNUTO (Daniel, 26. 7. 2026): klient odkoupí FVE
+za 1 Kč.** Reziduální hodnota pro investora je tím pádem nulová a NPV se správně počítá
+jen přes roky 1..N — žádná terminal value se nepřidává. (Druhý audit tohle otevřel jako
+možné podhodnocení NPV o 35–43 % CAPEX; s odkupem za symbolickou cenu ale hodnota
+zbytkové životnosti připadá klientovi, ne investorovi, takže dosavadní výpočet je
+správný. Pozn. pro obchod: odkup za 1 Kč je pro klienta hodnota, kterou lze v nabídce
+zmínit jako benefit.)
 
 ⚠️ **Otevřené body:** O&M (fixní Kč/kWp/rok vs. % z CAPEX; default v1 klidně 0 s jasným
 štítkem), pojištění, nájem střechy/pozemku, náklad na výměnu invertoru ~v roce 10–12,

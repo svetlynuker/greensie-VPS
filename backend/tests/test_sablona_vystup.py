@@ -136,14 +136,31 @@ class TestTabulka:
         assert klice == {"rok", "cena_ppa_kc_mwh", "cena_dodavatel_kc_mwh",
                          "uspora_klient_kc", "uspora_klient_kum_kc"}
         assert len(t["radky"]) == 2
-        assert t["radky"][0][0] == "1 let"  # rok
+        # „Rok“ je pořadové číslo, ne doba – tiskne se bez jednotky
+        # (dřív „1 let“, revize 26. 7. 2026).
+        assert t["radky"][0][0] == "1"
         assert "Kč" in t["radky"][0][3]
 
     def test_ps_tabulka(self):
         t = sk.resolvni_tabulku("peak_shaving", PS)
         assert len(t["radky"]) == 2
+        # Sloupec hledáme podle klíče, ne podle pozice – tabulka se rozšířila
+        # o „Provoz a údržba“ a „Čistý přínos za rok“ (revize 26. 7. 2026).
+        i_kum = [s["klic"] for s in t["sloupce"]].index("cf_kum_kc")
         # cf_kum_kc záporné v 1. roce (vč. investice)
-        assert "-" in t["radky"][0][2] or "−" in t["radky"][0][2] or t["radky"][0][2].startswith("-")
+        assert t["radky"][0][i_kum].lstrip().startswith("-")
+
+    def test_ps_tabulka_ukazuje_oam_a_cisty_prinos(self):
+        # Bez O&M vypadala tabulka rozporně: úspora kladná, ale kumulativ
+        # rostl pomaleji (nebo klesal), než by z ní vycházelo.
+        t = sk.resolvni_tabulku("peak_shaving", PS)
+        klice = [s["klic"] for s in t["sloupce"]]
+        assert "oam_kc" in klice and "cf_kc" in klice
+        i_prinos, i_oam, i_cf = klice.index("prinos_kc"), klice.index("oam_kc"), klice.index("cf_kc")
+        # čistý přínos = úspora − provoz a údržba (na zobrazené úrovni)
+        radek = PS["doporucena"]["roky"][0]
+        assert radek["prinos_kc"] - radek["oam_kc"] == pytest.approx(radek.get("cf_kc", 600000.0))
+        assert all(t["radky"][0][i] for i in (i_prinos, i_oam, i_cf))
 
 
 class TestGraf:

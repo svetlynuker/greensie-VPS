@@ -35,9 +35,15 @@ function VariantaRadek({ v, vybrana, rok, onVyber }) {
   // Úspora a návratnost dle přepínače roku (2027 = NTS odhad; starší uložené
   // výsledky nesou rocni_uspora_bez_aku / navratnost_2027_konzerv – PS-3).
   const je2027 = rok === 2027;
-  const uspora = je2027
-    ? v.ekonomika_2027?.rocni_uspora_bez_aku ?? v.ekonomika_2027?.rocni_uspora
-    : v.rocni_uspora_2026_kc;
+  // Sloupec musí ukazovat PŘÍNOS BATERIE, protože z něj se počítá návratnost
+  // ve vedlejším sloupci. Dřív tu byla celková úspora vs. dnešní stav (tj. i
+  // s úsporou z pouhé úpravy rezervace), takže „Cena ÷ Úspora“ nedávalo
+  // zobrazenou návratnost – rozdíl až 5× (revize 26. 7. 2026).
+  const prinos = je2027
+    ? v.ekonomika_2027?.prinos_baterie ??
+      v.ekonomika_2027?.rocni_uspora_bez_aku ??
+      v.ekonomika_2027?.rocni_uspora
+    : v.prinos_baterie_2026_kc ?? v.rocni_uspora_2026_kc;
   const navratnost = je2027
     ? v.navratnost_2027 ?? v.navratnost_2027_konzerv
     : v.navratnost_roky;
@@ -58,7 +64,7 @@ function VariantaRadek({ v, vybrana, rok, onVyber }) {
       </td>
       <td>{kw(v.celkovy_vykon_kw)} / {v.celkova_kapacita_kwh?.toLocaleString("cs-CZ")} kWh</td>
       <td>{kw(v.nova_rezervovana_kapacita_kw)}</td>
-      <td>{kc(uspora)}</td>
+      <td>{kc(prinos)}</td>
       <td>{kc(v.cena_celkem_kc)}</td>
       <td>{roky(navratnost)}</td>
       <td>{v.npv_kc != null ? kc(v.npv_kc) : "—"}</td>
@@ -394,6 +400,21 @@ export default function PeakShavingPanel({ nabidka }) {
                   </div>
                   <div className="gs-kpi-sub">
                     {kw(dop.celkovy_vykon_kw)} / {dop.celkova_kapacita_kwh?.toLocaleString("cs-CZ")} kWh · {kc(dop.cena_celkem_kc)}
+                    {/* Prodejní cena jde do nabídky, nákupní a marže jsou jen
+                        pro obchodníka (v zákaznickém výstupu je whitelist
+                        nepustí). Chybí-li v ceníku prodejní cena, marže je 0
+                        a zobrazí se jen jedna hodnota. */}
+                    {dop.marze_kc ? (
+                      <>
+                        {" prodejní"}
+                        <br />
+                        nákup {kc(dop.nakupni_cena_celkem_kc)} · marže{" "}
+                        <b>{kc(dop.marze_kc)}</b>
+                        {dop.cena_celkem_kc
+                          ? ` (${Math.round((dop.marze_kc / dop.cena_celkem_kc) * 100)} %)`
+                          : ""}
+                      </>
+                    ) : null}
                   </div>
                 </div>
                 {dop.npv_kc != null && (
@@ -564,12 +585,29 @@ export default function PeakShavingPanel({ nabidka }) {
                     <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
                       {je2027 ? "Rok 2027 (srážení po měsících)" : "Rok 2026 (držení ročního stropu)"}
                     </div>
+                    {/* Referenční čáry musí patřit k ZOBRAZENÉMU roku: v roce
+                        2026 se platí za rezervovanou kapacitu (RK), v NTS 2027
+                        za rezervovaný příkon (RP) ze smlouvy o připojení. Dřív
+                        se v obou pohledech kreslila RK modelu 2026, takže KPI
+                        „Rezervovaný příkon 400 kW“ a legenda grafu „rezervace
+                        nyní 250 kW“ si na jedné obrazovce odporovaly. */}
                     <GrafOdberu
                       mesice={graf.mesice}
                       bezBaterie={graf.bez_baterie_kw}
                       sBaterii={je2027 ? graf.s_baterii_2027_kw : graf.s_baterii_2026_kw}
-                      rpSoucasna={graf.rp_soucasna_kw}
-                      rpNova={graf.rp_nova_kw}
+                      rpSoucasna={
+                        je2027
+                          ? dop.ekonomika_2027?.rp_soucasny_kw ?? graf.rp_soucasna_kw
+                          : graf.rp_soucasna_kw
+                      }
+                      rpNova={
+                        je2027
+                          ? dop.ekonomika_2027?.rp_novy_kw ?? graf.rp_nova_kw
+                          : graf.rp_nova_kw
+                      }
+                      dokupuMesicu={
+                        je2027 ? null : dop.ekonomika_2026?.dokupy_s_baterii_pocet_mesicu
+                      }
                     />
                   </div>
                 </>
@@ -651,7 +689,7 @@ export default function PeakShavingPanel({ nabidka }) {
                   <div className="nb-scroll">
                     <table className="nb-table">
                       <thead>
-                        <tr><th>Baterie</th><th>Výkon / kapacita</th><th>Nová rez.</th><th>Úspora/rok ({rok})</th><th>Cena</th><th>Návratnost ({rok})</th><th>NPV</th></tr>
+                        <tr><th>Baterie</th><th>Výkon / kapacita</th><th>Nová rez.</th><th>Přínos baterie/rok ({rok})</th><th>Cena</th><th>Návratnost ({rok})</th><th>NPV</th></tr>
                       </thead>
                       <tbody>
                         {varianty.map((v, i) => (

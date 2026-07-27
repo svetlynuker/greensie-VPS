@@ -19,6 +19,7 @@ prodejní čísla.
 | [ppa-fve.md](ppa-fve.md) | Nálezy PPA-1 … PPA-9 (bug max_kwp, kalibrace výroby, letní čas, úspora klienta, ekonomika investora) |
 | [spolecne-profil-a-data.md](spolecne-profil-a-data.md) | Nálezy SP-1 … SP-4 (validace pokrytí roku, duplicitní profily, interval, status řádků) |
 | [synteticke-testy.md](synteticke-testy.md) | Reprodukovatelné testy T1–T8 s naměřenými dopady + skript |
+| **[revize-2026-07-26.md](revize-2026-07-26.md)** | **Druhý audit: nálezy R1 … R13** (fyzika výroby FVE, konzistence zákaznické nabídky, tisk do PDF, robustnost vstupů) |
 
 ## Prioritizace oprav
 

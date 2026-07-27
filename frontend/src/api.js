@@ -3,6 +3,24 @@
 const API_BASE = "/api";
 const TOKEN_KEY = "greensie_token";
 
+// FastAPI vrací u validačních chyb (422) `detail` jako SEZNAM objektů
+// {loc, msg, type}, ne text – bez převodu se v UI objevilo „[object Object]“
+// a uživatel nevěděl, které pole je špatně.
+function popisChyby(detail) {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const casti = detail.map((d) => {
+      if (typeof d === "string") return d;
+      const pole = Array.isArray(d?.loc) ? d.loc.filter((x) => x !== "body").join(".") : "";
+      const zprava = d?.msg || "neplatná hodnota";
+      return pole ? `${pole}: ${zprava}` : zprava;
+    });
+    return casti.join("; ");
+  }
+  if (detail && typeof detail === "object") return detail.msg || JSON.stringify(detail);
+  return String(detail);
+}
+
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -63,7 +81,7 @@ async function zavolej(cesta, moznosti = {}) {
     let detail = `Chyba ${res.status}`;
     try {
       const chyba = await res.json();
-      if (chyba.detail) detail = chyba.detail;
+      if (chyba.detail) detail = popisChyby(chyba.detail);
     } catch {
       // ponech výchozí hlášku
     }
@@ -183,7 +201,7 @@ export async function nabidkaNahrajDokument(nabidkaId, typ, file) {
     let detail = `Chyba ${res.status}`;
     try {
       const chyba = await res.json();
-      if (chyba.detail) detail = chyba.detail;
+      if (chyba.detail) detail = popisChyby(chyba.detail);
     } catch {
       // ponech výchozí hlášku
     }

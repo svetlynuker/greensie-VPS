@@ -130,11 +130,137 @@ class TestLetniCas:
         # Normalizace tvaru dne zachovává energii – posun jen přesouvá v čase.
         letni = sum(ppa.simuluj_vyrobu(den_casy(2025, 7, 15), 1.0, 49.8, 35, 0))
         assert letni > 0
-        # celý červenec v jednodenním profilu = E_měsíc/počet dní v profilu;
-        # den má nenulovou energii a součet tvaru je normovaný
+        # Bez denní proměnlivosti (vyhlazený model) mají dny téhož měsíce
+        # shodnou energii – tenhle invariant drží normalizace tvaru dne.
         casy2 = den_casy(2025, 7, 15) + den_casy(2025, 7, 16)
-        vyroba2 = ppa.simuluj_vyrobu(casy2, 1.0, 49.8, 35, 0)
+        vyroba2 = ppa.simuluj_vyrobu(casy2, 1.0, 49.8, 35, 0, denni_promenlivost=False)
         assert sum(vyroba2[:96]) == pytest.approx(sum(vyroba2[96:]), rel=1e-9)
+
+    def test_denni_promenlivost_zachova_energii_dvojice_dnu(self):
+        # Se zapnutou proměnlivostí se dny LIŠÍ (jasno/zataženo), ale součet
+        # dvojice zůstává stejný jako u vyhlazeného modelu – měsíční energie
+        # se jen jinak rozdělí mezi dny (revize 26. 7. 2026).
+        casy2 = den_casy(2025, 7, 15) + den_casy(2025, 7, 16)
+        s_prom = ppa.simuluj_vyrobu(casy2, 1.0, 49.8, 35, 0, denni_promenlivost=True)
+        bez_prom = ppa.simuluj_vyrobu(casy2, 1.0, 49.8, 35, 0, denni_promenlivost=False)
+        assert sum(s_prom) == pytest.approx(sum(bez_prom), rel=1e-9)
+        assert sum(s_prom[:96]) != pytest.approx(sum(s_prom[96:]), rel=1e-3)
+
+
+# ------------------------------------- revize fyziky výroby (26. 7. 2026)
+class TestFyzikaVyrobyRevize:
+    """Tvar dne dle azimutu, měsíční rozdělení dle orientace, denní proměnlivost.
+
+    Původní model měl symetrickou zvonovinu bez azimutu, jednu měsíční řadu
+    (35°/jih) pro všechny orientace a všechny dny měsíce stejné. Kalibrační
+    zdroj: docs/reserze_kalkulator/pvgis-data.csv (PVGIS v5.3, střed ČR).
+    """
+
+    ROK_CASY = None
+
+    @classmethod
+    def setup_class(cls):
+        casy = []
+        t = datetime(2025, 1, 1)
+        while t < datetime(2026, 1, 1):
+            casy.append(t)
+            t += timedelta(minutes=15)
+        cls.ROK_CASY = casy
+
+    def test_rocni_energie_drzi_pvgis_kalibraci_pro_vsechny_orientace(self):
+        # Roční úroveň určuje měrný výnos × k_orient – revize tvaru dne ani
+        # měsíčního rozdělení ji nesmí posunout.
+        for sklon, azimut in ((35, 0), (0, 0), (15, 45), (35, 90), (60, 0), (35, 180)):
+            vyroba = ppa.simuluj_vyrobu(self.ROK_CASY, 1.0, 49.8, sklon, azimut)
+            ocekavano = 1055.0 * ppa.korekce_orientace(azimut, sklon)
+            assert sum(vyroba) == pytest.approx(ocekavano, rel=1e-9)
+
+    @pytest.mark.parametrize(
+        "azimut,hodina",
+        [(0, 13), (-90, 11), (90, 15)],  # jih / východ / západ (letní čas)
+    )
+    def test_spicka_dne_se_posouva_s_azimutem(self, azimut, hodina):
+        den = den_casy(2025, 7, 16)
+        vyroba = ppa.simuluj_vyrobu(den, 1.0, 49.8, 35, azimut, denni_promenlivost=False)
+        assert den[vyroba.index(max(vyroba))].hour == hodina
+
+    def test_vychod_a_zapad_maji_zrcadlovy_tvar_dne(self):
+        den = den_casy(2025, 7, 16)
+        v_vychod = ppa.simuluj_vyrobu(den, 1.0, 49.8, 35, -90, denni_promenlivost=False)
+        v_zapad = ppa.simuluj_vyrobu(den, 1.0, 49.8, 35, 90, denni_promenlivost=False)
+        # stejná denní energie (k_orient je symetrický), ale zrcadlený tvar
+        assert sum(v_vychod) == pytest.approx(sum(v_zapad), rel=1e-9)
+        assert den[v_vychod.index(max(v_vychod))].hour < den[v_zapad.index(max(v_zapad))].hour
+
+    @pytest.mark.parametrize(
+        "sklon,azimut,zima_procent",
+        [
+            (0, 0, 23.1),  # plochá střecha – dřív model tvrdil 30,4 %
+            (15, 0, 26.8),
+            (35, 0, 30.4),  # referenční uzel (= _MESICNI_VYNOS)
+            (60, 0, 34.4),
+            (35, 90, 24.3),
+            (35, 180, 17.7),
+        ],
+    )
+    def test_zimni_pulrok_sedi_s_pvgis_pro_danou_orientaci(self, sklon, azimut, zima_procent):
+        vyroba = ppa.simuluj_vyrobu(
+            self.ROK_CASY, 1.0, 49.8, sklon, azimut, denni_promenlivost=False
+        )
+        zima = sum(
+            v for v, c in zip(vyroba, self.ROK_CASY) if c.month in (10, 11, 12, 1, 2, 3)
+        )
+        assert zima / sum(vyroba) * 100 == pytest.approx(zima_procent, abs=0.2)
+
+    def test_mesicni_podily_referencni_uzel_odpovida_puvodni_rade(self):
+        podily = ppa.mesicni_podily(0, 35)
+        assert sum(podily.values()) == pytest.approx(1.0)
+        for m in range(1, 13):
+            assert podily[m] == pytest.approx(ppa._MESICNI_VYNOS[m] / 1000.0, abs=1e-6)
+
+    def test_spickovy_vykon_odpovida_realne_fve(self):
+        # Reálná FVE dává za jasného dne v poledne 75–85 % kWp; vyhlazený
+        # model dával jen ~51 %, čímž nadhodnocoval samospotřebu.
+        vyroba = ppa.simuluj_vyrobu(self.ROK_CASY, 1.0, 49.8, 35, 0)
+        spicka_kw = max(vyroba) / 0.25
+        assert 0.72 <= spicka_kw <= 0.88
+
+    def test_promenlivost_snizuje_samospotrebu_a_zvysuje_orez(self):
+        # Σ min(V, S) je konkávní → vyhlazený profil samospotřebu nadhodnocuje.
+        spotreba = [
+            (1.0 if (c.weekday() < 5 and 5 <= c.hour < 13) else 0.25) * 0.25 * 40.0
+            for c in self.ROK_CASY
+        ]
+        vyhlazeny = ppa.simuluj_vyrobu(
+            self.ROK_CASY, 200.0, 49.8, 35, 0, denni_promenlivost=False
+        )
+        realny = ppa.simuluj_vyrobu(self.ROK_CASY, 200.0, 49.8, 35, 0, denni_promenlivost=True)
+        assert sum(vyhlazeny) == pytest.approx(sum(realny), rel=1e-9)
+        b_vyhlazeny = ppa.sparuj(vyhlazeny, spotreba, 40.0, 0.25)
+        b_realny = ppa.sparuj(realny, spotreba, 40.0, 0.25)
+        assert b_realny.samospotreba_kwh < b_vyhlazeny.samospotreba_kwh
+        assert b_realny.orez_kwh > b_vyhlazeny.orez_kwh
+
+    def test_diry_v_profilu_nenafouknou_vyrobu(self):
+        # E_den se dělí KALENDÁŘNÍMI dny měsíce: chybějící dny nesmí svou
+        # energii přesypat do dnů přítomných (dřív +2,9 % při 1,9 % děr).
+        cely = ppa.simuluj_vyrobu(self.ROK_CASY, 1.0, 49.8, 35, 0)
+        vynechane = {(2025, 7, d) for d in range(10, 17)}
+        s_dirou_casy = [
+            c for c in self.ROK_CASY if (c.year, c.month, c.day) not in vynechane
+        ]
+        s_dirou = ppa.simuluj_vyrobu(s_dirou_casy, 1.0, 49.8, 35, 0)
+        assert sum(s_dirou) < sum(cely)
+        # chybí 7 z 31 dní července → červenec dá jen 24/31 své energie
+        cervenec_cely = sum(v for v, c in zip(cely, self.ROK_CASY) if c.month == 7)
+        cervenec_dira = sum(v for v, c in zip(s_dirou, s_dirou_casy) if c.month == 7)
+        assert cervenec_dira == pytest.approx(cervenec_cely * 24 / 31, rel=0.02)
+
+    def test_nadmerny_sklon_je_mimo_kalibraci(self):
+        # PVGIS mřížka končí na 60°; nad ní se hodnoty klipují, což u svislé
+        # plochy nadhodnocuje výnos → route na to upozorňuje.
+        assert ppa.SKLON_KALIBROVANY_MAX == 60.0
+        assert ppa.korekce_orientace(0, 90) == ppa.korekce_orientace(0, 60)
 
 
 # --------------------------------------------------- PPA-4: LID prvního roku
@@ -289,3 +415,116 @@ class TestEkonomikaInvestora:
         # Obří CAPEX → záporné NPV → nedoporučeno.
         ztrata = ppa.spocti_ppa(vstup_ppa(capex_kc=100_000_000.0), self.CASY, self.SPOTREBA)
         assert ztrata["npv_kc"] < 0 and ztrata["doporuceno"] is False
+
+
+# ------------------ CAPEX z komponent: kontrola jednotek (26. 7. 2026)
+class TestCapexKomponentyJednotky:
+    """Výběr „nejlevnější dle Kč/kW“ je bezbranný proti překlepu v jednotkách.
+
+    Panel „550 Wp“ zadaný jako `vykon_kw = 550` má cenu za kW 1000× nižší,
+    takže by ho výběr VŽDY zvolil: `ceil(300 / 550) = 1` panel na 300 kWp,
+    tj. CAPEX o desítky procent nižší a NPV s payback silně nadhodnocené.
+    """
+
+    PANEL_OK = ppa.Komponenta(1, "fve_panel", "Panel 550 Wp", 0.55, 3300.0)
+    PANEL_PREKLEP = ppa.Komponenta(2, "fve_panel", "Panel 550 (chybné W)", 550.0, 3300.0)
+    INVERTOR = ppa.Komponenta(3, "invertor", "Střídač 100 kW", 100.0, 110_000.0)
+
+    def test_panel_s_prekleplou_jednotkou_se_nepouzije(self):
+        capex, rozpad = ppa.capex_komponenty(
+            300.0, [self.PANEL_OK, self.PANEL_PREKLEP], [self.INVERTOR], 11_000.0
+        )
+        assert rozpad["panely"]["nazev"] == "Panel 550 Wp"
+        assert rozpad["panely"]["pocet"] == 546  # ceil(300 / 0,55)
+        assert "preskocene" in rozpad
+        assert any("550" in s for s in rozpad["preskocene"])
+        # 546 × 3 300 + 3 × 110 000 + 300 × 11 000
+        assert capex == pytest.approx(546 * 3300.0 + 3 * 110_000.0 + 300 * 11_000.0)
+
+    def test_rozpad_uvadi_instalovany_vykon_komponent(self):
+        _, rozpad = ppa.capex_komponenty(300.0, [self.PANEL_OK], [self.INVERTOR], 0.0)
+        assert rozpad["panely"]["vykon_kw"] == pytest.approx(300.3, abs=0.05)
+        assert rozpad["invertory"]["vykon_kw"] == pytest.approx(300.0)
+
+    def test_kdyz_zbydou_jen_vadne_polozky_slozka_chybi(self):
+        capex, rozpad = ppa.capex_komponenty(
+            300.0, [self.PANEL_PREKLEP], [self.INVERTOR], 0.0
+        )
+        assert rozpad["panely"] == {"chybi": True}
+        assert capex == pytest.approx(3 * 110_000.0)
+
+    def test_prilis_velky_stridac_se_taky_odfiltruje(self):
+        vadny = ppa.Komponenta(4, "invertor", "Střídač 5000 kW", 5000.0, 100.0)
+        _, rozpad = ppa.capex_komponenty(300.0, [self.PANEL_OK], [vadny, self.INVERTOR], 0.0)
+        assert rozpad["invertory"]["nazev"] == "Střídač 100 kW"
+        assert "preskocene" in rozpad
+
+
+# --------------- sweep velikostí: jemnost a degenerace (26. 7. 2026)
+class TestSweepVelikosti:
+    """Doporučená velikost nesmí být artefaktem kroku mřížky.
+
+    Nejmenší kandidát byl dřív rovnou `krok = cap/pocet`, tedy u velké
+    spotřeby desítky až stovky kWp – menší FVE se nikdy nezkusila. A když
+    marginální kWp nevydělá (což závisí na ceně za kWp, kterou se ladí
+    v adminu), kritérium „max NPV“ nemá vnitřní optimum a vrací hranici
+    rozsahu; to musí appka říct, ne mlčky vydat číslo.
+    """
+
+    BASE_1KWP = [1000.0]
+
+    def test_male_velikosti_jsou_v_mrizce_i_pri_velke_spotrebe(self):
+        # 5 GWh/rok → cap 15 000 kWp, krok 500 kWp; dřív byl nejmenší
+        # kandidát 500 kWp a nic menšího se nezkusilo.
+        kandidati = ppa.kandidatni_velikosti([], [5_000_000.0], self.BASE_1KWP, pocet=30)
+        assert min(kandidati) == 1
+        for k in (1, 2, 3, 5, 8, 13, 21, 34, 55):
+            assert k in kandidati
+
+    def test_limit_strechy_zustava_tvrdy(self):
+        kandidati = ppa.kandidatni_velikosti([], [5_000_000.0], self.BASE_1KWP, max_kwp=40.0)
+        assert max(kandidati) <= 40
+        assert 55 not in kandidati  # malá velikost nad limitem se nepřidá
+
+    def _uloha(self, cena_kwp, delka=20):
+        casy = []
+        t = datetime(2025, 1, 1)
+        while t < datetime(2026, 1, 1):
+            casy.append(t)
+            t += timedelta(minutes=15)
+        spotreba = [
+            (1.0 if (c.weekday() < 5 and 6 <= c.hour < 18) else 0.3) * 0.25 * 60.0 for c in casy
+        ]
+        base1 = ppa.simuluj_vyrobu(casy, 1.0, 49.8, 30, 0)
+        sab = vstup_ppa(
+            kwp=0.0, sklon_st=30, delka_kontraktu_roky=delka, capex_kc=0.0,
+            cena_ppa_kc_mwh=2200.0, index_ppa_rocni=0.03,
+            cena_silova_kc_mwh=3500.0, index_dodavatel_rocni=0.03,
+            vyhnutelne_regulovane_kc_mwh=260.0, oam_kc_kwp_rok=350.0,
+            diskontni_sazba=0.075,
+        )
+
+        def capex_fn(kwp):
+            return kwp * cena_kwp, {"rezim": "cena_kwp", "cena_kc_kwp": cena_kwp}
+
+        kandidati = ppa.kandidatni_velikosti(casy, spotreba, base1, None, pocet=30)
+        return ppa.vyber_velikost(sab, casy, spotreba, kandidati, capex_fn, base1)
+
+    def test_degenerovane_optimum_je_oznacene(self):
+        # Drahá FVE: každý další kWp NPV zhoršuje → vítěz je nejmenší kandidát.
+        vysledky = self._uloha(cena_kwp=40_000.0)
+        assert vysledky[0]["optimum_na_hranici"] is True
+        assert vysledky[0]["kwp"] == pytest.approx(1.0)
+
+    def test_vnitrni_optimum_neni_oznacene_jako_hranice(self):
+        vysledky = self._uloha(cena_kwp=14_000.0)
+        assert vysledky[0]["optimum_na_hranici"] is False
+        assert vysledky[0]["kwp"] > 1.0
+
+    def test_jemny_pruchod_zpresni_vitezne_kwp(self):
+        # Vítěz nemusí ležet na hrubé mřížce – jemný průchod zkouší i mezi body.
+        vysledky = self._uloha(cena_kwp=14_000.0)
+        nejlepsi_npv = max(r["npv_kc"] for r in vysledky)
+        assert vysledky[0]["npv_kc"] == pytest.approx(nejlepsi_npv)
+        # výsledky jsou seřazené od nejlepší ekonomiky
+        assert vysledky[0]["npv_kc"] >= vysledky[-1]["npv_kc"]

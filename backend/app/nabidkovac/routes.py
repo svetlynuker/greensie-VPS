@@ -710,22 +710,41 @@ def smaz_sazbu(
 
 # ================= Profil spotřeby (načtení z nahraného souboru) =================
 def _profil_souhrn(db: Session, nabidka_id: int) -> dict:
-    """Souhrn načteného 15min profilu nabídky (počet, rozsah, max) pro UI."""
+    """Souhrn načteného 15min profilu nabídky (počet, rozsah, max) pro UI.
+
+    Vedle celého nahraného profilu vrací i to, co se SKUTEČNĚ použije ve
+    výpočtu – ten si profil delší než rok ořízne na posledních 12 celých
+    měsíců (SP-1). Bez toho hlavička panelu tvrdila jinou špičku a jinou
+    roční spotřebu než výsledek (u 15měsíčního exportu 320 vs. 202 kW,
+    resp. 1 210 vs. 964 MWh) – revize 26. 7. 2026.
+    """
     radky = (
         db.query(SpotrebaProfil.cas, SpotrebaProfil.hodnota_kw)
         .filter(SpotrebaProfil.nabidka_id == nabidka_id, SpotrebaProfil.hodnota_kw.isnot(None))
+        .order_by(SpotrebaProfil.cas)
         .all()
     )
     if not radky:
         return {"pocet": 0}
     casy = [r[0] for r in radky]
     hodnoty = [float(r[1]) for r in radky]
-    return {
+    out = {
         "pocet": len(radky),
         "od": _iso(min(casy)),
         "do": _iso(max(casy)),
         "max_kw": round(max(hodnoty), 2),
     }
+    interval_h = _interval_h_z_profilu(casy)
+    p_casy, p_hodnoty, orezano = profil_pokryti.orizni_na_posledni_rok(
+        casy, hodnoty, interval_h, pro_peak_shaving=True
+    )
+    if orezano and p_casy:
+        out["orezano_na_rok"] = True
+        out["pouzito_pocet"] = len(p_casy)
+        out["pouzito_od"] = _iso(min(p_casy))
+        out["pouzito_do"] = _iso(max(p_casy))
+        out["pouzito_max_kw"] = round(max(p_hodnoty), 2)
+    return out
 
 
 @router.get("/nabidky/{nabidka_id}/peak-shaving/profil-souhrn")
@@ -824,12 +843,45 @@ def _najdi_sazbu(
 
 
 def _interval_h_z_profilu(casy: list[datetime]) -> float:
-    """Odvodí délku intervalu (h) z prvních dvou časových značek; fallback 0,25 h."""
-    if len(casy) >= 2:
-        delta = (casy[1] - casy[0]).total_seconds() / 3600.0
-        if delta > 0:
-            return delta
-    return peak_shaving.VYCHOZI_INTERVAL_H
+    """Odvodí délku intervalu (h) z profilu jako MEDIÁN rozdílů sousedních značek.
+
+    Dřív se brala jen první dvojice `casy[1] − casy[0]`. Jedna chybějící (nebo
+    prázdná) hodnota hned na začátku exportu tak dala 0,5 h místo 0,25 h a
+    protože PPA přepočítává kW → kWh právě tímhle číslem, zdvojnásobila se
+    vykázaná roční spotřeba klienta (naměřeno 4 820 → 9 641 MWh), návrh
+    velikosti FVE i strop přetoku – a validace pokrytí to pustila, protože
+    počítá očekávaný počet intervalů z téhož (chybného) čísla.
+
+    Medián je proti jedné díře imunní. Vzorkuje se prvních ~2 000 rozdílů
+    (na 35 tis. řádcích je to dost a je to levné).
+    """
+    if len(casy) < 2:
+        return peak_shaving.VYCHOZI_INTERVAL_H
+    rozdily = [
+        (casy[i + 1] - casy[i]).total_seconds() / 3600.0
+        for i in range(min(len(casy) - 1, 2000))
+    ]
+    kladne = sorted(d for d in rozdily if d > 0)
+    if not kladne:
+        return peak_shaving.VYCHOZI_INTERVAL_H
+    return kladne[len(kladne) // 2]
+
+
+def _mrizka_profilu_ok(casy: list[datetime], interval_h: float) -> float:
+    """Podíl sousedních dvojic, které NEodpovídají odvozené délce intervalu.
+
+    Slouží k upozornění: profil s hodinovými i čtvrthodinovými úseky (nebo
+    s velkým počtem děr) je pořád použitelný, ale čísla z něj jsou méně
+    spolehlivá a OZ o tom má vědět.
+    """
+    if len(casy) < 2 or interval_h <= 0:
+        return 0.0
+    nesedi = sum(
+        1
+        for i in range(len(casy) - 1)
+        if abs((casy[i + 1] - casy[i]).total_seconds() / 3600.0 - interval_h) > 1e-6
+    )
+    return nesedi / (len(casy) - 1)
 
 
 def _zvaliduj_a_orizni_profil(
@@ -864,6 +916,39 @@ def _zvaliduj_a_orizni_profil(
             "Profil byl delší než rok – pro výpočet se použilo posledních 12 celých "
             f"měsíců ({min(casy).strftime('%m/%Y')}–{max(casy).strftime('%m/%Y')})."
         )
+
+    # Nekonzistentní časová mřížka (hodinové i 15min úseky, hodně děr):
+    # délka intervalu se odvozuje medián em, ale čísla jsou pak méně spolehlivá.
+    podil_mimo = _mrizka_profilu_ok(casy, interval_h)
+    if podil_mimo > 0.02:
+        upozorneni.append(
+            f"V profilu má {podil_mimo:.1%} sousedních záznamů jiný odstup než "
+            f"odvozených {interval_h * 60:.0f} min – zkontroluj export "
+            "(nekonzistentní mřížka zkresluje roční součty i špičky)."
+        )
+
+    # Záporné hodnoty = přetok do sítě (zákazník s vlastní FVE) nebo export
+    # se saldem místo odběru. Odběr nemůže být negativní, takže se hodnoty
+    # srovnají na nulu; kdyby jich bylo hodně, jde nejspíš o špatný sloupec
+    # a radši nic nespočítáme, než abychom tiše vyrobili nesmysl (dřív to
+    # dávalo zápornou samospotřebu a podstřelenou úsporu klienta).
+    zaporne = sum(1 for h in hodnoty if h < 0)
+    if zaporne:
+        podil = zaporne / len(hodnoty)
+        if podil > 0.01:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Profil má {podil:.1%} záporných hodnot – vypadá to, že se načetlo "
+                    "saldo (odběr minus dodávka) místo činného odběru. Nahraj sloupec "
+                    "s odběrem („+A [kW]“), ne saldo ani dodávku."
+                ),
+            )
+        hodnoty = [h if h > 0 else 0.0 for h in hodnoty]
+        upozorneni.append(
+            f"Profil obsahoval {zaporne} záporných hodnot (přetok do sítě) – "
+            "pro výpočet se berou jako nulový odběr."
+        )
     return casy, hodnoty, upozorneni
 
 
@@ -877,7 +962,11 @@ def _varianta_json(v: peak_shaving.Varianta) -> dict:
         # Simulace jede na využitelné kapacitě (SOC okno) a se ztrátami (PS-5).
         "vyuzitelna_kapacita_kwh": round(v.vyuzitelna_kapacita_kwh, 3),
         "ucinnost_rt": round(v.ucinnost_rt, 4),
+        # Prodejní cena = investice klienta (jde i do nabídky); nákupní cena
+        # a marže jsou INTERNÍ – v zákaznickém výstupu je whitelist nepustí.
         "cena_celkem_kc": round(v.cena_celkem_kc, 2),
+        "nakupni_cena_celkem_kc": round(v.nakupni_cena_celkem_kc, 2),
+        "marze_kc": round(v.marze_kc, 2),
         # Fyzický strop simulace vs. roční složka optimální RK (PS-6/PS-7).
         "strop_kw": round(v.strop_kw, 2),
         "rezerva_rk_procenta": round(v.rezerva_rk_procenta, 2),
@@ -1043,6 +1132,10 @@ def spocti_peak_shaving(
             # jmenovité hodnoty (viz Baterie).
             uzitna_kapacita_kwh=_num((t.extra or {}).get("uzitna_kapacita_kwh")),
             max_vykon_stridacu_kw=_num((t.extra or {}).get("max_vykon_stridacu_kw")),
+            # Doporučená PRODEJNÍ cena z ceníku – klient investuje ji, ne
+            # naši nákupní (dealer) cenu v `cena_kc`. Chybí-li, spadne se na
+            # nákupní (revize 26. 7. 2026).
+            prodejni_cena_kc=_num((t.extra or {}).get("doporucena_cena_kc")),
         )
         for t in tech
         if float(t.vykon_kw) > 0 and float(t.kapacita_kwh) > 0 and t.cena_kc
@@ -1187,6 +1280,11 @@ def spocti_peak_shaving(
         )
         graf["rp_soucasna_kw"] = round(vstup.rezervovana_kapacita_kw, 2)
         graf["rp_nova_kw"] = round(v.nova_rezervovana_kapacita_kw, 2)
+        # Počet měsíců s dokupem měsíční RK – vysvětluje, proč sloupce
+        # „s baterií“ v některých měsících přesahují čáru „rezervace nová“
+        # (ta je roční složkou kombinace). Bez toho graf v nabídce vypadal,
+        # jako by baterie nestačila (revize 26. 7. 2026).
+        graf["dokupu_mesicu"] = v.ekonomika_2026.get("dokupy_s_baterii_pocet_mesicu")
         vj["graf"] = graf
         # Citlivost stropu na meziroční variabilitu (audit PS-10).
         vj["citlivost_stropu"] = peak_shaving.citlivost_stropu(
@@ -1262,6 +1360,37 @@ def _profil_spotreby_kwh(db: Session, nabidka_id: int) -> tuple[list, list[float
     return casy, spotreba_kwh, interval_h
 
 
+# Indexy a degradace se zadávají jako ZLOMEK (0,03 = 3 %/rok). Pásmo je
+# záměrně široké (i pokles ceny je legitimní), jde jen o záchytku proti
+# zadání v procentech.
+_MEZ_INDEXU = 0.5
+
+
+def _zvaliduj_indexy(vstup: PpaVstup) -> None:
+    """Ohlídá, že indexy nejsou zadané v procentech místo zlomku.
+
+    Zadání „3“ místo „0.03“ znamenalo 300 %/rok: po 15 letech cena PPA
+    590 mld. Kč/MWh a kumulovaná „úspora“ klienta −163 bilionů Kč – a nabídka
+    to bez mrknutí vytiskla (revize 26. 7. 2026).
+    """
+    for hodnota, popis in (
+        (vstup.index_ppa_rocni, "Index PPA"),
+        (vstup.index_dodavatel_rocni, "Index ceny dodavatele"),
+        (vstup.degradace_rocni, "Roční degradace panelů"),
+        (vstup.degradace_rok1, "Degradace prvního roku (LID)"),
+    ):
+        if hodnota is None:
+            continue
+        if not (-_MEZ_INDEXU <= float(hodnota) <= _MEZ_INDEXU):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"{popis} se zadává jako zlomek, ne procenta: {float(hodnota):g} je mimo "
+                    f"rozsah −{_MEZ_INDEXU:g} až {_MEZ_INDEXU:g}. Pro 3 %/rok zadej 0.03."
+                ),
+            )
+
+
 def _ppa_param(nastaveni, klic: str, default: float) -> float:
     """Přečte PPA parametr z manažerského nastavení (JSONB `parametry`) s fallbackem."""
     if nastaveni is not None and nastaveni.parametry:
@@ -1292,13 +1421,27 @@ def ppa_profil_souhrn(
     casy, spotreba_kwh, interval_h = _profil_spotreby_kwh(db, nabidka_id)
     if not casy:
         return {"pocet": 0}
-    return {
+    out = {
         "pocet": len(casy),
         "od": _iso(min(casy)),
         "do": _iso(max(casy)),
         "interval_h": interval_h,
         "rocni_spotreba_mwh": round(sum(spotreba_kwh) / 1000.0, 2),
     }
+    # Roční spotřeba musí odpovídat tomu, s čím počítá výpočet – ten si profil
+    # delší než rok ořízne na 12 celých měsíců (revize 26. 7. 2026; u
+    # 15měsíčního exportu se hlavička a výsledek lišily o 25,6 %).
+    p_casy, p_spotreba, orezano = profil_pokryti.orizni_na_posledni_rok(
+        casy, spotreba_kwh, interval_h
+    )
+    if orezano and p_casy:
+        out["orezano_na_rok"] = True
+        out["pouzito_pocet"] = len(p_casy)
+        out["pouzito_od"] = _iso(min(p_casy))
+        out["pouzito_do"] = _iso(max(p_casy))
+        out["rocni_spotreba_mwh"] = round(sum(p_spotreba) / 1000.0, 2)
+        out["nahrano_celkem_mwh"] = round(sum(spotreba_kwh) / 1000.0, 2)
+    return out
 
 
 @router.post("/nabidky/{nabidka_id}/ppa/vypocet")
@@ -1323,6 +1466,16 @@ def spocti_ppa(
         raise HTTPException(status_code=422, detail="Ruční výkon FVE (kWp) musí být kladný.")
     if vstup.delka_kontraktu_roky <= 0:
         raise HTTPException(status_code=422, detail="Délka kontraktu musí být kladná.")
+    if not (0.0 <= float(vstup.sklon_st) <= 90.0):
+        raise HTTPException(
+            status_code=422,
+            detail="Sklon panelů musí být 0–90° (0 = rovina, 90 = svislá plocha).",
+        )
+    if float(vstup.cena_ppa_kc_mwh) <= 0 or float(vstup.cena_silova_kc_mwh) <= 0:
+        raise HTTPException(
+            status_code=422, detail="PPA cena i silová cena dodavatele musí být kladné."
+        )
+    _zvaliduj_indexy(vstup)
 
     casy, spotreba_kwh, interval_h = _profil_spotreby_kwh(db, nabidka_id)
     if not casy:
@@ -1340,6 +1493,29 @@ def spocti_ppa(
 
     # Manažerské nastavení (defaulty PPA) – aktuální verze.
     nastaveni = db.query(VypoctovaNastaveni).order_by(VypoctovaNastaveni.verze.desc()).first()
+
+    # Rozsah délky kontraktu z manažerského nastavení (METODIKA kap. 4.6 ho
+    # vyžaduje, ale nikdo ho nevynucoval – admin ho vyplnil a výpočet ho
+    # ignoroval, takže prošel i kontrakt delší než životnost FVE).
+    if nastaveni is not None:
+        min_roky = nastaveni.min_delka_kontraktu_roky
+        max_roky = nastaveni.max_delka_kontraktu_roky
+        if min_roky and vstup.delka_kontraktu_roky < int(min_roky):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Délka kontraktu {vstup.delka_kontraktu_roky} let je pod firemním "
+                    f"minimem {int(min_roky)} let (Katalog a výpočty)."
+                ),
+            )
+        if max_roky and vstup.delka_kontraktu_roky > int(max_roky):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Délka kontraktu {vstup.delka_kontraktu_roky} let je nad firemním "
+                    f"maximem {int(max_roky)} let (Katalog a výpočty)."
+                ),
+            )
     cena_fve_kc_kwp = _ppa_param(nastaveni, "ppa_cena_fve_kc_kwp", ppa_fve.VYCHOZI_CENA_FVE_KC_KWP)
     ostatni_kc_kwp = _ppa_param(nastaveni, "ppa_ostatni_naklady_kc_kwp", 0.0)
     # Defaulty ekonomiky investora (audit PPA-6): O&M 350 Kč/kWp/rok,
@@ -1441,6 +1617,18 @@ def spocti_ppa(
             upozorneni.append("V katalogu není použitelný FVE panel – panely nejsou v CAPEX započítány.")
         if not invertory:
             upozorneni.append("V katalogu není použitelný invertor – invertory nejsou v CAPEX započítány.")
+        # BOS (montáž, konstrukce, kabeláž, projekt) tvoří u komerční FVE
+        # ~50–60 % ceny a v katalogu po položkách není. Bez tohoto parametru
+        # vyjde CAPEX ~7 tis. Kč/kWp místo reálných ~18 tis., NPV se nadhodnotí
+        # o miliony a `doporuceno` se překlopí na True – zjednodušený režim
+        # varování měl, komponentový ne (revize 26. 7. 2026).
+        if not ostatni_kc_kwp:
+            upozorneni.append(
+                "Komponentový režim: „ostatní náklady“ (BOS – montáž, konstrukce, "
+                "kabeláž, projekt) nejsou nastavené, takže CAPEX obsahuje jen panely "
+                "a střídače, tj. cca 40–50 % skutečné ceny. Doplň "
+                "`ppa_ostatni_naklady_kc_kwp` v Katalogu a výpočtech."
+            )
 
         def capex_fn(kwp: float):
             return ppa_fve.capex_komponenty(kwp, panely, invertory, ostatni_kc_kwp)
@@ -1509,10 +1697,28 @@ def spocti_ppa(
         vstup_calc = dataclasses.replace(sablona, kwp=kwp, capex_kc=float(capex), capex_rozpad=rozpad)
         vysledek = ppa_fve.spocti_ppa(vstup_calc, casy, spotreba_kwh, [x * kwp for x in base1])
 
+    # Katalogové položky s nesmyslným výkonem (překlep v jednotkách) se do
+    # CAPEX nezapočítaly – ať to OZ vidí, protože jinak by o chybě v katalogu
+    # nevěděl a nabídka by stála na neúplném CAPEX.
+    preskocene = ((vysledek.get("capex_rozpad") or {}).get("preskocene")) or []
+    if preskocene:
+        upozorneni.append(
+            "V katalogu jsou položky s nesmyslným výkonem, do CAPEX se nezapočítaly "
+            f"(zkontroluj jednotky – W vs. kW): {', '.join(preskocene[:5])}."
+        )
+
     if vysledek.get("mira_orezu", 0) >= 0.05:
         upozorneni.append(
             f"Rezervovaný výkon dodávky ořezává {round(vysledek['mira_orezu'] * 100)} % výroby – "
             "část přebytku se nevyužije."
+        )
+    if vysledek.get("optimum_na_hranici"):
+        upozorneni.append(
+            f"Nejlepší ekonomiku má nejmenší (resp. největší) zkoušená velikost "
+            f"{vysledek.get('kwp')} kWp – kritérium „nejvyšší NPV“ tady nemá vnitřní optimum, "
+            "protože každý další kWp se buď vždy vyplatí, nebo nikdy. Velikost je pak daná "
+            "hranicí rozsahu, ne ekonomikou: zadej výkon napevno, nebo uprav cenu za kWp "
+            "a délku kontraktu v Katalogu a výpočtech."
         )
     if navrzeno_automaticky and not vstup.prebytek_uctovat:
         upozorneni.append(
@@ -1537,6 +1743,32 @@ def spocti_ppa(
         upozorneni.append(
             f"PPA cena je ≥ vyhnutelné ceně klienta ({vyhnutelna_cena:g} Kč/MWh) – "
             "klient by na PPA nešetřil nic."
+        )
+
+    # Kontrola CELÉHO horizontu, ne jen roku 1 (revize 26. 7. 2026). Když PPA
+    # cena roste rychleji než cena dodavatele (typicky index dodavatele 0 %),
+    # přeroste ji uprostřed kontraktu a klient začne prodělávat – rok 1 přitom
+    # vypadá dobře, takže dosavadní kontrola to nezachytila. Naměřeno: úspora
+    # v 1. roce +81 tis. Kč, ale kumulovaně za 20 let −961 tis. Kč.
+    roky_vysledku = vysledek.get("roky") or []
+    zaporne_roky = [r["rok"] for r in roky_vysledku if (r.get("uspora_klient_kc") or 0) < 0]
+    if zaporne_roky:
+        upozorneni.append(
+            f"Od roku {zaporne_roky[0]} kontraktu je PPA cena vyšší než vyhnutelná cena "
+            f"klienta – klient by v {len(zaporne_roky)} letech prodělával. Sniž index PPA, "
+            "nebo zvyš index ceny dodavatele."
+        )
+    uspora_kum = (vysledek.get("souhrn_klient") or {}).get("uspora_kum_kc") or 0.0
+    if uspora_kum <= 0:
+        upozorneni.append(
+            f"Kumulovaná úspora klienta za dobu kontraktu je {uspora_kum:,.0f} Kč – "
+            "takhle nabídku klientovi neposílej."
+        )
+    if float(vstup.sklon_st) > ppa_fve.SKLON_KALIBROVANY_MAX:
+        upozorneni.append(
+            f"Sklon {vstup.sklon_st:g}° je nad kalibrovaným rozsahem "
+            f"(PVGIS mřížka končí na {ppa_fve.SKLON_KALIBROVANY_MAX:g}°) – výnos se počítá "
+            "jako pro nejstrmější kalibrovaný sklon, u svislé plochy je proto nadhodnocený."
         )
     if not vysledek.get("doporuceno", True):
         upozorneni.append(

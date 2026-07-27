@@ -169,9 +169,14 @@ JSONB, verzované) → **kódový default** (`ppa_fve.py`). Manažerské klíče
 
 ### Jak výpočet funguje (srozumitelně; detail v technickém souhrnu)
 1. **Simulace výroby.** Roční výnos = `kWp × měrný_výnos × korekce_orientace(azimut, sklon)`.
-   Rozpustí se **po měsících** (kalibrovaná tabulka PVGIS v5.3), měsíc na dny a den na 15min
-   intervaly **clear-sky zvonovinou** ze solární geometrie. Ošetřen letní čas (v létě solární
-   poledne ~13:00 lokálního času). Výroba je lineární v kWp → simuluje se jednou pro 1 kWp a škáluje.
+   Rozpustí se **po měsících podle orientace** (kalibrované tabulky PVGIS v5.3 – zimní půlrok
+   tvoří 23 % výnosu u ploché střechy, 30 % u 35°/jih a 34 % u strmého jihu), měsíc na
+   **kalendářní dny** a den na 15min intervaly podle **úhlu dopadu slunečních paprsků na
+   plochu**. Tvar dne se proto řídí azimutem: špička je u jižního pole ~13:00, u západního
+   ~15:00 a u východního ~11:00 (letní čas ošetřen). Dny měsíce mají různou **jasnost**
+   (jasno / polojasno / zataženo dle klimatologie ČR), takže špičkový výkon vychází ~80 % kWp
+   jako u reálné FVE; měsíční ani roční výnos to nemění. Výroba je lineární v kWp → simuluje
+   se jednou pro 1 kWp a škáluje.
 2. **Spárování se spotřebou** (interval po intervalu): nejdřív **samospotřeba** `min(výroba, spotřeba)`,
    pak **přetok** do sítě omezený rezervovaným výkonem dodávky, zbytek **ořez** (0 Kč), a **dokup**
    toho, co FVE nepokryje.
@@ -251,9 +256,14 @@ frontend/src/
 - **Konstantní spotřeba přes roky** kontraktu je předpoklad v1 (růst/pokles se nezadává). Výnos
   investora je úměrný skutečné samospotřebě – reálné smlouvy to řeší minimálním odběrem / take-or-pay
   (upozornění je vždy ve výstupu).
-- **Simulace výroby je clear-sky model** (bez proměnlivosti počasí) – na měsíční/roční samospotřebu
-  stačí, na 15min špičky hůř. Regionalizace dle GPS zatím není (fallback střed ČR 49,8°); GPS
+- **Simulace výroby má denní proměnlivost počasí** (revize 26. 7. 2026) – dny měsíce se dělí na
+  jasné / polojasné / zatažené, takže špičkový výkon a odhad samospotřeby odpovídají realitě.
+  Dřív byly všechny dny stejné, což samospotřebu (a s ní úsporu klienta i výnos investora)
+  nadhodnocovalo o 2–26 % podle tvaru zátěže a orientace. Rozdělení je deterministické – stejný
+  profil dá vždy stejná čísla. Regionalizace dle GPS zatím není (fallback střed ČR 49,8°); GPS
   ovlivní jen solární geometrii, ne měrný výnos.
+- **Sklon nad 60° je mimo kalibraci** – PVGIS mřížka končí na 60°, u svislé plochy (fasáda,
+  solární plot) je proto výnos nadhodnocený a výpočet na to upozorní.
 - **„Cena dodavatele" = jen silová složka** (distribuce se z porovnání vypouští, platí ji klient tak
   jako tak); k ní se přičtou **vyhnutelné regulované platby**. Daň z elektřiny se nesrovnává
   (symetrická – u výroben > 30 kW jí PPA dodávka podléhá také, plus registrační povinnost investora).

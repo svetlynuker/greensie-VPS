@@ -7,8 +7,11 @@
 
 const MESICE_ZKR = ["led", "úno", "bře", "dub", "kvě", "čvn", "čvc", "srp", "zář", "říj", "lis", "pro"];
 
+// Chybějící hodnota nesmí skončit jako „NaN kW“ – u řešení spočítaných před
+// zavedením klíčů rp_soucasna_kw / rp_nova_kw legenda takhle svítila i
+// v zákaznickém PDF, přestože čáry se (správně) nekreslily.
 function kwLabel(v) {
-  return `${Math.round(v)} kW`;
+  return v == null || Number.isNaN(Number(v)) ? "—" : `${Math.round(v)} kW`;
 }
 
 // Sloupec se zaoblenou horní hranou, ukotvený na základně.
@@ -21,7 +24,17 @@ function topRoundRect(x, y, w, h, r) {
   );
 }
 
-export default function GrafOdberu({ mesice, bezBaterie, sBaterii, rpSoucasna, rpNova }) {
+export default function GrafOdberu({
+  mesice,
+  bezBaterie,
+  sBaterii,
+  rpSoucasna,
+  rpNova,
+  // Kolik měsíců se k roční rezervaci dokupuje měsíční rezervace. Bez toho
+  // vypadá graf jako chyba návrhu: v těch měsících sloupec „s baterií“
+  // cíleně přeroste čáru „rezervace nová“ (roční složku kombinace).
+  dokupuMesicu = null,
+}) {
   const W = 760;
   const H = 260;
   const L = 46;
@@ -58,6 +71,8 @@ export default function GrafOdberu({ mesice, bezBaterie, sBaterii, rpSoucasna, r
             <text x={x0 - 6} y={y(t) + 3} textAnchor="end" fontSize="10" fill="var(--muted)">{t}</text>
           </g>
         ))}
+        {/* Jednotka osy Y – bez ní musel čtenář kW dedukovat z legendy. */}
+        <text x={x0 - 6} y={y0 - 1} textAnchor="end" fontSize="9" fill="var(--muted)">kW</text>
         {/* sloupce po měsících */}
         {mesice.map((m, i) => {
           const gx = x0 + i * gw;
@@ -96,6 +111,13 @@ export default function GrafOdberu({ mesice, bezBaterie, sBaterii, rpSoucasna, r
         {/* základna */}
         <line x1={x0} y1={y1} x2={x1} y2={y1} stroke="var(--c-axis)" strokeWidth="1" opacity="0.4" />
       </svg>
+      {dokupuMesicu ? (
+        <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 4 }}>
+          Ve {dokupuMesicu} nejsilnějších měsících sloupec přesahuje čáru „rezervace nová“ –
+          v nich se k roční rezervaci dokupuje měsíční rezervace, což vychází levněji než
+          držet vysokou rezervaci celý rok.
+        </div>
+      ) : null}
     </div>
   );
 }
