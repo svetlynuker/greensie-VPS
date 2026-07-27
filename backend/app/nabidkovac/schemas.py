@@ -198,6 +198,9 @@ class PeakShavingVstup(BaseModel):
     # roste kapacita s počtem kusů, ale výkon bývá omezen sdíleným/pevným
     # střídačem (PCS). Prázdné = počítá se jen ze štítkového výkonu produktu.
     max_vykon_stridace_kw: Optional[float] = None
+    # Ruční výběr baterií z katalogu (id z `technologie`). Prázdné/None =
+    # počítá se celý dostupný katalog. Zúžení výběr zrychlí a zpřehlední.
+    baterie_ids: Optional[list[int]] = None
 
 
 class VariantaDetailVstup(BaseModel):

@@ -226,7 +226,24 @@ RK s upozorněním, že skutečný RP bývá vyšší.
 
 **Dva scénáře:**
 - **Bez peak shavingu:** `RP` = zadaný rezervovaný příkon (fallback současná RK), `M` = naměřené měsíční maximum z profilu.
-- **S peak shavingem:** `RP` = **stejný** (bez změny smlouvy — přínos baterie je jen na složce „maximální odebraný výkon“, poctivý default); s přepínačem „uvažovat snížení RP“ se dosadí nová RK (jednosměrné rozhodnutí, zpětné navýšení je zpoplatněno dle přílohy 2 vyhlášky č. 16/2016 Sb.). `M` = **měsíční maximum po baterii sražené co nejhlouběji v každém měsíci** (kap. 4.6 „srážej co to dá“).
+- **S peak shavingem:** `RP` = **stejný** (bez změny smlouvy — přínos baterie je jen na složce „maximální odebraný výkon“, poctivý default); s přepínačem „uvažovat snížení RP“ se RP **optimalizuje** (`optimalizuj_rp_2027` nad měsíčními maximy po baterii × faktor rezervy) — jednosměrné rozhodnutí, zpětné navýšení je zpoplatněno dle přílohy 2 vyhlášky č. 16/2016 Sb. `M` = **měsíční maximum po baterii sražené co nejhlouběji v každém měsíci** (kap. 4.6 „srážej co to dá“).
+
+> **Oprava 27. 7. 2026 — symetrie optimalizace RP.** Scénář s baterií dosazoval RP natvrdo
+> na celoroční strop + rezervu, zatímco baseline bez baterie se optimalizovala. Protože
+> `přínos baterie = baseline − scénář s baterií`, byl přínos baterie **systematicky
+> podhodnocený**. Nově se ve scénáři se snížením RP použije tentýž optimalizátor, takže RP
+> smí klesnout i **pod nejvyšší měsíční maximum**, když je penalizace za překročení levnější
+> než 12× kapacitní složka navíc. Snížit RP o 1 kW ušetří `12 × kapacitní sazba` za rok,
+> překročení stojí `sazba_prekroceni` za každý měsíc, kdy nastane → na sazbách ČEZ VN se
+> to v měsících T1 vyplatí, dokud je RP překročeno nejvýš 3× do roka (2 282 / 761), na T2
+> nikdy (273 / 761). Výstup nese `rp_optimalizovan`, `mesicu_s_prekrocenim_rp` a
+> `naklad_prekroceni_rp`; UI to ukazuje řádkem „… z toho vědomé překročení RP" a
+> upozorněním. Bez zaškrtnutého snížení RP se chování nemění.
+>
+> Modelový dopad (profil s jednou zimní špičkou, BESS 300/1320, RP ze smlouvy 1600 kW):
+> RP 1600 → 1082 kW, překročení v 1 měsíci za 227 tis. Kč, ale náklad s PS klesne
+> o 371 tis. Kč/rok → přínos baterie 2027 z **−88 tis.** na **+283 tis. Kč/rok**,
+> návratnost 2027 z 19,8 na 9,8 roku.
 
 > **Klíčová oprava během vývoje:** původně (dle promptu) baterie 2027 srážela jen na jeden roční strop → v letních měsících nedělala nic a úspora vycházela nízká. Přepnuto na per-měsíční srážení `M` dle metodiky 4.6 → úspora 2027 výrazně vyšší. Rezervovaná kapacita zůstává jedna roční hodnota.
 

@@ -542,6 +542,8 @@ def ekonomika_2027(
     interval_h: float = VYCHOZI_INTERVAL_H,
     ucinnost_rt: float = 1.0,
     cena_energie_kc_mwh: float = 0.0,
+    optimalizovat_rp: bool = False,
+    rezerva_rk_procenta: float = 0.0,
 ) -> dict:
     """Ekonomika roku 2027 (nová dvousložková struktura ERÚ, METODIKA kap. 4.6).
 
@@ -551,9 +553,15 @@ def ekonomika_2027(
       protějšek „optimalizace RK bez baterie" z modelu 2026. Přínos baterie se
       pak počítá proti této fér baseline, ne proti (často předimenzovanému)
       současnému RP. Počítá se vždy, informativně.
-    - S peak shavingem: RP = nová (roční, jedna hodnota = min. udržitelný strop pro
-      celý rok), M = měsíční maximum PO baterii, sražené co nejhlouběji v každém
-      měsíci (kap. 4.6 „srážej co to dá“). RP se přes rok nemění – mění se jen M.
+    - S peak shavingem: RP = jedna roční hodnota (v NTS ji nelze měnit po měsících),
+      M = měsíční maximum PO baterii, sražené co nejhlouběji v každém měsíci
+      (kap. 4.6 „srážej co to dá“). RP se přes rok nemění – mění se jen M.
+    - `optimalizovat_rp=True` (scénář se snížením RP): RP se nevolí natvrdo na
+      celoroční strop, ale stejným optimalizátorem jako baseline
+      (`optimalizuj_rp_2027`) nad měsíčními maximy po baterii. RP tedy smí
+      klesnout i pod nejvyšší měsíční maximum, když je penalizace za překročení
+      levnější než 12× kapacitní složka navíc. Bez toho by byla baseline
+      optimalizovaná a scénář s baterií ne → přínos baterie podhodnocený.
 
     Rezervovaný příkon (audit PS-4): RP je hodnota ZE SMLOUVY O PŘIPOJENÍ
     (dlouhodobá, typicky ≥ RK; v lednu 2027 se převezme ze smlouvy) – volající
@@ -598,7 +606,24 @@ def ekonomika_2027(
             vals, strop_m, vykon_kw, kapacita_kwh, interval_h, ucinnost_rt=ucinnost_rt
         )
         nabito_celkem += nabito
-    novy, poc_t1, poc_t2 = _rocni_naklad_2027(nova_rezervovana_kapacita_kw, mesicni_po, parametry)
+    # Volba RP scénáře s baterií. Při snižování RP se hledá optimum stejně jako
+    # u baseline – nad maximy navýšenými o rezervu (strop je z jednoho
+    # historického roku), náklad se ale počítá nad skutečnými maximy.
+    rp_pouzity = nova_rezervovana_kapacita_kw
+    if optimalizovat_rp and mesicni_po:
+        faktor_rezervy = 1.0 + max(0.0, rezerva_rk_procenta) / 100.0
+        _, rp_opt = optimalizuj_rp_2027(
+            {m: v * faktor_rezervy for m, v in mesicni_po.items()}, parametry
+        )
+        rp_pouzity = rp_opt
+
+    novy, poc_t1, poc_t2 = _rocni_naklad_2027(rp_pouzity, mesicni_po, parametry)
+    # Transparentnost: kolik měsíců počítáme s překročením RP a co to stojí.
+    sazba_prekroceni = float(parametry.get("sazba_prekroceni_kc_kw_mesic", 0.0))
+    prekroceni_kw = {
+        m: maximum - rp_pouzity for m, maximum in mesicni_po.items() if maximum > rp_pouzity + 1e-9
+    }
+    naklad_prekroceni_rp = sum(prekroceni_kw.values()) * sazba_prekroceni
     naklad_ztrat = naklad_ztrat_baterie_kc(nabito_celkem, ucinnost_rt, cena_energie_kc_mwh)
 
     novy_naklad_s_baterii = novy + naklad_ztrat
@@ -619,9 +644,13 @@ def ekonomika_2027(
         # RP obou scénářů (audit PS-4): hodnota ze smlouvy o připojení
         # (příp. fallback RK) a RP scénáře s PS (bez/se snížením smlouvy).
         "rp_soucasny_kw": rezervovana_kapacita_kw,
-        "rp_novy_kw": nova_rezervovana_kapacita_kw,
+        "rp_novy_kw": rp_pouzity,
         # Zpětná kompatibilita FE: RP použitý ve scénáři s PS.
-        "rezervovana_kapacita_kw": nova_rezervovana_kapacita_kw,
+        "rezervovana_kapacita_kw": rp_pouzity,
+        # Vědomé překročení RP (RP smí být pod špičkou, když se to vyplatí).
+        "rp_optimalizovan": bool(optimalizovat_rp),
+        "mesicu_s_prekrocenim_rp": len(prekroceni_kw),
+        "naklad_prekroceni_rp": naklad_prekroceni_rp,
         "pocet_mesicu_t1": poc_t1,
         "pocet_mesicu_t2": poc_t2,
         "je_modelovy_odhad": bool(je_modelovy_odhad),
@@ -930,8 +959,10 @@ def spocti_variantu(
     # Rok 2027 (audit PS-4): baseline RP = hodnota ze smlouvy o připojení
     # (fallback = současná RK); scénář s PS drží STEJNÝ RP (přínos jen na
     # složce „maximální odebraný výkon"), snížení RP jen na explicitní přání –
-    # je to jednosměrná změna smlouvy o připojení. Cíl snížení = fyzický strop
-    # + rezerva (v NTS neexistují měsíční dokupy RK).
+    # je to jednosměrná změna smlouvy o připojení. Při snižování se cílové RP
+    # hledá optimalizací (stejně jako baseline), takže smí klesnout i pod
+    # celoroční strop, když je penalizace levnější než kapacitní složka;
+    # v NTS neexistují měsíční dokupy RK, RP se volí jednou na celý rok.
     strop_s_rezervou = novy_strop * (1.0 + max(0.0, rezerva_rk_procenta) / 100.0)
     rp_soucasny = rezervovany_prikon_kw if rezervovany_prikon_kw else rezervovana_kapacita_kw
     rp_novy = strop_s_rezervou if uvazovat_snizeni_rp else rp_soucasny
@@ -947,6 +978,8 @@ def spocti_variantu(
         interval_h,
         ucinnost_rt=ucinnost,
         cena_energie_kc_mwh=cena_energie_kc_mwh,
+        optimalizovat_rp=uvazovat_snizeni_rp,
+        rezerva_rk_procenta=rezerva_rk_procenta,
     )
 
     # Návratnost dle modelu 2027 (jediný model – bez slevy AKU, PS-3).
