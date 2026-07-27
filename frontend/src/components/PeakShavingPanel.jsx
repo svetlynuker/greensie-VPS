@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import GrafOdberu from "./GrafOdberu";
+import GrafPrubehu from "./GrafPrubehu";
 import {
   sazbySeznam,
   peakShavingProfilSouhrn,
+  peakShavingPrubeh,
   peakShavingVariantaDetail,
   peakShavingVypocet,
   profilZpracuj,
@@ -212,6 +214,12 @@ export default function PeakShavingPanel({ nabidka }) {
   const [dopocitava, setDopocitava] = useState(false);
   // Rok zobrazených hodnot (dlaždice, graf, srovnání) – default 2027 (NTS).
   const [rokZobrazeni, setRokZobrazeni] = useState(2027);
+  // Graf průběhu (15min řady) se stahuje zvlášť a až na vyžádání – je to
+  // ~35 tisíc hodnot na variantu a rok. Cache podle varianty a roku.
+  const [prubehOtevren, setPrubehOtevren] = useState(false);
+  const [prubehy, setPrubehy] = useState({});
+  const [prubehNacita, setPrubehNacita] = useState(false);
+  const [prubehChyba, setPrubehChyba] = useState(null);
   // Řazení srovnání variant: klic = null → pořadí ze serveru (dle NPV sestupně).
   const [razeni, setRazeni] = useState({ klic: null, smer: "asc" });
 
@@ -298,6 +306,7 @@ export default function PeakShavingPanel({ nabidka }) {
       setVysledek(r.popis_json);
       setVybranyIdx(0);
       setDopoctene({});
+      setPrubehy({}); // nový výpočet = staré průběhy už neplatí
     } catch (e) {
       setChyba(e.message);
     } finally {
@@ -343,6 +352,30 @@ export default function PeakShavingPanel({ nabidka }) {
   const je2027 = rok === 2027;
   const uspora2027 = ek27?.rocni_uspora_bez_aku ?? ek27?.rocni_uspora;
   const rpNovy2027 = ek27?.rp_novy_kw ?? ek27?.rezervovana_kapacita_kw;
+
+  // Průběh v čase: stáhne se po otevření sekce a pak při každé změně varianty
+  // nebo roku (jiný model = jiná simulace). Jednou stažené se drží v paměti.
+  const prubehKlic = `${vybranyIdx}-${rok}`;
+  const prubeh = prubehy[prubehKlic] || null;
+  useEffect(() => {
+    if (!prubehOtevren || !vysledek || prubehy[prubehKlic]) return undefined;
+    let zruseno = false;
+    setPrubehNacita(true);
+    setPrubehChyba(null);
+    peakShavingPrubeh(nabidka.id, vybranyIdx, rok)
+      .then((d) => {
+        if (!zruseno) setPrubehy((s) => ({ ...s, [prubehKlic]: d }));
+      })
+      .catch((e) => {
+        if (!zruseno) setPrubehChyba(e.message);
+      })
+      .finally(() => {
+        if (!zruseno) setPrubehNacita(false);
+      });
+    return () => {
+      zruseno = true;
+    };
+  }, [prubehOtevren, prubehKlic, vysledek, prubehy, nabidka.id, vybranyIdx, rok]);
 
   // Srovnání variant: bez zvoleného sloupce zůstává pořadí ze serveru (dle NPV
   // sestupně). Každý řádek si nese původní index – ten drží odkaz na variantu
@@ -858,6 +891,64 @@ export default function PeakShavingPanel({ nabidka }) {
                     : "Graf pro tuhle variantu zatím není — spusť „Spočítat peak shaving“ znovu."}
                 </div>
               )}
+
+              {/* Průběh v čase – nitkový graf 15min simulace se zoomem */}
+              <div style={{ marginBottom: 16 }}>
+                <div
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    gap: 10, flexWrap: "wrap", marginBottom: 6,
+                  }}
+                >
+                  <h4 style={{ margin: 0, fontSize: 13 }}>
+                    Průběh v čase{" "}
+                    <span style={{ fontWeight: 400, color: "var(--fm-muted)" }}>
+                      (15min simulace – kdy baterie kryje špičku a kdy se dobíjí)
+                    </span>
+                  </h4>
+                  <button
+                    className="fm-btn"
+                    style={{ padding: "4px 10px", fontSize: 12 }}
+                    onClick={() => setPrubehOtevren((s) => !s)}
+                  >
+                    {prubehOtevren ? "Skrýt průběh" : "Zobrazit průběh v čase"}
+                  </button>
+                </div>
+                {prubehOtevren && (
+                  <>
+                    {prubehChyba && (
+                      <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{prubehChyba}</div>
+                    )}
+                    {!prubeh && prubehNacita && (
+                      <div style={{ fontSize: 12, color: "var(--fm-muted)" }}>
+                        Počítám 15min simulaci celého roku…
+                      </div>
+                    )}
+                    {prubeh && (
+                      <>
+                        {prubehNacita && (
+                          <div style={{ fontSize: 11, color: "var(--fm-muted)" }}>Přepočítávám…</div>
+                        )}
+                        <GrafPrubehu
+                          key={`${prubeh.varianta_index}-${prubeh.rok}`}
+                          data={prubeh}
+                          popisRoku={
+                            prubeh.rok === 2027
+                              ? "Model 2027: baterie sráží špičku v každém měsíci tak hluboko, jak to zvládne (platí se za měsíční maximum)."
+                              : "Model 2026: baterie drží jeden roční strop, na který je nasmlouvaná rezervovaná kapacita."
+                          }
+                        />
+                        <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 6 }}>
+                          Za rok baterie dodala {prubeh.souhrn?.vybito_kwh?.toLocaleString("cs-CZ")} kWh,
+                          ze sítě si na to vzala {prubeh.souhrn?.nabito_kwh?.toLocaleString("cs-CZ")} kWh
+                          (ztráty cyklováním {prubeh.souhrn?.ztraty_kwh?.toLocaleString("cs-CZ")} kWh).
+                          Špička odběru {kw(prubeh.souhrn?.max_odber_kw)} → ze sítě {kw(prubeh.souhrn?.max_site_kw)}.
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
 
               {citlivost && (
                 <div style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 14px" }}>

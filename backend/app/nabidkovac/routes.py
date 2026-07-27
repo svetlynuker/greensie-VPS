@@ -13,7 +13,7 @@ from typing import Optional
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -956,10 +956,14 @@ def _varianta_json(v: peak_shaving.Varianta) -> dict:
     }
 
 
-def _profil_pro_peak_shaving(
+def _profil_pro_peak_shaving_s_casy(
     db: Session, nabidka_id: int
-) -> tuple[list[float], list[int], float, list[str]]:
-    """Načte 15min profil nabídky pro peak shaving → (kW, měsíce, interval_h, upozornění)."""
+) -> tuple[list[datetime], list[float], float, list[str]]:
+    """Jako `_profil_pro_peak_shaving`, ale vrací i časové značky.
+
+    Ekonomice stačí čísla měsíců, graf průběhu ale potřebuje přesný čas každého
+    intervalu (osa X, proklik na událost) – proto tahle varianta.
+    """
     radky = (
         db.query(SpotrebaProfil)
         .filter(
@@ -985,7 +989,15 @@ def _profil_pro_peak_shaving(
     casy_profilu, profil_kw, upozorneni_profilu = _zvaliduj_a_orizni_profil(
         casy_profilu, profil_kw, interval_h, pro_peak_shaving=True
     )
-    return profil_kw, [c.month for c in casy_profilu], interval_h, upozorneni_profilu
+    return casy_profilu, profil_kw, interval_h, upozorneni_profilu
+
+
+def _profil_pro_peak_shaving(
+    db: Session, nabidka_id: int
+) -> tuple[list[float], list[int], float, list[str]]:
+    """Načte 15min profil nabídky pro peak shaving → (kW, měsíce, interval_h, upozornění)."""
+    casy, profil_kw, interval_h, upozorneni = _profil_pro_peak_shaving_s_casy(db, nabidka_id)
+    return profil_kw, [c.month for c in casy], interval_h, upozorneni
 
 
 # Kolika nejlepším variantám se graf + citlivost počítá rovnou při výpočtu.
@@ -1399,6 +1411,155 @@ def dopocti_variantu(
     db.commit()
 
     return {"index": vstup.index, **detail}
+
+
+# ---------------- průběh v čase (nitkový graf 15min simulace) ----------------
+def _useky_stropu(stropy_kw: list[float]) -> list[dict]:
+    """Slepí strop po intervalech do souvislých úseků (model 2027 sráží po měsících).
+
+    Frontend z toho kreslí schodovitou čáru stropu bez toho, aby musel dostat
+    35 040 čísel navíc.
+    """
+    useky: list[dict] = []
+    for i, s in enumerate(stropy_kw):
+        if useky and abs(useky[-1]["strop_kw"] - s) < 1e-6:
+            useky[-1]["do_index"] = i
+        else:
+            useky.append({"od_index": i, "do_index": i, "strop_kw": round(s, 2)})
+    return useky
+
+
+@router.get("/nabidky/{nabidka_id}/peak-shaving/prubeh")
+def peak_shaving_prubeh(
+    nabidka_id: int,
+    varianta: int = Query(0, ge=0, description="Pořadí varianty ve výsledku (0 = doporučená)"),
+    rok: int = Query(2026, description="Model 2026 (roční strop) nebo 2027 (srážení po měsících)"),
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Rozepsaná 15min simulace pro nitkový graf průběhu (odběr / síť / baterie / SOC).
+
+    Do uloženého řešení se průběh neukládá – je to ~35 tisíc hodnot na variantu
+    a rok, takže by JSONB nabídky nafoukl. Počítá se na vyžádání (jedna
+    simulace nad profilem ≈ desetiny sekundy) ze stejné fyziky jako ekonomika
+    (`peak_shaving._krok_simulace`), aby se čísla v grafu a v tabulkách
+    nemohla rozejít.
+
+    Model se řídí přepínačem roku ve výsledku:
+    - 2026 – baterie drží jeden roční strop (kap. 4.3),
+    - 2027 – v každém měsíci sráží špičku, jak hluboko to jde (kap. 4.6).
+    """
+    reseni = (
+        db.query(NavrhovaneReseni)
+        .filter(
+            NavrhovaneReseni.nabidka_id == nabidka_id,
+            NavrhovaneReseni.typ_reseni == "peak_shaving",
+        )
+        .order_by(NavrhovaneReseni.id.desc())
+        .first()
+    )
+    if reseni is None:
+        raise HTTPException(status_code=404, detail="Nabídka nemá spočítaný peak shaving.")
+
+    popis = dict(reseni.popis_json or {})
+    varianty = list(popis.get("varianty") or [])
+    if not 0 <= varianta < len(varianty):
+        raise HTTPException(status_code=422, detail="Varianta s tímhle pořadím ve výsledku není.")
+    vj = dict(varianty[varianta])
+    if any(vj.get(k) is None for k in ("celkovy_vykon_kw", "vyuzitelna_kapacita_kwh", "strop_kw")):
+        raise HTTPException(
+            status_code=422,
+            detail="Tenhle výsledek je ze starší verze výpočtu – spusť „Spočítat peak shaving“ znovu.",
+        )
+
+    casy, profil_kw, interval_h, upozorneni = _profil_pro_peak_shaving_s_casy(db, nabidka_id)
+    mesice = [c.month for c in casy]
+    vykon = float(vj["celkovy_vykon_kw"])
+    kapacita = float(vj["vyuzitelna_kapacita_kwh"])
+    ucinnost = float(vj.get("ucinnost_rt") or peak_shaving.VYCHOZI_UCINNOST_RT)
+
+    # Strop(y), na kterých simulace jede – přesně dle modelu zvoleného roku.
+    # 2027 sráží každý měsíc zvlášť (a i simulaci startuje po měsících, stejně
+    # jako ekonomika), 2026 drží jeden roční strop přes celý rok.
+    if rok == 2027:
+        stropy_mesicu = peak_shaving.mesicni_maxima_po_baterii(
+            profil_kw, mesice, vykon, kapacita, interval_h, ucinnost
+        )
+        p = peak_shaving.prubeh_po_mesicich(
+            profil_kw, mesice, stropy_mesicu, vykon, kapacita, interval_h, ucinnost
+        )
+    else:
+        p = peak_shaving.prubeh_baterie(
+            profil_kw, float(vj["strop_kw"]), vykon, kapacita, interval_h, ucinnost
+        )
+
+    vstup = popis.get("vstup") or {}
+    rk_soucasna = _num(vstup.get("rezervovana_kapacita_kw"))
+    ek27 = vj.get("ekonomika_2027") or {}
+    if rok == 2027:
+        rk_nova = _num(ek27.get("rp_novy_kw")) if ek27.get("status") == "spocitano" else None
+        rk_soucasna_ref = _num(ek27.get("rp_soucasny_kw")) or rk_soucasna
+        popisek_soucasna = "rezervovaný příkon nyní"
+        popisek_nova = "rezervovaný příkon po instalaci"
+    else:
+        rk_nova = _num(vj.get("nova_rezervovana_kapacita_kw"))
+        rk_soucasna_ref = rk_soucasna
+        popisek_soucasna = "sjednaná rezervace nyní"
+        popisek_nova = "nová rezervovaná kapacita"
+
+    udalosti = peak_shaving.udalosti_prubehu(
+        profil_kw,
+        p["site_kw"],
+        p["baterie_kw"],
+        p["soc_pct"],
+        mesice,
+        interval_h,
+        rk_soucasna_kw=rk_soucasna_ref,
+        rk_nova_kw=rk_nova,
+    )
+    for u in udalosti:
+        u["cas"] = _iso(casy[u["index"]])
+
+    zaklad = casy[0]
+    ztraty_kwh = p["nabito_kwh"] * (1.0 - ucinnost)
+    return {
+        "varianta_index": varianta,
+        "rok": rok,
+        "varianta": {
+            "nazev": vj.get("nazev"),
+            "pocet_kusu": vj.get("pocet_kusu"),
+            "celkovy_vykon_kw": vj.get("celkovy_vykon_kw"),
+            "celkova_kapacita_kwh": vj.get("celkova_kapacita_kwh"),
+            "vyuzitelna_kapacita_kwh": vj.get("vyuzitelna_kapacita_kwh"),
+            "ucinnost_rt": round(ucinnost, 4),
+        },
+        # Osa X: základ + offsety v minutách (drží se i při dírách a přechodu času).
+        "od": _iso(zaklad),
+        "do": _iso(casy[-1]),
+        "interval_min": round(interval_h * 60),
+        "pocet": len(profil_kw),
+        "casy_min": [int(round((c - zaklad).total_seconds() / 60)) for c in casy],
+        "odber_kw": [round(x, 2) for x in profil_kw],
+        "site_kw": [round(x, 2) for x in p["site_kw"]],
+        "baterie_kw": [round(x, 2) for x in p["baterie_kw"]],
+        "soc_pct": [round(x, 1) for x in p["soc_pct"]],
+        "useky_stropu": _useky_stropu(p["stropy_kw"]),
+        "referencni": {
+            "rk_soucasna_kw": round(rk_soucasna_ref, 2) if rk_soucasna_ref else None,
+            "rk_nova_kw": round(rk_nova, 2) if rk_nova else None,
+            "popisek_soucasna": popisek_soucasna,
+            "popisek_nova": popisek_nova,
+        },
+        "souhrn": {
+            "nabito_kwh": round(p["nabito_kwh"], 1),
+            "vybito_kwh": round(p["vybito_kwh"], 1),
+            "ztraty_kwh": round(ztraty_kwh, 1),
+            "max_odber_kw": round(max(profil_kw), 2) if profil_kw else None,
+            "max_site_kw": round(max(p["site_kw"]), 2) if p["site_kw"] else None,
+        },
+        "udalosti": udalosti,
+        "upozorneni": upozorneni,
+    }
 
 
 # ================= PPA pro FVE – výpočet (METODIKA-ppa-fve.md kap. 4–5) =================

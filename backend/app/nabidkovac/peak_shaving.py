@@ -199,6 +199,35 @@ def min_udrzitelny_strop(
     return horni
 
 
+def _krok_simulace(
+    odber_kw: float,
+    strop_kw: float,
+    soc_kwh: float,
+    vykon_kw: float,
+    kapacita_kwh: float,
+    interval_h: float,
+    eta: float,
+) -> tuple[float, float, float]:
+    """Jeden interval simulace → (nabito_ac_kwh, vybito_ac_kwh, nový SOC v kWh).
+
+    Jediné místo, kde je popsaná fyzika kap. 4.2 + ztráty (PS-5): nad stropem
+    baterie dodává `min(odběr − T, výkon)` a ze zásoby ubývá `dodávka/η_dis`,
+    pod stropem se dobíjí z rezervy `T − odběr` (max. výkonem a volnou
+    kapacitou) a uloží se `příkon × η_ch`. Sdílejí ho `energie_pri_stropu`
+    i `prubeh_baterie`, aby se čísla v grafech nemohla rozejít s ekonomikou.
+    """
+    if odber_kw > strop_kw:
+        dodavka = min(odber_kw - strop_kw, _max_udrzitelny_vyboj(soc_kwh, vykon_kw, interval_h, eta))
+        e_ac = dodavka * interval_h
+        soc_kwh = soc_kwh - (e_ac / eta if eta > 0 else soc_kwh)
+        return 0.0, e_ac, soc_kwh
+    rezerva = min(strop_kw - odber_kw, vykon_kw)
+    # Odběr ze sítě omezí volná kapacita (uloží se jen η_ch podílu).
+    e_ac = min(rezerva * interval_h, (kapacita_kwh - soc_kwh) / eta if eta > 0 else 0.0)
+    soc_kwh = min(kapacita_kwh, soc_kwh + e_ac * eta)
+    return e_ac, 0.0, soc_kwh
+
+
 def energie_pri_stropu(
     profil_kw: list[float],
     strop_kw: float,
@@ -222,20 +251,133 @@ def energie_pri_stropu(
     nabito = 0.0
     vybito = 0.0
     for odber in profil_kw:
-        if odber > strop_kw:
-            dodavka = min(
-                odber - strop_kw, _max_udrzitelny_vyboj(soc, vykon_kw, interval_h, eta)
-            )
-            e_ac = dodavka * interval_h
-            soc -= e_ac / eta if eta > 0 else soc
-            vybito += e_ac
-        else:
-            rezerva = min(strop_kw - odber, vykon_kw)
-            # Odběr ze sítě omezí volná kapacita (uloží se jen η_ch podílu).
-            e_ac = min(rezerva * interval_h, (kapacita_kwh - soc) / eta if eta > 0 else 0.0)
-            soc = min(kapacita_kwh, soc + e_ac * eta)
-            nabito += e_ac
+        n, v, soc = _krok_simulace(
+            odber, strop_kw, soc, vykon_kw, kapacita_kwh, interval_h, eta
+        )
+        nabito += n
+        vybito += v
     return (nabito, vybito)
+
+
+def prubeh_baterie(
+    profil_kw: list[float],
+    stropy_kw: float | list[float],
+    vykon_kw: float,
+    kapacita_kwh: float,
+    interval_h: float = VYCHOZI_INTERVAL_H,
+    ucinnost_rt: float = 1.0,
+    pocatecni_soc_kwh: float | None = None,
+) -> dict:
+    """Rozepíše simulaci interval po intervalu (podklad pro nitkový graf průběhu).
+
+    Stejná fyzika jako `energie_pri_stropu` (sdílený `_krok_simulace`), jen se
+    místo součtů zapisuje každý krok:
+
+    - `baterie_kw` – kladné = baterie vybíjí (kryje špičku), záporné = nabíjí se
+      ze sítě. Nula = baterie nic nedělá (plná a odběr pod stropem).
+    - `site_kw` – co v tom intervalu opravdu teče z přípojky: odběr − vybíjení
+      + nabíjení. Nad stropem se drží jen tam, kde baterii došla energie.
+    - `soc_kwh` / `soc_pct` – stav nabití (z využitelné kapacity, se kterou
+      simulace pracuje – ne z jmenovité).
+
+    `stropy_kw` je buď jedno číslo (roční strop, model 2026), nebo hodnota
+    pro každý interval zvlášť (model 2027 sráží každý měsíc jinak hluboko).
+    """
+    n = len(profil_kw)
+    if isinstance(stropy_kw, (int, float)):
+        stropy = [float(stropy_kw)] * n
+    else:
+        stropy = [float(x) for x in stropy_kw]
+        if len(stropy) != n:
+            raise ValueError("Počet stropů musí odpovídat délce profilu.")
+
+    if vykon_kw <= 0 or kapacita_kwh <= 0:
+        # Bez baterie je průběh triviální – síť = odběr, baterie stojí.
+        return {
+            "site_kw": list(profil_kw),
+            "baterie_kw": [0.0] * n,
+            "soc_kwh": [0.0] * n,
+            "soc_pct": [0.0] * n,
+            "stropy_kw": stropy,
+            "nabito_kwh": 0.0,
+            "vybito_kwh": 0.0,
+        }
+
+    eta = _eta_jednosmerna(ucinnost_rt)
+    soc = kapacita_kwh if pocatecni_soc_kwh is None else pocatecni_soc_kwh
+    site: list[float] = []
+    baterie: list[float] = []
+    soc_kwh: list[float] = []
+    soc_pct: list[float] = []
+    nabito_celkem = 0.0
+    vybito_celkem = 0.0
+    for odber, strop in zip(profil_kw, stropy):
+        nabito, vybito, soc = _krok_simulace(
+            odber, strop, soc, vykon_kw, kapacita_kwh, interval_h, eta
+        )
+        nabito_celkem += nabito
+        vybito_celkem += vybito
+        # Z energie za interval zpět na okamžitý výkon (kW) – to je, co graf kreslí.
+        vykon_baterie = (vybito - nabito) / interval_h if interval_h > 0 else 0.0
+        baterie.append(vykon_baterie)
+        site.append(odber - vykon_baterie)
+        soc_kwh.append(soc)
+        soc_pct.append(100.0 * soc / kapacita_kwh if kapacita_kwh > 0 else 0.0)
+    return {
+        "site_kw": site,
+        "baterie_kw": baterie,
+        "soc_kwh": soc_kwh,
+        "soc_pct": soc_pct,
+        "stropy_kw": stropy,
+        "nabito_kwh": nabito_celkem,
+        "vybito_kwh": vybito_celkem,
+    }
+
+
+def prubeh_po_mesicich(
+    profil_kw: list[float],
+    mesice: list[int],
+    stropy_mesicu: dict[int, float],
+    vykon_kw: float,
+    kapacita_kwh: float,
+    interval_h: float = VYCHOZI_INTERVAL_H,
+    ucinnost_rt: float = 1.0,
+) -> dict:
+    """Průběh pro model 2027: každý měsíc vlastní strop a vlastní start simulace.
+
+    Ekonomika 2027 (`ekonomika_2027`) počítá každý měsíc samostatně – hledá
+    v něm nejnižší udržitelný strop se startem od plné baterie. Graf průběhu
+    musí simulovat stejně, jinak by v prvních hodinách měsíce ukazoval
+    překročení stropu, které v ekonomice není (baterie by do měsíce vstupovala
+    vybitá z konce předchozího). Proto se profil rozseká na souvislé měsíční
+    úseky a každý se odsimuluje zvlášť.
+    """
+    if not profil_kw:
+        return prubeh_baterie([], 0.0, vykon_kw, kapacita_kwh, interval_h, ucinnost_rt)
+
+    vysledek = {
+        "site_kw": [], "baterie_kw": [], "soc_kwh": [], "soc_pct": [], "stropy_kw": [],
+        "nabito_kwh": 0.0, "vybito_kwh": 0.0,
+    }
+    zacatek = 0
+    for i in range(1, len(profil_kw) + 1):
+        if i < len(profil_kw) and mesice[i] == mesice[zacatek]:
+            continue
+        m = mesice[zacatek]
+        cast = prubeh_baterie(
+            profil_kw[zacatek:i],
+            stropy_mesicu.get(m, max(profil_kw[zacatek:i])),
+            vykon_kw,
+            kapacita_kwh,
+            interval_h,
+            ucinnost_rt,
+        )
+        for klic in ("site_kw", "baterie_kw", "soc_kwh", "soc_pct", "stropy_kw"):
+            vysledek[klic].extend(cast[klic])
+        vysledek["nabito_kwh"] += cast["nabito_kwh"]
+        vysledek["vybito_kwh"] += cast["vybito_kwh"]
+        zacatek = i
+    return vysledek
 
 
 # ------------------------------------------------- měsíční agregace profilu
@@ -719,6 +861,149 @@ def graf_maxima(
         "s_baterii_2026_kw": [round(min(raw[m], rocni_strop_kw), 2) for m in ms],
         "s_baterii_2027_kw": [round(per_mesic[m], 2) for m in ms],
     }
+
+
+# ------------------------------------------------- události v průběhu roku
+# Kategorie událostí (řídí filtry v grafu průběhu na frontendu).
+KATEGORIE_UDALOSTI = ("spicka", "sedlo", "baterie", "prekroceni")
+
+
+def _index_extremu(hodnoty: list[float], indexy: list[int], nejvyssi: bool) -> int | None:
+    """Index (do celého profilu) největší/nejmenší hodnoty ze zadané podmnožiny."""
+    if not indexy:
+        return None
+    if nejvyssi:
+        return max(indexy, key=lambda i: hodnoty[i])
+    return min(indexy, key=lambda i: hodnoty[i])
+
+
+def udalosti_prubehu(
+    profil_kw: list[float],
+    site_kw: list[float],
+    baterie_kw: list[float],
+    soc_pct: list[float],
+    mesice: list[int],
+    interval_h: float = VYCHOZI_INTERVAL_H,
+    rk_soucasna_kw: float | None = None,
+    rk_nova_kw: float | None = None,
+) -> list[dict]:
+    """Vypíchne z průběhu momenty, které stojí za prohlédnutí v grafu.
+
+    Vrací seznam značek s indexem do profilu – frontend si k indexu dohledá čas
+    a umí na událost skočit (zoom na daný okamžik). Kategorie:
+
+    - `spicka` – roční a měsíční maxima odběru (bez baterie i po baterii; po
+      baterii je to hodnota, za kterou se v daném měsíci platí),
+    - `sedlo` – roční a měsíční minima odběru,
+    - `baterie` – nejsilnější vybití/nabití, nejnižší stav nabití, nejdelší
+      souvislé vybíjení,
+    - `prekroceni` – nejvyšší překročení sjednané rezervované kapacity
+      (nejdražší okamžiky roku, každý měsíc nejvýš jednou).
+    """
+    n = len(profil_kw)
+    if n == 0:
+        return []
+    vse = list(range(n))
+    po_mesicich: dict[int, list[int]] = {}
+    for i, m in enumerate(mesice):
+        po_mesicich.setdefault(m, []).append(i)
+
+    ud: list[dict] = []
+
+    def pridej(index, typ, kategorie, uroven, popis, hodnota, jednotka="kW", mesic=None):
+        if index is None:
+            return
+        ud.append(
+            {
+                "index": int(index),
+                "typ": typ,
+                "kategorie": kategorie,
+                "uroven": uroven,
+                "mesic": mesic,
+                "popis": popis,
+                "hodnota": round(float(hodnota), 2),
+                "jednotka": jednotka,
+            }
+        )
+
+    # ---- rok
+    i_max = _index_extremu(profil_kw, vse, True)
+    pridej(i_max, "max_rok_bez", "spicka", "rok", "Roční špička odběru (bez baterie)", profil_kw[i_max])
+    i_max_site = _index_extremu(site_kw, vse, True)
+    pridej(i_max_site, "max_rok_sit", "spicka", "rok", "Roční špička odběru ze sítě (s baterií)", site_kw[i_max_site])
+    i_min = _index_extremu(profil_kw, vse, False)
+    pridej(i_min, "min_rok", "sedlo", "rok", "Nejnižší odběr v roce", profil_kw[i_min])
+
+    # ---- baterie
+    i_vyboj = _index_extremu(baterie_kw, vse, True)
+    if i_vyboj is not None and baterie_kw[i_vyboj] > 0:
+        pridej(i_vyboj, "max_vyboj", "baterie", "rok", "Nejsilnější vybíjení baterie", baterie_kw[i_vyboj])
+    i_nabij = _index_extremu(baterie_kw, vse, False)
+    if i_nabij is not None and baterie_kw[i_nabij] < 0:
+        pridej(i_nabij, "max_nabijeni", "baterie", "rok", "Nejsilnější nabíjení baterie", -baterie_kw[i_nabij])
+    i_soc = _index_extremu(soc_pct, vse, False)
+    if i_soc is not None:
+        pridej(i_soc, "min_soc", "baterie", "rok", "Nejhlubší vybití baterie (nejmenší rezerva)", soc_pct[i_soc], "%")
+
+    # Nejdelší souvislé vybíjení – ukazuje, jak dlouhou špičku musí baterie utáhnout.
+    nejdelsi_od = nejdelsi_delka = 0
+    zacatek = None
+    for i in range(n + 1):
+        vybiji = i < n and baterie_kw[i] > 1e-9
+        if vybiji and zacatek is None:
+            zacatek = i
+        elif not vybiji and zacatek is not None:
+            if i - zacatek > nejdelsi_delka:
+                nejdelsi_delka = i - zacatek
+                nejdelsi_od = zacatek
+            zacatek = None
+    if nejdelsi_delka > 1:
+        energie = sum(baterie_kw[nejdelsi_od : nejdelsi_od + nejdelsi_delka]) * interval_h
+        energie_txt = f"{energie:,.0f}".replace(",", " ")  # oddělovač tisíců
+        ud.append(
+            {
+                "index": nejdelsi_od,
+                "typ": "nejdelsi_vyboj",
+                "kategorie": "baterie",
+                "uroven": "rok",
+                "mesic": None,
+                "popis": (
+                    f"Nejdelší souvislé vybíjení – {nejdelsi_delka * interval_h:g} h, {energie_txt} kWh"
+                ),
+                "hodnota": round(nejdelsi_delka * interval_h, 2),
+                "jednotka": "h",
+                "delka_intervalu": nejdelsi_delka,
+            }
+        )
+
+    # ---- měsíce
+    for m in sorted(po_mesicich):
+        idx = po_mesicich[m]
+        i_mb = _index_extremu(profil_kw, idx, True)
+        pridej(i_mb, "max_mesic_bez", "spicka", "mesic", "Měsíční maximum odběru (bez baterie)", profil_kw[i_mb], mesic=m)
+        i_ms = _index_extremu(site_kw, idx, True)
+        pridej(
+            i_ms, "max_mesic_sit", "spicka", "mesic",
+            "Měsíční maximum ze sítě (platí se za něj)", site_kw[i_ms], mesic=m,
+        )
+        i_mn = _index_extremu(profil_kw, idx, False)
+        pridej(i_mn, "min_mesic", "sedlo", "mesic", "Měsíční minimum odběru", profil_kw[i_mn], mesic=m)
+        # Nejvyšší překročení sjednané RK po baterii (co ještě zbývá zaplatit).
+        if rk_soucasna_kw and i_ms is not None and site_kw[i_ms] > rk_soucasna_kw + 1e-9:
+            pridej(
+                i_ms, "prekroceni_rk", "prekroceni", "mesic",
+                f"Překročení sjednané kapacity o {site_kw[i_ms] - rk_soucasna_kw:.1f} kW",
+                site_kw[i_ms], mesic=m,
+            )
+        elif rk_nova_kw and i_ms is not None and site_kw[i_ms] > rk_nova_kw + 1e-9:
+            pridej(
+                i_ms, "prekroceni_nova_rk", "prekroceni", "mesic",
+                f"Nad novou rezervací o {site_kw[i_ms] - rk_nova_kw:.1f} kW",
+                site_kw[i_ms], mesic=m,
+            )
+
+    ud.sort(key=lambda x: x["index"])
+    return ud
 
 
 # ---------------------------------------------- výběr varianty (kap. 4.5)

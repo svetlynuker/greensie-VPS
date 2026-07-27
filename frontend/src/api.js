@@ -277,6 +277,14 @@ export function peakShavingVariantaDetail(nabidkaId, index) {
   });
 }
 
+// Rozepsaná 15min simulace pro nitkový graf průběhu (odběr / síť / baterie /
+// SOC + události). Do uloženého řešení se neukládá – počítá se na vyžádání.
+export function peakShavingPrubeh(nabidkaId, index, rok) {
+  return zavolej(
+    `/nabidkovac/nabidky/${nabidkaId}/peak-shaving/prubeh?varianta=${index}&rok=${rok}`
+  );
+}
+
 export function peakShavingProfilSouhrn(nabidkaId) {
   return zavolej(`/nabidkovac/nabidky/${nabidkaId}/peak-shaving/profil-souhrn`);
 }

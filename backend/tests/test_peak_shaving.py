@@ -742,3 +742,164 @@ class TestKatalogoveParametry:
     def test_ac_strop_rovny_jmenovitemu_nema_vliv(self):
         v = self._varianta(2, max_vykon_stridacu_kw=60.0)
         assert v.celkovy_vykon_kw == 120.0
+
+
+# ------------------------------------------- průběh v čase (nitkový graf)
+class TestPrubehBaterie:
+    """Rozepsaná 15min simulace – podklad pro graf průběhu.
+
+    Klíčové je, aby se nerozešla s ekonomikou: sdílí `_krok_simulace`
+    s `energie_pri_stropu`, takže součty musí sedět na haléř.
+    """
+
+    # Špičkový profil: dvě hodiny nad stropem, zbytek hluboko pod ním.
+    PROFIL = [50.0] * 8 + [180.0] * 8 + [50.0] * 8 + [200.0] * 8 + [40.0] * 8
+
+    def test_soucty_sedi_s_energie_pri_stropu(self):
+        strop = 120.0
+        nabito, vybito = ps.energie_pri_stropu(self.PROFIL, strop, 100.0, 200.0, 0.25, ucinnost_rt=0.88)
+        p = ps.prubeh_baterie(self.PROFIL, strop, 100.0, 200.0, 0.25, ucinnost_rt=0.88)
+        assert p["nabito_kwh"] == pytest.approx(nabito)
+        assert p["vybito_kwh"] == pytest.approx(vybito)
+
+    def test_energeticka_bilance_site(self):
+        # Co teče z přípojky = odběr − vybíjení + nabíjení (po intervalech).
+        p = ps.prubeh_baterie(self.PROFIL, 120.0, 100.0, 200.0, 0.25, ucinnost_rt=0.88)
+        for odber, site, bat in zip(self.PROFIL, p["site_kw"], p["baterie_kw"]):
+            assert site == pytest.approx(odber - bat)
+        odebrano = sum(p["site_kw"]) * 0.25
+        spotreba = sum(self.PROFIL) * 0.25
+        assert odebrano == pytest.approx(spotreba - p["vybito_kwh"] + p["nabito_kwh"])
+
+    def test_udrzitelny_strop_se_v_prubehu_neprekroci(self):
+        strop = ps.min_udrzitelny_strop(self.PROFIL, 100.0, 200.0, 0.25, 0.88)
+        p = ps.prubeh_baterie(self.PROFIL, strop, 100.0, 200.0, 0.25, ucinnost_rt=0.88)
+        assert max(p["site_kw"]) <= strop + 1e-6
+
+    def test_prilis_nizky_strop_se_v_grafu_projevi_prekrocenim(self):
+        # Baterie nestačí → graf poctivě ukáže, že síť jde nad strop.
+        p = ps.prubeh_baterie(self.PROFIL, 60.0, 20.0, 20.0, 0.25, ucinnost_rt=0.88)
+        assert max(p["site_kw"]) > 60.0
+
+    def test_soc_zustava_v_mezich(self):
+        p = ps.prubeh_baterie(self.PROFIL, 120.0, 100.0, 200.0, 0.25, ucinnost_rt=0.88)
+        assert min(p["soc_kwh"]) >= -1e-9
+        assert max(p["soc_kwh"]) <= 200.0 + 1e-9
+        assert min(p["soc_pct"]) >= -1e-9
+        assert max(p["soc_pct"]) <= 100.0 + 1e-9
+
+    def test_znamenko_vykonu_baterie(self):
+        # Nad stropem baterie dodává (+), pod stropem se nabíjí (−).
+        p = ps.prubeh_baterie(self.PROFIL, 120.0, 100.0, 200.0, 0.25, ucinnost_rt=0.88)
+        assert p["baterie_kw"][8] > 0  # první interval špičky – baterie dodává
+        assert p["baterie_kw"][0] == 0.0  # simulace startuje s plnou baterií, nemá co dobírat
+        assert p["baterie_kw"][16] < 0  # po špičce se pod stropem dobíjí
+        assert all(b <= 0 for b, o in zip(p["baterie_kw"], self.PROFIL) if o <= 120.0)
+
+    def test_stropy_po_intervalech(self):
+        # Model 2027 sráží každý měsíc jinak – strop se předává po intervalech.
+        stropy = [120.0] * 20 + [150.0] * 20
+        p = ps.prubeh_baterie(self.PROFIL, stropy, 100.0, 200.0, 0.25, ucinnost_rt=0.88)
+        assert p["stropy_kw"] == stropy
+
+    def test_spatny_pocet_stropu_je_chyba(self):
+        with pytest.raises(ValueError):
+            ps.prubeh_baterie(self.PROFIL, [120.0, 130.0], 100.0, 200.0, 0.25)
+
+    def test_bez_baterie_je_prubeh_totozny_s_profilem(self):
+        p = ps.prubeh_baterie(self.PROFIL, 120.0, 0.0, 0.0, 0.25)
+        assert p["site_kw"] == self.PROFIL
+        assert set(p["baterie_kw"]) == {0.0}
+
+
+class TestUdalostiPrubehu:
+    """Vypíchnuté momenty pro graf (roční/měsíční extrémy, chování baterie)."""
+
+    PROFIL = [50.0] * 8 + [180.0] * 8 + [50.0] * 8 + [200.0] * 8 + [40.0] * 8
+    MESICE = [1] * 20 + [2] * 20
+
+    def _udalosti(self, rk=None):
+        p = ps.prubeh_baterie(self.PROFIL, 120.0, 100.0, 200.0, 0.25, ucinnost_rt=0.88)
+        return ps.udalosti_prubehu(
+            self.PROFIL, p["site_kw"], p["baterie_kw"], p["soc_pct"],
+            self.MESICE, 0.25, rk_soucasna_kw=rk,
+        )
+
+    def _najdi(self, ud, typ, mesic=None):
+        return [u for u in ud if u["typ"] == typ and (mesic is None or u["mesic"] == mesic)]
+
+    def test_rocni_maximum_ukazuje_na_nejvyssi_odber(self):
+        ud = self._udalosti()
+        u = self._najdi(ud, "max_rok_bez")[0]
+        assert u["hodnota"] == pytest.approx(200.0)
+        assert self.PROFIL[u["index"]] == 200.0
+
+    def test_mesicni_maxima_pro_kazdy_mesic(self):
+        ud = self._udalosti()
+        assert self._najdi(ud, "max_mesic_bez", 1)[0]["hodnota"] == pytest.approx(180.0)
+        assert self._najdi(ud, "max_mesic_bez", 2)[0]["hodnota"] == pytest.approx(200.0)
+
+    def test_minimum_roku(self):
+        ud = self._udalosti()
+        assert self._najdi(ud, "min_rok")[0]["hodnota"] == pytest.approx(40.0)
+
+    def test_udalosti_baterie(self):
+        ud = self._udalosti()
+        assert self._najdi(ud, "max_vyboj")
+        assert self._najdi(ud, "max_nabijeni")
+        assert self._najdi(ud, "min_soc")[0]["jednotka"] == "%"
+
+    def test_prekroceni_rk_jen_kdyz_se_deje(self):
+        # Strop 120 kW se udrží → při RK 150 kW žádné překročení…
+        assert not self._najdi(self._udalosti(rk=150.0), "prekroceni_rk")
+        # …při RK 80 kW ano, v obou měsících.
+        prekroceni = self._najdi(self._udalosti(rk=80.0), "prekroceni_rk")
+        assert {u["mesic"] for u in prekroceni} == {1, 2}
+
+    def test_udalosti_jsou_serazene_v_case(self):
+        ud = self._udalosti(rk=80.0)
+        assert [u["index"] for u in ud] == sorted(u["index"] for u in ud)
+
+    def test_prazdny_profil(self):
+        assert ps.udalosti_prubehu([], [], [], [], [], 0.25) == []
+
+
+class TestPrubehPoMesicich:
+    """Model 2027: každý měsíc má vlastní strop a startuje s plnou baterií."""
+
+    PROFIL = [50.0] * 10 + [180.0] * 10 + [60.0] * 10 + [200.0] * 10
+    MESICE = [1] * 20 + [2] * 20
+
+    def test_delka_a_stropy_odpovidaji_mesicum(self):
+        stropy = {1: 120.0, 2: 150.0}
+        p = ps.prubeh_po_mesicich(self.PROFIL, self.MESICE, stropy, 100.0, 200.0, 0.25, 0.88)
+        assert len(p["site_kw"]) == len(self.PROFIL)
+        assert p["stropy_kw"][:20] == [120.0] * 20
+        assert p["stropy_kw"][20:] == [150.0] * 20
+
+    def test_kazdy_mesic_startuje_s_plnou_baterii(self):
+        # Simulace 2027 počítá měsíce samostatně (ekonomika taky) – na začátku
+        # února tedy baterie nesmí být „dojetá“ z ledna.
+        stropy = {1: 120.0, 2: 150.0}
+        p = ps.prubeh_po_mesicich(self.PROFIL, self.MESICE, stropy, 100.0, 200.0, 0.25, 0.88)
+        assert p["soc_kwh"][20] == pytest.approx(200.0, abs=1.0)
+
+    def test_soucty_odpovidaji_mesicnim_simulacim(self):
+        stropy = {1: 120.0, 2: 150.0}
+        p = ps.prubeh_po_mesicich(self.PROFIL, self.MESICE, stropy, 100.0, 200.0, 0.25, 0.88)
+        nabito = 0.0
+        vybito = 0.0
+        for m, strop in stropy.items():
+            cast = [v for v, mm in zip(self.PROFIL, self.MESICE) if mm == m]
+            a, b = ps.energie_pri_stropu(cast, strop, 100.0, 200.0, 0.25, ucinnost_rt=0.88)
+            nabito += a
+            vybito += b
+        assert p["nabito_kwh"] == pytest.approx(nabito)
+        assert p["vybito_kwh"] == pytest.approx(vybito)
+
+    def test_mesicni_stropy_z_metodiky_se_v_grafu_udrzi(self):
+        # Stropy spočítané „srážej co to dá“ musí v průběhu opravdu držet.
+        stropy = ps.mesicni_maxima_po_baterii(self.PROFIL, self.MESICE, 100.0, 200.0, 0.25, 0.88)
+        p = ps.prubeh_po_mesicich(self.PROFIL, self.MESICE, stropy, 100.0, 200.0, 0.25, 0.88)
+        for site, m in zip(p["site_kw"], self.MESICE):
+            assert site <= stropy[m] + 1e-6

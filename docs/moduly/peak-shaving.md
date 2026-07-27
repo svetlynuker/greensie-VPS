@@ -318,6 +318,7 @@ Měsíční maxima odběru: `bez_baterie` (naměřené), `s_baterii_2026` (= min
 | `POST /dokumenty/{id}/zpracuj-profil` | nabidkovac | naparsuje XLS/CSV → `spotreba_profil` |
 | `GET /nabidky/{id}/peak-shaving/profil-souhrn` | nabidkovac | počet/rozsah/špička profilu |
 | `POST /nabidky/{id}/peak-shaving/vypocet` | nabidkovac | spustí výpočet, uloží do `navrhovana_reseni` |
+| `GET /nabidky/{id}/peak-shaving/prubeh?varianta=&rok=` | nabidkovac | rozepsaná 15min simulace pro nitkový graf (neukládá se) |
 
 **Vstup výpočtu:** `{ distributor, napetova_hladina, rezervovana_kapacita_kw }`
 (+ volitelně `cena_energie_kc_mwh`, `rezervovany_prikon_kw`, `uvazovat_snizeni_rp`).
@@ -328,15 +329,34 @@ FE), `graf`/`citlivost_stropu` doporučené i na nejvyšší úrovni (zpětná
 kompatibilita), `upozorneni`. Každá varianta nese `ekonomika_2026` (s rozpadem
 úspory), `ekonomika_2027`, NPV/IRR a návratnosti.
 
+**Průběh v čase (`/prubeh`)** – podklad pro nitkový graf. Do `popis_json` se
+záměrně **neukládá** (35 040 hodnot × 4 řady na variantu a rok by nafouklo
+JSONB nabídky); počítá se na vyžádání ze stejné fyziky jako ekonomika
+(`peak_shaving._krok_simulace`), celý rok trvá ~0,1 s. Odpověď: `od`,
+`interval_min`, `casy_min` (offsety v minutách – přežijí díry i přechod času),
+`odber_kw`, `site_kw`, `baterie_kw` (+ vybíjí / − nabíjí), `soc_pct`,
+`useky_stropu` (schodovitý strop – 2027 sráží po měsících), `referencni`
+(čáry RK/RP), `souhrn` (nabito/vybito/ztráty) a `udalosti`. Cca 1,2 MB JSON,
+gzipem (`GZipMiddleware` v `main.py`) ~250 kB.
+**Model roku:** 2026 = jedna průběžná simulace na ročním stropu; 2027 =
+`prubeh_po_mesicich`, tedy měsíc po měsíci s vlastním stropem a startem od plné
+baterie – přesně jak počítá `ekonomika_2027` (jinak by graf na začátku měsíce
+ukazoval překročení, které v ekonomice není).
+**Události** (`peak_shaving.udalosti_prubehu`): roční a měsíční maxima/minima
+odběru i odběru ze sítě, nejsilnější vybití/nabití, nejnižší SOC, nejdelší
+souvislé vybíjení a překročení sjednané rezervace. Každá nese `index` do
+profilu, takže FE umí na okamžik skočit (zoom).
+
 ---
 
 ## 6. Frontend (`frontend/src`)
 
 - **`pages/NabidkovacKatalog.jsx`** (admin, právo `nabidkovac_katalog`): katalog technologií (samostatné sloupce Výkon/Kapacita, správa vlastních sloupců), výpočtová nastavení, **editor sazeb distributorů** (pole dle struktury – stara_2026 / T1,T2,penalizace,U1,U2 pro nova_2027; přepínače „čeká na sazby ERÚ“ a „modelový odhad“).
 - **`components/PeakShavingPanel.jsx`** (OZ, v detailu nabídky typu peak_shaving): načtení profilu, zadání distributora/hladiny/rezervace (+ RP a snížení RP), spuštění výpočtu, výsledek – KPI s rozpadem úspory a NPV, ekonomika 2026 (fair baseline) a 2027 vedle sebe, návratnosti dle modelů, citlivost stropu, srovnání variant. **Kliknutím na řádek srovnání se celý detail (KPI, ekonomika, grafy, citlivost) překreslí pro danou variantu** (◄ = zobrazená; starší uložené výsledky mají grafy jen pro doporučenou).
-- **`components/GrafOdberu.jsx`**: lehký **SVG graf bez knihovny** (projekt žádnou grafovou nemá; deploy nedělá `npm install`). Sloupce bez/s baterií + čárkované čáry rezervace.
-- **`components/PeakShavingPanel.jsx`** vykresluje dva grafy (2026, 2027).
-- **`api.js`**: helpery `sazby*`, `katalogSloupec*`, `peakShavingVypocet`, `profilZpracuj`, `peakShavingProfilSouhrn`.
+- **`components/GrafOdberu.jsx`**: lehký **SVG graf bez knihovny** (projekt žádnou grafovou nemá). Sloupce bez/s baterií + čárkované čáry rezervace.
+- **`components/GrafPrubehu.jsx`**: **nitkový graf průběhu** – celý rok po 15 minutách se zoomem až na jednotlivé čtvrthodiny. Taky bez knihovny (SVG + tokeny `--c-*`). Celoroční řady si stáhne jednou a při každé změně přiblížení je slije do ~900 košů (min/max/průměr) – špička tak nezmizí zaokrouhlením a při plném přiblížení pásmo splyne s nitkou a jsou vidět přesné hodnoty. Tři pásy nad sebou (odběr/síť, výkon baterie ±, stav nabití) + přehledová lišta s výřezem; ovládání kolečkem, tažením (výběr), Shift+tažením (posun), dvojklikem (oddálení) a tlačítky Rok/Měsíc/Týden/Den. Vypsané události (roční/měsíční extrémy, chování baterie, překročení) se filtrují po kategoriích a klikem se na ně graf přiblíží.
+- **`components/PeakShavingPanel.jsx`** vykresluje graf měsíčních maxim (dle přepínače roku) a pod ním na vyžádání průběh v čase (cache podle varianty a roku).
+- **`api.js`**: helpery `sazby*`, `katalogSloupec*`, `peakShavingVypocet`, `profilZpracuj`, `peakShavingProfilSouhrn`, `peakShavingPrubeh`.
 
 ---
 
