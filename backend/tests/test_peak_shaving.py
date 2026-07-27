@@ -168,6 +168,71 @@ class TestEkonomika2027RozpadUspory:
         assert ek["optimalni_rp_bez_baterie_kw"] == pytest.approx(rp)
 
 
+class TestOptimalizaceRpSBaterii:
+    """Scénář se snížením RP volí RP optimalizací, ne natvrdo celoročním stropem.
+
+    Jinak by byla baseline optimalizovaná a scénář s baterií ne → přínos
+    baterie systematicky podhodnocený.
+    """
+
+    # Rok, kde jeden měsíc výrazně přečnívá: leden 1500 kW, ostatní 1000 kW.
+    # (16 intervalů na měsíc, baterie se nezadává tak velká, aby špičku srazila.)
+    PROFIL_ROK = [1500.0] * 16 + [1000.0] * 16 * 11
+    MESICE_ROK = [1] * 16 + [m for m in range(2, 13) for _ in range(16)]
+
+    def _ek(self, optimalizovat, rezerva=0.0):
+        # Baterie 0 kW = nic nesráží, měsíční maxima zůstanou původní. Zajímá
+        # nás jen volba RP, ne fyzika srážení.
+        return ps.ekonomika_2027(
+            self.PROFIL_ROK,
+            self.MESICE_ROK,
+            2000.0,  # současný RP ze smlouvy
+            1500.0,  # RP „natvrdo na strop" = nejvyšší měsíční maximum
+            0.0,
+            0.0,
+            P2027_CEZ_VN,
+            optimalizovat_rp=optimalizovat,
+            rezerva_rk_procenta=rezerva,
+        )
+
+    def test_bez_optimalizace_drzi_rp_na_stropu(self):
+        ek = self._ek(optimalizovat=False)
+        assert ek["rp_novy_kw"] == pytest.approx(1500.0)
+        assert ek["mesicu_s_prekrocenim_rp"] == 0
+        assert ek["rp_optimalizovan"] is False
+
+    def test_optimalizace_pusti_rp_pod_spicku(self):
+        ek = self._ek(optimalizovat=True)
+        # Snížit RP o 1 kW ušetří 12× kapacitní sazbu, překročení stojí jednou
+        # sazbu za překročení → u jediného vybočujícího měsíce se to vyplatí.
+        assert ek["rp_novy_kw"] < 1500.0
+        assert ek["mesicu_s_prekrocenim_rp"] == 1
+        assert ek["naklad_prekroceni_rp"] > 0
+
+    def test_optimalizace_nikdy_nezhorsi_naklad(self):
+        bez = self._ek(optimalizovat=False)
+        s_opt = self._ek(optimalizovat=True)
+        assert s_opt["novy_rocni_naklad"] <= bez["novy_rocni_naklad"] + 1e-6
+        assert s_opt["prinos_baterie"] >= bez["prinos_baterie"] - 1e-6
+
+    def test_rezerva_rk_zvedne_volene_rp(self):
+        # Rezerva navyšuje cílová maxima → optimalizátor volí opatrnější RP.
+        bez_rezervy = self._ek(optimalizovat=True, rezerva=0.0)
+        s_rezervou = self._ek(optimalizovat=True, rezerva=5.0)
+        assert s_rezervou["rp_novy_kw"] >= bez_rezervy["rp_novy_kw"]
+
+    def test_plochy_rok_rp_nesnizi_pod_maximum(self):
+        # Když všechny měsíce sedí na stejném maximu, překročení by se platilo
+        # 12× – optimalizace proto RP nechá na maximu.
+        profil = [1000.0] * 16 * 12
+        mesice = [m for m in range(1, 13) for _ in range(16)]
+        ek = ps.ekonomika_2027(
+            profil, mesice, 2000.0, 1000.0, 0.0, 0.0, P2027_CEZ_VN, optimalizovat_rp=True
+        )
+        assert ek["rp_novy_kw"] == pytest.approx(1000.0)
+        assert ek["mesicu_s_prekrocenim_rp"] == 0
+
+
 # ------------------------------------------------------- PS-5: ztráty baterie
 class TestZtratyBaterie:
     def test_normalizace_ucinnosti(self):

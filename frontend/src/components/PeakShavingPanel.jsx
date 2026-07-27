@@ -6,10 +6,82 @@ import {
   peakShavingVariantaDetail,
   peakShavingVypocet,
   profilZpracuj,
+  technologieSeznam,
 } from "../api";
 
 // Kolik variant se ukáže ve „zkráceném" srovnání (zbytek po přepnutí na vše).
 const POCET_TOP_VARIANT = 3;
+
+// Ručně zadané vstupy se pamatují per nabídka (prohlížeč), ať je OZ nemusí
+// psát znovu při každém přepočtu. Nezamykají se – jde je kdykoli přepsat.
+const KLIC_ULOZISTE = (nabidkaId) => `gs-ps-vstup-${nabidkaId}`;
+
+function nactiUlozeneVstupy(nabidka) {
+  // Základ = vstup posledního výpočtu (drží se u nabídky, funguje i na jiném
+  // počítači), navrch rozepsané hodnoty z tohoto prohlížeče.
+  let hodnoty = {};
+  const rr = (nabidka.reseni || []).filter((x) => x.typ_reseni === "peak_shaving");
+  const v = rr.length ? rr[rr.length - 1].popis_json?.vstup : null;
+  if (v) {
+    hodnoty = {
+      distributor: v.distributor,
+      hladina: v.napetova_hladina,
+      rezKap: v.rezervovana_kapacita_kw != null ? String(v.rezervovana_kapacita_kw) : "",
+      rezPrikon: v.rezervovany_prikon_kw != null ? String(v.rezervovany_prikon_kw) : "",
+      snizeniRp: !!v.uvazovat_snizeni_rp,
+      maxVykonStridace: v.max_vykon_stridace_kw != null ? String(v.max_vykon_stridace_kw) : "",
+      baterieIds: v.baterie_ids || null,
+    };
+  }
+  try {
+    const s = JSON.parse(localStorage.getItem(KLIC_ULOZISTE(nabidka.id)) || "null");
+    if (s && typeof s === "object") hodnoty = { ...hodnoty, ...s };
+  } catch {
+    // poškozený zápis v úložišti prostě ignorujeme
+  }
+  return hodnoty;
+}
+
+// Sloupce srovnání, podle kterých jde řadit. `hodnota` vrací číslo nebo text
+// (null = řadí se nakonec, ať prázdné návratnosti nepředbíhají spočítané).
+const SLOUPCE_SROVNANI = [
+  {
+    klic: "nazev",
+    nazev: "Baterie",
+    vychoziSmer: "asc",
+    hodnota: (v) => `${v.nazev} ${String(v.pocet_kusu ?? "").padStart(3, "0")}`,
+  },
+  {
+    klic: "vykon",
+    nazev: "Výkon / kapacita",
+    vychoziSmer: "desc",
+    hodnota: (v) => v.celkovy_vykon_kw ?? null,
+  },
+  {
+    klic: "nova_rez",
+    nazev: "Nová rez.",
+    vychoziSmer: "asc",
+    hodnota: (v) => v.nova_rezervovana_kapacita_kw ?? null,
+  },
+  {
+    klic: "uspora",
+    nazev: "Úspora/rok",
+    vychoziSmer: "desc",
+    hodnota: (v, i, je2027) =>
+      je2027
+        ? v.ekonomika_2027?.rocni_uspora_bez_aku ?? v.ekonomika_2027?.rocni_uspora ?? null
+        : v.rocni_uspora_2026_kc ?? null,
+  },
+  { klic: "cena", nazev: "Cena", vychoziSmer: "asc", hodnota: (v) => v.cena_celkem_kc ?? null },
+  {
+    klic: "navratnost",
+    nazev: "Návratnost",
+    vychoziSmer: "asc",
+    hodnota: (v, i, je2027) =>
+      je2027 ? v.navratnost_2027 ?? v.navratnost_2027_konzerv ?? null : v.navratnost_roky ?? null,
+  },
+  { klic: "npv", nazev: "NPV", vychoziSmer: "desc", hodnota: (v) => v.npv_kc ?? null },
+];
 
 const DISTRIB = [
   { klic: "cez", nazev: "ČEZ Distribuce" },
@@ -106,17 +178,23 @@ function RokPrepinac({ rok, ma2027, onZmena }) {
 }
 
 export default function PeakShavingPanel({ nabidka }) {
+  // Zapamatované vstupy (poslední výpočet + rozepsané hodnoty z prohlížeče).
+  const [ulozene] = useState(() => nactiUlozeneVstupy(nabidka));
   const [sazby, setSazby] = useState(null);
   const [souhrn, setSouhrn] = useState(null);
-  const [distributor, setDistributor] = useState("cez");
-  const [hladina, setHladina] = useState("vn");
-  const [rezKap, setRezKap] = useState("");
+  const [distributor, setDistributor] = useState(ulozene.distributor || "cez");
+  const [hladina, setHladina] = useState(ulozene.hladina || "vn");
+  const [rezKap, setRezKap] = useState(ulozene.rezKap || "");
   // Rezervovaný příkon ze smlouvy o připojení – pro model 2027 (PS-4).
-  const [rezPrikon, setRezPrikon] = useState("");
-  const [snizeniRp, setSnizeniRp] = useState(false);
+  const [rezPrikon, setRezPrikon] = useState(ulozene.rezPrikon || "");
+  const [snizeniRp, setSnizeniRp] = useState(!!ulozene.snizeniRp);
   // Ruční override max. AC výkonu střídače (kW) – omezuje výkon modulárních
   // baterií, kde kapacita roste s počtem kusů, ale výkon drží sdílený PCS.
-  const [maxVykonStridace, setMaxVykonStridace] = useState("");
+  const [maxVykonStridace, setMaxVykonStridace] = useState(ulozene.maxVykonStridace || "");
+  // Které baterie se mají počítat: null = celý katalog, pole id = ruční výběr.
+  const [baterieIds, setBaterieIds] = useState(ulozene.baterieIds || null);
+  const [katalogBaterii, setKatalogBaterii] = useState(null);
+  const [hledaniBaterie, setHledaniBaterie] = useState("");
   const [vysledek, setVysledek] = useState(() => {
     const rr = (nabidka.reseni || []).filter((x) => x.typ_reseni === "peak_shaving");
     return rr.length ? rr[rr.length - 1].popis_json : null;
@@ -134,11 +212,34 @@ export default function PeakShavingPanel({ nabidka }) {
   const [dopocitava, setDopocitava] = useState(false);
   // Rok zobrazených hodnot (dlaždice, graf, srovnání) – default 2027 (NTS).
   const [rokZobrazeni, setRokZobrazeni] = useState(2027);
+  // Řazení srovnání variant: klic = null → pořadí ze serveru (dle NPV sestupně).
+  const [razeni, setRazeni] = useState({ klic: null, smer: "asc" });
 
   useEffect(() => {
     sazbySeznam().then(setSazby).catch((e) => setChyba(e.message));
     peakShavingProfilSouhrn(nabidka.id).then(setSouhrn).catch(() => setSouhrn({ pocet: 0 }));
+    technologieSeznam()
+      .then((t) => setKatalogBaterii(t.filter((x) => x.typ === "baterie" && x.dostupnost)))
+      .catch(() => setKatalogBaterii([]));
   }, [nabidka.id]);
+
+  // Ruční vstupy si pamatujeme, ať je OZ nemusí psát znovu (bez zamykání).
+  useEffect(() => {
+    const data = {
+      distributor,
+      hladina,
+      rezKap,
+      rezPrikon,
+      snizeniRp,
+      maxVykonStridace,
+      baterieIds,
+    };
+    try {
+      localStorage.setItem(KLIC_ULOZISTE(nabidka.id), JSON.stringify(data));
+    } catch {
+      // plné/zakázané úložiště nesmí shodit panel
+    }
+  }, [nabidka.id, distributor, hladina, rezKap, rezPrikon, snizeniRp, maxVykonStridace, baterieIds]);
 
   const profilDoklady = (nabidka.dokumenty || []).filter(
     (d) => d.typ === "spotreba_csv" || d.typ === "jiny"
@@ -156,6 +257,11 @@ export default function PeakShavingPanel({ nabidka }) {
       sazba.parametry.cena_prekroceni_kc_kw != null);
   const profilOk = souhrn && souhrn.pocet > 0;
   const rezOk = Number(String(rezKap).replace(",", ".")) > 0;
+  // Ruční výběr baterií: co projde hledáním, a jestli je z čeho počítat.
+  const viditelneBaterie = (katalogBaterii || []).filter((b) =>
+    `${b.nazev} ${b.model || ""}`.toLowerCase().includes(hledaniBaterie.trim().toLowerCase())
+  );
+  const vyberBateriiOk = baterieIds === null || baterieIds.length > 0;
 
   async function nactiProfil(dokId) {
     setZpracovavaId(dokId);
@@ -187,6 +293,7 @@ export default function PeakShavingPanel({ nabidka }) {
         uvazovat_snizeni_rp: snizeniRp,
         max_vykon_stridace_kw:
           maxVykonStridace.trim() === "" || !(maxVykon > 0) ? null : maxVykon,
+        baterie_ids: baterieIds && baterieIds.length ? baterieIds : null,
       });
       setVysledek(r.popis_json);
       setVybranyIdx(0);
@@ -202,7 +309,6 @@ export default function PeakShavingPanel({ nabidka }) {
   // Starší uložené výsledky nesou graf/citlivost jen na nejvyšší úrovni
   // (pro doporučenou) – u alternativ se pak grafy skryjí.
   const varianty = vysledek?.varianty || [];
-  const zobrazeneVarianty = vsechnyVarianty ? varianty : varianty.slice(0, POCET_TOP_VARIANT);
   const dop = varianty[vybranyIdx] || vysledek?.doporucena;
   const graf =
     dop?.graf || dopoctene[vybranyIdx]?.graf || (vybranyIdx === 0 ? vysledek?.graf : null);
@@ -237,6 +343,38 @@ export default function PeakShavingPanel({ nabidka }) {
   const je2027 = rok === 2027;
   const uspora2027 = ek27?.rocni_uspora_bez_aku ?? ek27?.rocni_uspora;
   const rpNovy2027 = ek27?.rp_novy_kw ?? ek27?.rezervovana_kapacita_kw;
+
+  // Srovnání variant: bez zvoleného sloupce zůstává pořadí ze serveru (dle NPV
+  // sestupně). Každý řádek si nese původní index – ten drží odkaz na variantu
+  // pro detail i pro dopočet grafu na serveru.
+  const sloupecRazeni = SLOUPCE_SROVNANI.find((s) => s.klic === razeni.klic) || null;
+  const serazeneVarianty = varianty.map((v, i) => ({ v, i }));
+  if (sloupecRazeni) {
+    serazeneVarianty.sort((a, b) => {
+      const x = sloupecRazeni.hodnota(a.v, a.i, je2027);
+      const y = sloupecRazeni.hodnota(b.v, b.i, je2027);
+      if (x == null && y == null) return a.i - b.i;
+      if (x == null) return 1; // prázdné hodnoty vždy na konec
+      if (y == null) return -1;
+      const smer = razeni.smer === "asc" ? 1 : -1;
+      if (typeof x === "string" || typeof y === "string") {
+        return smer * String(x).localeCompare(String(y), "cs");
+      }
+      return x === y ? a.i - b.i : smer * (x - y);
+    });
+  }
+  const zobrazeneVarianty = vsechnyVarianty
+    ? serazeneVarianty
+    : serazeneVarianty.slice(0, POCET_TOP_VARIANT);
+
+  function prepniRazeni(klic) {
+    const s = SLOUPCE_SROVNANI.find((x) => x.klic === klic);
+    setRazeni((r) =>
+      r.klic === klic
+        ? { klic, smer: r.smer === "asc" ? "desc" : "asc" }
+        : { klic, smer: s?.vychoziSmer || "asc" }
+    );
+  }
   // Zvýraznění karty vybraného roku v porovnání let.
   const kartaAktivni = { borderColor: "color-mix(in srgb, var(--brand) 45%, var(--line))" };
 
@@ -319,6 +457,93 @@ export default function PeakShavingPanel({ nabidka }) {
         V modelu 2027 uvažovat snížení rezervovaného příkonu na novou kapacitu
         <span style={{ fontSize: 11, color: "var(--fm-muted)" }}>(jednosměrná změna smlouvy o připojení)</span>
       </label>
+
+      {/* 2b) Které baterie počítat */}
+      <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "10px 0 6px" }}>
+        <b>Baterie do výpočtu.</b> Míň produktů = rychlejší výpočet.
+      </p>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 13, marginBottom: 6 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <input
+            type="radio"
+            checked={baterieIds === null}
+            onChange={() => setBaterieIds(null)}
+          />
+          Všechny dostupné z katalogu
+          {katalogBaterii && <span style={{ color: "var(--fm-muted)" }}>({katalogBaterii.length})</span>}
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <input
+            type="radio"
+            checked={baterieIds !== null}
+            onChange={() => setBaterieIds(baterieIds || [])}
+          />
+          Jen ručně vybrané
+          {baterieIds !== null && (
+            <span style={{ color: "var(--fm-muted)" }}>({baterieIds.length} vybráno)</span>
+          )}
+        </label>
+      </div>
+
+      {baterieIds !== null && (
+        <div style={{ border: "1px solid var(--line)", borderRadius: 9, padding: 8, marginBottom: 10 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+            <input
+              className="nb-pole"
+              value={hledaniBaterie}
+              onChange={(e) => setHledaniBaterie(e.target.value)}
+              placeholder="Hledat v katalogu…"
+              style={{ flex: "1 1 180px", minWidth: 140 }}
+            />
+            <button
+              className="fm-btn"
+              style={{ padding: "4px 10px", fontSize: 12 }}
+              onClick={() => setBaterieIds(viditelneBaterie.map((b) => b.id))}
+            >
+              Označit zobrazené ({viditelneBaterie.length})
+            </button>
+            <button
+              className="fm-btn"
+              style={{ padding: "4px 10px", fontSize: 12 }}
+              onClick={() => setBaterieIds([])}
+            >
+              Zrušit výběr
+            </button>
+          </div>
+          <div style={{ maxHeight: 190, overflowY: "auto" }}>
+            {katalogBaterii === null && (
+              <div style={{ fontSize: 12, color: "var(--fm-muted)" }}>Načítám katalog…</div>
+            )}
+            {katalogBaterii !== null && viditelneBaterie.length === 0 && (
+              <div style={{ fontSize: 12, color: "var(--fm-muted)" }}>
+                {katalogBaterii.length === 0
+                  ? "V katalogu nejsou žádné dostupné baterie."
+                  : "Hledání nic nenašlo."}
+              </div>
+            )}
+            {viditelneBaterie.map((b) => (
+              <label
+                key={b.id}
+                style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, padding: "2px 0" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={baterieIds.includes(b.id)}
+                  onChange={(e) =>
+                    setBaterieIds((s) =>
+                      e.target.checked ? [...s, b.id] : s.filter((x) => x !== b.id)
+                    )
+                  }
+                />
+                <span style={{ fontWeight: 600 }}>{b.nazev}</span>
+                <span style={{ color: "var(--fm-muted)" }}>
+                  {kw(b.vykon_kw)} / {b.kapacita_kwh?.toLocaleString("cs-CZ")} kWh · {kc(b.cena_kc)}
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
       {sazby && !sazbaOk && (
         <div className="nb-warn" style={{ margin: "0 0 12px" }}>
           <span>⚠️</span>
@@ -332,10 +557,15 @@ export default function PeakShavingPanel({ nabidka }) {
       <button
         className="fm-btn fm-primary"
         onClick={spocti}
-        disabled={pocita || !profilOk || !rezOk || !sazbaOk}
+        disabled={pocita || !profilOk || !rezOk || !sazbaOk || !vyberBateriiOk}
       >
         {pocita ? "Počítám…" : "Spočítat peak shaving"}
       </button>
+      {!vyberBateriiOk && (
+        <span style={{ fontSize: 12, color: "var(--fm-muted)", marginLeft: 10 }}>
+          Vyber aspoň jednu baterii (nebo přepni na celý katalog).
+        </span>
+      )}
       {zprava && <div style={{ color: "var(--fm-brand-dk)", fontSize: 13, marginTop: 10 }}>{zprava}</div>}
       {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13, marginTop: 10 }}>{chyba}</div>}
 
@@ -404,7 +634,9 @@ export default function PeakShavingPanel({ nabidka }) {
                     <div className="gs-kpi-label">Rezervovaný příkon</div>
                     <div className="gs-kpi-value">{kw(rpNovy2027)}</div>
                     <div className="gs-kpi-sub">
-                      {ek27?.rp_soucasny_kw != null && rpNovy2027 !== ek27.rp_soucasny_kw
+                      {ek27?.mesicu_s_prekrocenim_rp > 0
+                        ? `snížení z ${kw(ek27.rp_soucasny_kw)} · záměrně pod špičku, překročení v ${ek27.mesicu_s_prekrocenim_rp} měs.`
+                        : ek27?.rp_soucasny_kw != null && rpNovy2027 !== ek27.rp_soucasny_kw
                         ? `snížení z ${kw(ek27.rp_soucasny_kw)} · platí se RP + měsíční maxima`
                         : "beze změny smlouvy · platí se RP + měsíční maxima"}
                     </div>
@@ -550,6 +782,18 @@ export default function PeakShavingPanel({ nabidka }) {
                             </>
                           )}
                           <tr><td>Roční náklad s peak shavingem</td><td>{kc(dop.ekonomika_2027.novy_rocni_naklad_bez_aku ?? dop.ekonomika_2027.novy_rocni_naklad)}</td></tr>
+                          {dop.ekonomika_2027.mesicu_s_prekrocenim_rp > 0 && (
+                            <tr>
+                              <td>… z toho vědomé překročení RP</td>
+                              <td>
+                                {kc(dop.ekonomika_2027.naklad_prekroceni_rp)}
+                                <span style={{ fontSize: 11, color: "var(--fm-muted)" }}>
+                                  {" "}(v {dop.ekonomika_2027.mesicu_s_prekrocenim_rp} měs. – nižší RP
+                                  se i s penalizací vyplatí)
+                                </span>
+                              </td>
+                            </tr>
+                          )}
                           {dop.ekonomika_2027.prinos_baterie != null && (
                             <tr><td><b>Přínos baterie</b></td><td><b>{kc(dop.ekonomika_2027.prinos_baterie)}</b></td></tr>
                           )}
@@ -703,9 +947,14 @@ export default function PeakShavingPanel({ nabidka }) {
                         className="fm-btn"
                         style={{ padding: "4px 10px", fontSize: 12 }}
                         onClick={() => {
-                          // Zpět na TOP 3: když byla vybraná varianta z plného
-                          // seznamu, vrať zobrazení na doporučenou.
-                          if (vsechnyVarianty && vybranyIdx >= POCET_TOP_VARIANT) setVybranyIdx(0);
+                          // Zpět na užší výběr: když vybraná varianta mezi
+                          // zobrazenými nezůstane, vrať se na první řádek.
+                          const zustane = serazeneVarianty
+                            .slice(0, POCET_TOP_VARIANT)
+                            .some((x) => x.i === vybranyIdx);
+                          if (vsechnyVarianty && !zustane) {
+                            vyberVariantu(serazeneVarianty[0]?.i ?? 0);
+                          }
                           setVsechnyVarianty((s) => !s);
                         }}
                       >
@@ -718,10 +967,27 @@ export default function PeakShavingPanel({ nabidka }) {
                   <div className="nb-scroll">
                     <table className="nb-table">
                       <thead>
-                        <tr><th>Baterie</th><th>Výkon / kapacita</th><th>Nová rez.</th><th>Úspora/rok ({rok})</th><th>Cena</th><th>Návratnost ({rok})</th><th>NPV</th></tr>
+                        <tr>
+                          {SLOUPCE_SROVNANI.map((s) => (
+                            <th
+                              key={s.klic}
+                              onClick={() => prepniRazeni(s.klic)}
+                              title="Kliknutím seřadíš podle tohoto sloupce"
+                              style={{ cursor: "pointer", whiteSpace: "nowrap" }}
+                            >
+                              {s.klic === "uspora" || s.klic === "navratnost"
+                                ? `${s.nazev} (${rok})`
+                                : s.nazev}
+                              <span style={{ opacity: razeni.klic === s.klic ? 1 : 0.25 }}>
+                                {" "}
+                                {razeni.klic === s.klic && razeni.smer === "asc" ? "▲" : "▼"}
+                              </span>
+                            </th>
+                          ))}
+                        </tr>
                       </thead>
                       <tbody>
-                        {zobrazeneVarianty.map((v, i) => (
+                        {zobrazeneVarianty.map(({ v, i }) => (
                           <VariantaRadek
                             key={`${v.baterie_id}-${v.pocet_kusu}`}
                             v={v}
@@ -734,10 +1000,28 @@ export default function PeakShavingPanel({ nabidka }) {
                     </table>
                   </div>
                   <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 4 }}>
-                    <b>Kliknutím na řádek se celý detail (čísla, ekonomika, grafy) překreslí pro danou variantu</b> (◄ = zobrazená; první řádek = doporučená dle NPV).
+                    <b>Kliknutím na řádek se celý detail (čísla, ekonomika, grafy) překreslí pro danou variantu</b> (◄ = zobrazená).
+                    {" "}Klik na záhlaví sloupce mění řazení
+                    {sloupecRazeni ? (
+                      <>
+                        {" "}(teď: <b>{sloupecRazeni.nazev}</b>{" "}
+                        {razeni.smer === "asc" ? "vzestupně" : "sestupně"} —{" "}
+                        <button
+                          className="fm-btn"
+                          style={{ padding: "0 6px", fontSize: 11 }}
+                          onClick={() => setRazeni({ klic: null, smer: "asc" })}
+                        >
+                          zpět na doporučené pořadí
+                        </button>
+                        )
+                      </>
+                    ) : (
+                      <> (teď doporučené pořadí dle NPV)</>
+                    )}
+                    .
                     {!vsechnyVarianty && varianty.length > POCET_TOP_VARIANT && (
                       <>
-                        {" "}Spočítané jsou všechny baterie z katalogu – tlačítkem výš je ukážeš všechny.
+                        {" "}Spočítané jsou všechny baterie z výběru – tlačítkem výš je ukážeš všechny.
                       </>
                     )}
                   </div>

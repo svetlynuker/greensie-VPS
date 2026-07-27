@@ -1113,17 +1113,26 @@ def spocti_peak_shaving(
             parametry_2027 = sazba_2027.parametry
             je_modelovy_2027 = bool(sazba_2027.je_modelovy_odhad)
 
-    # 3) katalog baterií (typ=baterie, dostupné, s výkonem i kapacitou – kap. 3.2)
-    tech = (
-        db.query(Technologie)
-        .filter(
-            Technologie.typ == "baterie",
-            Technologie.dostupnost.is_(True),
-            Technologie.vykon_kw.isnot(None),
-            Technologie.kapacita_kwh.isnot(None),
-        )
-        .all()
+    # 3) katalog baterií (typ=baterie, dostupné, s výkonem i kapacitou – kap. 3.2).
+    # `baterie_ids` ve vstupu = OZ si ručně vybral, které produkty počítat
+    # (prázdné/None = celý katalog).
+    dotaz_baterie = db.query(Technologie).filter(
+        Technologie.typ == "baterie",
+        Technologie.dostupnost.is_(True),
+        Technologie.vykon_kw.isnot(None),
+        Technologie.kapacita_kwh.isnot(None),
     )
+    if vstup.baterie_ids:
+        dotaz_baterie = dotaz_baterie.filter(Technologie.id.in_(vstup.baterie_ids))
+    tech = dotaz_baterie.all()
+    if vstup.baterie_ids and not tech:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Žádná z vybraných baterií není použitelná (musí být dostupná a mít "
+                "vyplněný výkon, kapacitu i cenu). Vyber jiné, nebo počítej celý katalog."
+            ),
+        )
     baterie = [
         peak_shaving.Baterie(
             id=t.id,
@@ -1235,6 +1244,19 @@ def spocti_peak_shaving(
                 "jde o jednosměrnou změnu smlouvy o připojení (zpětné navýšení je "
                 "zpoplatněno dle přílohy 2 vyhlášky č. 16/2016 Sb.)."
             )
+            # RP se v NTS sjednává jednou na celý rok (žádné měsíční dokupy),
+            # takže vědomé překročení je smluvní riziko, ne jen položka nákladu.
+            dop_2027 = (
+                vysledek.doporucena.ekonomika_2027 if vysledek.doporucena is not None else {}
+            ) or {}
+            if dop_2027.get("mesicu_s_prekrocenim_rp"):
+                upozorneni_rp.append(
+                    f"Doporučená varianta počítá s RP {dop_2027['rp_novy_kw']:.0f} kW pod "
+                    f"nejvyšší měsíční špičkou: v {dop_2027['mesicu_s_prekrocenim_rp']} měsíci/ích "
+                    f"se platí překročení za {dop_2027['naklad_prekroceni_rp']:,.0f} Kč, protože "
+                    "12× nižší kapacitní složka to převáží. RP se v NTS drží celý rok – ověř, "
+                    "že překročení smlouva o připojení připouští.".replace(",", " ")
+                )
     if vysledek.doporucena is not None and vysledek.doporucena.uspora_bez_investice_2026 > 0:
         upozorneni_rp.append(
             "Úspora bez investice předpokládá úpravu sjednané RK: roční RK lze snížit "
@@ -1252,6 +1274,9 @@ def spocti_peak_shaving(
             "rezervovany_prikon_kw": vstup.rezervovany_prikon_kw,
             "uvazovat_snizeni_rp": bool(vstup.uvazovat_snizeni_rp),
             "max_vykon_stridace_kw": vstup.max_vykon_stridace_kw,
+            # Ruční výběr baterií (prázdné = celý katalog) – FE ho předvyplní
+            # při dalším výpočtu, ať OZ nemusí klikat znovu.
+            "baterie_ids": list(vstup.baterie_ids) if vstup.baterie_ids else None,
             "interval_h": interval_h,
             "poctu_intervalu": len(profil_kw),
         },
