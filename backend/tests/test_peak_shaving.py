@@ -362,6 +362,40 @@ class TestFairBaseline:
         npv_vitez = vysledek.doporucena.npv_kc
         assert all(v.npv_kc <= npv_vitez + 1e-6 for v in vysledek.varianty)
 
+    def test_vysledek_nese_variantu_za_kazdy_produkt(self):
+        # Srovnání v UI umí zobrazit celý katalog (manažerské rozhodnutí), takže
+        # výběr nesmí produkty zahazovat – za každý zůstane jeho nejlepší počet kusů.
+        profil, mesice = [], []
+        for m in range(1, 13):
+            profil += [200.0] * 6 + [400.0] + [200.0] * 5
+            mesice += [m] * 12
+        katalog = [
+            ps.Baterie(
+                id=i,
+                nazev=f"BESS {30 * i}",
+                vykon_kw=30.0 * i,
+                kapacita_kwh=100.0 * i,
+                cena_kc=300_000.0 * i,
+                ucinnost_rt=1.0,
+            )
+            for i in range(1, 7)
+        ]
+        vysledek = ps.vyber_reseni(
+            katalog,
+            profil,
+            mesice,
+            400.0,
+            self.CENA_ROCNI,
+            ps.pokuta_prekroceni_rk_kc_kw(self.CENA_MESICNI),
+            max_navratnost_roky=100.0,
+            cena_mesicni_rk_kc_kw_mesic=self.CENA_MESICNI,
+        )
+        assert len(vysledek.varianty) == len(katalog)
+        assert {v.baterie_id for v in vysledek.varianty} == {b.id for b in katalog}
+        # a pořadí je sestupně dle NPV (vítěz první)
+        npvs = [v.npv_kc for v in vysledek.varianty]
+        assert npvs == sorted(npvs, reverse=True)
+
     def test_navratnost_varianty_je_z_prinosu_baterie(self):
         profil, mesice = [], []
         for m, maximum in sorted(self.MAXIMA_T5.items()):

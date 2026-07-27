@@ -169,10 +169,11 @@ export function nabidkaSmaz(id) {
 }
 
 // Upload souboru = multipart, proto NEposíláme Content-Type ani JSON.
-export async function nabidkaNahrajDokument(nabidkaId, typ, file) {
+// Typ dokumentu je volitelný – bez něj si ho backend odvodí z přípony.
+export async function nabidkaNahrajDokument(nabidkaId, file, typ = null) {
   const token = getToken();
   const form = new FormData();
-  form.append("typ", typ);
+  if (typ) form.append("typ", typ);
   form.append("soubor", file);
   const res = await fetch(`${API_BASE}/nabidkovac/nabidky/${nabidkaId}/dokumenty`, {
     method: "POST",
@@ -194,6 +195,11 @@ export async function nabidkaNahrajDokument(nabidkaId, typ, file) {
 
 export function nabidkaSmazDokument(id) {
   return zavolej(`/nabidkovac/dokumenty/${id}`, { method: "DELETE" });
+}
+
+// Ruční oprava typu, když automat podle přípony minul.
+export function nabidkaZmenTypDokumentu(id, typ) {
+  return zavolej(`/nabidkovac/dokumenty/${id}`, { method: "PATCH", body: JSON.stringify({ typ }) });
 }
 
 export function technologieSeznam() {
@@ -260,6 +266,14 @@ export function peakShavingVypocet(nabidkaId, data) {
   return zavolej(`/nabidkovac/nabidky/${nabidkaId}/peak-shaving/vypocet`, {
     method: "POST",
     body: JSON.stringify(data),
+  });
+}
+
+// Graf + citlivost pro variantu mimo TOP 3 (počítá se až na vyžádání).
+export function peakShavingVariantaDetail(nabidkaId, index) {
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/peak-shaving/varianta-detail`, {
+    method: "POST",
+    body: JSON.stringify({ index }),
   });
 }
 

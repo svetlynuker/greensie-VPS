@@ -49,6 +49,7 @@ Legenda „kdo vidí": **(vše)** = každý, kdo nabídku otevře (má právo `n
 | **Spočítat peak shaving** | krok 2 | Spustí výpočet. Aktivní, jen když je **načtený profil**, **kladná RK** a **existují sazby 2026** pro zvolenou kombinaci distributor/hladina. | vše |
 | **Zobrazit rok: 2026 / 2027** (přepínač) | krok 3, výsledek | Přepíná, pro který rok se ukazují dlaždice, návratnost, graf a sloupec ve srovnání variant. **2027 je výchozí**; když ekonomika 2027 chybí (nejsou sazby), tlačítko 2027 je zakázané a vše spadne na 2026. | vše |
 | **Řádek ve „Srovnání variant"** | krok 3, tabulka | Klik na řádek **překreslí celý detail** (dlaždice, ekonomika, grafy, citlivost) pro danou variantu. `◄` = právě zobrazená, první řádek = doporučená. | vše |
+| **Zobrazit všechny baterie (N)** | krok 3, nad tabulkou | Rozbalí srovnání z 3 nejlepších na **celý spočítaný katalog** (řazeno dle NPV) – pro manažerské rozhodnutí. Zpět tlačítkem *Zobrazit jen 3 nejlepší*. | vše |
 
 > 📸 SCREENSHOT: formulář parametrů odběrného místa s vyplněnými poli a tlačítkem „Spočítat peak shaving"
 
@@ -116,12 +117,16 @@ Věta pod grafem: co by se stalo, kdyby byl profil o **±5 %** silnější/slab�
 Tabulka rok po roce na celém horizontu (default 10 let): tarif toho roku, přínos baterie, O&M (údržba), cash-flow roku, kumulovaná úspora a kumulované cash-flow. Řádek označený `◄` = rok, kdy se investice **poprvé vrátí**. Poslední hodnota „Kum. disk. CF" = NPV varianty.
 
 #### Srovnání variant
-Tabulka všech zvažovaných baterií (top varianty). První řádek = doporučená (dle NPV). Kliknutím na jiný řádek se celý výše popsaný detail přepočítá pro tu variantu. Varianta nad prahem návratnosti nese odznak **„nedoporučeno"**.
+Tabulka zvažovaných baterií. První řádek = doporučená (dle NPV). Kliknutím na jiný řádek se celý výše popsaný detail přepočítá pro tu variantu. Varianta nad prahem návratnosti nese odznak **„nedoporučeno"**.
+
+Výchozí zobrazení jsou **3 nejlepší varianty**, ale spočítané jsou vždy **všechny baterie z katalogu** (jedna nejlepší konfigurace počtu kusů za produkt). Tlačítkem **„Zobrazit všechny baterie (N)"** nad tabulkou rozbalíš celý katalog seřazený podle NPV – pro manažerské rozhodnutí, kdy nejde jen o nejvyšší NPV (dostupnost, preferovaný dodavatel, velikost investice). Zpátky se přepneš tlačítkem **„Zobrazit jen 3 nejlepší"**.
+
+> Graf měsíčních maxim a citlivost se předpočítají jen pro 3 nejlepší varianty (u celého ceníku by to k výpočtu přidalo ~15 s). U ostatních se dopočítají **až po kliknutí na řádek** – chvilku to trvá („Počítám graf pro tuhle variantu…") a pak už se to uloží k nabídce.
 
 ### Jak na…
 - **Spočítat peak shaving od nuly:** nahraj profil v Podkladech → v kroku 1 klikni **Načíst profil** → v kroku 2 vyber **distributora** a **hladinu**, opiš **RK z faktury** → **Spočítat peak shaving**.
 - **Zohlednit model 2027 se snížením příkonu:** vyplň **Rezervovaný příkon** ze smlouvy, zaškrtni **„uvažovat snížení RP"**, spočítej a přepni nahoře na **2027**.
-- **Porovnat víc baterií:** po výpočtu klikej na řádky ve **Srovnání variant** – detail se pro každou překreslí.
+- **Porovnat víc baterií:** po výpočtu klikej na řádky ve **Srovnání variant** – detail se pro každou překreslí. Chceš-li vidět celý katalog, ne jen 3 nejlepší, klikni na **„Zobrazit všechny baterie (N)"**.
 - **Omezit výkon u modulární baterie:** vyplň **Max. výkon střídače** (kW) podle sdíleného PCS a přepočítej.
 - **Vyměnit profil za novější:** nahraj nový soubor a klikni **Načíst profil** – starý profil se **celý** nahradí.
 
@@ -192,7 +197,9 @@ Podrobné vzorce (simulace baterie, fair baseline 2026, dvousložkový tarif 202
 | `GET/POST/PUT/DELETE /katalog-sloupce`, `/technologie` | čte `nabidkovac`, edituje `nabidkovac_katalog` | katalog + vlastní sloupce |
 
 **Vstup výpočtu:** `{ distributor, napetova_hladina, rezervovana_kapacita_kw }` + volitelně `cena_energie_kc_mwh`, `rezervovany_prikon_kw`, `uvazovat_snizeni_rp`, `max_vykon_stridace_kw`.
-**Výstup (`popis_json`):** `vstup`, `sazby`, `max_navratnost_roky`, `doporucena`, `varianty` (top 3, každá s vlastním grafem a citlivostí), `graf`, `citlivost_stropu`, `upozorneni`. Každá varianta nese `ekonomika_2026`, `ekonomika_2027`, NPV/IRR a návratnosti.
+**Výstup (`popis_json`):** `vstup`, `sazby`, `max_navratnost_roky`, `doporucena`, `varianty` (**všechny** spočítané varianty seřazené dle NPV; `graf` a `citlivost_stropu` nese jen první trojice), `graf`, `citlivost_stropu`, `upozorneni`. Každá varianta nese `ekonomika_2026`, `ekonomika_2027`, NPV/IRR a návratnosti.
+
+**Dopočet varianty:** `POST /nabidky/{id}/peak-shaving/varianta-detail` s `{ "index": N }` (pořadí ve `varianty`) dopočítá graf + citlivost pro variantu mimo první trojici a uloží je do řešení. Volá ho FE při kliknutí na řádek srovnání.
 
 ### Klíčové soubory
 ```
@@ -219,7 +226,7 @@ frontend/src/
 - **„Chybí sazba stara_2026 pro …" (422)** → sazba je NULL („čeká na sazby ERÚ") nebo neexistuje. Doplň v Katalogu (sazby distributorů).
 - **Přepínač „2027" je zakázaný** → pro danou kombinaci nejsou spočítané sazby 2027; zobrazí se jen 2026.
 - **„Výpočet nenašel použitelnou variantu"** → v katalogu nejsou dostupné baterie s vyplněným výkonem i kapacitou, nebo žádná neustojí špičky. Doplň/zkontroluj katalog technologií.
-- **Grafy/rozpis chybí u alternativní varianty** → starší uložené výsledky mají grafy jen pro doporučenou variantu; spusť „Spočítat peak shaving" znovu.
+- **Grafy/rozpis chybí u alternativní varianty** → u variant mimo 3 nejlepší se graf dopočítá až po kliknutí (chvíli to trvá). Když se ani pak neobjeví, je výsledek ze starší verze výpočtu – spusť „Spočítat peak shaving" znovu.
 
 ---
 
