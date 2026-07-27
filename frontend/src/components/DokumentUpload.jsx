@@ -1,12 +1,19 @@
 import { useRef, useState } from "react";
-import { nabidkaNahrajDokument, nabidkaSmazDokument } from "../api";
+import { nabidkaNahrajDokument, nabidkaSmazDokument, nabidkaZmenTypDokumentu } from "../api";
 
 // Typy dokumentů + jejich povolené přípony (zrcadlí backend POVOLENE_PRIPONY).
 const TYPY = [
-  { klic: "faktura_pdf", nazev: "Faktura (PDF)", pripony: ".pdf" },
-  { klic: "spotreba_csv", nazev: "Spotřeba (CSV/XLSX)", pripony: ".csv,.xlsx,.xls" },
-  { klic: "jiny", nazev: "Jiný dokument", pripony: ".pdf,.csv,.xlsx,.xls,.png,.jpg,.jpeg" },
+  { klic: "faktura_pdf", nazev: "Faktura (PDF)", pripony: [".pdf"] },
+  { klic: "spotreba_csv", nazev: "Spotřeba (CSV/XLSX)", pripony: [".csv", ".xlsx", ".xls"] },
+  {
+    klic: "jiny",
+    nazev: "Jiný dokument",
+    pripony: [".pdf", ".csv", ".xlsx", ".xls", ".png", ".jpg", ".jpeg"],
+  },
 ];
+
+// Vše, co jde nahrát (zrcadlí backend TYP_PODLE_PRIPONY) – typ si odvodí backend z přípony.
+const VSECHNY_PRIPONY = ".pdf,.csv,.xlsx,.xls,.png,.jpg,.jpeg";
 
 const STAV_DOKUMENTU = {
   nahrano: "Čeká na zpracování (funkce se připravuje)",
@@ -22,31 +29,54 @@ function fmtVelikost(b) {
   return `${(b / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function pripona(nazev) {
+  const i = (nazev || "").lastIndexOf(".");
+  return i < 0 ? "" : nazev.slice(i).toLowerCase();
+}
+
+/** Na jaké typy jde daný soubor přeoznačit (PDF nemůže být profil spotřeby). */
+function moznostiProSoubor(nazev) {
+  const p = pripona(nazev);
+  return TYPY.filter((t) => t.pripony.includes(p));
+}
+
 /**
  * Znovupoužitelná komponenta pro nahrání dokumentů k nabídce (kap. 5 SPEC).
- * Soubor se jen uloží (stav "nahráno") – NEZPRACOVÁVÁ se.
+ * Typ dokumentu se rozpozná automaticky z přípony; u nahraného souboru
+ * jde přeoznačit rozbalovátkem. Soubor se jen uloží – NEZPRACOVÁVÁ se.
  */
 export default function DokumentUpload({ nabidkaId, dokumenty, onZmena }) {
-  const [typ, setTyp] = useState("faktura_pdf");
   const [nahrava, setNahrava] = useState(false);
   const [chyba, setChyba] = useState(null);
   const [over, setOver] = useState(false);
+  const [meniTypId, setMeniTypId] = useState(null);
   const inputRef = useRef(null);
-
-  const aktualniTyp = TYPY.find((t) => t.klic === typ);
 
   async function nahraj(file) {
     if (!file) return;
     setNahrava(true);
     setChyba(null);
     try {
-      await nabidkaNahrajDokument(nabidkaId, typ, file);
+      await nabidkaNahrajDokument(nabidkaId, file);
       if (inputRef.current) inputRef.current.value = "";
       await onZmena();
     } catch (e) {
       setChyba(e.message);
     } finally {
       setNahrava(false);
+    }
+  }
+
+  async function zmenTyp(id, typ) {
+    setMeniTypId(id);
+    setChyba(null);
+    try {
+      await nabidkaZmenTypDokumentu(id, typ);
+      await onZmena();
+    } catch (e) {
+      setChyba(e.message);
+    } finally {
+      setMeniTypId(null);
     }
   }
 
@@ -62,19 +92,6 @@ export default function DokumentUpload({ nabidkaId, dokumenty, onZmena }) {
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 10, flexWrap: "wrap" }}>
-        <div>
-          <label className="nb-label">Typ dokumentu</label>
-          <select className="nb-pole" value={typ} onChange={(e) => setTyp(e.target.value)} style={{ width: "auto" }}>
-            {TYPY.map((t) => (
-              <option key={t.klic} value={t.klic}>
-                {t.nazev}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
       <div
         className={`nb-drop${over ? " nb-drop-over" : ""}`}
         onClick={() => inputRef.current?.click()}
@@ -92,12 +109,14 @@ export default function DokumentUpload({ nabidkaId, dokumenty, onZmena }) {
         <input
           ref={inputRef}
           type="file"
-          accept={aktualniTyp?.pripony}
+          accept={VSECHNY_PRIPONY}
           style={{ display: "none" }}
           onChange={(e) => nahraj(e.target.files?.[0])}
         />
         {nahrava ? "Nahrávám…" : "Přetáhni sem soubor nebo klikni pro výběr"}
-        <div style={{ fontSize: 11, marginTop: 4 }}>Povoleno: {aktualniTyp?.pripony} · max 25 MB</div>
+        <div style={{ fontSize: 11, marginTop: 4 }}>
+          Typ dokumentu poznáme sami · PDF, CSV, XLS/XLSX, obrázek · max 25 MB
+        </div>
       </div>
 
       {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13, marginTop: 8 }}>{chyba}</div>}
@@ -106,17 +125,44 @@ export default function DokumentUpload({ nabidkaId, dokumenty, onZmena }) {
         {(dokumenty || []).length === 0 && (
           <div style={{ fontSize: 13, color: "var(--fm-muted)" }}>Zatím žádné nahrané dokumenty.</div>
         )}
-        {(dokumenty || []).map((d) => (
-          <div key={d.id} className="nb-doc-row">
-            <span style={{ fontWeight: 600 }}>{d.puvodni_nazev}</span>
-            <span style={{ color: "var(--fm-muted)" }}>{fmtVelikost(d.velikost_bajtu)}</span>
-            <span className="nb-doc-wait">{STAV_DOKUMENTU[d.stav_zpracovani] || d.stav_zpracovani}</span>
-            <span style={{ flex: 1 }} />
-            <button className="fm-btn" style={{ padding: "4px 10px", color: "var(--st-crit)" }} onClick={() => smaz(d.id)}>
-              Smazat
-            </button>
-          </div>
-        ))}
+        {(dokumenty || []).map((d) => {
+          const moznosti = moznostiProSoubor(d.puvodni_nazev);
+          return (
+            <div key={d.id} className="nb-doc-row">
+              <span style={{ fontWeight: 600 }}>{d.puvodni_nazev}</span>
+              <span style={{ color: "var(--fm-muted)" }}>{fmtVelikost(d.velikost_bajtu)}</span>
+              {moznosti.length > 1 ? (
+                <select
+                  className="nb-pole"
+                  value={d.typ}
+                  disabled={meniTypId === d.id}
+                  title="Rozpoznáno automaticky – tady se dá opravit"
+                  onChange={(e) => zmenTyp(d.id, e.target.value)}
+                  style={{ width: "auto", padding: "2px 6px", fontSize: 12 }}
+                >
+                  {moznosti.map((t) => (
+                    <option key={t.klic} value={t.klic}>
+                      {t.nazev}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span style={{ color: "var(--fm-muted)", fontSize: 12 }}>
+                  {TYPY.find((t) => t.klic === d.typ)?.nazev || d.typ}
+                </span>
+              )}
+              <span className="nb-doc-wait">{STAV_DOKUMENTU[d.stav_zpracovani] || d.stav_zpracovani}</span>
+              <span style={{ flex: 1 }} />
+              <button
+                className="fm-btn"
+                style={{ padding: "4px 10px", color: "var(--st-crit)" }}
+                onClick={() => smaz(d.id)}
+              >
+                Smazat
+              </button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

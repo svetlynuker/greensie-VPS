@@ -9,6 +9,7 @@ import dataclasses
 import re
 import unicodedata
 from datetime import date, datetime
+from typing import Optional
 
 from pathlib import Path
 
@@ -46,6 +47,7 @@ from app.nabidkovac.models import (
 from app.nabidkovac.permissions import vyzaduj_katalog, vyzaduj_nabidkovac
 from app.nabidkovac.schemas import (
     DokumentOut,
+    DokumentUprava,
     KatalogSloupecOut,
     KatalogSloupecVstup,
     NabidkaDetailOut,
@@ -59,6 +61,7 @@ from app.nabidkovac.schemas import (
     SazbaVstup,
     TechnologieOut,
     TechnologieVstup,
+    VariantaDetailVstup,
     VypoctovaNastaveniOut,
     VypoctovaNastaveniVstup,
     VystupKonfigurace,
@@ -216,18 +219,32 @@ def smaz_nabidku(
 @router.post("/nabidky/{nabidka_id}/dokumenty", response_model=DokumentOut)
 async def nahraj_dokument(
     nabidka_id: int,
-    typ: str = Form(...),
+    typ: Optional[str] = Form(None),
     soubor: UploadFile = File(...),
     user: User = Depends(vyzaduj_nabidkovac),
     db: Session = Depends(get_db),
 ):
     """Nahraje dokument k nabídce. NEZPRACOVÁVÁ ho – jen uloží soubor a založí
     záznam se stavem "nahrano". Extrakce/parsování přijde v dalších promptech.
+
+    Typ dokumentu je volitelný: když nepřijde (nebo přijde "auto"), odvodí se
+    z přípony souboru – uživatel tak nemusí před nahráním nic vybírat.
     """
     n = db.get(Nabidka, nabidka_id)
     if n is None:
         raise HTTPException(status_code=404, detail="Nabídka neexistuje")
-    if typ not in TYPY_DOKUMENTU:
+
+    if typ in (None, "", "auto"):
+        typ = soubory.odvod_typ(soubor.filename or "")
+        if typ is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Typ souboru se nepodařilo rozpoznat. Povolené formáty: "
+                    f"{', '.join(soubory.VSECHNY_PRIPONY)}."
+                ),
+            )
+    elif typ not in TYPY_DOKUMENTU:
         raise HTTPException(status_code=422, detail=f"Neznámý typ dokumentu: {typ}")
 
     pripona = Path(soubor.filename or "").suffix.lower()
@@ -261,6 +278,36 @@ async def nahraj_dokument(
     # nahrání dokumentů posune koncept do stavu "data nahrána"
     if n.stav == "koncept":
         n.stav = "data_nahrana"
+    db.commit()
+    db.refresh(d)
+    return _dokument_out(d)
+
+
+@router.patch("/dokumenty/{dokument_id}", response_model=DokumentOut)
+def uprav_dokument(
+    dokument_id: int,
+    vstup: DokumentUprava,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Přepne typ už nahraného dokumentu (když automat podle přípony minul).
+
+    Hlídá se stejný whitelist přípon jako při nahrání – např. PDF nejde
+    označit za profil spotřeby.
+    """
+    d = db.get(NabidkaDokument, dokument_id)
+    if d is None:
+        raise HTTPException(status_code=404, detail="Dokument neexistuje")
+
+    pripona = Path(d.soubor_cesta).suffix.lower()
+    povolene = soubory.POVOLENE_PRIPONY.get(vstup.typ, set())
+    if pripona not in povolene:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Soubor {pripona} nelze označit jako tenhle typ (povoleno: {', '.join(sorted(povolene))}).",
+        )
+
+    d.typ = vstup.typ
     db.commit()
     db.refresh(d)
     return _dokument_out(d)
@@ -909,28 +956,10 @@ def _varianta_json(v: peak_shaving.Varianta) -> dict:
     }
 
 
-@router.post("/nabidky/{nabidka_id}/peak-shaving/vypocet")
-def spocti_peak_shaving(
-    nabidka_id: int,
-    vstup: PeakShavingVstup,
-    user: User = Depends(vyzaduj_nabidkovac),
-    db: Session = Depends(get_db),
-):
-    """Spustí výpočet peak shavingu a uloží výsledek do `navrhovana_reseni`.
-
-    Postup dle METODIKY kap. 4–5:
-    1. načte 15min profil odběru z `spotreba_profil` dané nabídky,
-    2. najde sazby distributora (stara_2026 pro výběr varianty, nova_2027 pro info),
-    3. projede katalog baterií × počty kusů, vybere nejrychlejší návratnost,
-    4. uloží `NavrhovaneReseni` (typ_reseni = peak_shaving) s ekonomikou 2026 i 2027.
-    """
-    n = db.get(Nabidka, nabidka_id)
-    if n is None:
-        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
-    if vstup.rezervovana_kapacita_kw <= 0:
-        raise HTTPException(status_code=422, detail="Rezervovaná kapacita musí být kladná.")
-
-    # 1) profil odběru (kW) z uložené časové řady
+def _profil_pro_peak_shaving(
+    db: Session, nabidka_id: int
+) -> tuple[list[float], list[int], float, list[str]]:
+    """Načte 15min profil nabídky pro peak shaving → (kW, měsíce, interval_h, upozornění)."""
     radky = (
         db.query(SpotrebaProfil)
         .filter(
@@ -956,7 +985,74 @@ def spocti_peak_shaving(
     casy_profilu, profil_kw, upozorneni_profilu = _zvaliduj_a_orizni_profil(
         casy_profilu, profil_kw, interval_h, pro_peak_shaving=True
     )
-    mesice = [c.month for c in casy_profilu]
+    return profil_kw, [c.month for c in casy_profilu], interval_h, upozorneni_profilu
+
+
+# Kolika nejlepším variantám se graf + citlivost počítá rovnou při výpočtu.
+# Zbytek se dopočítá až na vyžádání (jedna varianta ≈ 0,2 s, všech 84 ≈ 15 s).
+POCET_VARIANT_S_GRAFEM = 3
+
+
+def _detail_varianty(
+    vj: dict,
+    profil_kw: list[float],
+    mesice: list[int],
+    interval_h: float,
+    rezervovana_kapacita_kw: float,
+) -> dict:
+    """Dopočítá graf měsíčních maxim + citlivost stropu (PS-10) pro variantu.
+
+    Pracuje nad JSON podobou varianty (`_varianta_json`), takže se dá zavolat
+    i dodatečně nad už uloženým řešením.
+    """
+    graf = peak_shaving.graf_maxima(
+        profil_kw,
+        mesice,
+        vj["celkovy_vykon_kw"],
+        vj["vyuzitelna_kapacita_kwh"],
+        vj["strop_kw"],
+        interval_h,
+        vj["ucinnost_rt"],
+    )
+    graf["rp_soucasna_kw"] = round(rezervovana_kapacita_kw, 2)
+    graf["rp_nova_kw"] = round(vj["nova_rezervovana_kapacita_kw"], 2)
+    return {
+        "graf": graf,
+        "citlivost_stropu": peak_shaving.citlivost_stropu(
+            profil_kw,
+            vj["celkovy_vykon_kw"],
+            vj["vyuzitelna_kapacita_kwh"],
+            vj["strop_kw"],
+            vj["rezerva_rk_procenta"],
+            interval_h,
+            vj["ucinnost_rt"],
+        ),
+    }
+
+
+@router.post("/nabidky/{nabidka_id}/peak-shaving/vypocet")
+def spocti_peak_shaving(
+    nabidka_id: int,
+    vstup: PeakShavingVstup,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Spustí výpočet peak shavingu a uloží výsledek do `navrhovana_reseni`.
+
+    Postup dle METODIKY kap. 4–5:
+    1. načte 15min profil odběru z `spotreba_profil` dané nabídky,
+    2. najde sazby distributora (stara_2026 pro výběr varianty, nova_2027 pro info),
+    3. projede katalog baterií × počty kusů, vybere nejrychlejší návratnost,
+    4. uloží `NavrhovaneReseni` (typ_reseni = peak_shaving) s ekonomikou 2026 i 2027.
+    """
+    n = db.get(Nabidka, nabidka_id)
+    if n is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    if vstup.rezervovana_kapacita_kw <= 0:
+        raise HTTPException(status_code=422, detail="Rezervovaná kapacita musí být kladná.")
+
+    # 1) profil odběru (kW) z uložené časové řady
+    profil_kw, mesice, interval_h, upozorneni_profilu = _profil_pro_peak_shaving(db, nabidka_id)
 
     # 2) sazby (stara_2026 povinná pro výběr; nova_2027 volitelná – jen info)
     sazba_2026 = _najdi_sazbu(db, vstup.distributor, vstup.napetova_hladina, "stara_2026", 2026)
@@ -1170,34 +1266,20 @@ def spocti_peak_shaving(
         },
     }
 
-    # 2.–3. nejlepší varianta pro srovnání (kap. 5) – vítěz je [0]. Každá
-    # varianta nese i vlastní graf a citlivost, aby šel detail překreslit
-    # kliknutím v tabulce srovnání (FE).
+    # Všechny spočítané varianty pro srovnání (kap. 5) – vítěz je [0], řazeno
+    # dle NPV. Ukládáme kompletní seznam, ať jde manažersky rozhodnout i mimo
+    # TOP 3; graf a citlivost se ale předpočítají jen pro prvních pár variant
+    # (u 84 produktů ceníku by dopočet pro všechny přidal ~15 s výpočtu).
+    # Zbytku se graf dopočítá až na kliknutí – endpoint /varianta-detail.
     varianty_json = []
-    for v in vysledek.varianty[:3]:
+    for poradi, v in enumerate(vysledek.varianty):
         vj = _varianta_json(v)
-        graf = peak_shaving.graf_maxima(
-            profil_kw,
-            mesice,
-            v.celkovy_vykon_kw,
-            v.vyuzitelna_kapacita_kwh,
-            v.strop_kw,
-            interval_h,
-            v.ucinnost_rt,
-        )
-        graf["rp_soucasna_kw"] = round(vstup.rezervovana_kapacita_kw, 2)
-        graf["rp_nova_kw"] = round(v.nova_rezervovana_kapacita_kw, 2)
-        vj["graf"] = graf
-        # Citlivost stropu na meziroční variabilitu (audit PS-10).
-        vj["citlivost_stropu"] = peak_shaving.citlivost_stropu(
-            profil_kw,
-            v.celkovy_vykon_kw,
-            v.vyuzitelna_kapacita_kwh,
-            v.strop_kw,
-            v.rezerva_rk_procenta,
-            interval_h,
-            v.ucinnost_rt,
-        )
+        if poradi < POCET_VARIANT_S_GRAFEM:
+            vj.update(
+                _detail_varianty(
+                    vj, profil_kw, mesice, interval_h, vstup.rezervovana_kapacita_kw
+                )
+            )
         varianty_json.append(vj)
 
     popis_json.update(
@@ -1237,6 +1319,61 @@ def spocti_peak_shaving(
     db.refresh(reseni)
 
     return {"reseni_id": reseni.id, "popis_json": popis_json}
+
+
+@router.post("/nabidky/{nabidka_id}/peak-shaving/varianta-detail")
+def dopocti_variantu(
+    nabidka_id: int,
+    vstup: VariantaDetailVstup,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Dopočítá graf měsíčních maxim + citlivost pro variantu mimo TOP 3.
+
+    Při výpočtu se předpočítají jen první `POCET_VARIANT_S_GRAFEM` varianty
+    (dopočet pro celý ceník by přidal ~15 s). Když si obchodník rozklikne
+    variantu z plného srovnání, dopočítá se na vyžádání a uloží do řešení,
+    takže podruhé je hned k dispozici.
+    """
+    reseni = (
+        db.query(NavrhovaneReseni)
+        .filter(
+            NavrhovaneReseni.nabidka_id == nabidka_id,
+            NavrhovaneReseni.typ_reseni == "peak_shaving",
+        )
+        .order_by(NavrhovaneReseni.id.desc())
+        .first()
+    )
+    if reseni is None:
+        raise HTTPException(status_code=404, detail="Nabídka nemá spočítaný peak shaving.")
+
+    popis = dict(reseni.popis_json or {})
+    varianty = list(popis.get("varianty") or [])
+    if not 0 <= vstup.index < len(varianty):
+        raise HTTPException(status_code=422, detail="Varianta s tímhle pořadím ve výsledku není.")
+
+    vj = dict(varianty[vstup.index])
+    if vj.get("graf") and vj.get("citlivost_stropu"):
+        return {"index": vstup.index, "graf": vj["graf"], "citlivost_stropu": vj["citlivost_stropu"]}
+
+    # Starší uložené výsledky nemusí nést parametry potřebné pro simulaci.
+    if any(vj.get(k) is None for k in ("celkovy_vykon_kw", "vyuzitelna_kapacita_kwh", "strop_kw")):
+        raise HTTPException(
+            status_code=422,
+            detail="Tenhle výsledek je ze starší verze výpočtu – spusť „Spočítat peak shaving“ znovu.",
+        )
+
+    profil_kw, mesice, interval_h, _ = _profil_pro_peak_shaving(db, nabidka_id)
+    rezervovana_kapacita_kw = float((popis.get("vstup") or {}).get("rezervovana_kapacita_kw") or 0)
+    detail = _detail_varianty(vj, profil_kw, mesice, interval_h, rezervovana_kapacita_kw)
+
+    vj.update(detail)
+    varianty[vstup.index] = vj
+    popis["varianty"] = varianty
+    reseni.popis_json = popis  # nový objekt → SQLAlchemy uloží změnu JSONB
+    db.commit()
+
+    return {"index": vstup.index, **detail}
 
 
 # ================= PPA pro FVE – výpočet (METODIKA-ppa-fve.md kap. 4–5) =================

@@ -24,7 +24,28 @@ POVOLENE_PRIPONY = {
     "jiny": {".pdf", ".csv", ".xlsx", ".xls", ".png", ".jpg", ".jpeg"},
 }
 
+# Automatické rozpoznání typu podle přípony – uživatel nemusí nic vybírat.
+# Tabulka = profil spotřeby, PDF = faktura, obrázek = jiný dokument.
+# Špatný odhad se dá po nahrání přepnout (PATCH /dokumenty/{id}).
+TYP_PODLE_PRIPONY = {
+    ".pdf": "faktura_pdf",
+    ".csv": "spotreba_csv",
+    ".xlsx": "spotreba_csv",
+    ".xls": "spotreba_csv",
+    ".png": "jiny",
+    ".jpg": "jiny",
+    ".jpeg": "jiny",
+}
+
+VSECHNY_PRIPONY = sorted(TYP_PODLE_PRIPONY)
+
 MAX_BAJTU = 25 * 1024 * 1024  # 25 MB
+
+
+def odvod_typ(nazev: str) -> str | None:
+    """Vrátí typ dokumentu odvozený z přípony, nebo None u neznámé přípony."""
+    pripona = os.path.splitext(nazev or "")[1].lower()
+    return TYP_PODLE_PRIPONY.get(pripona)
 
 
 def _bezpecny_nazev(nazev: str) -> str:

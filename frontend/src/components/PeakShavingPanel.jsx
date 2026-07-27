@@ -3,9 +3,13 @@ import GrafOdberu from "./GrafOdberu";
 import {
   sazbySeznam,
   peakShavingProfilSouhrn,
+  peakShavingVariantaDetail,
   peakShavingVypocet,
   profilZpracuj,
 } from "../api";
+
+// Kolik variant se ukáže ve „zkráceném" srovnání (zbytek po přepnutí na vše).
+const POCET_TOP_VARIANT = 3;
 
 const DISTRIB = [
   { klic: "cez", nazev: "ČEZ Distribuce" },
@@ -123,6 +127,11 @@ export default function PeakShavingPanel({ nabidka }) {
   const [zpracovavaId, setZpracovavaId] = useState(null);
   // Varianta vybraná kliknutím ve srovnání (0 = doporučená).
   const [vybranyIdx, setVybranyIdx] = useState(0);
+  // Srovnání: false = 3 nejlepší, true = celý katalog (manažerské rozhodnutí).
+  const [vsechnyVarianty, setVsechnyVarianty] = useState(false);
+  // Graf/citlivost dopočítané na kliknutí u variant mimo TOP 3: { index: {...} }.
+  const [dopoctene, setDopoctene] = useState({});
+  const [dopocitava, setDopocitava] = useState(false);
   // Rok zobrazených hodnot (dlaždice, graf, srovnání) – default 2027 (NTS).
   const [rokZobrazeni, setRokZobrazeni] = useState(2027);
 
@@ -181,6 +190,7 @@ export default function PeakShavingPanel({ nabidka }) {
       });
       setVysledek(r.popis_json);
       setVybranyIdx(0);
+      setDopoctene({});
     } catch (e) {
       setChyba(e.message);
     } finally {
@@ -192,9 +202,32 @@ export default function PeakShavingPanel({ nabidka }) {
   // Starší uložené výsledky nesou graf/citlivost jen na nejvyšší úrovni
   // (pro doporučenou) – u alternativ se pak grafy skryjí.
   const varianty = vysledek?.varianty || [];
+  const zobrazeneVarianty = vsechnyVarianty ? varianty : varianty.slice(0, POCET_TOP_VARIANT);
   const dop = varianty[vybranyIdx] || vysledek?.doporucena;
-  const graf = dop?.graf || (vybranyIdx === 0 ? vysledek?.graf : null);
-  const citlivost = dop?.citlivost_stropu || (vybranyIdx === 0 ? vysledek?.citlivost_stropu : null);
+  const graf =
+    dop?.graf || dopoctene[vybranyIdx]?.graf || (vybranyIdx === 0 ? vysledek?.graf : null);
+  const citlivost =
+    dop?.citlivost_stropu ||
+    dopoctene[vybranyIdx]?.citlivost_stropu ||
+    (vybranyIdx === 0 ? vysledek?.citlivost_stropu : null);
+
+  // Kliknutí ve srovnání: u variant mimo TOP 3 si graf + citlivost doberem
+  // ze serveru (dopočítat je pro celý ceník rovnou by výpočet výrazně zdržel).
+  async function vyberVariantu(i) {
+    setVybranyIdx(i);
+    const v = varianty[i];
+    if (!v || v.graf || dopoctene[i]) return;
+    setDopocitava(true);
+    setChyba(null);
+    try {
+      const d = await peakShavingVariantaDetail(nabidka.id, i);
+      setDopoctene((s) => ({ ...s, [i]: d }));
+    } catch (e) {
+      setChyba(e.message);
+    } finally {
+      setDopocitava(false);
+    }
+  }
 
   // Bez spočítané ekonomiky 2027 (čeká se na sazby ERÚ) se hodnoty roku 2027
   // ukázat nedají – zobrazení spadne na 2026 a tlačítko 2027 se zakáže.
@@ -576,7 +609,9 @@ export default function PeakShavingPanel({ nabidka }) {
               )}
               {!graf && vybranyIdx !== 0 && (
                 <div style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 14px" }}>
-                  Grafy pro alternativní varianty se ukládají až od nové verze výpočtu — spusť „Spočítat peak shaving" znovu.
+                  {dopocitava
+                    ? "Počítám graf pro tuhle variantu…"
+                    : "Graf pro tuhle variantu zatím není — spusť „Spočítat peak shaving“ znovu."}
                 </div>
               )}
 
@@ -647,20 +682,52 @@ export default function PeakShavingPanel({ nabidka }) {
 
               {varianty.length > 1 && (
                 <>
-                  <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Srovnání variant</h4>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      flexWrap: "wrap",
+                      margin: "0 0 6px",
+                    }}
+                  >
+                    <h4 style={{ margin: 0, fontSize: 13 }}>
+                      Srovnání variant{" "}
+                      <span style={{ fontWeight: 400, color: "var(--fm-muted)" }}>
+                        ({zobrazeneVarianty.length} z {varianty.length})
+                      </span>
+                    </h4>
+                    {varianty.length > POCET_TOP_VARIANT && (
+                      <button
+                        className="fm-btn"
+                        style={{ padding: "4px 10px", fontSize: 12 }}
+                        onClick={() => {
+                          // Zpět na TOP 3: když byla vybraná varianta z plného
+                          // seznamu, vrať zobrazení na doporučenou.
+                          if (vsechnyVarianty && vybranyIdx >= POCET_TOP_VARIANT) setVybranyIdx(0);
+                          setVsechnyVarianty((s) => !s);
+                        }}
+                      >
+                        {vsechnyVarianty
+                          ? `Zobrazit jen ${POCET_TOP_VARIANT} nejlepší`
+                          : `Zobrazit všechny baterie (${varianty.length})`}
+                      </button>
+                    )}
+                  </div>
                   <div className="nb-scroll">
                     <table className="nb-table">
                       <thead>
                         <tr><th>Baterie</th><th>Výkon / kapacita</th><th>Nová rez.</th><th>Úspora/rok ({rok})</th><th>Cena</th><th>Návratnost ({rok})</th><th>NPV</th></tr>
                       </thead>
                       <tbody>
-                        {varianty.map((v, i) => (
+                        {zobrazeneVarianty.map((v, i) => (
                           <VariantaRadek
                             key={`${v.baterie_id}-${v.pocet_kusu}`}
                             v={v}
                             rok={rok}
                             vybrana={i === vybranyIdx}
-                            onVyber={() => setVybranyIdx(i)}
+                            onVyber={() => vyberVariantu(i)}
                           />
                         ))}
                       </tbody>
@@ -668,6 +735,11 @@ export default function PeakShavingPanel({ nabidka }) {
                   </div>
                   <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 4 }}>
                     <b>Kliknutím na řádek se celý detail (čísla, ekonomika, grafy) překreslí pro danou variantu</b> (◄ = zobrazená; první řádek = doporučená dle NPV).
+                    {!vsechnyVarianty && varianty.length > POCET_TOP_VARIANT && (
+                      <>
+                        {" "}Spočítané jsou všechny baterie z katalogu – tlačítkem výš je ukážeš všechny.
+                      </>
+                    )}
                   </div>
                 </>
               )}

@@ -112,9 +112,9 @@ Legenda „kdo vidí": **(vše)** = každý, kdo Nabídkovač otevře (právo `n
 #### Detail nabídky – karta Podklady (nahrávání dokumentů)
 | Prvek | Co dělá | Kdo vidí |
 |---|---|---|
-| **Typ dokumentu** | Výběr: *Faktura (PDF)* / *Spotřeba (CSV/XLSX)* / *Jiný dokument* | vše |
-| **Přetáhni sem soubor / klikni** | Nahraje soubor (drag & drop nebo výběr); povolené přípony dle typu, max 25 MB | vše |
-| **Řádek dokumentu** | Ukáže název, velikost a stav zpracování | vše |
+| **Přetáhni sem soubor / klikni** | Nahraje soubor (drag & drop nebo výběr); typ se pozná sám z přípony, max 25 MB | vše |
+| **Typ (u řádku dokumentu)** | Rozpoznaný typ; rozbalovátkem jde opravit, pokud to přípona dovolí (PDF = faktura / jiný, tabulka = spotřeba / jiný) | vše |
+| **Řádek dokumentu** | Ukáže název, velikost, typ a stav zpracování | vše |
 | **Smazat (u dokumentu)** | Smaže dokument (soubor i záznam) | vše |
 | **Otevřít nabídku pro zákazníka** | Jen u PPA/Peak shavingu – přejde do editoru výstupu | vše |
 
@@ -239,8 +239,9 @@ interní čísla se nenabízejí.
   - `GET /nabidky/{id}` — detail (včetně dokumentů a řešení).
   - `PUT /nabidky/{id}` — úprava zákazníka a případně stavu.
   - `DELETE /nabidky/{id}` — smaže nabídku i soubory.
-  - `POST /nabidky/{id}/dokumenty` — nahraje dokument (multipart: `typ`, `soubor`); posune
-    koncept na *data_nahrana*.
+  - `POST /nabidky/{id}/dokumenty` — nahraje dokument (multipart: `soubor`, volitelně `typ`;
+    bez `typ` se odvodí z přípony); posune koncept na *data_nahrana*.
+  - `PATCH /dokumenty/{id}` — přepne typ nahraného dokumentu (jen typ, který přípona dovoluje).
   - `DELETE /dokumenty/{id}` — smaže dokument (soubor + záznam).
   - `GET/POST /technologie`, `PUT/DELETE /technologie/{id}` — katalog (čtení: `nabidkovac`; zápis: `nabidkovac_katalog`).
   - `GET/POST /katalog-sloupce`, `PUT/DELETE /katalog-sloupce/{id}` — vlastní sloupce katalogu.
@@ -274,8 +275,11 @@ interní čísla se nenabízejí.
   nebo jednotlivci v Admin nastavení.
 - **Katalog jde jen číst, tlačítka + Technologie/+ Sloupec chybí** → chybí právo `nabidkovac_katalog`
   (jen vedení/admin); dlaždice „⚙ Katalog a výpočty" se pak ani nezobrazí.
-- **„Nepovolená přípona" / „Soubor je příliš velký"** → povolené přípony podle typu dokumentu
-  (faktura = `.pdf`; spotřeba = `.csv/.xlsx/.xls`), limit 25 MB.
+- **„Typ souboru se nepodařilo rozpoznat"** → nahráváš něco mimo povolené formáty
+  (`.pdf`, `.csv`, `.xlsx`, `.xls`, `.png`, `.jpg`, `.jpeg`). Např. `.docx` neprojde.
+- **„Soubor je příliš velký"** → limit je 25 MB na soubor.
+- **Dokument se označil špatně** (např. PDF jako faktura, i když je to smlouva) → přepni typ
+  rozbalovátkem přímo u řádku dokumentu.
 - **„U baterie musí být vyplněný výkon i kapacita"** → u typu Baterie musí být obě čísla kladná.
 - **„Pole … není mezi povolenými zákaznickými údaji" (422 při ukládání výstupu)** → do konfigurace
   se dostal klíč mimo whitelist (typicky zastaralá uložená konfigurace); je to záměrná ochrana.

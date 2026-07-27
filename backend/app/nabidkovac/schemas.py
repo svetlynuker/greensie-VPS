@@ -24,6 +24,12 @@ class DokumentOut(BaseModel):
     nahrano_at: Optional[str] = None
 
 
+class DokumentUprava(BaseModel):
+    """Ruční přepnutí typu už nahraného dokumentu (automat podle přípony minul)."""
+
+    typ: TypDokumentu
+
+
 class ReseniOut(BaseModel):
     id: int
     typ_reseni: TypNabidky
@@ -192,6 +198,12 @@ class PeakShavingVstup(BaseModel):
     # roste kapacita s počtem kusů, ale výkon bývá omezen sdíleným/pevným
     # střídačem (PCS). Prázdné = počítá se jen ze štítkového výkonu produktu.
     max_vykon_stridace_kw: Optional[float] = None
+
+
+class VariantaDetailVstup(BaseModel):
+    """Pořadí varianty ve srovnání, které se má dopočítat (0 = doporučená)."""
+
+    index: int
 
 
 # ---- PPA pro FVE výpočet (METODIKA-ppa-fve.md, kap. 2/4) ----
