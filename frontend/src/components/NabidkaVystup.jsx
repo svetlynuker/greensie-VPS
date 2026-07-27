@@ -75,6 +75,7 @@ function BlokGraf({ blok, typReseni, graf, tisk }) {
             sBaterii={graf.s_baterii_2026_kw}
             rpSoucasna={graf.rp_soucasna_kw}
             rpNova={graf.rp_nova_kw}
+            dokupuMesicu={graf.dokupu_mesicu}
           />
         )}
       </div>

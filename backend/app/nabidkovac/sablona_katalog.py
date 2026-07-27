@@ -59,6 +59,8 @@ def _fmt(hodnota: Any, format: str) -> str:
         return f"{_cislo(h, 1)}{NBSP}let"
     if format == "roky_cele":
         return f"{_cislo(round(h))}{NBSP}let"
+    if format == "cele_cislo":  # číslo bez jednotky (sloupec „Rok“)
+        return _cislo(round(h))
     if format == "pocet":
         return f"{_cislo(round(h))}{NBSP}ks"
     if format == "stupne":
@@ -119,7 +121,11 @@ _POLE_PPA: list[Pole] = [
          lambda p: _g(p, "vysledek", "delka_kontraktu_roky")),
     Pole("cena_ppa_rok1_kc_mwh", "Cena elektřiny z elektrárny (1. rok)", "penize_mwh",
          lambda p: _prvni_rok(p, "cena_ppa_kc_mwh")),
-    Pole("vyhnutelna_cena_rok1_kc_mwh", "Vaše dnešní cena elektřiny", "penize_mwh",
+    # Není to koncová cena z faktury, ale jen VYHNUTELNÁ část (silová složka +
+    # variabilní regulované platby). Fixní platby (jistič, OTE, daň) klient
+    # platí dál, takže label „vaše dnešní cena elektřiny“ zákazníka pletl –
+    # nesouhlasil mu s fakturou (revize 26. 7. 2026).
+    Pole("vyhnutelna_cena_rok1_kc_mwh", "Dnešní cena elektřiny, kterou nahradíme", "penize_mwh",
          lambda p: _g(p, "vysledek", "vyhnutelna_cena_rok1_kc_mwh")),
     Pole("uspora_rok1_kc", "Úspora v 1. roce", "penize",
          lambda p: _prvni_rok(p, "uspora_klient_kc")),
@@ -132,9 +138,11 @@ _POLE_PPA: list[Pole] = [
 
 # Sloupce roční tabulky PPA (jen zákaznické). Pořadí = pořadí sloupců.
 _TABULKA_PPA = [
-    {"klic": "rok", "nazev": "Rok", "format": "roky_cele"},
+    # „Rok“ je pořadové číslo, ne doba – formát bez jednotky (dřív „1 let“).
+    {"klic": "rok", "nazev": "Rok", "format": "cele_cislo"},
     {"klic": "cena_ppa_kc_mwh", "nazev": "Cena z elektrárny", "format": "penize_mwh"},
-    {"klic": "cena_dodavatel_kc_mwh", "nazev": "Vaše dnešní cena", "format": "penize_mwh"},
+    # Vyhnutelná cena, ne koncová cena z faktury – viz pole výše.
+    {"klic": "cena_dodavatel_kc_mwh", "nazev": "Cena, kterou nahrazujeme", "format": "penize_mwh"},
     {"klic": "uspora_klient_kc", "nazev": "Úspora v roce", "format": "penize"},
     {"klic": "uspora_klient_kum_kc", "nazev": "Úspora celkem", "format": "penize"},
 ]
@@ -152,24 +160,49 @@ _POLE_PS: list[Pole] = [
     Pole("celkovy_vykon_kw", "Výkon baterie", "vykon_kw", lambda p: _dop(p, "celkovy_vykon_kw")),
     Pole("celkova_kapacita_kwh", "Kapacita baterie", "kapacita_kwh",
          lambda p: _dop(p, "celkova_kapacita_kwh")),
+    # PRODEJNÍ cena – to, co klient reálně zaplatí. Nákupní cena a marže mají
+    # klíče `nakupni_cena_celkem_kc` / `marze_kc`, které tady schválně NEJSOU,
+    # takže je resolver do nabídky nikdy nevrátí (revize 26. 7. 2026).
     Pole("cena_celkem_kc", "Investice do baterie", "penize", lambda p: _dop(p, "cena_celkem_kc")),
     Pole("rezervovana_kapacita_kw", "Současná rezervovaná kapacita", "vykon_kw",
          lambda p: _g(p, "vstup", "rezervovana_kapacita_kw")),
-    Pole("nova_rezervovana_kapacita_kw", "Nová rezervovaná kapacita", "vykon_kw",
+    Pole("nova_rezervovana_kapacita_kw", "Nová roční rezervovaná kapacita", "vykon_kw",
          lambda p: _dop(p, "nova_rezervovana_kapacita_kw")),
+    # Kolik měsíců se k roční RK dokupuje měsíční rezervace (revize
+    # 26. 7. 2026): bez toho čtenář nechápe, proč je „nová rezervovaná
+    # kapacita“ nižší než hodnota, na kterou baterie sráží špičku, a proč
+    # sloupce v grafu v některých měsících přerostou čáru nové rezervace.
+    Pole("dokupy_s_baterii_pocet_mesicu", "Z toho měsíců s dokupem rezervace", "pocet",
+         lambda p: _dop(p, "ekonomika_2026", "dokupy_s_baterii_pocet_mesicu")),
     Pole("strop_kw", "Špičku snížíme na", "vykon_kw", lambda p: _dop(p, "strop_kw")),
     Pole("soucasny_naklad_celkem", "Dnešní roční náklad za rezervaci", "penize",
          lambda p: _dop(p, "ekonomika_2026", "soucasny_naklad_celkem")),
-    Pole("rocni_uspora_2026_kc", "Roční úspora", "penize",
+    # ROZPAD ÚSPORY (revize 26. 7. 2026). Dřív nabídka ukazovala jen celkovou
+    # úsporu vedle návratnosti počítané z přínosu baterie, takže si dokopočet
+    # zákazníka (investice ÷ úspora) a uvedená návratnost odporovaly řádově.
+    # Teď jsou v nabídce obě složky a je z čeho návratnost vychází.
+    Pole("uspora_bez_investice_2026_kc", "Úspora úpravou rezervace (bez investice)", "penize",
+         lambda p: _dop(p, "uspora_bez_investice_2026_kc")),
+    Pole("prinos_baterie_2026_kc", "Úspora díky baterii", "penize",
+         lambda p: _dop(p, "prinos_baterie_2026_kc")),
+    Pole("rocni_uspora_2026_kc", "Roční úspora celkem", "penize",
          lambda p: _dop(p, "rocni_uspora_2026_kc")),
-    Pole("navratnost_roky", "Návratnost investice", "roky",
+    Pole("navratnost_roky", "Návratnost investice do baterie", "roky",
          lambda p: _dop(p, "navratnost_roky")),
 ]
 
 # Sloupce roční tabulky peak shavingu (jen zákaznické).
 _TABULKA_PS = [
-    {"klic": "rok", "nazev": "Rok", "format": "roky_cele"},
-    {"klic": "prinos_kc", "nazev": "Úspora v roce", "format": "penize"},
+    # „Rok“ je pořadové číslo, ne doba – formát bez jednotky (dřív „1 let“).
+    {"klic": "rok", "nazev": "Rok", "format": "cele_cislo"},
+    # `prinos_kc` je přínos BATERIE (ne celková úspora vč. úpravy rezervace) –
+    # název to musí říct, ať sedí s kartou „Úspora díky baterii“.
+    {"klic": "prinos_kc", "nazev": "Úspora díky baterii", "format": "penize"},
+    # Provoz a údržba (O&M) je součástí kumulativního řádku, ale bez vlastního
+    # sloupce vypadala tabulka rozporně: úspora kladná, a přitom kumulativ
+    # roste pomaleji (nebo klesá), než by z ní vycházelo.
+    {"klic": "oam_kc", "nazev": "Provoz a údržba", "format": "penize"},
+    {"klic": "cf_kc", "nazev": "Čistý přínos za rok", "format": "penize"},
     {"klic": "cf_kum_kc", "nazev": "Kumulativně vč. investice", "format": "penize"},
 ]
 
@@ -262,9 +295,11 @@ _UVOD_PPA = (
     "za cenu nižší, než platíte dnes, po celou dobu kontraktu."
 )
 _ZAVER_PPA = (
-    "Tato nabídka je nezávazná a slouží jako orientační přehled. Rádi vám "
-    "kdykoli vysvětlíme jednotlivé údaje a připravíme konečnou smlouvu na míru. "
-    "Kontaktujte nás – těšíme se na spolupráci."
+    "Všechny uvedené ceny a částky jsou bez DPH. Tato nabídka je nezávazná a slouží "
+    "jako orientační přehled – vychází z vašeho naměřeného profilu spotřeby a z "
+    "modelové výroby elektrárny, skutečná výroba se rok od roku liší podle počasí. "
+    "Rádi vám kdykoli vysvětlíme jednotlivé údaje a připravíme konečnou smlouvu na "
+    "míru. Kontaktujte nás – těšíme se na spolupráci."
 )
 _UVOD_PS = (
     "Děkujeme za váš zájem o bateriové úložiště pro snížení špiček odběru "
@@ -273,9 +308,10 @@ _UVOD_PS = (
     "– bez omezení vašeho běžného provozu."
 )
 _ZAVER_PS = (
-    "Tato nabídka je nezávazná a slouží jako orientační přehled. Rádi vám "
-    "kdykoli vysvětlíme jednotlivé údaje a připravíme konečné řešení na míru. "
-    "Kontaktujte nás – těšíme se na spolupráci."
+    "Všechny uvedené ceny a částky jsou bez DPH. Tato nabídka je nezávazná a slouží "
+    "jako orientační přehled – vychází z vašeho naměřeného profilu odběru za uplynulý "
+    "rok, budoucí špičky se mohou lišit. Rádi vám kdykoli vysvětlíme jednotlivé údaje "
+    "a připravíme konečné řešení na míru. Kontaktujte nás – těšíme se na spolupráci."
 )
 
 VYCHOZI_SABLONA: dict[str, dict] = {
@@ -318,18 +354,30 @@ VYCHOZI_SABLONA: dict[str, dict] = {
                       "celkova_kapacita_kwh", "cena_celkem_kc"]},
             {"id": "kapacita", "druh": "udaje", "viditelny": True,
              "nadpis": "Snížení rezervované kapacity",
-             "text": "Baterie sráží špičky, takže vám stačí nižší sjednaná kapacita.",
+             "text": (
+                 "Baterie sráží špičky, takže vám stačí nižší sjednaná kapacita. "
+                 "Roční rezervaci držíme na úrovni běžných měsíců a v několika "
+                 "nejsilnějších měsících se k ní dokupuje měsíční rezervace – to "
+                 "vychází levněji než držet vysokou rezervaci celý rok."
+             ),
              "pole": ["rezervovana_kapacita_kw", "nova_rezervovana_kapacita_kw",
-                      "strop_kw"]},
+                      "dokupy_s_baterii_pocet_mesicu", "strop_kw"]},
             {"id": "uspora", "druh": "udaje", "viditelny": True,
              "nadpis": "Vaše úspora",
-             "pole": ["soucasny_naklad_celkem", "rocni_uspora_2026_kc",
+             "text": (
+                 "Úsporu rozdělujeme na dvě části. První část získáte samotnou "
+                 "úpravou sjednané rezervované kapacity, tedy bez jakékoli "
+                 "investice. Druhou část přináší baterie – a právě z ní se počítá "
+                 "návratnost investice."
+             ),
+             "pole": ["soucasny_naklad_celkem", "uspora_bez_investice_2026_kc",
+                      "prinos_baterie_2026_kc", "rocni_uspora_2026_kc",
                       "navratnost_roky"]},
             {"id": "graf", "druh": "graf", "viditelny": True,
              "nadpis": "Měsíční špičky odběru – dnes vs. s baterií"},
             {"id": "tabulka", "druh": "tabulka", "viditelny": False,
              "nadpis": "Vývoj úspory po letech",
-             "pole": ["rok", "prinos_kc", "cf_kum_kc"]},
+             "pole": ["rok", "prinos_kc", "oam_kc", "cf_kc", "cf_kum_kc"]},
             {"id": "zaver", "druh": "text", "viditelny": True,
              "nadpis": "Závěrem", "text": _ZAVER_PS},
         ]

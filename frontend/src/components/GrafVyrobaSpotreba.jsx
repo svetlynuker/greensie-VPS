@@ -44,7 +44,16 @@ export default function GrafVyrobaSpotreba({ graf }) {
   const y = (v) => y1 - (v / maxKwh) * (y1 - y0);
   const h = (v) => (v / maxKwh) * (y1 - y0);
 
-  const ticky = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round((maxKwh * f) / 1000) * 1000);
+  // Osa Y v MWh. Zaokrouhlení na celé MWh dávalo u menších klientů duplicitní
+  // popisky (0, 0, 1, 1, 1) a mřížku bez informace – krok se proto volí podle
+  // rozsahu a popisky se formátují s potřebným počtem desetin.
+  const desetin = maxKwh < 5000 ? 1 : 0;
+  const ticky = [0, 0.25, 0.5, 0.75, 1].map((f) => (maxKwh * f) / 1000);
+  const tickLabel = (mwhVal) =>
+    mwhVal.toLocaleString("cs-CZ", {
+      minimumFractionDigits: desetin,
+      maximumFractionDigits: desetin,
+    });
 
   // Vykreslí stohovaný sloupec (odspodu) ze segmentů [{v, barva, popis}].
   // Vlasový obrys v barvě podkladu opticky odděluje segmenty (čitelné
@@ -82,9 +91,9 @@ export default function GrafVyrobaSpotreba({ graf }) {
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", maxWidth: "100%" }} role="img">
         {ticky.map((t, i) => (
           <g key={i}>
-            <line x1={x0} y1={y(t)} x2={x1} y2={y(t)} stroke="var(--c-grid)" strokeWidth="1" />
-            <text x={x0 - 6} y={y(t) + 3} textAnchor="end" fontSize="10" fill="var(--muted)">
-              {Math.round(t / 1000)}
+            <line x1={x0} y1={y(t * 1000)} x2={x1} y2={y(t * 1000)} stroke="var(--c-grid)" strokeWidth="1" />
+            <text x={x0 - 6} y={y(t * 1000) + 3} textAnchor="end" fontSize="10" fill="var(--muted)">
+              {tickLabel(t)}
             </text>
           </g>
         ))}

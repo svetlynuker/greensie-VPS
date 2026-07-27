@@ -36,7 +36,18 @@ def vyzaduj_nabidkovac(user: User = Depends(get_current_user)) -> User:
 
 
 def vyzaduj_katalog(user: User = Depends(get_current_user)) -> User:
-    """Povolí jen ty, kdo smí editovat katalog / výpočtová nastavení."""
+    """Povolí jen ty, kdo smí editovat katalog / výpočtová nastavení.
+
+    Katalogové právo je NADSTAVBA nad základním právem na Nabídkovač, ne
+    samostatný vstup: kdo nemá `nabidkovac`, nemá modul vůbec vidět, a tím
+    méně přepisovat sazby distributorů nebo výpočtová nastavení, ze kterých
+    se počítají nabídky (kontrolujeme obojí – dřív stačilo jen katalogové).
+    """
+    if not muze_nabidkovac(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Na Nabídkovač nemáš oprávnění.",
+        )
     if not muze_katalog(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
