@@ -173,6 +173,32 @@ class VypoctovaNastaveni(Base):
     vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class SpotovaCena(Base):
+    """Spotová (day-ahead) cena elektřiny za jeden obchodní interval.
+
+    Vstup pro režimy „Kombinace" a „SPOT" peak shaving kalkulátoru. Ceny se
+    ukládají **v granularitě, ve které je vydal trh** (`interval_min` = 60 do
+    30. 9. 2025, pak 15 – přechod SDAC na čtvrthodinové intervaly); na
+    čtvrthodiny je rozpadá až čtení (`spot_ceny.nacti_rok`).
+
+    `cas_utc` je začátek intervalu v UTC – lokální čas (a tedy i přechody
+    letního času) se dopočítává až při čtení, aby v datech nebyla dvojznačnost.
+    Kč se odvozují kurzem ČNB dne dodávky, stejně jako zúčtovává OTE.
+    """
+
+    __tablename__ = "spotove_ceny"
+    __table_args__ = (UniqueConstraint("trh", "cas_utc", name="uq_spotove_ceny_trh_cas"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    trh = Column(String, nullable=False, index=True)  # zatím jen "dam_cz"
+    cas_utc = Column(DateTime(timezone=True), nullable=False, index=True)
+    interval_min = Column(Integer, nullable=False, default=15, server_default="15")
+    cena_eur_mwh = Column(Numeric(12, 4), nullable=True)
+    cena_kc_mwh = Column(Numeric(12, 4), nullable=True)
+    zdroj = Column(String, nullable=False, default="", server_default="")
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class Nabidka(Base):
     """Hlavní záznam zakázky/nabídky (kap. 4.3 SPEC).
 
