@@ -134,11 +134,45 @@ function BlokHlavicka({ blok, zakaznik }) {
   );
 }
 
+// Kontakt firmy do zápatí — stejné údaje jako na hlavičkovém papíře
+// (grafika/3. papíry, varianta Bedřichovská).
+const FIRMA = {
+  nazev: "GREENSIE",
+  ulice: "Bedřichovská 2183/16",
+  mesto: "182 00 Praha 8 – Libeň",
+  telefon: "+420 222 703 031",
+  email: "instalace@greensie.cz",
+};
+
+function Zapati() {
+  return (
+    <div className="vy-zapati">
+      <span className="vy-zapati-znacka">
+        <Logo jen="znacka" vyska={26} />
+      </span>
+      <span className="vy-zapati-adresa">
+        <b>{FIRMA.nazev}</b>
+        <span>
+          {FIRMA.ulice} · {FIRMA.mesto}
+        </span>
+      </span>
+      <span className="vy-zapati-kontakt">
+        <span>{FIRMA.telefon}</span>
+        <span>{FIRMA.email}</span>
+      </span>
+    </div>
+  );
+}
+
 export default function NabidkaVystup({ data, konfigurace, tisk = false }) {
   if (!data) return null;
   const bloky = (konfigurace?.bloky || []).filter((b) => b.viditelny);
   return (
     <div className={"vystup-sheet" + (tisk ? " vystup-tisk" : "")}>
+      {/* Vodoznak leží pod obsahem a nic nepřekrývá (pointer-events: none). */}
+      <div className="vy-vodoznak" aria-hidden="true">
+        <Logo jen="znacka" vyska={420} />
+      </div>
       {bloky.map((blok) => {
         switch (blok.druh) {
           case "hlavicka":
@@ -163,6 +197,7 @@ export default function NabidkaVystup({ data, konfigurace, tisk = false }) {
             return null;
         }
       })}
+      <Zapati />
     </div>
   );
 }
