@@ -33,6 +33,8 @@ function nactiUlozeneVstupy(nabidka) {
       snizeniRp: !!v.uvazovat_snizeni_rp,
       maxVykonStridace: v.max_vykon_stridace_kw != null ? String(v.max_vykon_stridace_kw) : "",
       baterieIds: v.baterie_ids || null,
+      rezim: v.rezim || "peak_shaving",
+      maxExport: v.max_export_kw != null ? String(v.max_export_kw) : "",
     };
   }
   try {
@@ -118,6 +120,42 @@ const DISTRIB = [
 const HLADINY = [
   { klic: "vn", nazev: "VN" },
   { klic: "vvn", nazev: "VVN" },
+];
+
+// Názvy měsíců pro tabulku rozhodnutí obchodu (graf používá vlastní zkratky).
+const MESICE_NAZVY = [
+  "Leden",
+  "Únor",
+  "Březen",
+  "Duben",
+  "Květen",
+  "Červen",
+  "Červenec",
+  "Srpen",
+  "Září",
+  "Říjen",
+  "Listopad",
+  "Prosinec",
+];
+
+// Co má baterie dělat (drží se `spot_arbitraz.REZIMY` na backendu).
+const REZIMY = [
+  {
+    klic: "peak_shaving",
+    nazev: "Peak shaving",
+    popis: "baterie jen sráží špičky a šetří na platbě za výkon",
+  },
+  {
+    klic: "kombinace",
+    nazev: "Kombinace",
+    popis:
+      "sráží špičky a ve zbytku obchoduje; model si u každého měsíce sám vybere, co vydělá víc",
+  },
+  {
+    klic: "spot",
+    nazev: "Spot",
+    popis: "baterie jen obchoduje, rezervovaná kapacita zůstává jak je",
+  },
 ];
 
 function kc(x) {
@@ -534,6 +572,9 @@ export default function PeakShavingPanel({ nabidka }) {
   // Ruční override max. AC výkonu střídače (kW) – omezuje výkon modulárních
   // baterií, kde kapacita roste s počtem kusů, ale výkon drží sdílený PCS.
   const [maxVykonStridace, setMaxVykonStridace] = useState(ulozene.maxVykonStridace || "");
+  // Co má baterie dělat (viz REZIMY) + limit dodávky do sítě pro obchodování.
+  const [rezim, setRezim] = useState(ulozene.rezim || "peak_shaving");
+  const [maxExport, setMaxExport] = useState(ulozene.maxExport || "");
   // Které baterie se mají počítat: null = celý katalog, pole id = ruční výběr.
   const [baterieIds, setBaterieIds] = useState(ulozene.baterieIds || null);
   const [katalogBaterii, setKatalogBaterii] = useState(null);
@@ -601,13 +642,26 @@ export default function PeakShavingPanel({ nabidka }) {
       snizeniRp,
       maxVykonStridace,
       baterieIds,
+      rezim,
+      maxExport,
     };
     try {
       localStorage.setItem(KLIC_ULOZISTE(nabidka.id), JSON.stringify(data));
     } catch {
       // plné/zakázané úložiště nesmí shodit panel
     }
-  }, [nabidka.id, distributor, hladina, rezKap, rezPrikon, snizeniRp, maxVykonStridace, baterieIds]);
+  }, [
+    nabidka.id,
+    distributor,
+    hladina,
+    rezKap,
+    rezPrikon,
+    snizeniRp,
+    maxVykonStridace,
+    baterieIds,
+    rezim,
+    maxExport,
+  ]);
 
   const profilDoklady = (nabidka.dokumenty || []).filter(
     (d) => d.typ === "spotreba_csv" || d.typ === "jiny"
@@ -667,6 +721,12 @@ export default function PeakShavingPanel({ nabidka }) {
         max_vykon_stridace_kw:
           maxVykonStridace.trim() === "" || !(maxVykon > 0) ? null : maxVykon,
         baterie_ids: baterieIds && baterieIds.length ? baterieIds : null,
+        rezim,
+        // Prázdné = výkon baterie; „0" je platná volba (bez dodávky do sítě).
+        max_export_kw:
+          rezim === "peak_shaving" || String(maxExport).trim() === ""
+            ? null
+            : Number(String(maxExport).replace(",", ".")),
       });
       setVysledek(r.popis_json);
       setVybranyIdx(0);
@@ -714,6 +774,9 @@ export default function PeakShavingPanel({ nabidka }) {
   // ukázat nedají – zobrazení spadne na 2026 a tlačítko 2027 se zakáže.
   const ek27 = dop?.ekonomika_2027;
   const ma2027 = ek27?.status === "spocitano";
+  // Ekonomika obchodování na spotu – u čistého peak shavingu chybí (null).
+  const spot = dop?.ekonomika_spot || null;
+  const rezimVysledku = dop?.rezim || vysledek?.vstup?.rezim || "peak_shaving";
   const rok = ma2027 ? rokZobrazeni : 2026;
   const je2027 = rok === 2027;
   // NPV / reálná návratnost / doporučení dle zvoleného základu (bez přepočtu).
@@ -1040,9 +1103,59 @@ export default function PeakShavingPanel({ nabidka }) {
           </div>
         </section>
 
-        {/* 3) Které baterie počítat */}
+        {/* 3) Co má baterie dělat – peak shaving / kombinace / spot */}
         <section className="gs-step">
           <span className="gs-step-num">3</span>
+          <h4>Co má baterie dělat</h4>
+          <div className="gs-step-sub">
+            Kromě srážení špiček umí baterie obchodovat na spotovém trhu — nakupovat v levných
+            hodinách a dodávat v drahých.
+          </div>
+          {REZIMY.map((r) => (
+            <label key={r.klic} className="gs-volba">
+              <input type="radio" checked={rezim === r.klic} onChange={() => setRezim(r.klic)} />
+              <span>
+                <b>{r.nazev}</b>
+                <span style={{ color: "var(--muted)" }}> — {r.popis}</span>
+              </span>
+            </label>
+          ))}
+          {rezim !== "peak_shaving" && (
+            <>
+              <div className="gs-pole" style={{ marginTop: 10 }}>
+                <label className="nb-label" htmlFor="ps-export">
+                  Max. dodávka do sítě <span style={{ fontWeight: 400 }}>(nepovinné)</span>
+                </label>
+                <div className="gs-unit">
+                  <input
+                    id="ps-export"
+                    className="nb-pole"
+                    value={maxExport}
+                    onChange={(e) => setMaxExport(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="prázdné = výkon baterie, 0 = bez dodávky"
+                  />
+                  <span className="gs-unit-txt">kW</span>
+                </div>
+                <div className="gs-pozn">
+                  Vybít do vlastní spotřeby je <b>cennější než dodat do sítě</b> — zákazník se
+                  vyhne celé nákupní ceně včetně distribuce, kdežto za dodávku dostane jen spot
+                  mínus marže obchodníka. Dodávka do sítě navíc potřebuje licenci a rezervovaný
+                  výkon pro dodávku; zadej 0, pokud se má jen posouvat vlastní spotřeba.
+                </div>
+              </div>
+              <div className="gs-pozn">
+                Marže obchodníka i regulované složky za odebranou MWh se berou z výpočtových
+                nastavení (admin). Model počítá <b>skutečnou cenu, kterou zákazník zaplatí a
+                kterou dostane</b>, a odečítá opotřebení baterie obchodními cykly.
+              </div>
+            </>
+          )}
+        </section>
+
+        {/* 4) Které baterie počítat */}
+        <section className="gs-step">
+          <span className="gs-step-num">4</span>
           <h4>
             Baterie do výpočtu
             {katalogBaterii && <span className="nb-badge">{katalogBaterii.length}</span>}
@@ -1283,6 +1396,17 @@ export default function PeakShavingPanel({ nabidka }) {
 
         {/* --- KPI: hlavní čísla na první pohled --- */}
         <div className="gs-kpis">
+          {spot && (
+            <div className="gs-kpi accent">
+              <div className="gs-kpi-label">Zisk z obchodu (rok)</div>
+              <div className="gs-kpi-value">{kc(spot.zisk_kc)}</div>
+              <div className="gs-kpi-sub">
+                {`${Math.round(spot.zisk_kc_kwh_rok)} Kč/kWh baterie · ${Math.round(
+                  spot.obchodnich_cyklu
+                )} cyklů · po opotřebení ${kc(spot.naklad_opotrebeni_kc)}`}
+              </div>
+            </div>
+          )}
           <div className="gs-kpi accent">
             <div className="gs-kpi-label">Roční úspora ({rok})</div>
             <div className="gs-kpi-value">
@@ -1459,6 +1583,7 @@ export default function PeakShavingPanel({ nabidka }) {
         <div className="gs-tabs gs-tabs-odsazeni" role="tablist" aria-label="Části výsledku">
           {[
             { klic: "ekonomika", nazev: "Ekonomika" },
+            ...(spot ? [{ klic: "spot", nazev: "Obchod na spotu" }] : []),
             { klic: "grafy", nazev: "Grafy odběru" },
             { klic: "varianty", nazev: "Srovnání variant", pocet: varianty.length },
             { klic: "roky", nazev: "Po letech" },
@@ -1606,6 +1731,151 @@ export default function PeakShavingPanel({ nabidka }) {
         )}
 
         {/* ---------- záložka: grafy ---------- */}
+        {/* ---------- záložka: obchod na spotu ---------- */}
+        {zalozka === "spot" && spot && (
+          <div role="tabpanel">
+            <div className="fm-card" style={{ marginBottom: 12 }}>
+              <div className="gs-karta-h">
+                <span className="gs-karta-nazev">Co obchod přinesl</span>
+                <span className="gs-mezera" />
+                <span className="nb-badge">
+                  {`ceny ${spot.info_cen?.rok_cen ?? "?"} · ${
+                    REZIMY.find((r) => r.klic === rezimVysledku)?.nazev ?? rezimVysledku
+                  }`}
+                </span>
+              </div>
+              <table className="fm-tabulka">
+                <tbody>
+                  <tr>
+                    <td className="dim">Vyhnutý nákup a dodávka do sítě</td>
+                    <td className="cislo">{kc(spot.zisk_energie_kc)}</td>
+                  </tr>
+                  <tr>
+                    <td className="dim">
+                      Opotřebení baterie obchodními cykly
+                      <div className="gs-pozn">
+                        {`${Math.round(spot.opotrebeni_kc_mwh)} Kč/MWh × ${Math.round(
+                          spot.obchodni_vybito_kwh / 1000
+                        ).toLocaleString("cs-CZ")} MWh`}
+                      </div>
+                    </td>
+                    <td className="cislo">−{kc(spot.naklad_opotrebeni_kc)}</td>
+                  </tr>
+                  <tr className="soucet">
+                    <td>Zisk z obchodu za rok</td>
+                    <td className="cislo">{kc(spot.zisk_kc)}</td>
+                  </tr>
+                  <tr>
+                    <td className="dim">Kdyby měl peak shaving absolutní prioritu</td>
+                    <td className="cislo">{kc(spot.zisk_pri_prioritnim_ps_kc)}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div className="gs-pozn" style={{ padding: "0 14px 12px" }}>
+                Model v každém měsíci porovnal, co vydělá víc: srazit špičku (a šetřit na platbě
+                za výkon), nebo obchodovat. Rozdíl proti řádku „absolutní priorita" je to, co
+                získal tím, že v některých měsících špičku vědomě pustil výš — celkový přínos je
+                pak vždy vyšší, jinak by u nejnižšího stropu zůstal.
+              </div>
+            </div>
+
+            <div className="fm-card" style={{ marginBottom: 12 }}>
+              <div className="gs-karta-h">
+                <span className="gs-karta-nazev">Energie</span>
+              </div>
+              <table className="fm-tabulka">
+                <tbody>
+                  <tr>
+                    <td className="dim">Nabito ze sítě</td>
+                    <td className="cislo">
+                      {(spot.ze_site_kwh / 1000).toLocaleString("cs-CZ", {
+                        maximumFractionDigits: 1,
+                      })}{" "}
+                      MWh
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="dim">Vybito do vlastní spotřeby</td>
+                    <td className="cislo">
+                      {(spot.do_odberu_kwh / 1000).toLocaleString("cs-CZ", {
+                        maximumFractionDigits: 1,
+                      })}{" "}
+                      MWh
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="dim">Dodáno do sítě</td>
+                    <td className="cislo">
+                      {(spot.do_site_kwh / 1000).toLocaleString("cs-CZ", {
+                        maximumFractionDigits: 1,
+                      })}{" "}
+                      MWh
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="dim">Obchodních cyklů za rok</td>
+                    <td className="cislo">{Math.round(spot.obchodnich_cyklu)}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div className="gs-pozn" style={{ padding: "0 14px 12px" }}>
+                Vybít do vlastní spotřeby je cennější než dodat do sítě: zákazník se vyhne celé
+                nákupní ceně včetně distribuce, za dodávku dostane jen spot mínus marže
+                obchodníka. U velkého odběru proto model do sítě téměř nedodává.
+              </div>
+            </div>
+
+            <div className="fm-card">
+              <div className="gs-karta-h">
+                <span className="gs-karta-nazev">Rozhodnutí po měsících</span>
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table className="fm-tabulka">
+                  <thead>
+                    <tr>
+                      <th>Měsíc</th>
+                      <th className="cislo">Cílový strop</th>
+                      <th className="cislo">Nejnižší udržitelný</th>
+                      <th className="cislo">Maximum bez baterie</th>
+                      <th className="cislo">Zisk obchodu</th>
+                      <th className="cislo">Při prioritě PS</th>
+                      <th className="cislo">Cyklů</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(spot.mesice || []).map((m) => {
+                      const pusteno = m.strop_kw > m.strop_nejnizsi_udrzitelny_kw + 0.5;
+                      return (
+                        <tr key={m.mesic}>
+                          <td>
+                            {MESICE_NAZVY[m.mesic - 1] || m.mesic}
+                            {pusteno && (
+                              <span className="nb-badge" style={{ marginLeft: 6 }}>
+                                strop puštěn výš
+                              </span>
+                            )}
+                          </td>
+                          <td className="cislo">{kw(m.strop_kw)}</td>
+                          <td className="cislo">{kw(m.strop_nejnizsi_udrzitelny_kw)}</td>
+                          <td className="cislo">{kw(m.maximum_bez_baterie_kw)}</td>
+                          <td className="cislo">{kc(m.zisk_obchodu_kc)}</td>
+                          <td className="cislo">{kc(m.zisk_pri_nejnizsim_stropu_kc)}</td>
+                          <td className="cislo">{Math.round(m.obchodnich_cyklu)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="gs-pozn" style={{ padding: "10px 14px 12px" }}>
+                Cílový strop je maximum, na které se odběr v daném měsíci sráží. Kde je vyšší než
+                nejnižší udržitelný, tam model usoudil, že obchod vydělá víc, než stojí vyšší
+                platba za výkon — typicky v měsících, jejichž maximum roční rezervaci neurčuje.
+              </div>
+            </div>
+          </div>
+        )}
+
         {zalozka === "grafy" && (
           <div role="tabpanel">
             {graf ? (

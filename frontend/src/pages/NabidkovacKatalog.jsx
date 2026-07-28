@@ -105,6 +105,35 @@ const PS_POLE = [
   { klic: "ps_degradace_uspor_procenta_rok", label: "Degradace úspor (%/rok, default 1.5)" },
 ];
 
+// Obchodování na spotovém trhu (režimy Kombinace/SPOT) – `spot_arbitraz.py`.
+// Marže není naše, ale obchodníkova: rozdíl mezi spotem a cenou, kterou
+// zákazník zaplatí (nákup) resp. dostane (prodej).
+const SPOT_POLE = [
+  { klic: "spot_marze_nakup_kc_mwh", label: "Marže obchodníka – nákup (Kč/MWh, default 200)" },
+  { klic: "spot_marze_prodej_kc_mwh", label: "Marže obchodníka – prodej (Kč/MWh, default 200)" },
+  // Co zákazník platí za MWh ze sítě navíc: použití sítí + systémové služby
+  // + POZE. Stejná logika jako `ppa_vyhnutelne_regulovane_kc_mwh`.
+  {
+    klic: "spot_regulovane_nakup_kc_mwh",
+    label: "Regulované složky za odebranou MWh (Kč/MWh, default 260)",
+  },
+  {
+    klic: "spot_regulovane_prodej_kc_mwh",
+    label: "Složky za dodanou MWh (Kč/MWh, default 0)",
+  },
+  // U akumulace je otázka osvobození od daně z elektřiny (28,30 Kč/MWh) → 0.
+  { klic: "spot_dan_z_elektriny_kc_mwh", label: "Daň z elektřiny (Kč/MWh, default 0)" },
+  // Náklad opotřebení = cena baterie / (cykly × kapacita). Produkt může mít
+  // vlastní hodnotu v katalogu (sloupec „cyklu_zivotnosti").
+  { klic: "spot_cyklu_zivotnosti", label: "Cyklů životnosti baterie (default 6000)" },
+  { klic: "spot_max_cyklu_rok", label: "Limit obchodních cyklů za rok (0 = bez limitu)" },
+  {
+    klic: "spot_bezpecnostni_rezerva_procenta",
+    label: "Rezerva kapacity pro peak shaving (%, default 10)",
+  },
+  { klic: "spot_referencni_rok", label: "Referenční rok spotových cen (0 = nejnovější)" },
+];
+
 // Záložky: jedna na každou spravovanou věc. Dřív bylo všechno pod sebou na jedné
 // stránce a katalog produktů ji roztáhl na několik obrazovek.
 const ZALOZKY = [
@@ -488,6 +517,7 @@ export default function NabidkovacKatalog() {
   const [maxRoky, setMaxRoky] = useState("");
   const [ppaParam, setPpaParam] = useState({});
   const [psParam, setPsParam] = useState({});
+  const [spotParam, setSpotParam] = useState({});
   const [nastavZprava, setNastavZprava] = useState(null);
   const [nastavUklada, setNastavUklada] = useState(false);
 
@@ -531,6 +561,9 @@ export default function NabidkovacKatalog() {
     const p = akt?.parametry || {};
     setPpaParam(Object.fromEntries(PPA_POLE.map((f) => [f.klic, p[f.klic] == null ? "" : String(p[f.klic])])));
     setPsParam(Object.fromEntries(PS_POLE.map((f) => [f.klic, p[f.klic] == null ? "" : String(p[f.klic])])));
+    setSpotParam(
+      Object.fromEntries(SPOT_POLE.map((f) => [f.klic, p[f.klic] == null ? "" : String(p[f.klic])]))
+    );
   }
 
   useEffect(() => {
@@ -604,8 +637,10 @@ export default function NabidkovacKatalog() {
       // Zachovej existující (neznámé) klíče parametrů a přepiš/doplň jen
       // PPA + peak shaving pole; prázdné pole klíč odebere.
       const parametry = { ...(nastaveni?.[0]?.parametry || {}) };
-      for (const f of [...PPA_POLE, ...PS_POLE]) {
-        const val = num((f.klic in psParam ? psParam : ppaParam)[f.klic] ?? "");
+      for (const f of [...PPA_POLE, ...PS_POLE, ...SPOT_POLE]) {
+        const zdroj =
+          f.klic in psParam ? psParam : f.klic in spotParam ? spotParam : ppaParam;
+        const val = num(zdroj[f.klic] ?? "");
         if (val == null) delete parametry[f.klic];
         else parametry[f.klic] = val;
       }
@@ -923,6 +958,19 @@ export default function NabidkovacKatalog() {
               psParam,
               setPsParam,
               "Práh doporučení, ocenění ztrát baterie a parametry NPV. Tyhle hodnoty řídí, která varianta se v kalkulátoru označí jako doporučená."
+            )}
+            <div className="gs-sekce-t" style={{ marginTop: 18 }}>
+              Obchodování na spotu — režimy Kombinace a SPOT
+            </div>
+            {formularParametru(
+              SPOT_POLE,
+              spotParam,
+              setSpotParam,
+              "Marže je obchodníkova, ne naše: rozdíl mezi spotovou cenou a tím, co zákazník " +
+                "zaplatí (nákup) nebo dostane (prodej). K nákupu se přičítají regulované složky " +
+                "za odebranou MWh, aby model počítal skutečnou cenu. Náklad opotřebení se " +
+                "odvozuje z ceny baterie a počtu cyklů životnosti (produkt může mít vlastní " +
+                "hodnotu v katalogu)."
             )}
           </div>
         )}
