@@ -10,6 +10,10 @@ function strankaManualu(pathname) {
   if (pathname.startsWith("/projekty")) return "prehled-projektu";
   if (pathname.startsWith("/finance")) return "prehled-financi";
   if (pathname.startsWith("/zmeny")) return "prehled-zmen";
+  // Kalkulátory mají vlastní stránku manuálu – ta obecná o Nabídkovači
+  // nevysvětluje ani jedno políčko výpočtu.
+  if (pathname.startsWith("/nabidkovac/peak_shaving")) return "nabidkovac-peak-shaving";
+  if (pathname.startsWith("/nabidkovac/ppa")) return "nabidkovac-ppa-fve";
   if (pathname.startsWith("/nabidkovac")) return "nabidkovac";
   if (pathname.startsWith("/admin")) return "admin-nastaveni";
   if (pathname.startsWith("/logy")) return "logy";
