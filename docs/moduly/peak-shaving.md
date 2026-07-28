@@ -430,6 +430,16 @@ a na čtvrthodiny se rozpadají až při čtení. Profil zákazníka je typicky 
 roku než ceny, takže se páruje **podle měsíce a dne v týdnu**, aby pracovní dny
 dostaly ceny pracovních dnů.
 
+**Výkon.** Obchodní režimy stojí ~**0,6 s na produkt** (proti 0,25 s u čistého peak
+shavingu): pro každý měsíc se zkoušejí kandidátní stropy a každý znamená
+odsimulovat měsíc po čtvrthodinách. U celého ceníku (84 produktů) je to ~50 s, což
+je nad hranicí pohodlí — panel proto doporučuje zúžit výběr baterií (`baterie_ids`).
+Zrychleno dvěma věcmi: cenové prahy se hledají **dvouprůchodově** (hrubá mřížka
+2×2 percentilů + zjemnění kolem nejlepšího nálezu místo plné 4×4 mřížky, stejné
+výsledky za polovinu času) a kandidátních stropů jsou **3**, ne 4. Výsledky mezi
+variantami se cachují podle `(měsíc, strop)`, takže souřadnicové zlepšování
+neplatí za opakované simulace.
+
 **Oprava symetrie RP (28. 7. 2026).** Scénář s baterií volí rezervovaný příkon
 stejně jako baseline — levnější z {nechat RP ze smlouvy, optimalizovat}.
 Optimalizace nese bezpečnostní rezervu (PS-6), takže u zákazníka s velkým RP umí

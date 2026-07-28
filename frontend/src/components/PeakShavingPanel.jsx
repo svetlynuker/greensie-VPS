@@ -1149,6 +1149,11 @@ export default function PeakShavingPanel({ nabidka }) {
                 nastavení (admin). Model počítá <b>skutečnou cenu, kterou zákazník zaplatí a
                 kterou dostane</b>, a odečítá opotřebení baterie obchodními cykly.
               </div>
+              <div className="gs-pozn">
+                Obchodní režimy počítají ~0,6 s na produkt (u každého měsíce se hledá nejlepší
+                strop), takže u celého katalogu je to skoro minuta — <b>vyplatí se zúžit výběr
+                baterií</b> v sekci níž.
+              </div>
             </>
           )}
         </section>

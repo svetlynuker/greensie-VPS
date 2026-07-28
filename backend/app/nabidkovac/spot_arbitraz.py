@@ -106,8 +106,9 @@ VYCHOZI_CYKLU_ZIVOTNOSTI = 6000
 VYCHOZI_BEZPECNOSTNI_REZERVA_PROCENTA = 10.0
 
 # Kolik kandidátních stropů se v každém měsíci zkouší (rozhodovací vrstva):
-# nejnižší udržitelný + kroky k naměřenému maximu.
-POCET_KANDIDATU_STROPU = 4
+# nejnižší udržitelný + kroky k naměřenému maximu. Čas výpočtu roste lineárně
+# s tímhle číslem, protože každý kandidát znamená odsimulovat celý měsíc.
+POCET_KANDIDATU_STROPU = 3
 
 # Kolik průchodů souřadnicového zlepšování volby měsíčních stropů.
 _MAX_ITERACI_VOLBY = 3
@@ -115,9 +116,13 @@ _MAX_ITERACI_VOLBY = 3
 # Kolik pokusů o dodržení ročního limitu cyklů (zvyšováním nákladu opotřebení).
 _MAX_ITERACI_LIMITU_CYKLU = 5
 
-# Mřížka percentilů pro kalibraci denních cenových prahů (`optimalizuj_prahy`).
-PERCENTILY_NAKUP = (10.0, 20.0, 30.0, 40.0)
-PERCENTILY_PRODEJ = (60.0, 70.0, 80.0, 90.0)
+# Kalibrace denních cenových prahů (`optimalizuj_prahy`) probíhá ve dvou
+# průchodech: hrubá mřížka percentilů, pak zjemnění o `KROK_ZJEMNENI` kolem
+# nejlepšího nálezu. Plná mřížka 4×4 dávala stejné výsledky za dvojnásobek
+# času – u celého ceníku baterií to je rozdíl desítek sekund.
+PERCENTILY_NAKUP = (15.0, 35.0)
+PERCENTILY_PRODEJ = (65.0, 85.0)
+KROK_ZJEMNENI = 10.0
 
 
 @dataclass
@@ -409,33 +414,50 @@ def optimalizuj_prahy(
     """
     serazene = sorted(ceny_kc_mwh)
     nejlepsi: tuple[float, float, VysledekUseku] | None = None
-    for p_nakup in PERCENTILY_NAKUP:
+    nejlepsi_percentily: tuple[float, float] | None = None
+
+    def zkus(p_nakup: float, p_prodej: float) -> None:
+        nonlocal nejlepsi, nejlepsi_percentily
         prah_nakup = _percentil(serazene, p_nakup)
+        prah_prodej = _percentil(serazene, p_prodej)
+        # Vyplatí se vůbec cyklovat? Nákup na spodním prahu musí být po
+        # ztrátách a opotřebení levnější než hodnota na horním prahu.
+        if cena_nakup_kc_mwh(prah_nakup, n) + opotrebeni_kc_mwh >= ucinnost_rt * (
+            cena_nakup_kc_mwh(prah_prodej, n)
+        ):
+            return
+        vysledek = simuluj_usek(
+            ceny_kc_mwh,
+            odber_kw,
+            strop_kw,
+            vykon_kw,
+            kapacita_kwh,
+            n,
+            prah_nakup,
+            prah_prodej,
+            opotrebeni_kc_mwh,
+            interval_h,
+            ucinnost_rt,
+            pocatecni_soc_kwh,
+            soc_minimum,
+        )
+        if nejlepsi is None or vysledek.zisk_kc > nejlepsi[2].zisk_kc:
+            nejlepsi = (prah_nakup, prah_prodej, vysledek)
+            nejlepsi_percentily = (p_nakup, p_prodej)
+
+    for p_nakup in PERCENTILY_NAKUP:
         for p_prodej in PERCENTILY_PRODEJ:
-            prah_prodej = _percentil(serazene, p_prodej)
-            # Vyplatí se vůbec cyklovat? Nákup na spodním prahu musí být po
-            # ztrátách a opotřebení levnější než hodnota na horním prahu.
-            if cena_nakup_kc_mwh(prah_nakup, n) + opotrebeni_kc_mwh >= ucinnost_rt * (
-                cena_nakup_kc_mwh(prah_prodej, n)
-            ):
-                continue
-            vysledek = simuluj_usek(
-                ceny_kc_mwh,
-                odber_kw,
-                strop_kw,
-                vykon_kw,
-                kapacita_kwh,
-                n,
-                prah_nakup,
-                prah_prodej,
-                opotrebeni_kc_mwh,
-                interval_h,
-                ucinnost_rt,
-                pocatecni_soc_kwh,
-                soc_minimum,
-            )
-            if nejlepsi is None or vysledek.zisk_kc > nejlepsi[2].zisk_kc:
-                nejlepsi = (prah_nakup, prah_prodej, vysledek)
+            zkus(p_nakup, p_prodej)
+    # Zjemnění kolem nejlepšího nálezu – posun o krok v každém směru.
+    if nejlepsi_percentily is not None:
+        p_n, p_p = nejlepsi_percentily
+        for dn in (-KROK_ZJEMNENI, KROK_ZJEMNENI):
+            if 0.0 <= p_n + dn <= 50.0:
+                zkus(p_n + dn, p_p)
+        p_n = nejlepsi_percentily[0]
+        for dp in (-KROK_ZJEMNENI, KROK_ZJEMNENI):
+            if 50.0 <= p_p + dp <= 100.0:
+                zkus(p_n, p_p + dp)
     if nejlepsi is None:
         # Žádná kombinace prahů se nevyplatí → baterie jen sráží špičky.
         return (
