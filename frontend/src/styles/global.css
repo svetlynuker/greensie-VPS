@@ -537,6 +537,189 @@ textarea::placeholder {
   color: var(--muted);
 }
 
+/* ---------- Pole s jednotkou (kW, Kč) ----------
+   Jednotka patří do pole, ne do popisky: popiska pak říká, co se zadává,
+   a nemusí opakovat „(kW)". */
+.gs-unit {
+  position: relative;
+}
+
+.gs-unit > input {
+  padding-right: 38px;
+}
+
+.gs-unit > .gs-unit-txt {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* ---------- Segmentovaný přepínač (2–3 volby vedle sebe) ----------
+   Pro volby, které jen mění zobrazení už spočítaných dat (rok, základ
+   výpočtu) — ne pro akce. Stav drží aria-pressed, ne jen barva. */
+.gs-seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.gs-seg > button {
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 4px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.gs-seg > button + button {
+  border-left: 1px solid var(--line);
+}
+
+.gs-seg > button:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.gs-seg > button[aria-pressed="true"] {
+  background: var(--brand-wash);
+  color: var(--brand-strong);
+  font-weight: 700;
+}
+
+.gs-seg > button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Popiska nad/před přepínačem nebo skupinou ovládání */
+.gs-ctrl-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ---------- Záložky (dělí výsledek, ať není jedna dlouhá rolovačka) ---------- */
+.gs-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+.gs-tabs > button {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 15px;
+  margin-bottom: -1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.gs-tabs > button:hover {
+  color: var(--ink);
+}
+
+.gs-tabs > button[aria-selected="true"] {
+  color: var(--brand-strong);
+  border-bottom-color: var(--brand);
+}
+
+.gs-tabs .gs-tab-cnt {
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+/* ---------- Sbalená metodika ----------
+   Vysvětlení „proč to tak je" patří sem, ne drobným šedým textem mezi čísla.
+   Napoprvé je potřeba, napodesáté zahlcuje — tak ať si ho čtenář rozbalí sám. */
+.gs-meta {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12px;
+}
+
+.gs-meta > summary {
+  cursor: pointer;
+  padding: 8px 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  list-style: none;
+}
+
+.gs-meta > summary::-webkit-details-marker {
+  display: none;
+}
+
+.gs-meta > summary::before {
+  content: "ⓘ ";
+  color: var(--brand);
+}
+
+.gs-meta[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.gs-meta > .gs-meta-in {
+  padding: 10px 12px;
+  color: var(--ink-2);
+  line-height: 1.55;
+}
+
+.gs-meta > .gs-meta-in b {
+  color: var(--ink);
+}
+
+/* ---------- Kontrolní seznam připravenosti ----------
+   Zakázané tlačítko samo neřekne, co chybí. Tenhle seznam to řekne. */
+.gs-chk {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.gs-chk > li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 3px 0;
+}
+
+.gs-chk > li > .gs-chk-mark {
+  flex: 0 0 14px;
+  width: 14px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.gs-chk > li.gs-chk-ok > .gs-chk-mark {
+  color: var(--st-good);
+}
+
+.gs-chk > li.gs-chk-no {
+  color: var(--ink-2);
+}
+
+.gs-chk > li.gs-chk-no > .gs-chk-mark {
+  color: var(--st-crit);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fm-btn,
   .gs-icon-btn,

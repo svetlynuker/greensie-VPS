@@ -45,7 +45,7 @@ Rozcestník `/nabidkovac` nabízí tři dlaždice (klíč = typ nabídky na serv
 4. **Nahraj podklady** – fakturu (PDF) a/nebo diagram spotřeby (CSV/XLSX). Prvním nahraným
    dokumentem se koncept posune do stavu *Data nahrána*.
 5. **Spočítej řešení** – u PPA a Peak shavingu v panelu v detailu nabídky (viz samostatné návody).
-6. **Sestav nabídku pro zákazníka** – tlačítko „Otevřít nabídku pro zákazníka" (jen u PPA a
+6. **Sestav nabídku pro zákazníka** – tlačítko „Nabídka pro zákazníka" v hlavičce detailu (jen u PPA a
    Peak shavingu): v editoru zapneš/vypneš bloky, upravíš texty a vybereš zobrazená pole.
 7. **Ulož do PDF** – tlačítko „Uložit do PDF" otevře tiskový dialog prohlížeče (tisk / uložit jako PDF).
 
@@ -73,16 +73,21 @@ vpravo nahoře tlačítko **⚙ Katalog a výpočty** (jen s právem na katalog)
 lišta s tlačítkem **+ Nová nabídka** a počítadlem, a tabulka nabídek (Zákazník · Stav · Vytvořil ·
 Datum). Klik na řádek otevře detail.
 
-**C) Detail nabídky `/nabidkovac/nabidka/:id`** – shora: odkaz zpět, hlavička s názvem zákazníka
-a štítky (linie + stav), karta **Zákazník** (formulář), karta **Podklady** (nahrávání dokumentů),
-u PPA/Peak shavingu karta **Nabídka pro zákazníka** (tlačítko do editoru výstupu) a nakonec panel
-**Navržená řešení** (u PPA/Peak shavingu kalkulátor, u Prodeje zatím jen upozornění).
+**C) Detail nabídky `/nabidkovac/nabidka/:id`** – shora: odkaz zpět, pak **hlavička zákazníka**
+na jeden řádek (název, adresa, štítky linie + stav, tlačítka *Upravit zákazníka* a u PPA/Peak
+shavingu *Nabídka pro zákazníka*), sbalená karta **Podklady** (nahrávání dokumentů) a pak už
+**panel řešení** — u Peak shavingu „pracovní stůl" (vlevo vstupy, vpravo výsledek), u PPA
+kalkulátor, u Prodeje zatím jen upozornění.
+
+Formulář s údaji zákazníka a karta Podklady se rozbalují na vyžádání; u čerstvě založené nabídky
+(bez názvu zákazníka, resp. bez dokumentů) se otevřou samy. Důvod: do obojího se sahá jednou na
+začátku, zbytek času tam patří výpočet.
 
 **D) Nabídka pro zákazníka `/nabidkovac/nabidka/:id/vystup/:typ`** – nahoře lišta s tlačítky
 (Zpět, Obnovit výchozí, Uložit, Uložit do PDF), pod ní vlevo **editor bloků**, vpravo **živý
 náhled** tiskové A4 stránky.
 
-> 📸 SCREENSHOT: detail nabídky – karty Zákazník, Podklady, Nabídka pro zákazníka
+> 📸 SCREENSHOT: detail nabídky – hlavička zákazníka, sbalené Podklady a pod nimi panel řešení
 > 📸 SCREENSHOT: obrazovka „Nabídka pro zákazníka" – vlevo editor bloků, vpravo náhled
 
 ### Ovládací prvky — políčko po políčku
@@ -100,23 +105,24 @@ Legenda „kdo vidí": **(vše)** = každý, kdo Nabídkovač otevře (právo `n
 | **Počítadlo „N nabídek"** | seznam podsekce | Kolik je v podsekci nabídek | vše |
 | **Řádek nabídky** | tabulka | Klik otevře detail nabídky | vše |
 
-#### Detail nabídky – karta Zákazník
+#### Detail nabídky – údaje zákazníka (rozbalovací formulář)
 | Prvek | Co dělá | Kdo vidí |
 |---|---|---|
 | **Název zákazníka** | Jméno/firma zákazníka (zobrazí se i v hlavičce PDF) | vše |
 | **Adresa** | Adresa zákazníka (zobrazí se v hlavičce PDF) | vše |
 | **GPS šířka (lat) / délka (lng)** | Souřadnice pro budoucí PVGIS; zatím jen uložení | vše |
+| **Upravit zákazníka / Zavřít údaje** | Rozbalí a zavře formulář v hlavičce detailu | vše |
 | **Uložit** | Uloží změny zákazníka | vše |
 | **Smazat nabídku** | Smaže celou nabídku včetně nahraných souborů (s potvrzením) | vše |
 
-#### Detail nabídky – karta Podklady (nahrávání dokumentů)
+#### Detail nabídky – sbalená karta Podklady (nahrávání dokumentů)
 | Prvek | Co dělá | Kdo vidí |
 |---|---|---|
 | **Přetáhni sem soubor / klikni** | Nahraje soubor (drag & drop nebo výběr); typ se pozná sám z přípony, max 25 MB | vše |
 | **Typ (u řádku dokumentu)** | Rozpoznaný typ; rozbalovátkem jde opravit, pokud to přípona dovolí (PDF = faktura / jiný, tabulka = spotřeba / jiný) | vše |
 | **Řádek dokumentu** | Ukáže název, velikost, typ a stav zpracování | vše |
 | **Smazat (u dokumentu)** | Smaže dokument (soubor i záznam) | vše |
-| **Otevřít nabídku pro zákazníka** | Jen u PPA/Peak shavingu – přejde do editoru výstupu | vše |
+| **Nabídka pro zákazníka** | Jen u PPA/Peak shavingu – tlačítko v hlavičce detailu, přejde do editoru výstupu | vše |
 
 #### Nabídka pro zákazníka – lišta a editor
 | Prvek | Kde | Co dělá | Kdo vidí |
@@ -179,9 +185,9 @@ interní čísla se nenabízejí.
 
 ### Jak na…
 - **Založit novou nabídku:** rozcestník → vyber linii → *+ Nová nabídka* → vyplň zákazníka → *Uložit*.
-- **Nahrát fakturu / diagram spotřeby:** detail nabídky → karta *Podklady* → vyber typ → přetáhni
+- **Nahrát fakturu / diagram spotřeby:** detail nabídky → rozbal *Podklady* → vyber typ → přetáhni
   soubor. (Soubor se zatím jen uloží, automatické čtení se připravuje.)
-- **Sestavit nabídku do PDF:** detail (PPA/Peak shaving) → *Otevřít nabídku pro zákazníka* →
+- **Sestavit nabídku do PDF:** detail (PPA/Peak shaving) → *Nabídka pro zákazníka* →
   zapni/vypni bloky, uprav texty a vyber údaje → *Uložit* → *Uložit do PDF* (dialog tisku prohlížeče).
 - **Vrátit se k výchozí předloze:** v editoru výstupu *Obnovit výchozí* (přepíše se až po *Uložit*).
 - **Přidat technologii do katalogu:** *Katalog a výpočty* → *+ Technologie* → vyplň a *Uložit*.

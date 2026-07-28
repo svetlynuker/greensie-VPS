@@ -158,6 +158,21 @@ Pro lidi s červeno-zelenou vadou zraku (deuteranopie/protanopie). Po zapnutí a
 barvy a barvy grafů za paletu čitelnou bez rozlišení červená/zelená (modrá = v pořádku, závažnost
 se pozná jasem). Layout se přitom nemění. Volba se ukládá do profilu.
 
+### Opakující se prvky v modulech
+Moduly, které něco zadávají a něco spočítají, mají od 28. 7. 2026 stejné rozvržení — „**pracovní
+stůl**". Poprvé se objevil u [kalkulátoru peak shavingu](nabidkovac-peak-shaving.md) a postupně se
+přenáší do dalších modulů, takže se ovládání nikde neučí znovu:
+
+| Prvek | Jak vypadá | Co dělá |
+|---|---|---|
+| **Pracovní stůl** | vlevo úzký panel se vstupy, vpravo výsledek | Panel vlevo je „přilepený" – při čtení výsledku neuhne z obrazu, takže jde přepsat vstup a hned vedle vidět dopad. Na úzké obrazovce se panel přesune nad výsledek. |
+| **Číslované sekce vstupů** | ① ② ③ v levém panelu | Rozdělují zadávání na logické kroky. Všechny vstupy jednoho výpočtu jsou vždy v tomhle jednom panelu, ne rozházené po stránce. |
+| **Kontrolní seznam** | ✓ / `!` pod hlavním tlačítkem | Když je tlačítko šedé, seznam říká, co ještě chybí. |
+| **Segmentovaný přepínač** | dvě až tři volby v jednom rámečku | Mění jen *zobrazení* už spočítaných dat (např. rok). Nic nepřepočítává, nic neukládá. |
+| **Záložky výsledku** | vodorovné záložky nad obsahem | Dělí dlouhý výsledek na části. Přepnutí nic nepočítá. |
+| **Sbalená metodika `ⓘ`** | jednořádkový šedý pruh, klik rozbalí | Vysvětlení „proč se to takhle počítá". Napoprvé je potřeba, napodesáté zdržuje — proto je sbalené. |
+| **Sbalená karta** | `▸` nadpis se štítkem | Obsah, do kterého se sahá jen občas (třeba nahrané podklady). U prázdné se otevře sama. |
+
 ### Jak na…
 - **Přepnout na tmavý režim:** jméno vpravo nahoře → u **Režim** klikni na měsíc.
 - **Zvětšit písmo:** jméno vpravo nahoře → u **Velikost textu** vyber **A** nebo **A+**.
@@ -252,6 +267,29 @@ vlastní klíč** bez změny schématu.
   v `backend/app/auth/permissions.py` (`PRAVA`); supersprávce (`je_admin`) má vždy všechna.
 - Skrytí v nabídce je **pohodlí, ne ochrana** — každý modul si právo hlídá i na backendu
   (např. `vyzaduj_admina`, `vyzaduj_pravo_zmeny`). Kdo by si adresu napsal ručně, dostane 403.
+
+### Stavební prvky pro nové moduly (CSS)
+Když se předělává vzhled dalšího modulu, **nevymýšlí se nový** — bere se tenhle inventář z
+`styles/global.css`. Referenční implementace je `components/PeakShavingPanel.jsx`.
+
+| Třída | K čemu | Poznámka |
+|---|---|---|
+| `gs-seg` | segmentovaný přepínač zobrazení | Stav drží `aria-pressed`, ne jen barva. Popiska vedle přes `gs-ctrl-label`. |
+| `gs-tabs` | záložky (`role="tablist"` + `aria-selected`) | Počet v závorce přes `gs-tab-cnt`. |
+| `gs-meta` | sbalená metodika (`<details>`) | Vnitřek do `gs-meta-in`; značka `ⓘ` se přidá sama. |
+| `gs-chk` | kontrolní seznam připravenosti | Řádky `gs-chk-ok` / `gs-chk-no`, značka v `gs-chk-mark`. |
+| `gs-unit` | pole s jednotkou (kW, Kč) | Jednotka do `gs-unit-txt`, ne do popisky pole. |
+| `gs-kpis` / `gs-kpi` | pás dlaždic s hlavními čísly | `gs-kpi.accent` zvýrazní tu nejdůležitější. |
+
+Rozvržení stolu samo (`ps-desk`, `ps-panel`, `ps-step`, karty variant) leží zatím v
+`styles/nabidkovac.css`, protože je jen v nabídkovači. **Až se použije ve druhém modulu, přesune se
+do `global.css` pod obecnějším jménem** — ne aby se kopírovalo.
+
+Pravidla, která k rozvržení patří (nejen třídy):
+- **Vstupy na jednom místě.** Jeden panel, číslované sekce. Ne tři karty nad sebou.
+- **Čísla vpravo, `tabular-nums`.** V tabulkách `td.n` / `th.n`, ať se sloupce dají porovnat okem.
+- **Vysvětlivky do `gs-meta`.** Ne drobný šedý text mezi čísly.
+- **Přepínače zobrazení v hlavičce výsledku** a platí pro celou pravou stranu.
 
 ### Klíčové soubory
 - **Frontend:** `components/Layout.jsx` (rámec), `Sidebar.jsx` (levý panel), `UserMenu.jsx` (nabídka
