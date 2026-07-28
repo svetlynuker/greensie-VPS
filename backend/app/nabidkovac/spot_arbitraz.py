@@ -708,9 +708,13 @@ def simuluj_rok(
     opotrebeni_pouzite = opotrebeni_kc_mwh
     if n.max_cyklu_rok is not None and n.max_cyklu_rok > 0:
         for _ in range(_MAX_ITERACI_LIMITU_CYKLU):
-            if sum(plan(m, s).obchodnich_cyklu for m, s in volba.items()) <= n.max_cyklu_rok:
+            cyklu = sum(plan(m, s).obchodnich_cyklu for m, s in volba.items())
+            if cyklu <= n.max_cyklu_rok:
                 break
-            opotrebeni_pouzite = max(opotrebeni_pouzite * 1.6, 150.0)
+            # Zvýšení se odvozuje z toho, o kolik jsme nad limitem – pevný krok
+            # by u velkých spreadů nestačil ani po pěti průchodech.
+            faktor = max(1.6, min(4.0, cyklu / n.max_cyklu_rok))
+            opotrebeni_pouzite = max(opotrebeni_pouzite * faktor, 150.0)
             opotrebeni_kc_mwh = opotrebeni_pouzite
             cache.clear()
         if opotrebeni_pouzite > vysledek.opotrebeni_pouzite_kc_mwh:
