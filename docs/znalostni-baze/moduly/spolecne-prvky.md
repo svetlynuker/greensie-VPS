@@ -274,22 +274,42 @@ Když se předělává vzhled dalšího modulu, **nevymýšlí se nový** — be
 
 | Třída | K čemu | Poznámka |
 |---|---|---|
+| `gs-desk` | pracovní stůl (vstupy vlevo, výsledek vpravo) | Dva sloupce; pod 1150 px se samo zalomí pod sebe. |
+| `gs-panel` | levý panel se vstupy | Hlavička `gs-panel-h`, tělo `gs-panel-body` (vnitřní scroll), patička `gs-panel-f`. |
+| `gs-step` | číslovaná sekce vstupů | Číslo v `gs-step-num`, podtitulek `gs-step-sub`. |
+| `gs-res-h` | hlavička výsledku | Nadtitulek `gs-nadtitul`, `gs-mezera` odtlačí přepínače doprava. |
+| `gs-karta` + `gs-karta-h` | karta s hlavičkou (roky, grafy, tabulky) | `gs-karta.aktivni` zvýrazní tu zvolenou. |
+| `gs-varianta` | karta varianty k rozhodnutí | Štítek kritéria `gs-varianta-lb`, pruh `gs-pruh`. |
 | `gs-seg` | segmentovaný přepínač zobrazení | Stav drží `aria-pressed`, ne jen barva. Popiska vedle přes `gs-ctrl-label`. |
 | `gs-tabs` | záložky (`role="tablist"` + `aria-selected`) | Počet v závorce přes `gs-tab-cnt`. |
 | `gs-meta` | sbalená metodika (`<details>`) | Vnitřek do `gs-meta-in`; značka `ⓘ` se přidá sama. |
 | `gs-chk` | kontrolní seznam připravenosti | Řádky `gs-chk-ok` / `gs-chk-no`, značka v `gs-chk-mark`. |
 | `gs-unit` | pole s jednotkou (kW, Kč) | Jednotka do `gs-unit-txt`, ne do popisky pole. |
 | `gs-kpis` / `gs-kpi` | pás dlaždic s hlavními čísly | `gs-kpi.accent` zvýrazní tu nejdůležitější. |
+| `gs-table` | tabulka | Čísla do `td.n`, součtový řádek `tr.soucet`, neklikatelný `tr.staticky`. |
+| `gs-scroll` | rám tabulky s vodorovným scrollem | S `okno` navíc svislý scroll do výšky `--gs-okno`. |
+| `gs-pill` | štítek | Varianty `dobre` / `pozor` / `spatne` / `znacka`. |
+| `gs-input`, `gs-label`, `gs-form-grid` | pole, popiska, mřížka formuláře | |
+| `gs-modul`, `gs-backlink` | kontejner stránky modulu a odkaz zpět | Nadpis stránky nese lišta rámce, nedublovat ho. |
 
-Rozvržení stolu samo (`ps-desk`, `ps-panel`, `ps-step`, karty variant) leží zatím v
-`styles/nabidkovac.css`, protože je jen v nabídkovači. **Až se použije ve druhém modulu, přesune se
-do `global.css` pod obecnějším jménem** — ne aby se kopírovalo.
+Tabulky, pole a štítky mají v `global.css` **dvojitý selektor `gs-*, nb-*`** — starší nabídkovač
+píše ještě `nb-table` / `nb-pole` / `nb-badge`. Je to jeden zdroj pravdy, takže se vzhled nemůže
+rozejít; nový kód ale píše `gs-*` a **třetí jméno se nezavádí**.
+
+**Kde už rozvržení je:** peak shaving, PPA a prodej (celý stůl) · admin nastavení a katalog
+nabídkovače (záložky, tabulky, pole).
 
 Pravidla, která k rozvržení patří (nejen třídy):
 - **Vstupy na jednom místě.** Jeden panel, číslované sekce. Ne tři karty nad sebou.
 - **Čísla vpravo, `tabular-nums`.** V tabulkách `td.n` / `th.n`, ať se sloupce dají porovnat okem.
 - **Vysvětlivky do `gs-meta`.** Ne drobný šedý text mezi čísly.
 - **Přepínače zobrazení v hlavičce výsledku** a platí pro celou pravou stranu.
+- **Dlouhý seznam do okna,** ne na celou stránku: `gs-scroll okno` + hledání + filtr. Kde se hodí,
+  i přepínač výšky okna (nízké / vysoké / celé) — viz katalog produktů.
+- **Zakázané tlačítko vždy s vysvětlením** (`gs-chk`), ať uživatel ví, co doplnit.
+- **Nehotovou funkci napsat slovy, ne vypnutými políčky.** Šedá pole, do kterých se nedá psát,
+  vypadají jako funkce, kterou jen někdo nezapnul — viz linie Prodej v nabídkovači.
+- **Nadpis stránky nedublovat** — nese ho horní lišta rámce.
 
 ### Klíčové soubory
 - **Frontend:** `components/Layout.jsx` (rámec), `Sidebar.jsx` (levý panel), `UserMenu.jsx` (nabídka

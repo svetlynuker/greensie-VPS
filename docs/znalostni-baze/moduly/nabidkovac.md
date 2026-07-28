@@ -37,6 +37,19 @@ Rozcestník `/nabidkovac` nabízí tři dlaždice (klíč = typ nabídky na serv
 > [nabidkovac-ppa-fve.md](nabidkovac-ppa-fve.md). Tenhle návod je o obecné práci s nabídkami,
 > katalogem, podklady a nabídkovým výstupem (PDF).
 
+#### Linie Prodej — výpočet se připravuje
+U prodeje **zatím není výpočtová metodika**, takže tam nic nepočítá. Panel má ale **stejné
+rozvržení jako ostatní linie**, aby se OZ nemusel nic přeučovat, až výpočet přijde:
+
+- vlevo **funkční načtení profilu odběru** (uloží se k nabídce a použije ho i budoucí návrh) a
+  seznam **podkladů, které si vyžádat od zákazníka** (spotřeba, požadovaný výkon nebo plocha
+  střechy, jestli má být součástí baterie, marže a záruka),
+- vpravo napsané, co se připravuje, s odkazem do katalogu produktů.
+
+Vypnutá políčka pro parametry, které server neumí přijmout, tam **schválně nejsou** — vypadala by
+jako funkce, kterou jen někdo nezapnul. Nabídku prodeje jde zatím připravit ručně: nahrát podklady,
+načíst profil a technologii vybrat z katalogu.
+
 ### Tok práce (od založení po PDF)
 1. **Vyber podsekci** na rozcestníku (PPA / Prodej / Peak shaving).
 2. **Založ nabídku** tlačítkem „+ Nová nabídka" – vznikne prázdný záznam ve stavu *Koncept* a
@@ -77,7 +90,7 @@ Datum). Klik na řádek otevře detail.
 na jeden řádek (název, adresa, štítky linie + stav, tlačítka *Upravit zákazníka* a u PPA/Peak
 shavingu *Nabídka pro zákazníka*), sbalená karta **Podklady** (nahrávání dokumentů) a pak už
 **panel řešení** — u Peak shavingu „pracovní stůl" (vlevo vstupy, vpravo výsledek), u PPA
-kalkulátor, u Prodeje zatím jen upozornění.
+kalkulátor, u Prodeje stejný stůl s prázdným výsledkem (výpočet se připravuje).
 
 Formulář s údaji zákazníka a karta Podklady se rozbalují na vyžádání; u čerstvě založené nabídky
 (bez názvu zákazníka, resp. bez dokumentů) se otevřou samy. Důvod: do obojího se sahá jednou na
@@ -143,18 +156,40 @@ Legenda „kdo vidí": **(vše)** = každý, kdo Nabídkovač otevře (právo `n
 ### Práce s katalogem a vlastními sloupci
 Katalog technologií je **společný** (jeden pro celý Nabídkovač) a najdeš ho přes **⚙ Katalog
 a výpočty** (`/nabidkovac/katalog`). **Prohlížet ho může každý s právem `nabidkovac`, editovat
-jen s právem `nabidkovac_katalog`.** Obrazovka má tři části: Katalog technologií, Výpočtová
-nastavení a Sazby distributorů.
+jen s právem `nabidkovac_katalog`.**
+
+Obrazovka je rozdělená do **pěti záložek**, jedna na každou spravovanou věc:
+
+| Záložka | Co v ní je |
+|---|---|
+| **Produkty** (s počtem) | katalog technologií — hledání, filtr typu, přepínač výšky okna, vlastní sloupce |
+| **Sazby distributorů** (s počtem) | ceny pro peak shaving po distributorech a hladinách |
+| **Peak shaving** | výchozí hodnoty výpočtu baterie (práh doporučení, NPV, O&M, degradace) |
+| **PPA pro FVE** | marže, délky kontraktu a výchozí hodnoty PPA výpočtu |
+| **Verze nastavení** | historie verzí — jen ke čtení, doklad, s čím se počítala která nabídka |
+
+Dřív bylo všechno na jedné stránce pod sebou a katalog produktů ji roztáhl na několik obrazovek.
+
+**Záložka Produkty** má tři ovládací prvky nad tabulkou:
+
+| Prvek | Co dělá |
+|---|---|
+| **Hledání** | filtruje podle názvu a modelu |
+| **Filtr typu** | Vše / FVE panel / Invertor / Baterie / Jiná |
+| **Okno: nízké / vysoké / celé** | jak vysoký je výřez seznamu; *celé* limit zruší a tabulka roste, jak potřebuje. Volba se pamatuje v prohlížeči. |
+
+Pod tabulkou je vidět, **kolik z kolika** produktů je zobrazeno, takže filtr nejde přehlédnout.
 
 | Prvek | Co dělá | Kdo vidí |
 |---|---|---|
-| **+ Technologie** | Otevře dialog nové položky katalogu | katalog |
-| **+ Sloupec** | Přidá vlastní sloupec katalogu (např. „Záruka"), text nebo číslo | katalog |
-| **Řádek technologie** | Klik otevře editaci | katalog |
-| **Smazat (u technologie / sloupce)** | Smaže položku / definici sloupce | katalog |
+| **+ Produkt** | Otevře dialog nové položky katalogu | katalog |
+| **+ Vlastní sloupec** | Přidá vlastní sloupec katalogu (např. „Záruka"), text nebo číslo | katalog |
+| **Řádek produktu** | Klik otevře editaci | katalog |
+| **Smazat (u produktu / sloupce)** | Smaže položku / definici sloupce | katalog |
 | **Vlastní sloupec (štítek)** | Klik na název upraví sloupec, × ho smaže (uložené hodnoty osiřejí, neškodí) | katalog |
+| **Uložit jako novou verzi** | V záložkách *Peak shaving* a *PPA* — uloží **obě** sady parametrů jako novou verzi (drží se ve stavu, přepnutím záložky se nic neztratí) | katalog |
 
-**Dialog technologie** obsahuje: *Typ* (FVE panel / Invertor / Baterie / Jiná), *Název*, *Model*,
+**Dialog produktu** obsahuje: *Typ* (FVE panel / Invertor / Baterie / Jiná), *Název*, *Model*,
 *Výkon (kW)*, *Kapacita (kWh)*, *Cena (Kč)*, *Účinnost (0–1)*, přepínač *Dostupná v katalogu* a
 vstupy pro případné vlastní sloupce. **U typu Baterie musí být vyplněný výkon i kapacita** (obojí
 kladné) – bez nich nelze počítat peak shaving.
@@ -190,8 +225,9 @@ interní čísla se nenabízejí.
 - **Sestavit nabídku do PDF:** detail (PPA/Peak shaving) → *Nabídka pro zákazníka* →
   zapni/vypni bloky, uprav texty a vyber údaje → *Uložit* → *Uložit do PDF* (dialog tisku prohlížeče).
 - **Vrátit se k výchozí předloze:** v editoru výstupu *Obnovit výchozí* (přepíše se až po *Uložit*).
-- **Přidat technologii do katalogu:** *Katalog a výpočty* → *+ Technologie* → vyplň a *Uložit*.
-- **Přidat vlastní sloupec katalogu:** *Katalog a výpočty* → *+ Sloupec* → název + typ (text/číslo).
+- **Přidat technologii do katalogu:** *Katalog a výpočty* → záložka *Produkty* → *+ Produkt* → vyplň a *Uložit*.
+- **Přidat vlastní sloupec katalogu:** *Katalog a výpočty* → záložka *Produkty* → *+ Vlastní sloupec* → název + typ (text/číslo).
+- **Najít produkt v dlouhém katalogu:** záložka *Produkty* → napiš část názvu do hledání, případně zvol typ. Přepínačem **Okno** si nastavíš, jak vysoký výřez seznamu chceš.
 - **Smazat nabídku:** detail nabídky → *Smazat nabídku* (smaže i nahrané soubory).
 
 ---

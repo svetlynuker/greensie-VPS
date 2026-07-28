@@ -5,7 +5,7 @@
 
 Centrální správa **uživatelů, skupin a práv** celé appky, **reset hesel** a **nastavení automatické synchronizace s Freelem**. Slouží správci systému (supersprávci nebo komukoli s právem `admin`).
 
-> 📸 SCREENSHOT: celá obrazovka Admin nastavení — tři karty pod sebou (Uživatelé, Skupiny, Synchronizace s Freelem)
+> 📸 SCREENSHOT: Admin nastavení se záložkami Uživatelé / Skupiny a práva / Přehled projektů
 
 ---
 
@@ -14,32 +14,36 @@ Centrální správa **uživatelů, skupin a práv** celé appky, **reset hesel**
 Uživatelem se zde myslí **administrátor** — jen ten stránku otevře.
 
 ### K čemu to slouží
-Na jednom místě zakládáš a upravuješ **účty zaměstnanců**, přiděluješ jim **práva** (co smí v appce otevřít a dělat) buď jednotlivě, nebo přes **skupiny**, a **resetuješ hesla**, když je někdo zapomene. Poslední karta řídí, jak často a co si má appka **sama stahovat z Freela** do Přehledu projektů.
+Na jednom místě zakládáš a upravuješ **účty zaměstnanců**, přiděluješ jim **práva** (co smí v appce otevřít a dělat) buď jednotlivě, nebo přes **skupiny**, a **resetuješ hesla**, když je někdo zapomene. Poslední záložka řídí, jak často a co si má appka **sama stahovat z Freela** do Přehledu projektů.
 
-### Rozvržení obrazovky
-Shora dolů, vše jsou karty pod sebou:
+### Rozvržení obrazovky — záložky
+Nastavení je rozdělené do **záložek, jedna na každou spravovanou věc**. Dřív byly tři karty pod
+sebou a stránka se musela rolovat; teď se přepíná nahoře a vidí se jen to, co člověk právě řeší.
 
-1. **Odkaz „← Zpět na rozcestník"** — návrat na úvodní souhrn (mezi moduly se ale chodí
-   panelem vlevo).
-2. **Nadpis „Admin nastavení".**
-3. **Karta „Uživatelé"** — počet uživatelů, tlačítko *+ Přidat uživatele* a tabulka všech účtů.
-4. **Karta „Skupiny"** — počet skupin, tlačítko *+ Přidat skupinu* a seznam skupin s jejich právy.
-5. **Karta „Synchronizace s Freelem"** — nastavení automatického stahování dat z Freela (viz Pro admina / provoz).
+| Záložka | Co v ní je |
+|---|---|
+| **Uživatelé** (s počtem) | tabulka všech účtů ve vlastním okně se scrollem, tlačítko *+ Přidat uživatele* |
+| **Skupiny a práva** (s počtem) | seznam skupin s jejich právy, tlačítko *+ Přidat skupinu* |
+| **Přehled projektů** | nastavení automatické synchronizace s Freelem (viz Pro admina / provoz) |
+
+Nad záložkami je jen odkaz **„← Zpět na rozcestník"**; nadpis stránky nese horní lišta appky, tak
+se tu nedubluje. Až přijdou nastavení dalších modulů, přidají se jako další záložka — proto se
+záložka jmenuje po modulu (**Přehled projektů**), ne po technologii (~~Freelo~~).
 
 Úpravy uživatele, skupiny, reset hesla i zobrazení vygenerovaného hesla se dějí ve **vyskakovacím okně (modalu)** nad stránkou.
 
-> 📸 SCREENSHOT: karta Uživatelé s tabulkou účtů a tlačítkem „+ Přidat uživatele"
+> 📸 SCREENSHOT: záložka Uživatelé s tabulkou účtů a tlačítkem „+ Přidat uživatele"
 
 ### Ovládací prvky — políčko po políčku
 
 Celou stránku i všechna její tlačítka vidí **jen administrátor** (kdo má právo `admin`); ostatní se sem vůbec nedostanou. Ve sloupci „Kdo vidí" proto rozlišuji jen jemnější pojistky.
 
-#### Karta Uživatelé — tabulka
+#### Záložka Uživatelé — tabulka
 
 | Prvek | Kde | Co dělá |
 |---|---|---|
-| **+ Přidat uživatele** | záhlaví karty | Otevře okno pro založení nového účtu |
-| **Počítadlo `(N)`** | vedle nadpisu | Kolik je celkem uživatelů |
+| **+ Přidat uživatele** | nad tabulkou | Otevře okno pro založení nového účtu |
+| **Počítadlo `(N)`** | v záložce | Kolik je celkem uživatelů |
 | Sloupec **Jméno** | tabulka | Jméno uživatele |
 | Sloupec **E-mail** | tabulka | Přihlašovací e-mail |
 | Sloupec **Přístup** | tabulka | Štítek **Supersprávce**, nebo text *Uživatel*; pod tím se u čekajících účtů ukáže „🔑 čeká na změnu hesla" |
@@ -85,12 +89,12 @@ Zobrazí se **jednorázové heslo**, odkaz na appku a e-mail. Heslo se **ukáže
 
 > 📸 SCREENSHOT: okno „Přihlašovací údaje" s vygenerovaným heslem a tlačítkem „Kopírovat údaje"
 
-#### Karta Skupiny
+#### Záložka Skupiny a práva
 
 | Prvek | Kde | Co dělá |
 |---|---|---|
-| **+ Přidat skupinu** | záhlaví karty | Otevře okno pro založení skupiny |
-| **Počítadlo `(N)`** | vedle nadpisu | Kolik je skupin |
+| **+ Přidat skupinu** | nad seznamem | Otevře okno pro založení skupiny |
+| **Počítadlo `(N)`** | v záložce | Kolik je skupin |
 | **Název skupiny** | řádek skupiny | Název + počet členů |
 | Štítky práv | řádek skupiny | Barevné štítky práv skupiny (nebo „žádná práva") |
 | **Upravit** | řádek skupiny | Otevře okno úpravy |
@@ -98,13 +102,13 @@ Zobrazí se **jednorázové heslo**, odkaz na appku a e-mail. Heslo se **ukáže
 
 Okno **„Přidat / Upravit skupinu"** má pole **Název skupiny** a seznam zaškrtávátek **„Co smí členové skupiny"** (katalog práv).
 
-> 📸 SCREENSHOT: karta Skupiny se dvěma skupinami a jejich štítky práv
+> 📸 SCREENSHOT: záložka Skupiny a práva se dvěma skupinami a jejich štítky práv
 
 ### Jak na…
 
-- **Jak přidat uživatele:** karta Uživatelé → *+ Přidat uživatele* → vyplň Jméno a E-mail → případně nastav Supersprávce / Skupinu / Práva navíc → *Uložit*. Objeví se okno s **jednorázovým heslem** — zkopíruj ho a předej uživateli (pokud je nastavený e-mail, appka ho pošle sama). Uživatel si při prvním přihlášení nastaví vlastní heslo.
+- **Jak přidat uživatele:** záložka Uživatelé → *+ Přidat uživatele* → vyplň Jméno a E-mail → případně nastav Supersprávce / Skupinu / Práva navíc → *Uložit*. Objeví se okno s **jednorázovým heslem** — zkopíruj ho a předej uživateli (pokud je nastavený e-mail, appka ho pošle sama). Uživatel si při prvním přihlášení nastaví vlastní heslo.
 - **Jak resetovat heslo:** u řádku uživatele *Reset hesla* → vyber *Vygenerovat nové heslo* (nebo *Zadat vlastní heslo*) → *Resetovat heslo* → zkopíruj z okna nové heslo. Uživatel si při dalším přihlášení nastaví vlastní.
-- **Jak vytvořit skupinu a přidělit práva:** karta Skupiny → *+ Přidat skupinu* → zadej název (např. „Vedení") → zaškrtej, co smí členové otevřít/dělat → *Uložit*. Pak u uživatele *Upravit* → vyber tuto skupinu.
+- **Jak vytvořit skupinu a přidělit práva:** záložka Skupiny a práva → *+ Přidat skupinu* → zadej název (např. „Vedení") → zaškrtej, co smí členové otevřít/dělat → *Uložit*. Pak u uživatele *Upravit* → vyber tuto skupinu.
 - **Jak dát jednomu člověku právo navíc:** *Upravit* uživatele → v sekci **Práva navíc** zaškrtni konkrétní právo (např. „Otevřít Přehled financí") → *Uložit*. Nemusíš kvůli tomu zakládat skupinu.
 - **Jak z někoho udělat správce:** *Upravit* → zaškrtni **Supersprávce** → *Uložit*. Získá přístup ke všemu; skupina a práva navíc se u něj ignorují.
 

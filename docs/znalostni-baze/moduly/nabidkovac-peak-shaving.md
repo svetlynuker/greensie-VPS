@@ -379,9 +379,11 @@ backend/app/nabidkovac/
 backend/app/main.py  – create_all + _lehka_migrace + seed při startu
 frontend/src/
   components/PeakShavingPanel.jsx  – pracovní stůl: vstupy + výsledek (OZ)
-  styles/nabidkovac.css            – rozvržení stolu (ps-*), hlavička zákazníka, karty variant
-  styles/global.css                – znovupoužitelné prvky stolu (gs-seg, gs-tabs, gs-meta,
-                                     gs-chk, gs-unit) — vzor pro ostatní moduly
+  styles/global.css                – celé sdílené rozvržení (gs-desk, gs-panel, gs-step,
+                                     gs-varianta, gs-seg, gs-tabs, gs-meta, gs-chk, gs-unit,
+                                     gs-table, gs-pill…) — vzor pro ostatní moduly
+  styles/nabidkovac.css            – jen zbytky specifické pro nabídkovač (hlavička zákazníka,
+                                     sbalené podklady, ruční výběr baterií)
   components/GrafOdberu.jsx        – SVG graf měsíčních maxim (bez knihovny)
   components/GrafPrubehu.jsx       – nitkový graf průběhu se zoomem rok → 15 min (bez knihovny)
   pages/NabidkovacKatalog.jsx      – admin: sazby, katalog, výpočtová nastavení
@@ -402,7 +404,7 @@ frontend/src/
 
 ## Poznámky a úskalí (k ověření / nezřejmé)
 - **Návratnost se nikdy neukáže jako „nevrátí se".** Backend dál posílá `payback_roky = null`, když se investice v horizontu NPV nevrátí — frontend (`navratnostKZobrazeni` v `PeakShavingPanel.jsx`) místo toho číslo **dopočítá za horizont** z klesajícího cash flow posledních let a označí ho vlnovkou. Když ani to nejde (roční CF je nekladné, tedy úspora nepokryje O&M), ukáže se prostá návratnost s poznámkou „(prostá)". Je to **zobrazovací vrstva** — do NPV, prahu doporučení ani do výběru varianty tenhle dopočet nevstupuje. Řazení srovnání podle návratnosti ale používá stejné číslo, které je v řádku vidět, jinak by varianty s odhadem padaly bez důvodu na konec.
-- **Rozvržení „pracovní stůl" je vzor pro ostatní moduly.** Panel se 28. 7. 2026 překlopil z jedné svislé roláky (vstupy roztržené mezi tři karty, výsledek ~2500 px pod nimi) na dva sloupce se záložkami. Znovupoužitelné části leží v `global.css` jako `gs-*`, layout stolu jako `ps-*` v `nabidkovac.css`. Až se stůl použije i jinde, `ps-*` se přesune do `global.css` pod obecnějším jménem.
+- **Rozvržení „pracovní stůl" je vzor pro ostatní moduly.** Panel se 28. 7. 2026 překlopil z jedné svislé roláky (vstupy roztržené mezi tři karty, výsledek ~2500 px pod nimi) na dva sloupce se záložkami. Všechny sdílené části leží v `global.css` jako `gs-*` — od 28. 7. 2026 tam je i layout stolu (`gs-desk`, `gs-panel`, `gs-step`…), protože ho používá i PPA a prodej. Inventář prvků je ve [Společných prvcích](spolecne-prvky.md).
 - **Detail nabídky musí být široký.** `.nb-app.siroky` zvedá šířku obsahu na 1560 px – při původních 1100 px by se dva sloupce nikdy nevešly a stůl by se pořád zalamoval pod sebe.
 - **Karta „Podklady" a údaje zákazníka jsou v detailu nabídky sbalené.** Rozbalí se samy jen u čerstvě založené nabídky (chybí název zákazníka, resp. žádné dokumenty). Profil odběru se načítá ve vstupech výpočtu, takže do Podkladů se chodí prakticky jen při zakládání.
 - **2027 je modelový odhad, ne cena.** Dokud nevyjde závazný výměr ERÚ (~11/2026), jsou všechna čísla 2027 nezávazná (`je_modelovy_odhad`). Výběr doporučené varianty se řídí modelem **2026**.

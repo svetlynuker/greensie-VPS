@@ -10,7 +10,7 @@ dvě ekonomiky nad stejnou fyzikou – **klientovi** úsporu (dnes vs. s PPA), *
 návratnost (payback / IRR / NPV). Výrobu FVE si appka **sama simuluje** (nenahrává se), velikost
 FVE **navrhuje sama**. Ceny jsou **bez DPH**, výpočet je deterministický.
 
-> 📸 SCREENSHOT: detail nabídky typu `ppa` – panel „PPA pro FVE – výpočet" s vyplněnými vstupy a výsledkem
+> 📸 SCREENSHOT: detail nabídky typu `ppa` – pracovní stůl s vyplněnými vstupy vlevo a výsledkem vpravo
 
 ---
 
@@ -29,29 +29,48 @@ Výrobu FVE **nenahráváš** – appka si ji simuluje z výkonu, lokality a ori
 FVE (kWp) taky nezadáváš** – appka vyzkouší řadu velikostí a navrhne tu s nejlepší ekonomikou
 (volitelně můžeš omezit střechou nebo zadat výkon napevno).
 
-### Rozvržení obrazovky
-Panel PPA je spodní část detailu nabídky typu `ppa` (nad ním je karta **Zákazník**, **Podklady**
-a tlačítko **Nabídka pro zákazníka**). Shora dolů:
+### Rozvržení obrazovky — „pracovní stůl"
+Panel PPA je spodní část detailu nabídky typu `ppa` (nad ním je hlavička zákazníka a sbalená karta
+**Podklady**). Od 28. 7. 2026 má **stejné rozvržení jako peak shaving**: vlevo úzký panel se všemi
+vstupy, vpravo výsledek. Levý panel je „přilepený" — při čtení výsledku neuhne z obrazu, takže jde
+přepsat PPA cenu a hned vedle sledovat, co to udělá s návratností.
 
-1. **1. Profil spotřeby** – stav načtení profilu + tlačítka „Načíst profil" pro nahrané soubory.
-2. **2. Parametry FVE a PPA** – mřížka vstupních polí (velikost, orientace, ceny, kontrakt, CAPEX…).
-3. **Zaškrtávátko „Účtovat přetok do sítě"** – po zapnutí přibude pole „Cena přebytku".
-4. **Tlačítko „Spočítat PPA"** – spustí výpočet.
-5. **Výsledek** (po výpočtu): navržená velikost + **% pokrytí spotřeby z FVE**, dlaždice ekonomiky
-   investora (návratnost / IRR / NPV / kum. úspora klienta), tabulka **Srovnání velikostí**,
-   měsíční graf **výroba vs. spotřeba**, tabulka **po letech** a případná **upozornění**.
+**Levý panel – vstupy výpočtu** (tři číslované sekce):
 
-> 📸 SCREENSHOT: celý panel PPA shora dolů – profil, parametry, výsledek s grafem a tabulkami
+1. **Profil spotřeby** – stav načtení + tlačítka „Načíst" pro nahrané soubory. Výroba FVE se
+   simuluje, nenahrává.
+2. **Fotovoltaika** – max. výkon dle střechy, výkon napevno, sklon, azimut, režim nákladů (CAPEX)
+   a max. rezervovaný výkon dodávky.
+3. **Smlouva PPA** – PPA cena, silová cena dodavatele, vyhnutelné regulované platby, délka
+   kontraktu, indexy eskalace a účtování přetoku.
+
+V patičce je tlačítko **Spočítat PPA** a pod ním **kontrolní seznam** — u každé podmínky ✓ nebo `!`
+s tím, co ještě chybí (profil, PPA cena, silová cena, délka kontraktu).
+
+**Pravý sloupec – výsledek:** hlavička s navrženou velikostí a odznakem (*ekonomický návrh* /
+*ruční výkon* / *alternativa*), pás dlaždic (**pokrytí spotřeby z FVE**, návratnost investora,
+NPV/IRR, CAPEX, kumulovaná úspora klienta) a **záložky**:
+
+| Záložka | Co v ní je |
+|---|---|
+| **Energie a ekonomika** | dvě karty vedle sebe: energie roku 1 (výroba, spotřeba, samospotřeba, přetok) a ceny s ekonomikou (vyhnutelná cena, CAPEX, návratnost, NPV, IRR) |
+| **Výroba vs. spotřeba** | měsíční graf rok 1 |
+| **Srovnání velikostí** | tabulka zvažovaných kWp; klik na řádek překreslí celý výsledek |
+| **Po letech** | rozpis na celou dobu kontraktu, ◄ = rok návratnosti |
+
+Pod kartami je sbalený blok **ⓘ Jak se počítá úspora klienta a cash flow investora**.
+
+> 📸 SCREENSHOT: pracovní stůl PPA – vlevo vstupy s kontrolním seznamem, vpravo dlaždice a záložky
 
 ### Jak založit a spočítat PPA (krok za krokem)
 1. V Nabídkovači otevři sekci **PPA pro FVE** a založ/otevři nabídku (typ `ppa`).
-2. V kartě **Zákazník** vyplň název a ideálně **GPS** (zpřesní simulaci výroby; bez GPS se použije
+2. V hlavičce nabídky klikni na **Upravit zákazníka** a vyplň název a ideálně **GPS** (zpřesní simulaci výroby; bez GPS se použije
    střed ČR 49,8°).
-3. V kartě **Podklady** nahraj soubor s **15minutovým profilem spotřeby** (XLS/CSV z portálu
+3. Rozbal **Podklady** a nahraj soubor s **15minutovým profilem spotřeby** (XLS/CSV z portálu
    distributora – činný výkon kW).
-4. V panelu PPA klikni u nahraného souboru na **„Načíst profil: …"**. Objeví se počet intervalů,
+4. V levém panelu, sekce 1, klikni u nahraného souboru na **„Načíst: …"**. Objeví se počet intervalů,
    rozsah dat a **roční spotřeba (MWh)**.
-5. Vyplň **Parametry FVE a PPA** (viz tabulka níže). Povinné pro výpočet jsou **PPA cena**,
+5. Vyplň sekce **Fotovoltaika** a **Smlouva PPA** (viz tabulka níže). Povinné pro výpočet jsou **PPA cena**,
    **silová cena dodavatele** a **délka kontraktu** – bez nich zůstane tlačítko „Spočítat PPA"
    neaktivní.
 6. Klikni **Spočítat PPA**. Výsledek se uloží a při příštím otevření nabídky se vstupy **předvyplní
@@ -67,9 +86,9 @@ Legenda „kdo vidí": **(OZ)** = kdo má právo `nabidkovac` · **(admin)** = e
 
 | Prvek | Co to je | Co ovlivní | Kdo vidí |
 |---|---|---|---|
-| **Načíst profil: `<soubor>`** | Naparsuje nahraný XLS/CSV do 15min profilu spotřeby | Bez něj nejde počítat; z profilu se bere spotřeba i roční MWh | OZ |
-| **Max. výkon dle střechy (kWp)** | Volitelný **strop** pro automatický návrh velikosti | Žádná navržená velikost ho nepřekročí (tvrdý limit) | OZ |
-| **Výkon napevno (kWp)** | Volitelný ruční výkon FVE | Když vyplníš, appka **nenavrhuje** a počítá jen tuto velikost | OZ |
+| **Načíst: `<soubor>`** (sekce 1) | Naparsuje nahraný XLS/CSV do 15min profilu spotřeby | Bez něj nejde počítat; z profilu se bere spotřeba i roční MWh | OZ |
+| **Max. dle střechy** (kWp, sekce 2) | Volitelný **strop** pro automatický návrh velikosti | Žádná navržená velikost ho nepřekročí (tvrdý limit) | OZ |
+| **Výkon napevno** (kWp, sekce 2) | Volitelný ruční výkon FVE | Když vyplníš, appka **nenavrhuje** a počítá jen tuto velikost | OZ |
 | **Sklon panelů (°)** | Sklon roviny panelů (0 = rovina, 90 = svisle) | Korekce ročního výnosu (optimum ~35°) | OZ |
 | **Azimut (°, 0 = jih)** | Natočení panelů (0 = jih, ±90 = V/Z, 180 = sever) | Korekce výnosu (jih nejvyšší) | OZ |
 | **PPA cena rok 1 (Kč/MWh)** | Nabízená cena, za kterou klient odebírá z FVE | Úsporu klienta i výnos investora; eskaluje se po letech | OZ |
@@ -85,7 +104,7 @@ Legenda „kdo vidí": **(OZ)** = kdo má právo `nabidkovac` · **(admin)** = e
 | **Spočítat PPA** | Spustí výpočet | Uloží nové řešení a vykreslí výsledek | OZ |
 | **Řádek v „Srovnání velikostí"** | Klikací řádek s jinou velikostí FVE | **Překreslí celý detail** (čísla, graf, tabulka let) pro danou velikost | OZ |
 
-> 📸 SCREENSHOT: mřížka parametrů FVE a PPA s popisky polí
+> 📸 SCREENSHOT: levý panel se sekcemi Fotovoltaika a Smlouva PPA
 
 ### Význam výstupů
 Po výpočtu je nahoře **navržená FVE** (velikost v kWp) s odznakem, jak vznikla:
