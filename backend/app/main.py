@@ -201,8 +201,27 @@ def _seed_baterie():
         db.close()
 
 
+def _seed_spotove_ceny():
+    """Naseeduje spotové ceny z přiložených datových souborů (spot_ceny.py).
+
+    Idempotentní a offline – produkce nechodí na internet, ceny jsou v repu
+    jako `app/nabidkovac/data/spot_dam_cz_<rok>.csv.gz`. Když už jsou ceny roku
+    v DB v plném počtu, seed se přeskočí (35 tis. řádků na rok by zdržovalo
+    každý restart). Další rok se přidává skriptem `scripts/import_spot_ceny.py`.
+    """
+    from app.database import SessionLocal
+    from app.nabidkovac.spot_ceny import seed_z_datovych_souboru
+
+    db = SessionLocal()
+    try:
+        seed_z_datovych_souboru(db)
+    finally:
+        db.close()
+
+
 _seed_sazby()
 _seed_baterie()
+_seed_spotove_ceny()
 
 app = FastAPI(title="Greensie")
 

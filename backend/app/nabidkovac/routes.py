@@ -26,6 +26,8 @@ from app.nabidkovac import (
     profil_pokryti,
     sablona_katalog,
     soubory,
+    spot_arbitraz,
+    spot_ceny,
 )
 from app.nabidkovac.models import (
     DISTRIBUTORI,
@@ -970,6 +972,10 @@ def _varianta_json(v: peak_shaving.Varianta) -> dict:
         "ekonomika_2027": {
             k: (round(x, 2) if isinstance(x, float) else x) for k, x in v.ekonomika_2027.items()
         },
+        # Obchodování na spotu (None u čistého peak shavingu).
+        "rezim": v.rezim,
+        "zisk_spot_kc": round(v.zisk_spot_kc, 2),
+        "ekonomika_spot": v.ekonomika_spot,
     }
 
 
@@ -1020,6 +1026,84 @@ def _profil_pro_peak_shaving(
 # Kolika nejlepším variantám se graf + citlivost počítá rovnou při výpočtu.
 # Zbytek se dopočítá až na vyžádání (jedna varianta ≈ 0,2 s, všech 84 ≈ 15 s).
 POCET_VARIANT_S_GRAFEM = 3
+
+
+def _spot_kontext(
+    db: Session,
+    casy_profilu: list[datetime],
+    mesice: list[int],
+    vstup: PeakShavingVstup,
+    ps_param,
+) -> tuple[object | None, list[str]]:
+    """Sestaví kontext pro obchodování na spotu (ceny + parametry).
+
+    Ceny se načtou z `spotove_ceny` (seed z přiložených dat při startu appky)
+    a napárují na časy profilu. Rok cen se bere ze vstupu, jinak z manažerského
+    nastavení `spot_referencni_rok`, jinak nejnovější dostupný. Když ceny
+    v databázi nejsou vůbec, vrací `None` a výpočet spadne na čistý peak
+    shaving s upozorněním – radši nabídka bez obchodu než nabídka z ničeho.
+    """
+    upozorneni: list[str] = []
+    roky = spot_ceny.dostupne_roky(db)
+    if not roky:
+        return None, [
+            "Spotové ceny nejsou v databázi – obchodování se nepočítá. Naimportuj je "
+            "skriptem `python -m scripts.import_spot_ceny --z-csv --do-db`."
+        ]
+    rok = vstup.spot_referencni_rok or int(ps_param("spot_referencni_rok", 0)) or max(roky)
+    if rok not in roky:
+        upozorneni.append(
+            f"Spotové ceny roku {rok} nejsou k dispozici – použit nejbližší dostupný rok."
+        )
+        rok = min(roky, key=lambda r: abs(r - rok))
+    rada = spot_ceny.nacti_rok(db, rok)
+    ceny, info = spot_ceny.ceny_pro_casy(casy_profilu, rada)
+    if not info["stejny_rok"]:
+        upozorneni.append(
+            f"Profil odběru je z jiného roku než ceny ({rok}) – dny se párovaly podle "
+            f"měsíce a dne v týdnu ({info['parovano_dnu']} dnů), aby pracovní dny "
+            "dostaly ceny pracovních dnů."
+        )
+    if info["chybejici_intervaly"]:
+        upozorneni.append(
+            f"U {info['chybejici_intervaly']} intervalů profilu se nenašla spotová cena "
+            "(použita nula) – zkontroluj rozsah nahraných cen."
+        )
+
+    max_export = vstup.max_export_kw
+    nastaveni_spot = spot_arbitraz.NastaveniSpot(
+        marze_nakup_kc_mwh=ps_param("spot_marze_nakup_kc_mwh", spot_arbitraz.VYCHOZI_MARZE_KC_MWH),
+        marze_prodej_kc_mwh=ps_param(
+            "spot_marze_prodej_kc_mwh", spot_arbitraz.VYCHOZI_MARZE_KC_MWH
+        ),
+        regulovane_nakup_kc_mwh=ps_param(
+            "spot_regulovane_nakup_kc_mwh", spot_arbitraz.VYCHOZI_REGULOVANE_NAKUP_KC_MWH
+        ),
+        regulovane_prodej_kc_mwh=ps_param(
+            "spot_regulovane_prodej_kc_mwh", spot_arbitraz.VYCHOZI_REGULOVANE_PRODEJ_KC_MWH
+        ),
+        dan_z_elektriny_kc_mwh=ps_param(
+            "spot_dan_z_elektriny_kc_mwh", spot_arbitraz.VYCHOZI_DAN_Z_ELEKTRINY_KC_MWH
+        ),
+        cyklu_zivotnosti=int(
+            ps_param("spot_cyklu_zivotnosti", spot_arbitraz.VYCHOZI_CYKLU_ZIVOTNOSTI)
+        ),
+        max_cyklu_rok=(ps_param("spot_max_cyklu_rok", 0.0) or None),
+        umoznit_export=(max_export is None or max_export > 0),
+        max_export_kw=(float(max_export) if max_export else None),
+        bezpecnostni_rezerva_procenta=ps_param(
+            "spot_bezpecnostni_rezerva_procenta",
+            spot_arbitraz.VYCHOZI_BEZPECNOSTNI_REZERVA_PROCENTA,
+        ),
+    )
+    kontext = spot_arbitraz.Kontext(
+        ceny_kc_mwh=ceny,
+        mesice=mesice,
+        dny=[c.toordinal() for c in casy_profilu],
+        nastaveni=nastaveni_spot,
+        info_cen=info,
+    )
+    return kontext, upozorneni
 
 
 def _detail_varianty(
@@ -1089,8 +1173,12 @@ def spocti_peak_shaving(
     if vstup.rezervovana_kapacita_kw <= 0:
         raise HTTPException(status_code=422, detail="Rezervovaná kapacita musí být kladná.")
 
-    # 1) profil odběru (kW) z uložené časové řady
-    profil_kw, mesice, interval_h, upozorneni_profilu = _profil_pro_peak_shaving(db, nabidka_id)
+    # 1) profil odběru (kW) z uložené časové řady. Časy potřebujeme i kvůli
+    # napárování spotových cen (režimy Kombinace/SPOT).
+    casy_profilu, profil_kw, interval_h, upozorneni_profilu = (
+        _profil_pro_peak_shaving_s_casy(db, nabidka_id)
+    )
+    mesice = [c.month for c in casy_profilu]
 
     # 2) sazby (stara_2026 povinná pro výběr; nova_2027 volitelná – jen info)
     sazba_2026 = _najdi_sazbu(db, vstup.distributor, vstup.napetova_hladina, "stara_2026", 2026)
@@ -1186,6 +1274,13 @@ def spocti_peak_shaving(
             # jmenovité hodnoty (viz Baterie).
             uzitna_kapacita_kwh=_num((t.extra or {}).get("uzitna_kapacita_kwh")),
             max_vykon_stridacu_kw=_num((t.extra or {}).get("max_vykon_stridacu_kw")),
+            # Počet cyklů životnosti pro náklad opotřebení (režimy Kombinace/
+            # SPOT). Chybí-li u produktu, použije se admin default.
+            cyklu_zivotnosti=(
+                int(_num((t.extra or {}).get("cyklu_zivotnosti")))
+                if _num((t.extra or {}).get("cyklu_zivotnosti"))
+                else None
+            ),
         )
         for t in tech
         if float(t.vykon_kw) > 0 and float(t.kapacita_kwh) > 0 and t.cena_kc
@@ -1240,6 +1335,15 @@ def spocti_peak_shaving(
         ),
     )
 
+    # 3b) spotové ceny pro režimy Kombinace/SPOT. Načtou se JEDNOU za výpočet
+    # a napárují na časy profilu – varianty si pak kontext jen půjčují.
+    spot_kontext = None
+    upozorneni_spot: list[str] = []
+    if vstup.rezim in (spot_arbitraz.REZIM_KOMBINACE, spot_arbitraz.REZIM_SPOT):
+        spot_kontext, upozorneni_spot = _spot_kontext(
+            db, casy_profilu, mesice, vstup, _ps_param
+        )
+
     # 4) výpočet (kap. 4.2–4.6)
     vysledek = peak_shaving.vyber_reseni(
         baterie_katalog=baterie,
@@ -1265,6 +1369,8 @@ def spocti_peak_shaving(
         max_vykon_stridace_kw=(
             float(vstup.max_vykon_stridace_kw) if vstup.max_vykon_stridace_kw else None
         ),
+        rezim=vstup.rezim,
+        spot_kontext=spot_kontext,
     )
 
     # Upozornění k modelu 2027 (audit PS-4).
@@ -1312,6 +1418,12 @@ def spocti_peak_shaving(
             "rezervovany_prikon_kw": vstup.rezervovany_prikon_kw,
             "uvazovat_snizeni_rp": bool(vstup.uvazovat_snizeni_rp),
             "max_vykon_stridace_kw": vstup.max_vykon_stridace_kw,
+            # Režim baterie (peak_shaving / kombinace / spot) a parametry obchodu.
+            "rezim": vstup.rezim,
+            "spot_referencni_rok": (
+                spot_kontext.info_cen.get("rok_cen") if spot_kontext is not None else None
+            ),
+            "max_export_kw": vstup.max_export_kw,
             # Ruční výběr baterií (prázdné = celý katalog) – FE ho předvyplní
             # při dalším výpočtu, ať OZ nemusí klikat znovu.
             "baterie_ids": list(vstup.baterie_ids) if vstup.baterie_ids else None,
@@ -1353,7 +1465,13 @@ def spocti_peak_shaving(
             "upozorneni": upozorneni_profilu
             + list(vysledek.upozorneni)
             + upozorneni_sazeb
-            + upozorneni_rp,
+            + upozorneni_rp
+            + upozorneni_spot
+            + (
+                list((vysledek.doporucena.ekonomika_spot or {}).get("upozorneni", []))
+                if vysledek.doporucena is not None
+                else []
+            ),
         }
     )
     if not parametry_2027:

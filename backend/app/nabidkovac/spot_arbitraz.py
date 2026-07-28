@@ -595,6 +595,8 @@ class VysledekRoku:
     zisk_pri_prioritnim_ps_kc: float = 0.0
     opotrebeni_pouzite_kc_mwh: float = 0.0
     upozorneni: list[str] = field(default_factory=list)
+    # Odkud jsou ceny a jak se párovaly na profil (`spot_ceny.ceny_pro_casy`).
+    info_cen: dict = field(default_factory=dict)
 
 
 def simuluj_rok(
@@ -751,4 +753,97 @@ def simuluj_rok(
         vysledek.zisk_pri_prioritnim_ps_kc += zakladni.zisk_kc
 
     vysledek.opotrebeni_pouzite_kc_mwh = opotrebeni_pouzite
+    return vysledek
+
+
+# ------------------------------------------------ vstupní bod pro varianty
+@dataclass
+class Kontext:
+    """Vše, co je pro obchodování stejné napříč variantami baterií.
+
+    Sestavuje ho `routes.py` jednou za výpočet (ceny už napárované na časy
+    profilu), varianty si ho pak jen půjčují – jinak by se pro každý produkt
+    z katalogu znovu načítal celý rok cen.
+    """
+
+    ceny_kc_mwh: list[float]
+    mesice: list[int]
+    # Identifikátor dne (např. `datetime.date.toordinal()`) – dělí rok na dny,
+    # v nichž se kalibrují cenové prahy.
+    dny: list[int]
+    nastaveni: NastaveniSpot = field(default_factory=NastaveniSpot)
+    info_cen: dict = field(default_factory=dict)
+
+
+def spocti_pro_variantu(
+    kontext: Kontext,
+    profil_kw: list[float],
+    vykon_kw: float,
+    kapacita_kwh: float,
+    kapacita_jmenovita_kwh: float,
+    cena_baterie_kc: float,
+    cyklu_zivotnosti: int | None,
+    rezim: str,
+    interval_h: float,
+    ucinnost_rt: float,
+    parametry_2027: dict | None,
+    rezervovany_prikon_kw: float,
+    uvazovat_snizeni_rp: bool,
+    cena_rezervace_kc_kw_rok: float,
+    cena_mesicni_rk_kc_kw_mesic: float,
+    rezerva_rk_procenta: float,
+) -> VysledekRoku:
+    """Odsimuluje obchodní rok pro jednu variantu baterie.
+
+    Postaví callback „co stojí platba za výkon při daných měsíčních maximech"
+    – rozhodovací vrstva podle něj volí měsíční stropy. Přednost má model NTS
+    2027 (na něm jede celý horizont NPV, rozhodnuto 27. 7. 2026); bez sazeb
+    2027 se použije struktura 2026 s optimalizací kombinace roční a měsíční
+    rezervované kapacity.
+
+    Náklad opotřebení se počítá z **jmenovité** kapacity a ceny baterie
+    (`naklad_opotrebeni_kc_mwh`), protože záruka na cykly se vztahuje k
+    jmenovité kapacitě, ne k využitelnému SOC oknu.
+    """
+    faktor_rezervy = 1.0 + max(0.0, rezerva_rk_procenta) / 100.0
+    ma_2027 = bool(parametry_2027) and not any(
+        parametry_2027.get(k) is None for k in peak_shaving.KLICE_2027
+    )
+
+    def naklad_vykonu(maxima: dict[int, float]) -> float:
+        if ma_2027:
+            if uvazovat_snizeni_rp:
+                _, rp = peak_shaving.optimalizuj_rp_2027(
+                    {m: v * faktor_rezervy for m, v in maxima.items()}, parametry_2027
+                )
+            else:
+                rp = rezervovany_prikon_kw
+            naklad, _, _ = peak_shaving._rocni_naklad_2027(rp, maxima, parametry_2027)
+            return naklad
+        opt = peak_shaving.optimalizuj_rk(
+            {m: v * faktor_rezervy for m, v in maxima.items()},
+            cena_rezervace_kc_kw_rok,
+            cena_mesicni_rk_kc_kw_mesic,
+        )
+        return opt.naklad_kc
+
+    vysledek = simuluj_rok(
+        kontext.ceny_kc_mwh,
+        profil_kw,
+        kontext.mesice,
+        kontext.dny,
+        vykon_kw,
+        kapacita_kwh,
+        kontext.nastaveni,
+        naklad_opotrebeni_kc_mwh(
+            cena_baterie_kc,
+            kapacita_jmenovita_kwh,
+            cyklu_zivotnosti or kontext.nastaveni.cyklu_zivotnosti,
+        ),
+        naklad_vykonu,
+        rezim=rezim,
+        interval_h=interval_h,
+        ucinnost_rt=ucinnost_rt,
+    )
+    vysledek.info_cen = dict(kontext.info_cen)
     return vysledek
