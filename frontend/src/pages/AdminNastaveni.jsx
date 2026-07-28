@@ -18,15 +18,14 @@ import {
   ulozSyncNastaveni,
 } from "../api";
 
-const poleStyl = {
-  width: "100%",
-  padding: "8px 10px",
-  border: "1px solid var(--fm-line)",
-  borderRadius: 8,
-  fontSize: 14,
-  fontFamily: "inherit",
-};
-const labelStyl = { display: "block", fontSize: 12, fontWeight: 600, color: "var(--fm-muted)", marginBottom: 4 };
+// Záložky = jedno nastavení na záložku. Uživatelé a skupiny jsou systémové,
+// synchronizace s Freelem patří modulu Přehled projektů. Až přijdou nastavení
+// dalších modulů, přidají se sem jako další záložka.
+const ZALOZKY = [
+  { klic: "uzivatele", nazev: "Uživatelé" },
+  { klic: "skupiny", nazev: "Skupiny a práva" },
+  { klic: "projekty", nazev: "Přehled projektů" },
+];
 
 /* ---------- společný modal ---------- */
 function Modal({ nadpis, children, onClose }) {
@@ -119,12 +118,12 @@ function UzivatelEditor({ uzivatel, ciselniky, skupiny, onSave, onClose }) {
   return (
     <Modal nadpis={novy ? "Přidat uživatele" : "Upravit uživatele"} onClose={onClose}>
       <div>
-        <label style={labelStyl}>Jméno</label>
-        <input style={poleStyl} value={jmeno} onChange={(e) => setJmeno(e.target.value)} placeholder="Jan Novák" />
+        <label className="gs-label">Jméno</label>
+        <input className="gs-input" value={jmeno} onChange={(e) => setJmeno(e.target.value)} placeholder="Jan Novák" />
       </div>
       <div>
-        <label style={labelStyl}>E-mail</label>
-        <input style={poleStyl} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jan@greensie.cz" />
+        <label className="gs-label">E-mail</label>
+        <input className="gs-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jan@greensie.cz" />
       </div>
       {novy && (
         <div style={{ fontSize: 12, color: "var(--fm-muted)" }}>
@@ -143,14 +142,14 @@ function UzivatelEditor({ uzivatel, ciselniky, skupiny, onSave, onClose }) {
         )}
       </div>
       <div style={{ opacity: jeAdmin ? 0.5 : 1, pointerEvents: jeAdmin ? "none" : "auto" }}>
-        <label style={labelStyl}>Skupina</label>
-        <select style={poleStyl} value={skupinaId} onChange={(e) => setSkupinaId(e.target.value)}>
+        <label className="gs-label">Skupina</label>
+        <select className="gs-input" value={skupinaId} onChange={(e) => setSkupinaId(e.target.value)}>
           <option value="">— žádná —</option>
           {skupiny.map((s) => (
             <option key={s.id} value={s.id}>{s.nazev}</option>
           ))}
         </select>
-        <label style={{ ...labelStyl, marginTop: 12 }}>Práva navíc (mimo skupinu)</label>
+        <label className="gs-label" style={{ marginTop: 12 }}>Práva navíc (mimo skupinu)</label>
         <PravaVyber katalog={ciselniky.prava} vybrana={extraPrava} onZmena={setExtraPrava} />
       </div>
       {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</div>}
@@ -197,7 +196,7 @@ function ResetDialog({ uzivatel, onReset, onClose }) {
       </label>
       {rezim === "vlastni" && (
         <input
-          style={poleStyl}
+          className="gs-input"
           type="text"
           value={heslo}
           onChange={(e) => setHeslo(e.target.value)}
@@ -274,11 +273,11 @@ function SkupinaEditor({ skupina, ciselniky, onSave, onClose }) {
   return (
     <Modal nadpis={novy ? "Přidat skupinu" : "Upravit skupinu"} onClose={onClose}>
       <div>
-        <label style={labelStyl}>Název skupiny</label>
-        <input style={poleStyl} value={nazev} onChange={(e) => setNazev(e.target.value)} placeholder="např. Projektoví manažeři" />
+        <label className="gs-label">Název skupiny</label>
+        <input className="gs-input" value={nazev} onChange={(e) => setNazev(e.target.value)} placeholder="např. Projektoví manažeři" />
       </div>
       <div>
-        <label style={labelStyl}>Co smí členové skupiny</label>
+        <label className="gs-label">Co smí členové skupiny</label>
         <PravaVyber katalog={ciselniky.prava} vybrana={prava} onZmena={setPrava} />
       </div>
       {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</div>}
@@ -296,18 +295,7 @@ function SkupinaEditor({ skupina, ciselniky, onSave, onClose }) {
 function Chip({ children }) {
   return (
     <span
-      style={{
-        display: "inline-block",
-        background: "var(--fm-brand-soft)",
-        color: "var(--fm-brand-dk)",
-        borderRadius: 999,
-        padding: "2px 9px",
-        fontSize: 12,
-        fontWeight: 600,
-      }}
-    >
-      {children}
-    </span>
+      className="gs-pill znacka">{children}</span>
   );
 }
 
@@ -365,9 +353,6 @@ function SynchronizaceKarta() {
 
   return (
     <div className="fm-card" style={{ padding: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
-        <strong style={{ fontSize: 15 }}>Synchronizace s Freelem</strong>
-      </div>
       <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--fm-muted)", lineHeight: 1.5 }}>
         Server sám v nastaveném intervalu stáhne data z Freela a promítne je do Přehledu projektů.
         Zaškrtnuté pole se přepíše hodnotou z Freela (i kdyby bylo v tabulce zadané ručně), ostatní
@@ -400,7 +385,7 @@ function SynchronizaceKarta() {
               disabled={!nast.auto_zapnuto}
               value={nast.interval_min}
               onChange={(e) => nastav("interval_min", e.target.value)}
-              style={{ ...poleStyl, width: 90, padding: "6px 8px" }}
+              className="gs-input" style={{ width: 90, padding: "6px 8px" }}
             />
             <span style={{ fontSize: 14 }}>minut (nejméně 5)</span>
           </div>
@@ -475,6 +460,7 @@ export default function AdminNastaveni() {
   const [editSkupina, setEditSkupina] = useState(null);
   const [resetUzivatel, setResetUzivatel] = useState(null);
   const [hesloVysledek, setHesloVysledek] = useState(null);
+  const [zalozka, setZalozka] = useState("uzivatele");
   const navigate = useNavigate();
 
   const nazvyPrav = (klice) => {
@@ -566,104 +552,133 @@ export default function AdminNastaveni() {
 
   return (
     <Layout uzivatel={uzivatel}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <Link to="/rozcestnik" style={{ fontSize: 13, color: "var(--fm-muted)", textDecoration: "none" }}>
+      <div className="gs-modul">
+        <Link to="/rozcestnik" className="gs-backlink">
           ← Zpět na rozcestník
         </Link>
-        <h2 style={{ margin: 0, fontSize: 18 }}>Admin nastavení</h2>
 
-        {/* ---- Uživatelé ---- */}
-        <div className="fm-card" style={{ padding: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
-            <strong style={{ fontSize: 15 }}>Uživatelé</strong>
-            <span style={{ color: "var(--fm-muted)", fontSize: 13, marginLeft: 8 }}>({uzivatele.length})</span>
-            <div style={{ flex: 1 }} />
-            <button className="fm-btn fm-primary" onClick={() => setEditUzivatel({})}>+ Přidat uživatele</button>
-          </div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 640 }}>
-              <thead>
-                <tr style={{ textAlign: "left", color: "var(--fm-muted)" }}>
-                  <th style={{ padding: "8px 10px" }}>Jméno</th>
-                  <th style={{ padding: "8px 10px" }}>E-mail</th>
-                  <th style={{ padding: "8px 10px" }}>Přístup</th>
-                  <th style={{ padding: "8px 10px" }}>Skupina</th>
-                  <th style={{ padding: "8px 10px" }}>Práva navíc</th>
-                  <th style={{ padding: "8px 10px", textAlign: "right" }}>Akce</th>
-                </tr>
-              </thead>
-              <tbody>
-                {uzivatele.map((u) => (
-                  <tr key={u.id} style={{ borderTop: "1px solid var(--fm-line)" }}>
-                    <td style={{ padding: "8px 10px", fontWeight: 600 }}>{u.jmeno}</td>
-                    <td style={{ padding: "8px 10px", color: "var(--fm-muted)" }}>{u.email}</td>
-                    <td style={{ padding: "8px 10px" }}>
-                      {u.je_admin ? <Chip>Supersprávce</Chip> : <span style={{ color: "var(--fm-muted)" }}>Uživatel</span>}
-                      {u.musi_zmenit_heslo && (
-                        <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 2 }}>🔑 čeká na změnu hesla</div>
-                      )}
-                    </td>
-                    <td style={{ padding: "8px 10px" }}>{u.skupina_id ? nazevSkupiny(u.skupina_id) : <span style={{ color: "var(--fm-muted)" }}>—</span>}</td>
-                    <td style={{ padding: "8px 10px" }}>
-                      <span style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                        {u.extra_prava.length ? nazvyPrav(u.extra_prava).map((n) => <Chip key={n}>{n}</Chip>) : <span style={{ color: "var(--fm-muted)" }}>—</span>}
-                      </span>
-                    </td>
-                    <td style={{ padding: "8px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
-                      <button className="fm-btn" style={{ padding: "5px 10px" }} onClick={() => setEditUzivatel(u)}>Upravit</button>{" "}
-                      <button className="fm-btn" style={{ padding: "5px 10px" }} onClick={() => setResetUzivatel(u)}>Reset hesla</button>{" "}
-                      <button className="fm-btn" style={{ padding: "5px 10px" }} onClick={() => smazUzivatele(u)}>Smazat</button>
-                    </td>
+        {/* Nadpis stránky nese horní lišta rámce, tady rovnou záložky. */}
+        <div className="gs-tabs" role="tablist" aria-label="Nastavení">
+          {ZALOZKY.map((z) => (
+            <button
+              key={z.klic}
+              type="button"
+              role="tab"
+              aria-selected={zalozka === z.klic}
+              onClick={() => setZalozka(z.klic)}
+            >
+              {z.nazev}
+              {z.klic === "uzivatele" && <span className="gs-tab-cnt"> ({uzivatele.length})</span>}
+              {z.klic === "skupiny" && <span className="gs-tab-cnt"> ({skupiny.length})</span>}
+            </button>
+          ))}
+        </div>
+
+        {/* ---------- záložka: uživatelé ---------- */}
+        {zalozka === "uzivatele" && (
+          <div role="tabpanel">
+            <div className="gs-sekce-t">
+              Uživatelé a přístupy
+              <span className="gs-mezera" />
+              <button className="fm-btn fm-primary" onClick={() => setEditUzivatel({})}>+ Přidat uživatele</button>
+            </div>
+            <div className="gs-scroll okno" style={{ "--gs-okno": "calc(100vh - 260px)" }}>
+              <table className="gs-table">
+                <thead>
+                  <tr>
+                    <th>Jméno</th>
+                    <th>E-mail</th>
+                    <th>Přístup</th>
+                    <th>Skupina</th>
+                    <th>Práva navíc</th>
+                    <th className="n">Akce</th>
                   </tr>
+                </thead>
+                <tbody>
+                  {uzivatele.map((u) => (
+                    <tr key={u.id} className="staticky">
+                      <td style={{ fontWeight: 600 }}>{u.jmeno}</td>
+                      <td style={{ color: "var(--muted)" }}>{u.email}</td>
+                      <td>
+                        {u.je_admin ? <Chip>Supersprávce</Chip> : <span style={{ color: "var(--muted)" }}>Uživatel</span>}
+                        {u.musi_zmenit_heslo && (
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>🔑 čeká na změnu hesla</div>
+                        )}
+                      </td>
+                      <td>{u.skupina_id ? nazevSkupiny(u.skupina_id) : <span style={{ color: "var(--muted)" }}>—</span>}</td>
+                      <td>
+                        <span style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {u.extra_prava.length ? nazvyPrav(u.extra_prava).map((n) => <Chip key={n}>{n}</Chip>) : <span style={{ color: "var(--muted)" }}>—</span>}
+                        </span>
+                      </td>
+                      <td className="n" style={{ whiteSpace: "nowrap" }}>
+                        <button className="fm-btn" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setEditUzivatel(u)}>Upravit</button>{" "}
+                        <button className="fm-btn" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setResetUzivatel(u)}>Reset hesla</button>{" "}
+                        <button className="fm-btn" style={{ padding: "4px 10px", fontSize: 12, color: "var(--st-crit)" }} onClick={() => smazUzivatele(u)}>Smazat</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {uzivatele.length === 0 && (
+                    <tr className="staticky"><td colSpan={6} className="gs-empty">Zatím žádní uživatelé.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="gs-pozn">
+              Nový uživatel dostane jednorázové heslo, které si při prvním přihlášení změní.
+              Supersprávce vidí vše bez ohledu na skupinu.
+            </div>
+          </div>
+        )}
+
+        {/* ---------- záložka: skupiny a práva ---------- */}
+        {zalozka === "skupiny" && (
+          <div role="tabpanel">
+            <div className="gs-sekce-t">
+              Skupiny a práva
+              <span className="gs-mezera" />
+              <button className="fm-btn fm-primary" onClick={() => setEditSkupina({})}>+ Přidat skupinu</button>
+            </div>
+            {skupiny.length === 0 ? (
+              <div className="fm-card gs-empty">
+                Zatím žádné skupiny. Skupina sdružuje uživatele se stejnými právy – vytvoř si třeba
+                „Vedení" a zaškrtni, co smí otevřít.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {skupiny.map((s) => (
+                  <div
+                    key={s.id}
+                    className="fm-card"
+                    style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", flexWrap: "wrap" }}
+                  >
+                    <div style={{ minWidth: 140 }}>
+                      <div style={{ fontWeight: 700 }}>{s.nazev}</div>
+                      <div style={{ fontSize: 12, color: "var(--muted)" }}>{s.pocet_clenu} členů</div>
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, flex: 1 }}>
+                      {s.prava.length ? nazvyPrav(s.prava).map((n) => <Chip key={n}>{n}</Chip>) : <span style={{ color: "var(--muted)", fontSize: 13 }}>žádná práva</span>}
+                    </div>
+                    <button className="fm-btn" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setEditSkupina(s)}>Upravit</button>
+                    <button className="fm-btn" style={{ padding: "4px 10px", fontSize: 12, color: "var(--st-crit)" }} onClick={() => smazSkupinu(s)}>Smazat</button>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* ---- Skupiny ---- */}
-        <div className="fm-card" style={{ padding: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
-            <strong style={{ fontSize: 15 }}>Skupiny</strong>
-            <span style={{ color: "var(--fm-muted)", fontSize: 13, marginLeft: 8 }}>({skupiny.length})</span>
-            <div style={{ flex: 1 }} />
-            <button className="fm-btn fm-primary" onClick={() => setEditSkupina({})}>+ Přidat skupinu</button>
-          </div>
-          {skupiny.length === 0 ? (
-            <div style={{ color: "var(--fm-muted)", fontSize: 13, padding: "8px 2px" }}>
-              Zatím žádné skupiny. Skupina sdružuje uživatele se stejnými právy – vytvoř si třeba „Vedení" a zaškrtni, co smí otevřít.
+              </div>
+            )}
+            <div className="gs-pozn">
+              Právo lze dát i jednotlivci mimo skupinu — v úpravě uživatele jako „práva navíc".
+              Skrytí sekce v levém panelu je pohodlí, ne ochrana: každý modul si právo hlídá i na serveru.
             </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {skupiny.map((s) => (
-                <div
-                  key={s.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    padding: "10px 12px",
-                    border: "1px solid var(--fm-line)",
-                    borderRadius: 10,
-                  }}
-                >
-                  <div style={{ minWidth: 140 }}>
-                    <div style={{ fontWeight: 700 }}>{s.nazev}</div>
-                    <div style={{ fontSize: 12, color: "var(--fm-muted)" }}>{s.pocet_clenu} členů</div>
-                  </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, flex: 1 }}>
-                    {s.prava.length ? nazvyPrav(s.prava).map((n) => <Chip key={n}>{n}</Chip>) : <span style={{ color: "var(--fm-muted)", fontSize: 13 }}>žádná práva</span>}
-                  </div>
-                  <button className="fm-btn" style={{ padding: "5px 10px" }} onClick={() => setEditSkupina(s)}>Upravit</button>
-                  <button className="fm-btn" style={{ padding: "5px 10px" }} onClick={() => smazSkupinu(s)}>Smazat</button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* ---- Synchronizace s Freelem ---- */}
-        <SynchronizaceKarta />
+        {/* ---------- záložka: nastavení modulu Přehled projektů ---------- */}
+        {zalozka === "projekty" && (
+          <div role="tabpanel">
+            <div className="gs-sekce-t">Přehled projektů — synchronizace s Freelem</div>
+            <SynchronizaceKarta />
+          </div>
+        )}
       </div>
 
       {editUzivatel && (

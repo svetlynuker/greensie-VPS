@@ -292,7 +292,7 @@ const ZAKLADY_NPV = [
 // jen na volby, které překreslují už spočítaná data – nic nepočítá.
 function SegPrepinac({ popis, aria, volby, hodnota, onZmena }) {
   return (
-    <span className="ps-prepinac">
+    <span className="gs-prepinac">
       <span className="gs-ctrl-label">{popis}</span>
       <span className="gs-seg" role="group" aria-label={aria}>
         {volby.map((v) => (
@@ -428,7 +428,7 @@ function Ekonomika2027({ dop, rpJeFallbackRk }) {
           <td>
             Náklad dnes <span style={{ color: "var(--muted)" }}>(RP {kw(e.rp_soucasny_kw)})</span>
             {rpJeFallbackRk && (
-              <div className="ps-pozn pozor">
+              <div className="gs-pozn pozor">
                 Příkon ze smlouvy nezadán → dosazena RK. Skutečný RP bývá vyšší, náklad 2027 i
                 úspora jsou tak podhodnocené.
               </div>
@@ -870,8 +870,8 @@ export default function PeakShavingPanel({ nabidka }) {
 
   // ==================== VSTUPNÍ PANEL (levý sloupec) ====================
   const panelVstupu = (
-    <form className="ps-panel" onSubmit={(e) => e.preventDefault()}>
-      <div className="ps-panel-h">
+    <form className="gs-panel" onSubmit={(e) => e.preventDefault()}>
+      <div className="gs-panel-h">
         <h3>Vstupy výpočtu</h3>
         <span style={{ flex: 1 }} />
         {vsePripraveno ? (
@@ -881,14 +881,14 @@ export default function PeakShavingPanel({ nabidka }) {
         )}
       </div>
 
-      <div className="ps-panel-body">
+      <div className="gs-panel-body">
         {/* 1) Profil spotřeby */}
-        <section className="ps-step">
-          <span className="ps-num">1</span>
+        <section className="gs-step">
+          <span className="gs-step-num">1</span>
           <h4>Profil odběru</h4>
-          <div className="ps-sub">15minutový export z portálu distributora.</div>
+          <div className="gs-step-sub">15minutový export z portálu distributora.</div>
           {profilOk ? (
-            <div className="ps-profil">
+            <div className="gs-stav">
               <span aria-hidden="true">✓</span>
               <div>
                 <div>
@@ -901,7 +901,7 @@ export default function PeakShavingPanel({ nabidka }) {
               </div>
             </div>
           ) : (
-            <div className="ps-profil chybi">
+            <div className="gs-stav chybi">
               <span aria-hidden="true">○</span>
               <div>Profil zatím není načtený — bez něj výpočet nejde spustit.</div>
             </div>
@@ -930,12 +930,12 @@ export default function PeakShavingPanel({ nabidka }) {
         </section>
 
         {/* 2) Parametry odběrného místa */}
-        <section className="ps-step">
-          <span className="ps-num">2</span>
+        <section className="gs-step">
+          <span className="gs-step-num">2</span>
           <h4>Odběrné místo</h4>
-          <div className="ps-sub">Ze smlouvy o připojení a z faktury za elektřinu.</div>
-          <div className="ps-dva">
-            <div className="ps-pole">
+          <div className="gs-step-sub">Ze smlouvy o připojení a z faktury za elektřinu.</div>
+          <div className="gs-dva">
+            <div className="gs-pole">
               <label className="nb-label" htmlFor="ps-distributor">
                 Distributor
               </label>
@@ -952,7 +952,7 @@ export default function PeakShavingPanel({ nabidka }) {
                 ))}
               </select>
             </div>
-            <div className="ps-pole">
+            <div className="gs-pole">
               <label className="nb-label" htmlFor="ps-hladina">
                 Hladina
               </label>
@@ -970,7 +970,7 @@ export default function PeakShavingPanel({ nabidka }) {
               </select>
             </div>
           </div>
-          <div className="ps-pole">
+          <div className="gs-pole">
             <label className="nb-label" htmlFor="ps-rk">
               Rezervovaná kapacita <span style={{ fontWeight: 400 }}>(z faktury)</span>
             </label>
@@ -986,7 +986,7 @@ export default function PeakShavingPanel({ nabidka }) {
               <span className="gs-unit-txt">kW</span>
             </div>
           </div>
-          <div className="ps-pole">
+          <div className="gs-pole">
             <label className="nb-label" htmlFor="ps-rp">
               Rezervovaný příkon <span style={{ fontWeight: 400 }}>(ze smlouvy o připojení)</span>
             </label>
@@ -1003,13 +1003,13 @@ export default function PeakShavingPanel({ nabidka }) {
             </div>
             {/* Prázdné pole není neutrální volba: RP ze smlouvy o připojení bývá
                 výrazně vyšší než RK, takže fallback podhodnotí náklad 2027 i úsporu. */}
-            <div className="ps-pozn">
+            <div className="gs-pozn">
               Řídí model 2027. Necháš-li prázdné, počítá se{" "}
               <b>RP = RK{rezOk ? ` (${rezKap} kW)` : ""}</b> — skutečný příkon bývá vyšší, náklad
               2027 i úspora pak vyjdou podhodnocené.
             </div>
           </div>
-          <label className="ps-zaskrt" style={{ margin: "4px 0 12px" }}>
+          <label className="gs-zaskrt" style={{ margin: "4px 0 12px" }}>
             <input
               type="checkbox"
               checked={snizeniRp}
@@ -1022,7 +1022,7 @@ export default function PeakShavingPanel({ nabidka }) {
               </span>
             </span>
           </label>
-          <div className="ps-pole">
+          <div className="gs-pole">
             <label className="nb-label" htmlFor="ps-stridac">
               Max. výkon střídače <span style={{ fontWeight: 400 }}>(nepovinné)</span>
             </label>
@@ -1041,18 +1041,18 @@ export default function PeakShavingPanel({ nabidka }) {
         </section>
 
         {/* 3) Které baterie počítat */}
-        <section className="ps-step">
-          <span className="ps-num">3</span>
+        <section className="gs-step">
+          <span className="gs-step-num">3</span>
           <h4>
             Baterie do výpočtu
             {katalogBaterii && <span className="nb-badge">{katalogBaterii.length}</span>}
           </h4>
-          <div className="ps-sub">Míň produktů = rychlejší výpočet.</div>
-          <label className="ps-volba">
+          <div className="gs-step-sub">Míň produktů = rychlejší výpočet.</div>
+          <label className="gs-volba">
             <input type="radio" checked={baterieIds === null} onChange={() => setBaterieIds(null)} />
             <span>Všechny dostupné z katalogu</span>
           </label>
-          <label className="ps-volba">
+          <label className="gs-volba">
             <input
               type="radio"
               checked={baterieIds !== null}
@@ -1067,7 +1067,7 @@ export default function PeakShavingPanel({ nabidka }) {
           </label>
 
           {baterieIds !== null && (
-            <div className="ps-katalog" style={{ marginTop: 8 }}>
+            <div className="nb-katalog" style={{ marginTop: 8 }}>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
                 <input
                   className="nb-pole"
@@ -1092,7 +1092,7 @@ export default function PeakShavingPanel({ nabidka }) {
                   Zrušit
                 </button>
               </div>
-              <div className="ps-katalog-seznam">
+              <div className="nb-katalog-seznam">
                 {katalogBaterii === null && (
                   <div style={{ fontSize: 12, color: "var(--muted)" }}>Načítám katalog…</div>
                 )}
@@ -1104,7 +1104,7 @@ export default function PeakShavingPanel({ nabidka }) {
                   </div>
                 )}
                 {viditelneBaterie.map((b) => (
-                  <label key={b.id} className="ps-katalog-radek">
+                  <label key={b.id} className="nb-katalog-radek">
                     <input
                       type="checkbox"
                       checked={baterieIds.includes(b.id)}
@@ -1128,7 +1128,7 @@ export default function PeakShavingPanel({ nabidka }) {
       </div>
 
       {/* Patička panelu: akce + co ještě chybí */}
-      <div className="ps-panel-f">
+      <div className="gs-panel-f">
         <button className="fm-btn fm-primary" onClick={spocti} disabled={pocita || !vsePripraveno}>
           {pocita ? "Počítám…" : "Spočítat peak shaving"}
         </button>
@@ -1174,7 +1174,7 @@ export default function PeakShavingPanel({ nabidka }) {
         )}
         {chyba && <div style={{ color: "var(--st-crit)", fontSize: 12, marginTop: 8 }}>{chyba}</div>}
 
-        <div className="ps-pozn" style={{ marginTop: 10 }}>
+        <div className="gs-pozn" style={{ marginTop: 10 }}>
           Vstupy se pamatují u nabídky —{" "}
           <a
             href="/manual?stranka=nabidkovac-peak-shaving"
@@ -1217,9 +1217,9 @@ export default function PeakShavingPanel({ nabidka }) {
     vysledekObsah = (
       <>
         {/* --- hlavička výsledku + přepínače zobrazení --- */}
-        <div className="ps-res-h">
+        <div className="gs-res-h">
           <div>
-            <div className="ps-nadtitul">
+            <div className="gs-nadtitul">
               {vybranyIdx === 0 ? "Doporučená varianta" : "Vybraná varianta"}
               {varianty.length > 1 && poradiVybrane > 0 && (
                 <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
@@ -1247,8 +1247,8 @@ export default function PeakShavingPanel({ nabidka }) {
               )}
             </h3>
           </div>
-          <span className="ps-mezera" />
-          <div className="ps-prepinace">
+          <span className="gs-mezera" />
+          <div className="gs-prepinace">
             <SegPrepinac
               popis="Rok"
               aria="Rok zobrazených hodnot"
@@ -1378,9 +1378,9 @@ export default function PeakShavingPanel({ nabidka }) {
         {/* --- tři varianty k rozhodnutí, každá podle jiného kritéria --- */}
         {kartyVariant.length > 1 && (
           <>
-            <div className="ps-sekce-t" style={{ marginTop: 20 }}>
+            <div className="gs-sekce-t" style={{ marginTop: 20 }}>
               Varianty k rozhodnutí
-              <span className="ps-mezera" />
+              <span className="gs-mezera" />
               <button
                 className="fm-btn"
                 style={{ padding: "4px 10px", fontSize: 12 }}
@@ -1389,7 +1389,7 @@ export default function PeakShavingPanel({ nabidka }) {
                 Všech {varianty.length} v tabulce
               </button>
             </div>
-            <div className="ps-varianty">
+            <div className="gs-varianty">
               {kartyVariant.map((k) => {
                 const npv = npvDleZakladu(k.v, zakladNpv);
                 const uspora = je2027
@@ -1406,18 +1406,18 @@ export default function PeakShavingPanel({ nabidka }) {
                   <button
                     type="button"
                     key={k.i}
-                    className={"ps-varianta" + (k.i === vybranyIdx ? " vybrana" : "")}
+                    className={"gs-varianta" + (k.i === vybranyIdx ? " vybrana" : "")}
                     onClick={() => vyberVariantu(k.i)}
                     title="Kliknutím se celý výsledek překreslí pro tuhle variantu"
                   >
-                    <div className="ps-kriterium">
+                    <div className="gs-varianta-lb">
                       {k.kriteria.map((x) => x.popis).join(" · ")}
                       {!npv.doporuceno && <span className="nb-badge spatne">nad prahem</span>}
                     </div>
                     <h4>
                       {k.v.nazev} × {k.v.pocet_kusu}
                     </h4>
-                    <div className="ps-spec">
+                    <div className="gs-varianta-spec">
                       {kw(k.v.celkovy_vykon_kw)} /{" "}
                       {k.v.celkova_kapacita_kwh?.toLocaleString("cs-CZ")} kWh · nová rezervace{" "}
                       {kw(novaRezervace(k.v))}
@@ -1439,10 +1439,10 @@ export default function PeakShavingPanel({ nabidka }) {
                     </dl>
                     {podil != null && (
                       <>
-                        <div className="ps-npv-pruh">
+                        <div className="gs-pruh">
                           <i style={{ width: `${Math.min(100, podil)}%` }} />
                         </div>
-                        <div className="ps-npv-popis">
+                        <div className="gs-pruh-popis">
                           <span>{k.kriteria[0].detail}</span>
                           <span>{Math.round(podil)} % NPV nejlepší</span>
                         </div>
@@ -1456,7 +1456,7 @@ export default function PeakShavingPanel({ nabidka }) {
         )}
 
         {/* --- záložky výsledku --- */}
-        <div className="gs-tabs ps-tabs" role="tablist" aria-label="Části výsledku">
+        <div className="gs-tabs gs-tabs-odsazeni" role="tablist" aria-label="Části výsledku">
           {[
             { klic: "ekonomika", nazev: "Ekonomika" },
             { klic: "grafy", nazev: "Grafy odběru" },
@@ -1479,12 +1479,12 @@ export default function PeakShavingPanel({ nabidka }) {
         {/* ---------- záložka: ekonomika ---------- */}
         {zalozka === "ekonomika" && (
           <div role="tabpanel">
-            <div className="ps-dve-karty">
-              <div className={"fm-card ps-karta-roku" + (je2027 ? " aktivni" : "")}>
-                <div className="ps-karta-h">
-                  <span className="ps-rok">2027</span>
+            <div className="gs-dve-karty">
+              <div className={"fm-card gs-karta" + (je2027 ? " aktivni" : "")}>
+                <div className="gs-karta-h">
+                  <span className="gs-karta-nazev">2027</span>
                   <span className="nb-badge znacka">rozhoduje</span>
-                  <span className="ps-mezera" />
+                  <span className="gs-mezera" />
                   {dop.ekonomika_2027?.je_modelovy_odhad && (
                     <span className="nb-badge pozor" title="Nezávazný odhad, ne finální cena ERÚ">
                       ⚠ modelový odhad
@@ -1494,10 +1494,10 @@ export default function PeakShavingPanel({ nabidka }) {
                 <Ekonomika2027 dop={dop} rpJeFallbackRk={rpJeFallbackRk} />
               </div>
 
-              <div className={"fm-card ps-karta-roku" + (je2027 ? "" : " aktivni")}>
-                <div className="ps-karta-h">
-                  <span className="ps-rok">2026</span>
-                  <span className="ps-mezera" />
+              <div className={"fm-card gs-karta" + (je2027 ? "" : " aktivni")}>
+                <div className="gs-karta-h">
+                  <span className="gs-karta-nazev">2026</span>
+                  <span className="gs-mezera" />
                   <span
                     className="nb-badge"
                     title="Instalace i spuštění spadá už do NTS 2027 – tahle karta je jen srovnání „co by to bylo dnes“"
@@ -1509,9 +1509,9 @@ export default function PeakShavingPanel({ nabidka }) {
               </div>
             </div>
 
-            <div className="ps-sekce-t">
+            <div className="gs-sekce-t">
               Tři čísla návratnosti
-              <span className="ps-mezera" />
+              <span className="gs-mezera" />
               <span className="nb-badge">práh doporučení {vysledek.max_navratnost_roky} let</span>
             </div>
             <div className="fm-card" style={{ padding: 0 }}>
@@ -1529,7 +1529,7 @@ export default function PeakShavingPanel({ nabidka }) {
                           {zakladNpv === "prinos_baterie" ? "přínosu baterie" : "celé roční úspory"},
                           vč. O&amp;M a degradace
                         </span>
-                        <div className="ps-pozn">
+                        <div className="gs-pozn">
                           Tohle rozhoduje o doporučení i o výběru varianty.
                           {navratnostDop.druh === "odhad" && (
                             <>
@@ -1610,11 +1610,11 @@ export default function PeakShavingPanel({ nabidka }) {
           <div role="tabpanel">
             {graf ? (
               <div className="fm-card" style={{ padding: 0 }}>
-                <div className="ps-karta-h">
+                <div className="gs-karta-h">
                   <span style={{ fontSize: 13, fontWeight: 700 }}>
                     Odběr ze sítě — měsíční maxima
                   </span>
-                  <span className="ps-mezera" />
+                  <span className="gs-mezera" />
                   <span className="nb-badge">
                     {je2027 ? "2027 · srážení po měsících" : "2026 · držení ročního stropu"}
                   </span>
@@ -1638,7 +1638,7 @@ export default function PeakShavingPanel({ nabidka }) {
 
             {citlivost && (
               <>
-                <div className="ps-sekce-t">Citlivost návrhu na sílu roku</div>
+                <div className="gs-sekce-t">Citlivost návrhu na sílu roku</div>
                 <div className="fm-card" style={{ padding: 14, fontSize: 12.5 }}>
                   Při profilu ±{citlivost.procenta} % by udržitelný strop byl{" "}
                   <b>
@@ -1658,12 +1658,12 @@ export default function PeakShavingPanel({ nabidka }) {
             )}
 
             {/* Průběh v čase – nitkový graf 15min simulace se zoomem */}
-            <div className="ps-sekce-t">
+            <div className="gs-sekce-t">
               Průběh v čase
               <span style={{ fontWeight: 400, color: "var(--muted)" }}>
                 (kdy baterie kryje špičku a kdy se dobíjí)
               </span>
-              <span className="ps-mezera" />
+              <span className="gs-mezera" />
               <button
                 className="fm-btn"
                 style={{ padding: "4px 10px", fontSize: 12 }}
@@ -1696,7 +1696,7 @@ export default function PeakShavingPanel({ nabidka }) {
                           : "Model 2026: baterie drží jeden roční strop, na který je nasmlouvaná rezervovaná kapacita."
                       }
                     />
-                    <div className="ps-pozn">
+                    <div className="gs-pozn">
                       Za rok baterie dodala {prubeh.souhrn?.vybito_kwh?.toLocaleString("cs-CZ")} kWh,
                       ze sítě si na to vzala {prubeh.souhrn?.nabito_kwh?.toLocaleString("cs-CZ")} kWh
                       (ztráty cyklováním {prubeh.souhrn?.ztraty_kwh?.toLocaleString("cs-CZ")} kWh).
@@ -1720,7 +1720,7 @@ export default function PeakShavingPanel({ nabidka }) {
             {varianty.length > 1 ? (
               <>
                 <div className="fm-card" style={{ padding: 0 }}>
-                  <div className="ps-karta-h">
+                  <div className="gs-karta-h">
                     <span style={{ fontSize: 13, fontWeight: 700 }}>Srovnání variant</span>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>
                       {zobrazeneVarianty.length} z {varianty.length} ·{" "}
@@ -1732,7 +1732,7 @@ export default function PeakShavingPanel({ nabidka }) {
                             zakladNpv === "prinos_baterie" ? "přínosu baterie" : "celé úspory"
                           }`}
                     </span>
-                    <span className="ps-mezera" />
+                    <span className="gs-mezera" />
                     {sloupecRazeni && (
                       <button
                         className="fm-btn"
@@ -1807,7 +1807,7 @@ export default function PeakShavingPanel({ nabidka }) {
                     </table>
                   </div>
                 </div>
-                <div className="ps-pozn">
+                <div className="gs-pozn">
                   <b>Kliknutím na řádek se celý výsledek překreslí pro danou variantu</b> (◄ =
                   zobrazená) — čísla jsou nad tabulkou, takže je změna hned vidět. Klik na záhlaví
                   sloupce mění řazení.
@@ -1830,9 +1830,9 @@ export default function PeakShavingPanel({ nabidka }) {
             {npvDop.roky?.length > 0 ? (
               <>
                 <div className="fm-card" style={{ padding: 0 }}>
-                  <div className="ps-karta-h">
+                  <div className="gs-karta-h">
                     <span style={{ fontSize: 13, fontWeight: 700 }}>Ekonomika po letech</span>
-                    <span className="ps-mezera" />
+                    <span className="gs-mezera" />
                     <span className="nb-badge">
                       horizont {dop.npv_horizont_roky ?? npvDop.roky.length} let
                     </span>
@@ -1886,7 +1886,7 @@ export default function PeakShavingPanel({ nabidka }) {
                     </table>
                   </div>
                 </div>
-                <div className="ps-pozn">
+                <div className="gs-pozn">
                   Roční úspora = celý rozdíl proti dnešnímu stavu v modelu NTS 2027 (celý horizont),
                   klesá degradací úspor; CF roku = úspora − O&amp;M. Řádek ◄ = kumulovaný CF poprvé
                   pokryje investici; poslední „Kum. disk. CF“ = NPV varianty.
@@ -1905,7 +1905,7 @@ export default function PeakShavingPanel({ nabidka }) {
   }
 
   return (
-    <div className="ps-desk">
+    <div className="gs-desk">
       {panelVstupu}
       <div>{vysledekObsah}</div>
     </div>

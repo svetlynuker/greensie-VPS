@@ -4,6 +4,7 @@ import Layout from "../components/Layout";
 import DokumentUpload from "../components/DokumentUpload";
 import PeakShavingPanel from "../components/PeakShavingPanel";
 import PpaPanel from "../components/PpaPanel";
+import ProdejPanel from "../components/ProdejPanel";
 import { nactiMe, logout, nabidkaDetail, nabidkaUprav, nabidkaSmaz } from "../api";
 import { PODSEKCE, STAV_NABIDKY, fmtDatum } from "../nabidkovac";
 import "../styles/nabidkovac.css";
@@ -116,9 +117,9 @@ export default function NabidkaDetail() {
 
   return (
     <Layout uzivatel={me.uzivatel}>
-      {/* Pracovní stůl (peak shaving) potřebuje šířku na dva sloupce; ostatní
-          linie zůstávají na původních 1100 px, ať se jim obsah nerozplizne. */}
-      <div className={"nb-app" + (nabidka.typ === "peak_shaving" ? " siroky" : "")}>
+      {/* Pracovní stůl (vstupy + výsledek vedle sebe) potřebuje šířku na dva
+          sloupce — mají ho všechny tři linie, takže platí pro celý detail. */}
+      <div className="nb-app siroky">
         <Link to={`/nabidkovac/${nabidka.typ}`} className="nb-backlink">
           ← Zpět na {sekce?.nazev || "seznam"}
         </Link>
@@ -219,22 +220,13 @@ export default function NabidkaDetail() {
           </div>
         </details>
 
-        {/* Navržená řešení */}
+        {/* Navržená řešení — všechny tři linie mají stejný pracovní stůl */}
         {nabidka.typ === "peak_shaving" ? (
           <PeakShavingPanel nabidka={nabidka} />
         ) : nabidka.typ === "ppa" ? (
           <PpaPanel nabidka={nabidka} />
         ) : (
-          <div className="fm-card" style={{ padding: 18 }}>
-            <h3 style={{ margin: "0 0 8px", fontSize: 14 }}>Navržená řešení</h3>
-            <div className="nb-warn" style={{ margin: 0 }}>
-              <span>⚠️</span>
-              <span>
-                Výpočet zatím není aktivní. Až bude doladěná metodika, tady se objeví navržená řešení
-                (velikost elektrárny/baterie, cena, délka kontraktu, ROI) – i víc variant najednou.
-              </span>
-            </div>
-          </div>
+          <ProdejPanel nabidka={nabidka} />
         )}
       </div>
     </Layout>
