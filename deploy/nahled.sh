@@ -27,6 +27,17 @@
 # ============================================================
 set -euo pipefail
 
+# Skript aktualizuje klon, ze kterého se nejčastěji sám spouští. Bash ale čte
+# soubor postupně za běhu, takže by se sám pod rukama přepsal a mohl skončit
+# uprostřed. Proto se nejdřív odkopírujeme mimo a pokračujeme z kopie.
+if [[ "${GREENSIE_NAHLED_KOPIE:-}" != "1" ]]; then
+	KOPIE="$(mktemp /tmp/greensie-nahled-XXXXXX.sh)"
+	cp "${BASH_SOURCE[0]}" "${KOPIE}"
+	export GREENSIE_NAHLED_KOPIE=1
+	exec bash "${KOPIE}" "$@"
+fi
+trap 'rm -f "$0"' EXIT   # jsme ta kopie v /tmp – po sobě uklidíme
+
 ZDROJ="/home/dan/projects/greensie-app"          # ostrá instalace (odkud se klonuje a bere venv)
 KLON="/home/dan/projects/greensie-nahled"        # kód náhledu
 WEB="/var/www/greensie-nahled"                   # statický frontend náhledu
