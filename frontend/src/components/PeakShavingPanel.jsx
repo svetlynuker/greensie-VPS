@@ -553,7 +553,26 @@ export default function PeakShavingPanel({ nabidka }) {
 
   return (
     <div className="fm-card" style={{ padding: 18 }}>
-      <h3 style={{ margin: "0 0 8px", fontSize: 14 }}>Peak shaving – výpočet</h3>
+      {/* Nápověda je u kalkulátoru po ruce – tlačítko „?" v hlavičce appky
+          z detailu nabídky netrefí stránku kalkulátoru (typ nabídky není v URL). */}
+      <div
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          gap: 10, flexWrap: "wrap", margin: "0 0 8px",
+        }}
+      >
+        <h3 style={{ margin: 0, fontSize: 14 }}>Peak shaving – výpočet</h3>
+        <a
+          className="fm-btn"
+          href="/manual?stranka=nabidkovac-peak-shaving"
+          target="_blank"
+          rel="noreferrer"
+          style={{ padding: "3px 10px", fontSize: 12, textDecoration: "none" }}
+          title="Návod k výpočtu: co která hodnota znamená, RK vs. RP, tři čísla návratnosti"
+        >
+          ? Nápověda k výpočtu
+        </a>
+      </div>
 
       {/* 1) Profil spotřeby */}
       <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 8px" }}>

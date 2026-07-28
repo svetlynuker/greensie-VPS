@@ -88,11 +88,32 @@ Ukazují se pro rok zvolený přepínačem:
 | Dlaždice | Co znamená |
 |---|---|
 | **Roční úspora (rok)** | Kolik klient ušetří za rok. U 2026 je pod tím rozpad „z toho bez investice X" (viz níže). U 2027 je to modelový odhad NTS. |
-| **Návratnost (rok)** | Prostá návratnost zvoleného roku („cena ÷ úspora jednoho roku"). Pod tím je **reálná návratnost, která rozhoduje o doporučení**: celý horizont v NTS 2027, včetně O&M a degradace úspor. Bývá delší než prostá návratnost – právě proto, že O&M a degradaci nezametá pod stůl. |
+| **Návratnost (rok)** | **Reálná** návratnost – kdy investice naskočí do plusu včetně O&M a degradace úspor. **Tohle číslo rozhoduje o doporučení** a mění se přepínačem „Počítat návratnost z". V podtitulku je pro srovnání prostá návratnost („cena ÷ úspora jednoho roku"), která O&M ani stárnutí nezná. Podrobně v sekci **🔑 Tři čísla návratnosti** hned pod touhle tabulkou. |
 | **Nová rez. kapacita** (rok 2026) | Jaká RK bude po instalaci baterie sjednaná. Pod tím fyzický „strop" baterie a rezerva. |
 | **Rezervovaný příkon** (rok 2027) | Rezervovaný příkon v modelu 2027 (případně jeho snížení, když je zaškrtnuté). |
 | **Baterie** | Doporučená baterie a počet kusů, její celkový výkon / kapacita a cena. |
 | **NPV (N let)** | Čistá současná hodnota investice na horizontu (default 10 let), případně IRR. **Právě NPV řídí výběr doporučené varianty.** |
+
+#### 🔑 Tři čísla návratnosti a jak spolu souvisejí
+Nejčastější zádrhel při čtení výsledku: appka ukazuje **tři různé návratnosti** a všechny jsou správně – jen každá odpovídá na jinou otázku. Tady je celý řetěz na jednom reálném příkladu (**nabídka VRL**, BESS 100 kW / 330 kWh za 1 500 000 Kč, roční úspora 2027 **394 419 Kč**):
+
+| Číslo | Kde ho vidíš | Jak se počítá | Co v něm **není** |
+|---|---|---|---|
+| **3,8 roku** — prostá návratnost | podtitulek dlaždice „Návratnost", řádek *Model 2027* v tabulce návratností | `1 500 000 ÷ 394 419` | provozní náklady (O&M), stárnutí baterie; **vždy** počítá z celé úspory → přepínačem se nemění |
+| **4,23 roku** — reálná, volba *Celá úspora* | velké číslo v dlaždici „Návratnost", řádek *Reálně*, řádek ◄ v tabulce po letech | z 394 419 Kč/rok se odečte **O&M 30 000 Kč/rok** (2 % z ceny) a úspora každý rok klesne o **1,5 %** (degradace); po 4 letech je nasčítáno 1 422 529 Kč, zbylých 77 471 Kč přijde během 5. roku | — (to je „hotové" číslo) |
+| **7,12 roku** — reálná, volba *Jen přínos baterie* | totéž po přepnutí přepínače | stejný výpočet, ale ze základu **251 977 Kč/rok** místo 394 419 | úspora **142 442 Kč/rok**, kterou klient dostane i bez baterie (snížením rezervovaného příkonu z 600 na 294 kW) |
+
+**Jak to číst:**
+
+| Otázka klienta | Číslo, kterým odpovíš |
+|---|---|
+| „Za jak dlouho se mi vrátí celý projekt (nová rezervace + baterie), i s provozem?" | **4,23 roku** |
+| „A kdybych si tu rezervaci snížil sám – za jak dlouho se vrátí ta baterie?" | **7,12 roku** |
+| „Kolik to zhruba je, od oka?" | 3,8 roku (ale nezmiňuj to jako slib – nezná O&M) |
+
+> ⚠️ **O doporučení („nedoporučeno" / práh 5 let) rozhoduje vždy to reálné číslo**, ne prostá návratnost. Proto může varianta s prostou návratností 3,8 roku vyjít jako nedoporučená – reálně je na 7,12 letech.
+
+> 💡 Rozdíl mezi 4,23 a 7,12 je celý v tom, **komu připíšeš úsporu z úpravy rezervace**. Když ji děláte v rámci projektu, patří do ekonomiky projektu (4,23). Když si ji klient umí zařídit sám, poctivější je ukázat, co přidá samotná baterie (7,12).
 
 #### Dvě čtení návratnosti – přepínač „Počítat návratnost z"
 Část úspory klient získá i **bez investice** – stačí si u distributora zoptimalizovat sjednanou rezervaci (tzv. „audit RK zdarma"). Otázka „vyplácí se baterie?" má proto dvě legitimní odpovědi a appka počítá **obě** – přepínačem nad dlaždicemi si vybíráš, která řídí NPV, reálnou návratnost, odznaky „nedoporučeno" i pořadí variant.
@@ -102,7 +123,16 @@ Ukazují se pro rok zvolený přepínačem:
 | **Celá úspora** (výchozí) | celý rozdíl proti dnešnímu stavu – „dnešní faktura → faktura po instalaci", včetně úspory ze souběžné úpravy rezervace | když se klientovi prodává **projekt jako celek** a úpravu rezervace děláte v rámci něj |
 | **Jen přínos baterie** | jen to, co přinese sama baterie nad rámec toho, co jde získat i bez investice | když chceš vědět, jestli se vyplácí **samotná investice** – přísnější a obhajitelnější před klientem, který si rezervaci umí snížit sám |
 
-Rozdíl obou = řádek „Úspora hned bez investice" v kartě roku. Na nabídce „hydra" (BESS 100/330 za 1,5 mil. Kč, RP 560 kW): **Celá úspora** → NPV +421 tis. Kč, IRR 14,1 %, reálná návratnost 5,1 roku; **Jen přínos baterie** → NPV −386 tis. Kč, IRR 1,7 %, 9,1 roku. Obě čísla jsou správně – liší se tím, co počítáš jako zásluhu baterie.
+Rozdíl obou = řádek „Úspora hned bez investice" v kartě roku. Dvě reálné nabídky pro srovnání:
+
+| Nabídka | Volba | Základ (Kč/rok) | NPV | IRR | Reálná návratnost | Doporučeno |
+|---|---|---|---|---|---|---|
+| **VRL** (BESS 100/330, RP 600 kW) | Celá úspora | 394 419 | **+797 146 Kč** | — | 4,23 roku | ✅ ano |
+| | Jen přínos baterie | 251 977 | −105 154 Kč | — | 7,12 roku | ❌ ne |
+| **hydra** (BESS 100/330, RP 560 kW) | Celá úspora | 334 995 | **+420 727 Kč** | 14,1 % | 5,09 roku | ❌ těsně ne |
+| | Jen přínos baterie | 207 600 | −386 261 Kč | 1,7 % | 9,07 roku | ❌ ne |
+
+Obě čísla jsou pokaždé správně – liší se tím, co počítáš jako zásluhu baterie. Všimni si, že volba umí překlopit i odznak „doporučeno" (VRL) a u obou nabídek mění NPV z kladného na záporné.
 
 > ℹ️ Přepnutí **nic nepřepočítává** (obě sady spočetl server dopředu) a **nemění uložený výsledek** – je to jen způsob zobrazení. Volba se pamatuje v prohlížeči, ne u nabídky.
 
