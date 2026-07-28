@@ -50,7 +50,7 @@ podmínky výpočtu ✓ nebo `!` s tím, co ještě chybí. Zakázané tlačítk
 - **hlavička** s vybranou variantou, odznakem *doporučeno / nedoporučeno* a **přepínači zobrazení**
   (rok, základ návratnosti) — platí pro celý pravý sloupec,
 - **dlaždice s hlavními čísly** (KPI): úspora, reálná návratnost, NPV, nová rezervace, investice,
-- **Varianty k rozhodnutí** — tři karty vedle sebe, každá podle jiného kritéria (viz níž),
+- **Varianty k rozhodnutí** — karty vedle sebe (nejvhodnější podle NPV a nejlevnější),
 - **záložky**: *Ekonomika* · *Grafy odběru* · *Srovnání variant* · *Po letech*.
 
 Záložky nahradily jednu dlouhou rolovací stránku. Dřív bylo srovnání variant až na jejím konci,
@@ -74,7 +74,7 @@ Legenda „kdo vidí": **(vše)** = každý, kdo nabídku otevře (má právo `n
 | **Spočítat peak shaving** | patička vstupů | Spustí výpočet. Pod tlačítkem je **kontrolní seznam**, který u nesplněné podmínky řekne, co chybí. Aktivní, jen když je **načtený profil**, **kladná RK**, **existují sazby 2026** pro zvolenou kombinaci distributor/hladina a (při ručním výběru) je **označená aspoň jedna baterie**. | vše |
 | **Zobrazit rok: 2026 / 2027** (přepínač) | hlavička výsledku | Přepíná, pro který rok se ukazují dlaždice, prostá návratnost, graf a sloupec ve srovnání variant. **2027 je výchozí**; když ekonomika 2027 chybí (nejsou sazby), tlačítko 2027 je zakázané a vše spadne na 2026. Pozor: ekonomika, NPV i doporučení jedou vždy na modelu 2027 — karta 2026 je jen informativní srovnání „co by to bylo dnes". | vše |
 | **Počítat návratnost z: Celá úspora / Jen přínos baterie** (přepínač) | hlavička výsledku | Volí, z čeho se počítá **NPV, reálná návratnost a doporučení** (viz „Dvě čtení návratnosti" níže). Obě varianty jsou spočítané dopředu, přepnutí **nic nepřepočítává** — okamžitě se překreslí dlaždice NPV, řádek „Reálně", tabulka po letech, odznaky „nedoporučeno" i pořadí ve srovnání variant. Volba se pamatuje v prohlížeči. Výchozí je **Celá úspora**. | vše |
-| **Karta ve „Variantách k rozhodnutí"** | výsledek, pod dlaždicemi | Tři karty vedle sebe, každá vítěz jiného kritéria: **◆ Nejvhodnější** (nejvyšší NPV – ta doporučená), **Nejlevnější** (nejnižší investice) a **Největší osekání špiček** (nejnižší nová rezervace v jednotkách zobrazeného roku). Klik kartu vybere a překreslí celý výsledek. Vítěz se hledá nezávisle na řazení tabulky. Pruh dole = NPV proti nejlepší variantě. | vše |
+| **Karta ve „Variantách k rozhodnutí"** | výsledek, pod dlaždicemi | Dvě karty vedle sebe, každá vítěz jiného kritéria: **◆ Nejvhodnější** (nejvyšší NPV – ta doporučená) a **Nejlevnější** (nejnižší investice). Klik kartu vybere a překreslí celý výsledek. Vítěz se hledá nezávisle na řazení tabulky. Pruh dole = NPV proti nejlepší variantě. Když oba vítězové padnou na tutéž baterii, karty se skryjí. | vše |
 | **Řádek ve „Srovnání variant"** | záložka Srovnání variant | Klik na řádek **překreslí celý výsledek** (dlaždice, karty, ekonomika, grafy, citlivost) pro danou variantu. `◄` = právě zobrazená. | vše |
 | **Záložky výsledku** | nad výsledkem | *Ekonomika* (dvě karty roků + tři čísla návratnosti) · *Grafy odběru* (měsíční maxima, citlivost, průběh v čase) · *Srovnání variant* (tabulka) · *Po letech* (rozpis horizontu). Přepnutí nic nepřepočítává. | vše |
 | **Záhlaví sloupce ve srovnání** | záložka Srovnání variant | Klik **seřadí** tabulku podle toho sloupce (druhý klik obrátí směr): baterie (abecedně), výkon, nová rezervace, úspora, cena, návratnost, NPV. Prázdné hodnoty padají na konec. Odkaz *zpět na doporučené pořadí* vrátí výchozí řazení dle NPV. | vše |
@@ -113,7 +113,7 @@ Ukazují se pro rok zvolený přepínačem:
 | Dlaždice | Co znamená |
 |---|---|
 | **Roční úspora (rok)** | Kolik klient ušetří za rok. Pod tím rozpad „z toho X i bez investice" (viz níže). U 2027 je to modelový odhad NTS. |
-| **Reálná návratnost** | Kdy investice naskočí do plusu **včetně O&M a degradace úspor**. **Tohle číslo rozhoduje o doporučení** a mění se přepínačem „Návratnost z". V podtitulku je pro srovnání prostá návratnost („cena ÷ úspora jednoho roku"), která O&M ani stárnutí nezná. Podrobně v sekci **🔑 Tři čísla návratnosti** hned pod touhle tabulkou. |
+| **Reálná návratnost** | Kdy investice naskočí do plusu **včetně O&M a degradace úspor**. **Tohle číslo rozhoduje o doporučení** a mění se přepínačem „Návratnost z". V podtitulku je pro srovnání prostá návratnost („cena ÷ úspora jednoho roku"), která O&M ani stárnutí nezná. Podrobně v sekci **🔑 Tři čísla návratnosti** hned pod touhle tabulkou. Nikdy tu nestojí „nevrátí se" — viz „Vždycky je vidět číslo" níž. |
 | **NPV (N let)** | Čistá současná hodnota investice na horizontu (default 10 let), případně IRR. **Právě NPV řídí výběr doporučené varianty.** |
 | **Nová rez. kapacita** (rok 2026) | Jaká RK bude po instalaci baterie sjednaná. Pod tím fyzický „strop" baterie a rezerva. |
 | **Rezervovaný příkon** (rok 2027) | Rezervovaný příkon v modelu 2027 (případně jeho snížení, když je zaškrtnuté). |
@@ -168,6 +168,22 @@ V záložce *Ekonomika*, pod kartami roků. Tři řádky, nejdůležitější pr
 - **Prostá 2026** – jen **informativně**, do rozhodování nevstupuje. Co se dnes nabízí, se instaluje a spouští už v NTS 2027, takže rok na starém tarifu nikdo neodžije.
 
 Pod tabulkou je sbalený blok **ⓘ Proč se čísla liší** — celé metodické vysvětlení včetně tarifů T1/T2. Dřív byl tenhle text rozepsaný drobným písmem mezi čísly, což u desátého výpočtu spíš zdržovalo.
+
+##### Vždycky je vidět číslo (od 28. 7. 2026)
+Server počítá reálnou návratnost jen do horizontu NPV (default 10 let). Co se v něm nevrátí, nemá
+`payback_roky` a appka tam dřív psala **„nevrátí se"** — což se před klientem nedalo použít.
+Nově je na tom místě vždycky číslo:
+
+| Zápis | Co znamená | Odkud je |
+|---|---|---|
+| `6,12 let` | reálná návratnost | spočítal server v horizontu |
+| `~14,24 let` | **dopočet za horizont modelu** — vlnovka říká, že je to odhad | chybějící část investice se dělí cash flow dalších let, které dál klesá stejným tempem jako na konci rozpisu (degradace úspor) |
+| `12,4 let (prostá)` | reálná návratnost **neexistuje** ani teoreticky, protože roční úspora nepokryje ani provozní náklady (O&M) | poslední záchrana: prostá návratnost, která O&M ani degradaci nezná |
+
+Najetím myší na číslo se ukáže vysvětlení. **Dopočet za horizont je orientační** — ceny distribuce
+po roce 2036 nikdo nezná a tempo degradace je modelové. Na výběr varianty ani na odznak
+„nedoporučeno" tenhle dopočet **nemá vliv**: o obojím pořád rozhoduje NPV a práh, který takové
+varianty stejně odmítne (jsou hluboko nad ním).
 
 #### Ekonomika – porovnání let (dvě karty vedle sebe)
 V záložce *Ekonomika*. Vlevo je **2027** (ten rozhoduje, odznak *rozhoduje*), vpravo **2026** (odznak *informativní*). Zvýrazněná (rámečkem) je karta roku podle přepínače.
@@ -247,16 +263,17 @@ V záložce *Grafy odběru*, pod grafem měsíčních maxim: co by se stalo, kdy
 #### Ekonomika po letech (záložka)
 Tabulka rok po roce na celém horizontu (default 10 let): tarif toho roku, přínos baterie, O&M (údržba), cash-flow roku, kumulovaná úspora a kumulované cash-flow. Řádek označený `◄` = rok, kdy se investice **poprvé vrátí**. Poslední hodnota „Kum. disk. CF" = NPV varianty.
 
-#### Varianty k rozhodnutí (tři karty pod dlaždicemi)
+#### Varianty k rozhodnutí (karty pod dlaždicemi)
 Tabulka srovnání odpovídá na otázku „která je nejlepší podle NPV". Tyhle karty odpovídají na otázky, které klade zákazník:
 
 | Karta | Kritérium | Kdy ji nabídnout |
 |---|---|---|
 | **◆ Nejvhodnější** | nejvyšší NPV | výchozí doporučení — nejlepší ekonomika na horizontu |
 | **Nejlevnější** | nejnižší investice | když klienta limituje rozpočet, ne návratnost |
-| **Největší osekání špiček** | nejnižší nová rezervace (RK pro 2026, RP pro 2027) | když klient chce hlavně technickou rezervu do budoucna |
 
-Klik na kartu ji vybere a překreslí celý výsledek. Vítěz každého kritéria se hledá **nezávisle na řazení tabulky** — když si ji seřadíš po svém, karty se nemění. Když je jedna varianta vítěz ve víc kritériích, ukáže se **jednou a nese oba štítky**, takže karty jsou někdy dvě místo tří. Pruh dole ukazuje NPV varianty proti nejlepší; u záporného NPV je pruh nulový. Karty se skryjí, když je použitelná jen jedna varianta.
+Klik na kartu ji vybere a překreslí celý výsledek. Vítěz se hledá **nezávisle na řazení tabulky** — když si ji seřadíš po svém, karty se nemění. Pruh dole ukazuje NPV varianty proti nejlepší; u záporného NPV je pruh nulový. Když nejvyšší NPV a nejnižší cena padnou na tutéž baterii (nebo je použitelná jen jedna varianta), karty se skryjí — není co srovnávat.
+
+> Kritérium **„největší osekání špiček"** tu bylo do 28. 7. 2026, ale ukázalo se jako nepoužitelné: nejnižší rezervace sama o sobě nic neříká, jen vždycky ukázala na nejdražší baterii v katalogu.
 
 #### Srovnání variant (záložka)
 Tabulka zvažovaných baterií. První řádek = doporučená (dle NPV). Kliknutím na jiný řádek se celý výsledek přepočítá pro tu variantu — čísla jsou nad tabulkou, takže je změna hned vidět (dřív byla tabulka na konci dlouhé stránky a přepisovala čísla mimo obraz). Varianta, jejíž **reálná** návratnost přeleze firemní práh, nese odznak **„nedoporučeno"** – i když prostá návratnost 2027 vypadá pod prahem. Do 27. 7. 2026 rozhodovala jen prostá návratnost modelu 2026, takže dobrá ekonomika 2027 na odznak neměla vliv.
@@ -270,7 +287,7 @@ Výchozí zobrazení jsou **3 nejlepší varianty**, ale spočítané jsou všec
 ### Jak na…
 - **Spočítat peak shaving od nuly:** nahraj profil v Podkladech → vlevo v sekci 1 klikni **Načíst profil** → v sekci 2 vyber **distributora** a **hladinu**, opiš **RK z faktury** → **Spočítat peak shaving**.
 - **Zohlednit model 2027 se snížením příkonu:** vyplň **Rezervovaný příkon** ze smlouvy, zaškrtni **„uvažovat snížení RP"**, spočítej a přepni nahoře na **2027**. (Bez vyplněného RP se dosadí RK a celý model 2027 vyjde podhodnocený – viz „RK vs. RP" výše.)
-- **Porovnat víc baterií:** hned pod dlaždicemi jsou tři **karty variant** (nejvhodnější / nejlevnější / největší osekání špiček) – klik na kartu překreslí výsledek. Kdo chce vidět celý katalog, přepne na záložku **Srovnání variant** a klikne na **„Zobrazit všechny (N)"**.
+- **Porovnat víc baterií:** hned pod dlaždicemi jsou **karty variant** (nejvhodnější podle NPV a nejlevnější) – klik na kartu překreslí výsledek. Kdo chce vidět celý katalog, přepne na záložku **Srovnání variant** a klikne na **„Zobrazit všechny (N)"**.
 - **Počítat jen vybrané baterie:** v sekci 3 vstupů přepni na **Jen ručně vybrané**, v seznamu zaškrtni produkty (jde v nich hledat) a spočítej. Výběr se pamatuje do dalšího výpočtu.
 - **Seřadit srovnání po svém:** klikni na záhlaví sloupce (cena, návratnost, výkon…) – druhý klik obrátí směr, odkaz *zpět na doporučené pořadí* vrátí NPV.
 - **Omezit výkon u modulární baterie:** vyplň **Max. výkon střídače** (kW) podle sdíleného PCS a přepočítej.
@@ -384,6 +401,7 @@ frontend/src/
 ---
 
 ## Poznámky a úskalí (k ověření / nezřejmé)
+- **Návratnost se nikdy neukáže jako „nevrátí se".** Backend dál posílá `payback_roky = null`, když se investice v horizontu NPV nevrátí — frontend (`navratnostKZobrazeni` v `PeakShavingPanel.jsx`) místo toho číslo **dopočítá za horizont** z klesajícího cash flow posledních let a označí ho vlnovkou. Když ani to nejde (roční CF je nekladné, tedy úspora nepokryje O&M), ukáže se prostá návratnost s poznámkou „(prostá)". Je to **zobrazovací vrstva** — do NPV, prahu doporučení ani do výběru varianty tenhle dopočet nevstupuje. Řazení srovnání podle návratnosti ale používá stejné číslo, které je v řádku vidět, jinak by varianty s odhadem padaly bez důvodu na konec.
 - **Rozvržení „pracovní stůl" je vzor pro ostatní moduly.** Panel se 28. 7. 2026 překlopil z jedné svislé roláky (vstupy roztržené mezi tři karty, výsledek ~2500 px pod nimi) na dva sloupce se záložkami. Znovupoužitelné části leží v `global.css` jako `gs-*`, layout stolu jako `ps-*` v `nabidkovac.css`. Až se stůl použije i jinde, `ps-*` se přesune do `global.css` pod obecnějším jménem.
 - **Detail nabídky musí být široký.** `.nb-app.siroky` zvedá šířku obsahu na 1560 px – při původních 1100 px by se dva sloupce nikdy nevešly a stůl by se pořád zalamoval pod sebe.
 - **Karta „Podklady" a údaje zákazníka jsou v detailu nabídky sbalené.** Rozbalí se samy jen u čerstvě založené nabídky (chybí název zákazníka, resp. žádné dokumenty). Profil odběru se načítá ve vstupech výpočtu, takže do Podkladů se chodí prakticky jen při zakládání.

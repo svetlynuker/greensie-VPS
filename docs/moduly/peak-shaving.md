@@ -331,6 +331,14 @@ přínos ≤ 0) — zobrazuje se doplňkově (PS-9). Dvě návratnosti:
 pokryje investici (lineární interpolace v rámci roku); `None` = v horizontu se nevrátí.
 Počítá se pro oba základy zvlášť (`npv_varianty[…]["payback_roky"]`).
 
+> **`None` se od 28. 7. 2026 v UI neukazuje jako „nevrátí se".** Frontend
+> (`navratnostKZobrazeni` v `PeakShavingPanel.jsx`) číslo dopočítá **za horizont**: dělí
+> nepokrytý zbytek investice cash flow dalších let, které dál klesá stejným tempem jako
+> mezi posledními dvěma roky rozpisu, a zobrazí ho s vlnovkou (`~14,24 let`). Když je CF
+> posledního roku nekladné (úspora nepokryje O&M) nebo klesající řada na zbytek nikdy
+> nestačí, ukáže prostou návratnost s poznámkou „(prostá)". Backend se tím **nemění** — je to
+> jen zobrazení a do NPV, prahu doporučení ani výběru varianty nevstupuje.
+
 > **Oprava 27. 7. 2026 — doporučení nesmí viset na jednom roce.** Práh se poměřoval
 > s prostou návratností **modelu 2026**, takže varianta s výbornou ekonomikou 2027
 > a slabým rokem 2026 vyšla „nedoporučeno" — a naopak si OZ nemohl srovnat, proč se

@@ -92,12 +92,13 @@ const SLOUPCE_SROVNANI = [
     nazev: "Návratnost",
     vychoziSmer: "asc",
     cislo: true,
+    // Řadí se podle čísla, které je v řádku vidět – včetně dopočtu za horizontem,
+    // jinak by varianty s odhadem padaly na konec bez ohledu na svou hodnotu.
     hodnota: (v, i, je2027, zaklad) => {
-      const payback = npvDleZakladu(v, zaklad).payback_roky;
-      if (payback !== undefined) return payback;
-      return je2027
-        ? v.navratnost_2027 ?? v.navratnost_2027_konzerv ?? null
-        : v.navratnost_roky ?? null;
+      const prosta = je2027
+        ? v.navratnost_2027 ?? v.navratnost_2027_konzerv
+        : v.navratnost_roky;
+      return navratnostKZobrazeni(npvDleZakladu(v, zaklad), prosta)?.hodnota ?? null;
     },
   },
   {
@@ -148,6 +149,73 @@ function npvDleZakladu(v, zaklad) {
   };
 }
 
+// Reálnou návratnost počítá server jen do horizontu NPV (default 10 let); co se
+// v něm nevrátí, nese `payback_roky = null`. Místo „nevrátí se" dopočítáme rok
+// za horizontem z rozpisu po letech: chybějící část investice se dělí cash flow
+// dalších let, které dál klesá stejným tempem jako na konci rozpisu (degradace
+// úspor). Je to odhad za hranicí modelu – v UI se proto značí vlnovkou.
+function navratnostZaHorizontem(rozpis) {
+  if (!rozpis?.length) return null;
+  const posledni = rozpis[rozpis.length - 1];
+  if (posledni.cf_kum_kc >= 0) return null; // vrátila se v horizontu (má payback)
+  let cf = posledni.cf_kc;
+  if (!(cf > 0)) return null; // úspora nepokryje ani provoz – nevrátí se nikdy
+  // Tempo poklesu z posledních dvou let rozpisu. Rostoucí CF neextrapolujeme
+  // (byl by to optimismus navíc), počítáme s ním jako s konstantním.
+  const predchozi = rozpis.length > 1 ? rozpis[rozpis.length - 2].cf_kc : null;
+  let q = predchozi > 0 ? cf / predchozi : 1;
+  if (!(q > 0) || q > 1) q = 1;
+  let dluh = -posledni.cf_kum_kc;
+  // Klesající řada má konečný součet cf·q/(1−q); když na dluh nestačí, nevrátí se.
+  if (q < 1 && (cf * q) / (1 - q) <= dluh) return null;
+  let let_ = rozpis.length;
+  for (let i = 0; i < 200 && dluh > 0; i++) {
+    cf *= q;
+    if (dluh <= cf) {
+      let_ += dluh / cf;
+      dluh = 0;
+    } else {
+      dluh -= cf;
+      let_ += 1;
+    }
+  }
+  return dluh > 0 ? null : let_;
+}
+
+// Návratnost k zobrazení – vždy číslo, ať už spočítané serverem, dopočítané za
+// horizontem, nebo (když ani to nejde, protože úspora nepokryje provoz) prostá.
+// `druh` říká, o které z těch tří jde, ať se dá číslo správně popsat.
+function navratnostKZobrazeni(npv, prosta) {
+  if (npv?.payback_roky != null) return { hodnota: npv.payback_roky, druh: "realna" };
+  if (npv?.payback_roky === undefined) {
+    // Starší uložený výsledek reálnou návratnost vůbec nemá.
+    return prosta != null ? { hodnota: prosta, druh: "prosta" } : null;
+  }
+  const odhad = navratnostZaHorizontem(npv.roky);
+  if (odhad != null) return { hodnota: odhad, druh: "odhad" };
+  return prosta != null ? { hodnota: prosta, druh: "prosta" } : null;
+}
+
+// Text návratnosti: vlnovka u odhadu za horizontem, „prostá" u posledního
+// fallbacku, ať je z čísla poznat, jak vzniklo.
+function navratnostText(n) {
+  if (!n) return "—";
+  if (n.druh === "odhad") return `~${roky(n.hodnota)}`;
+  if (n.druh === "prosta") return `${roky(n.hodnota)} (prostá)`;
+  return roky(n.hodnota);
+}
+
+function navratnostTitulek(n, horizont) {
+  if (!n) return undefined;
+  if (n.druh === "odhad") {
+    return `Investice se v horizontu ${horizont ?? 10} let nevrátí. Číslo je dopočítané za horizont modelu z klesajícího cash flow posledních let – orientační.`;
+  }
+  if (n.druh === "prosta") {
+    return "Reálná návratnost neexistuje – roční úspora nepokryje ani provozní náklady (O&M). Ukazuje se proto prostá návratnost (cena ÷ úspora jednoho roku), která O&M ani degradaci nezná.";
+  }
+  return undefined;
+}
+
 function VariantaRadek({ v, vybrana, rok, zakladNpv, onVyber }) {
   // Úspora a návratnost dle přepínače roku (2027 = NTS odhad; starší uložené
   // výsledky nesou rocni_uspora_bez_aku / navratnost_2027_konzerv – PS-3).
@@ -159,7 +227,7 @@ function VariantaRadek({ v, vybrana, rok, zakladNpv, onVyber }) {
   // Reálná návratnost (drží odznak „nedoporučeno" ve stejném řádku); starší
   // uložené výsledky ji nemají, tam se ukáže prostá návratnost roku.
   const prosta = je2027 ? v.navratnost_2027 ?? v.navratnost_2027_konzerv : v.navratnost_roky;
-  const navratnost = npv.payback_roky !== undefined ? npv.payback_roky : prosta;
+  const navratnost = navratnostKZobrazeni(npv, prosta);
   return (
     <tr
       onClick={onVyber}
@@ -186,8 +254,14 @@ function VariantaRadek({ v, vybrana, rok, zakladNpv, onVyber }) {
       <td className="n">{kw(v.nova_rezervovana_kapacita_kw)}</td>
       <td className="n">{kc(uspora)}</td>
       <td className="n">{kc(v.cena_celkem_kc)}</td>
-      <td className="n" title={prosta != null ? `prostá návratnost ${roky(prosta)}` : undefined}>
-        {navratnost === null ? "nevrátí se" : roky(navratnost)}
+      <td
+        className="n"
+        title={
+          navratnostTitulek(navratnost, v.npv_horizont_roky) ||
+          (prosta != null ? `prostá návratnost ${roky(prosta)}` : undefined)
+        }
+      >
+        {navratnostText(navratnost)}
       </td>
       <td className="n">{npv.npv_kc != null ? kc(npv.npv_kc) : "—"}</td>
     </tr>
@@ -649,6 +723,8 @@ export default function PeakShavingPanel({ nabidka }) {
   const prostaNavratnost = je2027
     ? dop?.navratnost_2027 ?? dop?.navratnost_2027_konzerv
     : dop?.navratnost_2026 ?? dop?.navratnost_roky;
+  // Návratnost k zobrazení – vždy číslo (viz navratnostKZobrazeni výš).
+  const navratnostDop = navratnostKZobrazeni(npvDop, prostaNavratnost);
   const zakladPopis = ZAKLADY_NPV.find((z) => z.klic === zakladNpv);
   const uspora2027 = ek27?.rocni_uspora_bez_aku ?? ek27?.rocni_uspora;
   const rpNovy2027 = ek27?.rp_novy_kw ?? ek27?.rezervovana_kapacita_kw;
@@ -744,10 +820,11 @@ export default function PeakShavingPanel({ nabidka }) {
     );
   }
 
-  // Tři varianty k rozhodnutí. Tabulka srovnání odpovídá na „která je nejlepší
-  // podle NPV"; tyhle karty na otázky, které klade zákazník — co doporučujeme,
-  // co je nejlevnější a co nejvíc srazí špičku. Vítěz se hledá nezávisle na
-  // řazení tabulky (to si uživatel mění po svém).
+  // Varianty k rozhodnutí. Tabulka srovnání odpovídá na „která je nejlepší podle
+  // NPV"; tyhle karty na otázky, které klade zákazník — co doporučujeme a co je
+  // nejlevnější. Vítěz se hledá nezávisle na řazení tabulky (to si uživatel mění
+  // po svém). Kritérium „největší osekání špiček" tu bylo taky, ale nejnižší
+  // rezervace sama o sobě o ničem nevypovídá – jen ukazovala na nejdražší baterii.
   const novaRezervace = (v) =>
     je2027
       ? v.ekonomika_2027?.rp_novy_kw ?? v.nova_rezervovana_kapacita_kw
@@ -778,11 +855,6 @@ export default function PeakShavingPanel({ nabidka }) {
         popis: "Nejlevnější",
         detail: "nejnižší investice",
         vitez: nej((v) => v.cena_celkem_kc, false),
-      },
-      {
-        popis: "Největší osekání špiček",
-        detail: je2027 ? "nejnižší rezervovaný příkon" : "nejnižší rezervovaná kapacita",
-        vitez: nej(novaRezervace, false),
       },
     ].filter((k) => k.vitez);
     // Když je jedna varianta vítěz ve víc kritériích, ukáže se jednou a nese
@@ -1232,18 +1304,23 @@ export default function PeakShavingPanel({ nabidka }) {
                 je jen orientační – nezná O&M ani degradaci a počítá se vždy
                 z celé úspory, takže se přepínačem nehnula a působilo to jako
                 rozpor. */}
-            <div className="gs-kpi-label">Reálná návratnost</div>
-            <div className="gs-kpi-value">
-              {npvDop.payback_roky === undefined
-                ? roky(prostaNavratnost)
-                : npvDop.payback_roky === null
-                  ? "nevrátí se"
-                  : roky(npvDop.payback_roky)}
+            <div className="gs-kpi-label">
+              {navratnostDop?.druh === "prosta" ? "Návratnost (prostá)" : "Reálná návratnost"}
+            </div>
+            <div
+              className="gs-kpi-value"
+              title={navratnostTitulek(navratnostDop, dop.npv_horizont_roky)}
+            >
+              {navratnostDop?.druh === "prosta"
+                ? roky(navratnostDop.hodnota)
+                : navratnostText(navratnostDop)}
             </div>
             <div className="gs-kpi-sub">
-              {npvDop.payback_roky === undefined
-                ? `prostá – ${je2027 ? "z úspory 2027" : "z přínosu baterie"} · práh ${vysledek.max_navratnost_roky} let`
-                : `vč. O&M a degradace · prostá ${roky(prostaNavratnost)} · práh ${vysledek.max_navratnost_roky} let`}
+              {navratnostDop?.druh === "odhad"
+                ? `dopočet za horizont ${dop.npv_horizont_roky ?? 10} let · prostá ${roky(prostaNavratnost)} · práh ${vysledek.max_navratnost_roky} let`
+                : navratnostDop?.druh === "prosta"
+                  ? `úspora nepokryje ani O&M, reálná návratnost neexistuje · práh ${vysledek.max_navratnost_roky} let`
+                  : `vč. O&M a degradace · prostá ${roky(prostaNavratnost)} · práh ${vysledek.max_navratnost_roky} let`}
             </div>
           </div>
           {npvDop.npv_kc != null && (
@@ -1321,7 +1398,7 @@ export default function PeakShavingPanel({ nabidka }) {
                 const prosta = je2027
                   ? k.v.navratnost_2027 ?? k.v.navratnost_2027_konzerv
                   : k.v.navratnost_roky;
-                const navratnost = npv.payback_roky !== undefined ? npv.payback_roky : prosta;
+                const navratnost = navratnostKZobrazeni(npv, prosta);
                 // Pruh má smysl jen když je vůbec nějaké kladné NPV, ke kterému
                 // se dá poměřovat; záporná NPV se kreslí jako nulový pruh.
                 const podil = npvMax > 0 ? Math.max(0, ((npv.npv_kc ?? 0) / npvMax) * 100) : null;
@@ -1351,7 +1428,9 @@ export default function PeakShavingPanel({ nabidka }) {
                       <dt>Investice</dt>
                       <dd>{kc(k.v.cena_celkem_kc)}</dd>
                       <dt>Návratnost</dt>
-                      <dd>{navratnost === null ? "nevrátí se" : roky(navratnost)}</dd>
+                      <dd title={navratnostTitulek(navratnost, k.v.npv_horizont_roky)}>
+                        {navratnostText(navratnost)}
+                      </dd>
                       <dt>NPV{npv.irr != null ? " / IRR" : ""}</dt>
                       <dd>
                         {npv.npv_kc != null ? kc(npv.npv_kc) : "—"}
@@ -1438,7 +1517,7 @@ export default function PeakShavingPanel({ nabidka }) {
             <div className="fm-card" style={{ padding: 0 }}>
               <table className="nb-table">
                 <tbody>
-                  {npvDop.payback_roky !== undefined && (
+                  {npvDop.payback_roky !== undefined && navratnostDop && (
                     <tr
                       className="soucet"
                       style={{ background: "color-mix(in srgb, var(--brand) 9%, transparent)" }}
@@ -1452,12 +1531,30 @@ export default function PeakShavingPanel({ nabidka }) {
                         </span>
                         <div className="ps-pozn">
                           Tohle rozhoduje o doporučení i o výběru varianty.
+                          {navratnostDop.druh === "odhad" && (
+                            <>
+                              {" "}
+                              Investice se do {dop.npv_horizont_roky ?? 10} let nevrátí — číslo je{" "}
+                              <b>dopočtené za horizont modelu</b> z klesajícího cash flow posledních
+                              let, takže je orientační.
+                            </>
+                          )}
+                          {navratnostDop.druh === "prosta" && (
+                            <>
+                              {" "}
+                              Roční úspora nepokryje ani provozní náklady, takže reálná návratnost
+                              neexistuje — ukazuje se <b>prostá</b>, která O&amp;M ani degradaci
+                              nezná.
+                            </>
+                          )}
                         </div>
                       </td>
-                      <td className="n" style={{ fontSize: 15 }}>
-                        {npvDop.payback_roky === null
-                          ? `nevrátí se do ${dop.npv_horizont_roky ?? 10} let`
-                          : roky(npvDop.payback_roky)}
+                      <td
+                        className="n"
+                        style={{ fontSize: 15 }}
+                        title={navratnostTitulek(navratnostDop, dop.npv_horizont_roky)}
+                      >
+                        {navratnostText(navratnostDop)}
                       </td>
                     </tr>
                   )}
