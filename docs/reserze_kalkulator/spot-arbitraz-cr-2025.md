@@ -227,6 +227,11 @@ jediný důvod baterii postavit — proto samostatný režim SPOT.
 
 ## 10. Reprodukce
 
-Skripty rešerše: `docs/reserze_kalkulator/skripty/spot_stahni.py` (stažení cen a kurzů),
-`docs/reserze_kalkulator/skripty/spot_analyza.py` (statistika + optimalizace arbitráže).
-Data cen pro appku se seedují z `backend/app/nabidkovac/data/spot_dam_cz_2025.csv.gz`.
+Stažení dat: `python -m scripts.import_spot_ceny --rok 2025 --csv` (v `backend/`) —
+stáhne ceny z energy-charts i denní kurzy ČNB a uloží
+`backend/app/nabidkovac/data/spot_dam_cz_2025.csv.gz`, odkud appka ceny seeduje.
+
+Analýza: `docs/reserze_kalkulator/skripty/spot_analyza.py` (statistika + optimální
+arbitráž dynamickým programováním). Appka sama používá **prahovou strategii**
+(`spot_arbitraz.py`), protože ta je proveditelná v reálném provozu; číslo z DP je
+horní odhad, proti kterému se poměřuje (testy hlídají aspoň 90 % optima).

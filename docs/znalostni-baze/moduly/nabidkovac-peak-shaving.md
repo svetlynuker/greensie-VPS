@@ -31,7 +31,7 @@ Levý panel je „přilepený" — při čtení výsledku dole neuhne z obrazu, 
 rezervovanou kapacitu a hned vedle sledovat, co to udělalo s návratností.
 Na úzké obrazovce (do 1150 px) se panel přesune nad výsledek a přestane být přilepený.
 
-**Levý panel – vstupy výpočtu** (tři číslované sekce):
+**Levý panel – vstupy výpočtu** (čtyři číslované sekce):
 
 1. **Profil odběru.** Nahraný soubor se spotřebou se tlačítkem „načte" (naparsuje) do appky.
    Nad tlačítky vidíš stav: kolik intervalů se načetlo, od kdy do kdy a jaká je špička.
@@ -40,7 +40,9 @@ Na úzké obrazovce (do 1150 px) se panel přesune nad výsledek a přestane bý
    Ručně zadané hodnoty se **pamatují u nabídky** – když se do ní vrátíš (i po zavření prohlížeče),
    jsou předvyplněné podle posledního výpočtu, resp. podle toho, co jsi naposled psal.
    Nejsou zamčené: cokoli přepíšeš, přepsané zůstane.
-3. **Baterie do výpočtu.** Celý katalog, nebo ruční výběr produktů.
+3. **Co má baterie dělat.** Tři režimy – *Peak shaving*, *Kombinace*, *Spot* (viz níž).
+   U obchodních režimů se navíc nabídne pole *Max. dodávka do sítě*.
+4. **Baterie do výpočtu.** Celý katalog, nebo ruční výběr produktů.
 
 V patičce panelu je tlačítko **Spočítat peak shaving** a pod ním **kontrolní seznam** — u každé
 podmínky výpočtu ✓ nebo `!` s tím, co ještě chybí. Zakázané tlačítko tak nikdy není bez vysvětlení.
@@ -51,7 +53,7 @@ podmínky výpočtu ✓ nebo `!` s tím, co ještě chybí. Zakázané tlačítk
   (rok, základ návratnosti) — platí pro celý pravý sloupec,
 - **dlaždice s hlavními čísly** (KPI): úspora, reálná návratnost, NPV, nová rezervace, investice,
 - **Varianty k rozhodnutí** — karty vedle sebe (nejvhodnější podle NPV a nejlevnější),
-- **záložky**: *Ekonomika* · *Grafy odběru* · *Srovnání variant* · *Po letech*.
+- **záložky**: *Ekonomika* · *Obchod na spotu* (jen v obchodních režimech) · *Grafy odběru* · *Srovnání variant* · *Po letech*.
 
 Záložky nahradily jednu dlouhou rolovací stránku. Dřív bylo srovnání variant až na jejím konci,
 ale klik na řádek přepisoval čísla o dvě obrazovky výš, takže tu změnu nebylo vidět.
@@ -104,6 +106,38 @@ RP existuje i dnes – jen se za něj dnes neplatí distribuční složka (plat�
 - **„✅ Načteno N intervalů, DD.MM.RRRR – DD.MM.RRRR, špička X kW"** – profil je v pořádku a připravený k výpočtu. Špička = nejvyšší 15min hodnota odběru v celém profilu.
 - **„Profil zatím není načtený."** – soubor jsi ještě nenačetl (nebo se nenačetl). Klikni na tlačítko „Načíst profil".
 - **„⚠️ Nejdřív nahraj soubor se spotřebou"** – v nabídce není žádný vhodný podklad; nahraj ho ve sbalené sekci Podklady nad stolem (viz [Nabídkovač](nabidkovac.md)).
+
+### Tři režimy – co má baterie dělat (sekce 3 vstupů)
+
+Baterie umí kromě srážení špiček ještě **obchodovat na spotovém trhu**: nakoupit
+elektřinu v hodinách, kdy je levná, a v drahých ji vydat. V Česku byl v roce 2025
+rozdíl mezi nejlevnější a nejdražší čtvrthodinou dne v polovině dnů větší než
+**3 000 Kč/MWh**, takže je z čeho vydělávat.
+
+| Režim | Co baterie dělá | Kdy ho zvolit |
+|---|---|---|
+| **Peak shaving** (výchozí) | Jen sráží špičky a šetří na platbě za výkon. | Standardní nabídka; klient nechce nebo nemůže obchodovat. |
+| **Kombinace** | Sráží špičky a ve zbytku obchoduje. Model si **u každého měsíce sám vybere**, co vydělá víc. | Nejčastější volba – vytěží baterii naplno. |
+| **Spot** | Baterie jen obchoduje, rezervovaná kapacita zůstává jak je. | Plochý profil, kde není co srážet — baterie se pak platí jen z obchodu. |
+
+**Kombinace nikdy nevyjde horší než čistý peak shaving.** Model začíná u dnešního
+chování (srazit špičku co nejhlouběji) a strop pustí výš jen tam, kde obchod
+vydělá víc, než stojí vyšší platba za výkon — typicky v měsících, jejichž maximum
+neurčuje roční rezervaci (u testovacího profilu to byly jarní a podzimní měsíce,
+kdežto v zimě model držel strop dole).
+
+**Špičky mají vždy přednost.** Baterie si nejdřív odloží energii na sražení všech
+špiček, které v následujících hodinách přijdou, a teprve zbytek kapacity a výkonu
+smí obchodovat. Navíc si drží rezervu (výchozí 10 % kapacity) na to, že skutečný
+odběr bude jiný než plánovaný. Nabíjení nikdy nezvedne měsíční maximum — takže si
+baterie obchodem nemůže sama prodražit platbu za výkon.
+
+**Max. dodávka do sítě (kW).** Prázdné = výkon baterie, **0 = baterie do sítě nedodává**
+a jen posouvá vlastní spotřebu. Vybít do vlastní spotřeby je totiž **cennější než
+prodat**: klient se vyhne celé nákupní ceně včetně distribuce, kdežto za dodávku
+dostane jen spotovou cenu mínus marži obchodníka. U velkého odběru proto model do
+sítě téměř nedodává. Pozor: dodávka do sítě potřebuje licenci a rezervovaný výkon
+pro dodávku — to kalkulátor neřeší, jen na to upozorní.
 
 ### Co znamenají výstupní hodnoty
 
@@ -260,6 +294,27 @@ Graf respektuje přepínač roku: **2026** ukazuje držení jednoho ročního st
 #### Citlivost návrhu
 V záložce *Grafy odběru*, pod grafem měsíčních maxim: co by se stalo, kdyby byl profil o **±5 %** silnější/slabší – jestli by nasazená rezerva RK zvládla i „silnější rok", nebo by hrozily měsíční dokupy/pokuty. Je to rychlá kontrola, jak moc je návrh „na hraně".
 
+#### Obchod na spotu (záložka — jen v režimech Kombinace a SPOT)
+Tři karty, které odpovídají na otázku „kde ty peníze vlastně jsou":
+
+1. **Co obchod přinesl.** Vyhnutý nákup a dodávka do sítě mínus opotřebení baterie
+   obchodními cykly = zisk za rok. Poslední řádek říká, kolik by obchod přinesl, kdyby
+   měl peak shaving **absolutní prioritu** — rozdíl je to, co model vydělal tím, že
+   v některých měsících špičku vědomě pustil výš.
+2. **Energie.** Kolik se nabilo ze sítě, kolik se vybilo do vlastní spotřeby, kolik
+   se dodalo do sítě a kolik cyklů to znamenalo. U velkého odběru bývá dodávka do
+   sítě nulová — vyhnutý nákup je cennější.
+3. **Rozhodnutí po měsících.** Pro každý měsíc cílový strop, nejnižší udržitelný strop,
+   naměřené maximum bez baterie, zisk obchodu a počet cyklů. Kde je cílový strop
+   vyšší než nejnižší udržitelný, je odznak **„strop puštěn výš"** — tam model
+   usoudil, že obchod vydělá víc než úspora na platbě za výkon. Typicky jde
+   o měsíce, jejichž maximum roční rezervaci neurčuje.
+
+**Jak to klientovi vysvětlit:** „V zimě baterie sráží špičky, protože tím určujete
+sjednanou rezervaci na celý rok. V letních měsících, kde je vaše maximum tak jako tak
+nižší, ji pustíme obchodovat — to vydělá víc než pár kilowattů rezervace, které
+byste stejně neušetřili."
+
 #### Ekonomika po letech (záložka)
 Tabulka rok po roce na celém horizontu (default 10 let): tarif toho roku, přínos baterie, O&M (údržba), cash-flow roku, kumulovaná úspora a kumulované cash-flow. Řádek označený `◄` = rok, kdy se investice **poprvé vrátí**. Poslední hodnota „Kum. disk. CF" = NPV varianty.
 
@@ -339,7 +394,26 @@ Konstanty jsou v `peak_shaving.py`; manažerské parametry ve **výpočtových n
 | O&M (údržba) | `ps_oam_procenta_capex_rok` | 2 % CAPEX/rok | provozní náklady |
 | Degradace úspor | `ps_degradace_uspor_procenta_rok` | 1,5 %/rok | pokles přínosu baterie v čase |
 
-Podrobné vzorce (simulace baterie, fair baseline 2026, dvousložkový tarif 2027, NPV/IRR, koeficient AKU) viz [technický souhrn kap. 4](../../moduly/peak-shaving.md).
+**Obchodování na spotu** (režimy Kombinace/SPOT) – vlastní sekce v záložce Peak shaving:
+
+| Parametr | Klíč | Výchozí | Význam |
+|---|---|---|---|
+| Marže obchodníka – nákup | `spot_marze_nakup_kc_mwh` | 200 Kč/MWh | o kolik je nákup dražší než spot (**marže není naše, ale obchodníkova**) |
+| Marže obchodníka – prodej | `spot_marze_prodej_kc_mwh` | 200 Kč/MWh | o kolik je prodej levnější než spot |
+| Regulované složky za odebranou MWh | `spot_regulovane_nakup_kc_mwh` | 260 Kč/MWh | použití sítí + systémové služby + POZE; stejná hodnota jako u PPA |
+| Složky za dodanou MWh | `spot_regulovane_prodej_kc_mwh` | 0 | dodávka do sítě distribuci neplatí |
+| Daň z elektřiny | `spot_dan_z_elektriny_kc_mwh` | 0 | u akumulace je otázka osvobození (28,30 Kč/MWh) – **k ověření** |
+| Cyklů životnosti baterie | `spot_cyklu_zivotnosti` | 6 000 | fallback, když produkt nemá vlastní hodnotu v katalogu |
+| Limit obchodních cyklů za rok | `spot_max_cyklu_rok` | 0 = bez limitu | pojistka kvůli záruce; náklad opotřebení počet cyklů reguluje sám |
+| Rezerva kapacity pro peak shaving | `spot_bezpecnostni_rezerva_procenta` | 10 % | polštář na to, že skutečný odběr bude jiný než plánovaný |
+| Referenční rok spotových cen | `spot_referencni_rok` | 0 = nejnovější | který rok cen se použije |
+
+V **katalogu produktů** je navíc sloupec **„Cyklů životnosti"** – z něj a z ceny baterie
+se počítá **náklad opotřebení** (Kč za MWh proteklou baterií). Je to nejcitlivější
+číslo celého obchodního modelu: u 2h baterie za 7 mil. Kč s 6 000 cykly ukrojí
+z hodnoty obchodu polovinu (742 → 362 Kč/kWh/rok).
+
+Podrobné vzorce (simulace baterie, fair baseline 2026, dvousložkový tarif 2027, NPV/IRR, koeficient AKU, obchodní režimy) viz [technický souhrn kap. 4](../../moduly/peak-shaving.md) a [rešerši spotových cen](../../reserze_kalkulator/spot-arbitraz-cr-2025.md).
 
 ### Datový model (PostgreSQL)
 - **`spotreba_profil`** – 15min profil odběru (`nabidka_id`, `cas`, `hodnota_kw`, `zdroj_dokument_id`). Unique `(nabidka_id, cas)`. Zpracování profilu **nahrazuje celý** profil nabídky (poslední vyhrává), duplicitní časy z podzimního přechodu času slučuje na maximum.
@@ -348,6 +422,7 @@ Podrobné vzorce (simulace baterie, fair baseline 2026, dvousložkový tarif 202
 - **`katalog_sloupce`** – definice vlastních (admin) sloupců katalogu.
 - **`navrhovana_reseni`** – výstup výpočtu v `popis_json` (`typ_reseni = peak_shaving`).
 - **`vypoctova_nastaveni`** – manažerské parametry (viz tabulka výše).
+- **`spotove_ceny`** – ceny denního trhu (`trh`, `cas_utc`, `interval_min`, `cena_eur_mwh`, `cena_kc_mwh`, `zdroj`), unique `(trh, cas_utc)`. Rok 2025 se **seeduje při startu** z přiloženého souboru `backend/app/nabidkovac/data/spot_dam_cz_2025.csv.gz`, takže produkce nechodí na internet. Další rok přidá `python -m scripts.import_spot_ceny --rok 2026 --csv` (stáhne ceny + kurzy ČNB a vytvoří datový soubor) a `--z-csv --do-db` (nahraje do DB). Ceny se drží v granularitě trhu (hodinové do 30. 9. 2025, od 1. 10. 2025 čtvrthodinové) a na 15 minut se rozpadají až při čtení.
 
 ### API (prefix `/nabidkovac`, přes Caddy `/api`)
 | Metoda / cesta | Právo | Popis |
@@ -360,8 +435,8 @@ Podrobné vzorce (simulace baterie, fair baseline 2026, dvousložkový tarif 202
 | `POST/PUT/DELETE /sazby[/{id}]` | `nabidkovac_katalog` | správa sazeb |
 | `GET/POST/PUT/DELETE /katalog-sloupce`, `/technologie` | čte `nabidkovac`, edituje `nabidkovac_katalog` | katalog + vlastní sloupce |
 
-**Vstup výpočtu:** `{ distributor, napetova_hladina, rezervovana_kapacita_kw }` + volitelně `cena_energie_kc_mwh`, `rezervovany_prikon_kw`, `uvazovat_snizeni_rp`, `max_vykon_stridace_kw`, `baterie_ids` (ruční výběr produktů z katalogu; prázdné = celý katalog).
-**Výstup (`popis_json`):** `vstup`, `sazby`, `max_navratnost_roky`, `doporucena`, `varianty` (**všechny** spočítané varianty seřazené dle NPV; `graf` a `citlivost_stropu` nese jen první trojice), `graf`, `citlivost_stropu`, `upozorneni`. Každá varianta nese `ekonomika_2026`, `ekonomika_2027`, NPV/IRR a návratnosti.
+**Vstup výpočtu:** `{ distributor, napetova_hladina, rezervovana_kapacita_kw }` + volitelně `cena_energie_kc_mwh`, `rezervovany_prikon_kw`, `uvazovat_snizeni_rp`, `max_vykon_stridace_kw`, `baterie_ids` (ruční výběr produktů z katalogu; prázdné = celý katalog), `rezim` (`peak_shaving` / `kombinace` / `spot`, výchozí `peak_shaving`), `spot_referencni_rok`, `max_export_kw` (0 = bez dodávky do sítě).
+**Výstup (`popis_json`):** `vstup`, `sazby`, `max_navratnost_roky`, `doporucena`, `varianty` (**všechny** spočítané varianty seřazené dle NPV; `graf` a `citlivost_stropu` nese jen první trojice), `graf`, `citlivost_stropu`, `upozorneni`. Každá varianta nese `ekonomika_2026`, `ekonomika_2027`, NPV/IRR a návratnosti; v obchodních režimech navíc `rezim`, `zisk_spot_kc` a `ekonomika_spot` (rozpad zisku, energetická bilance, počet cyklů a **rozhodnutí po měsících** – zvolený strop vs. nejnižší udržitelný).
 
 **Průběh v čase:** `GET /nabidky/{id}/peak-shaving/prubeh?varianta=N&rok=2026|2027` vrátí rozepsanou 15minutovou simulaci (odběr, odběr ze sítě, výkon baterie ±, stav nabití), schodovitý strop, referenční čáry, souhrn energií a seznam událostí. **Neukládá se** do řešení (~35 000 hodnot na variantu a rok) – počítá se na vyžádání (~0,1 s) ze stejné fyziky jako ekonomika. Odpověď má ~1,2 MB, gzipem (`GZipMiddleware`) ~250 kB. Volá ji FE po otevření sekce „Průběh v čase".
 

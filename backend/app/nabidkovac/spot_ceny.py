@@ -26,8 +26,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import text
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
+
+from app.nabidkovac.models import SpotovaCena
 
 # Trh, ze kterého ceny jsou. Zatím jediný; klíč je v datech kvůli budoucímu
 # vnitrodennímu trhu (ten je mimo scope – viz rešerše kap. 9).
@@ -84,8 +87,8 @@ def uloz_do_db(db: Session, ceny: list[tuple[int, int, float]], zona: str = "CZ"
                 "trh": trh,
                 "cas_utc": cas,
                 "interval_min": interval_min,
-                "eur": eur,
-                "kc": kc,
+                "cena_eur_mwh": eur,
+                "cena_kc_mwh": kc,
                 "zdroj": zdroj,
             }
         )
@@ -93,16 +96,25 @@ def uloz_do_db(db: Session, ceny: list[tuple[int, int, float]], zona: str = "CZ"
 
 
 def _vloz_radky(db: Session, radky: list[dict]) -> int:
-    """Hromadný upsert po dávkách (35 tis. řádků na rok)."""
-    sql = text(
-        "INSERT INTO spotove_ceny (trh, cas_utc, interval_min, cena_eur_mwh, cena_kc_mwh, zdroj) "
-        "VALUES (:trh, :cas_utc, :interval_min, :eur, :kc, :zdroj) "
-        "ON CONFLICT (trh, cas_utc) DO UPDATE SET "
-        "cena_eur_mwh = EXCLUDED.cena_eur_mwh, cena_kc_mwh = EXCLUDED.cena_kc_mwh, "
-        "interval_min = EXCLUDED.interval_min, zdroj = EXCLUDED.zdroj"
-    )
+    """Hromadný upsert po dávkách (35 tis. řádků na rok).
+
+    Klíč je `(trh, cas_utc)` – opakovaný import stejného roku ceny přepíše
+    (třeba když se přepočítají kurzem, který ČNB dodatečně opravila).
+    """
     for i in range(0, len(radky), 2000):
-        db.execute(sql, radky[i : i + 2000])
+        davka = radky[i : i + 2000]
+        prikaz = pg_insert(SpotovaCena).values(davka)
+        db.execute(
+            prikaz.on_conflict_do_update(
+                index_elements=[SpotovaCena.trh, SpotovaCena.cas_utc],
+                set_={
+                    "interval_min": prikaz.excluded.interval_min,
+                    "cena_eur_mwh": prikaz.excluded.cena_eur_mwh,
+                    "cena_kc_mwh": prikaz.excluded.cena_kc_mwh,
+                    "zdroj": prikaz.excluded.zdroj,
+                },
+            )
+        )
     db.commit()
     return len(radky)
 
@@ -137,20 +149,14 @@ def seed_z_datovych_souboru(db: Session, jen_rok: int | None = None) -> int:
             radky_csv = list(csv.DictReader(f, delimiter=";"))
         if not radky_csv:
             continue
-        hotovo = db.execute(
-            text(
-                "SELECT count(*) FROM spotove_ceny WHERE trh = :trh "
-                "AND cas_utc >= :od AND cas_utc < :do"
-            ),
-            {
-                "trh": TRH_DAM_CZ,
-                "od": datetime.datetime(rok, 1, 1, tzinfo=datetime.timezone.utc)
-                - datetime.timedelta(hours=2),
-                "do": datetime.datetime(rok + 1, 1, 1, tzinfo=datetime.timezone.utc)
-                + datetime.timedelta(hours=2),
-            },
-        ).scalar_one()
-        if hotovo >= len(radky_csv):
+        hotovo = db.scalar(
+            select(func.count(SpotovaCena.id)).where(
+                SpotovaCena.trh == TRH_DAM_CZ,
+                SpotovaCena.cas_utc >= _hranice_roku(rok),
+                SpotovaCena.cas_utc < _hranice_roku(rok + 1),
+            )
+        )
+        if (hotovo or 0) >= len(radky_csv):
             continue
         radky = [
             {
@@ -159,8 +165,8 @@ def seed_z_datovych_souboru(db: Session, jen_rok: int | None = None) -> int:
                     int(r["unix_s"]), datetime.timezone.utc
                 ),
                 "interval_min": int(r["interval_min"]),
-                "eur": float(r["eur_mwh"]),
-                "kc": float(r["kc_mwh"]),
+                "cena_eur_mwh": float(r["eur_mwh"]),
+                "cena_kc_mwh": float(r["kc_mwh"]),
                 "zdroj": f"energy-charts+ČNB ({cesta.name})",
             }
             for r in radky_csv
@@ -170,16 +176,44 @@ def seed_z_datovych_souboru(db: Session, jen_rok: int | None = None) -> int:
 
 
 # ------------------------------------------------------------------- čtení
+def _hranice_roku(rok: int) -> datetime.datetime:
+    """Začátek roku v lokálním čase, převedený do UTC (pro filtr v DB)."""
+    return datetime.datetime(rok, 1, 1, tzinfo=ZONA).astimezone(datetime.timezone.utc)
+
+
+# Kolik intervalů musí rok mít, aby se považoval za použitelný. Rok cen má
+# 8 760 hodinových / 35 040 čtvrthodinových obchodních intervalů; 5 000 je
+# hranice „je toho dost na roční simulaci", ne exaktní kontrola pokrytí.
+MIN_INTERVALU_ROKU = 5000
+
+
 def dostupne_roky(db: Session, trh: str = TRH_DAM_CZ) -> list[int]:
-    """Roky, pro které jsou v DB ceny (dle lokálního času)."""
-    radky = db.execute(
-        text(
-            "SELECT DISTINCT date_part('year', cas_utc AT TIME ZONE 'Europe/Prague')::int AS rok "
-            "FROM spotove_ceny WHERE trh = :trh ORDER BY rok"
-        ),
-        {"trh": trh},
-    ).all()
-    return [r.rok for r in radky]
+    """Roky, pro které jsou v DB použitelné ceny (dle lokálního času).
+
+    Záměrně bez databázových funkcí na časové zóny – rozsah se zjistí z min/max
+    a počty se dopočítají obyčejnými filtry, takže na dialektu nezáleží.
+    """
+    hranice = db.execute(
+        select(func.min(SpotovaCena.cas_utc), func.max(SpotovaCena.cas_utc)).where(
+            SpotovaCena.trh == trh
+        )
+    ).one()
+    od, do = hranice
+    if od is None or do is None:
+        return []
+    roky: list[int] = []
+    for rok in range(od.astimezone(ZONA).year, do.astimezone(ZONA).year + 1):
+        pocet = db.scalar(
+            select(func.count(SpotovaCena.id)).where(
+                SpotovaCena.trh == trh,
+                SpotovaCena.cena_kc_mwh.isnot(None),
+                SpotovaCena.cas_utc >= _hranice_roku(rok),
+                SpotovaCena.cas_utc < _hranice_roku(rok + 1),
+            )
+        )
+        if (pocet or 0) >= MIN_INTERVALU_ROKU:
+            roky.append(rok)
+    return roky
 
 
 def nacti_rok(db: Session, rok: int, trh: str = TRH_DAM_CZ) -> RadaCen:
@@ -190,18 +224,14 @@ def nacti_rok(db: Session, rok: int, trh: str = TRH_DAM_CZ) -> RadaCen:
     informace, jen společná granularita s profilem odběru.
     """
     radky = db.execute(
-        text(
-            "SELECT cas_utc, interval_min, cena_kc_mwh FROM spotove_ceny "
-            "WHERE trh = :trh AND cena_kc_mwh IS NOT NULL "
-            "AND cas_utc >= :od AND cas_utc < :do ORDER BY cas_utc"
-        ),
-        {
-            "trh": trh,
-            "od": datetime.datetime(rok, 1, 1, tzinfo=ZONA).astimezone(datetime.timezone.utc),
-            "do": datetime.datetime(rok + 1, 1, 1, tzinfo=ZONA).astimezone(
-                datetime.timezone.utc
-            ),
-        },
+        select(SpotovaCena.cas_utc, SpotovaCena.interval_min, SpotovaCena.cena_kc_mwh)
+        .where(
+            SpotovaCena.trh == trh,
+            SpotovaCena.cena_kc_mwh.isnot(None),
+            SpotovaCena.cas_utc >= _hranice_roku(rok),
+            SpotovaCena.cas_utc < _hranice_roku(rok + 1),
+        )
+        .order_by(SpotovaCena.cas_utc)
     ).all()
     return _rada_z_radku(
         [(r.cas_utc, int(r.interval_min), float(r.cena_kc_mwh)) for r in radky], rok, trh
@@ -211,6 +241,15 @@ def nacti_rok(db: Session, rok: int, trh: str = TRH_DAM_CZ) -> RadaCen:
 def _rada_z_radku(
     radky: list[tuple[datetime.datetime, int, float]], rok: int, trh: str
 ) -> RadaCen:
+    """Rozpadne obchodní intervaly na čtvrthodiny lokálního času.
+
+    Klíčem v rámci dne je `(hodina, minuta)`. Při podzimním přechodu času se
+    hodina 2:00–3:00 odehraje dvakrát, takže druhý výskyt ten první přepíše –
+    z roku se tím ztratí jedna hodina (4 z 35 040 intervalů, 0,01 %). Je to
+    záměr: profily odběru mají stejnou nejednoznačnost a appka je slučuje
+    obdobně (viz `_lehka_migrace` k `spotreba_profil`), a párování podle času
+    dne je proti tomu jednodušší i čitelnější než rozlišovat opakování.
+    """
     podle_dne: dict[datetime.date, dict[tuple[int, int], float]] = {}
     for cas_utc, interval_min, kc in radky:
         if cas_utc.tzinfo is None:
