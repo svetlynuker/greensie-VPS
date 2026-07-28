@@ -1,6 +1,6 @@
 # <Název modulu>
 
-> **Dlaždice:** `<klíč>` · **Adresa (routa):** `/<cesta>` · **Kdo smí otevřít:** <právo / role>
+> **Sekce v nabídce:** `<klíč>` · **Adresa (routa):** `/<cesta>` · **Kdo smí otevřít:** <právo / role>
 > **Kód:** frontend `frontend/src/pages/<Soubor>.jsx`, backend `backend/app/<modul>/`
 
 Jedna až dvě věty: k čemu modul je a pro koho.
@@ -32,7 +32,8 @@ Typické postupy krok za krokem (např. „Jak upravit termín úkolu").
 ## 🛠 Pro admina / provoz
 
 ### Práva — kdo co vidí a smí
-Které prvky jsou zamčené bez práv, co odemyká `editace`, co jen admin.
+Které prvky jsou bez práv nedostupné (sekce v nabídce se skryje úplně), co odemyká
+`editace`, co jen admin.
 
 ### Nastavení
 Konfigurace modulu a kde se dělá.

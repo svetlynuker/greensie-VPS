@@ -41,52 +41,56 @@ kdokoli jiný            → set(extra_prava) | set(skupina.prava)
 
 Práva jsou textové klíče z jednoho katalogu (`PRAVA` v `permissions.py`). Dělí se na dvě skupiny:
 
-- **Otevírací práva** — mají **stejný klíč jako dlaždice** rozcestníku. Kdo má právo, smí dlaždici
-  otevřít; kdo ne, vidí ji zamčenou (🔒).
-- **Akční práva** — neodemykají dlaždici, ale konkrétní **akce** uvnitř modulu (typicky editaci).
+- **Otevírací práva** — mají **stejný klíč jako sekce** v nabídce vlevo. Kdo má právo, sekci
+  v panelu vidí a smí ji otevřít; kdo ne, tomu se položka **vůbec nezobrazí**.
+- **Akční práva** — neodemykají sekci, ale konkrétní **akce** uvnitř modulu (typicky editaci).
 
 | Klíč | Název (v katalogu) | Typ | Co odemyká |
 |---|---|---|---|
-| `projekty` | Otevřít Přehled projektů | otevření dlaždice | vstup do modulu Přehled projektů (čtení matice) |
-| `finance` | Otevřít Přehled financí | otevření dlaždice | vstup do modulu Přehled financí |
-| `zmeny` | Otevřít Přehled změn | otevření dlaždice | vstup do modulu Přehled změn |
-| `nabidkovac` | Nabídkovač – vytvářet/upravovat nabídky (OZ) | otevření dlaždice | vstup do Nabídkovače (tvorba/úprava nabídek) |
-| `admin` | Otevřít Admin nastavení | otevření dlaždice | vstup do Admin nastavení (správa uživatelů, skupin, práv) |
-| `logy` | Otevřít Logy (provoz, chyby, audit) | otevření dlaždice | vstup do modulu Logy |
-| `konektor` | Otevřít Konektor Raynet ↔ Google Drive | otevření dlaždice | vstup do Konektoru (nastavení, logy) |
+| `projekty` | Otevřít Přehled projektů | otevření sekce | vstup do modulu Přehled projektů (čtení matice) |
+| `finance` | Otevřít Přehled financí | otevření sekce | vstup do modulu Přehled financí |
+| `zmeny` | Otevřít Přehled změn | otevření sekce | vstup do modulu Přehled změn |
+| `nabidkovac` | Nabídkovač – vytvářet/upravovat nabídky (OZ) | otevření sekce | vstup do Nabídkovače (tvorba/úprava nabídek) |
+| `admin` | Otevřít Admin nastavení | otevření sekce | vstup do Admin nastavení (správa uživatelů, skupin, práv) |
+| `logy` | Otevřít Logy (provoz, chyby, audit) | otevření sekce | vstup do modulu Logy |
+| `konektor` | Otevřít Konektor Raynet ↔ Google Drive | otevření sekce | vstup do Konektoru (nastavení, logy) |
 | `editace` | Editace matice (Přehled projektů) | akční | úpravy v Přehledu projektů (buňky, projekty/sloupce, prahy, Disk…) |
 | `nabidkovac_katalog` | Nabídkovač – editace katalogu a výpočtů (vedení) | akční | úprava katalogu technologií a výpočtových nastavení v Nabídkovači |
 
-> **Pozor na dva „nedlaždicové" klíče:** `editace` a `nabidkovac_katalog` **nemají** vlastní
-> dlaždici — jsou to práva k akcím **uvnitř** modulu. Naopak každá dlaždice má svůj stejnojmenný
-> otevírací klíč.
+> **Pozor na dva klíče bez vlastní sekce:** `editace` **nemá** položku v nabídce — je to právo
+> k akcím **uvnitř** Přehledu projektů. `nabidkovac_katalog` naopak od přechodu na levý panel
+> **položku má** (Nabídky → Katalog technologií), i když je to zároveň akční právo na editaci
+> katalogu a výpočtů.
 
 ---
 
-## Dlaždice rozcestníku (`DLAZDICE`)
+## Sekce v nabídce vlevo
 
-Dlaždice = položky hlavního rozcestníku appky. Backend jich vrací **vždy všech sedm** a ke každé
-přidá příznak `muze_otevrit`:
+Nabídka appky je popsaná na frontendu v `frontend/src/navigace.js` (skupiny → položky, každá
+s klíčem práva). Backend posílá v `GET /auth/me` pole **`prava`** a frontend podle něj nabídku
+profiltruje (`nabidkaPro`).
 
-| Klíč dlaždice | Název | Otevře, kdo má právo |
+| Skupina | Položka | Vidí, kdo má právo |
 |---|---|---|
-| `projekty` | Přehled projektů | `projekty` |
-| `finance` | Přehled financí | `finance` |
-| `zmeny` | Přehled změn | `zmeny` |
-| `nabidkovac` | Nabídkovač | `nabidkovac` |
-| `admin` | Admin nastavení | `admin` |
-| `logy` | Logy | `logy` |
-| `konektor` | Konektor Raynet ↔ Disk | `konektor` |
+| *(nahoře)* | Rozcestník | — (každý přihlášený) |
+| Přehledy | Přehled projektů | `projekty` |
+| Přehledy | Přehled financí | `finance` |
+| Přehledy | Přehled změn | `zmeny` |
+| Nabídky | Nabídkovač | `nabidkovac` |
+| Nabídky | Katalog technologií | `nabidkovac_katalog` |
+| Systém | Konektor Raynet ↔ Disk | `konektor` |
+| Systém | Logy | `logy` |
+| Systém | Admin nastavení | `admin` |
+| Nápověda | Manuál | — (každý přihlášený) |
 
-**Princip zobrazení (dle backendu):** dlaždici vidí **vždy všichni**; bez příslušného práva je
-**zamčená (🔒)** a klik na ni vede na **výukové video** (rozpracovaný / nedostupný modul).
-Kdo právo má, klikem modul otevře.
+**Princip zobrazení:** kdo právo nemá, položku **vůbec nevidí** — nezobrazuje se zamčená ani
+zašedlá varianta, takže se uživatel o existenci sekce nedozví. Skupina, ve které nezůstane
+žádná položka, zmizí celá. Výjimky bez práva: **Rozcestník** a **Manuál**.
 
-> ⚠️ **Frontend to dnes zjemňuje** (viz Poznámky a úskalí): některé dlaždice se uživateli bez
-> práva **úplně skryjí** místo pouhého zamčení. Konceptuálně ale platí, že zdrojem pravdy je
-> backend, který vrací všechny dlaždice s příznakem `muze_otevrit`.
+> **Skrytí je pohodlí, ne ochrana.** Skutečnou hranici drží backend (strážci níže) — kdo by si
+> adresu napsal ručně, dostane 403.
 
-> 📸 SCREENSHOT: rozcestník s několika odemčenými dlaždicemi a jednou zamčenou (🔒)
+> 📸 SCREENSHOT: panel vlevo pro supersprávce vs. pro obchodního zástupce (kratší nabídka)
 
 ---
 
@@ -101,7 +105,7 @@ nezáleží na tom, co ukazuje frontend.
 | Nástroj | Kde je | Co dělá |
 |---|---|---|
 | `get_current_user` | `auth/permissions.py` | ověří přihlášení (JWT token) a vrátí uživatele; bez platného tokenu **401** |
-| `muze_otevrit(user, klic)` | `auth/permissions.py` | vrátí `True/False`, zda uživatel smí danou dlaždici otevřít |
+| `muze_otevrit(user, klic)` | `auth/permissions.py` | vrátí `True/False`, zda uživatel smí danou sekci otevřít |
 | `muze_editovat(user)` | `auth/permissions.py` | vrátí `True/False`, zda má právo `editace` |
 | `vyzaduj_admina` | `auth/permissions.py` | strážce: pustí jen toho, kdo smí otevřít `admin`, jinak **403** |
 | `vyzaduj_editora` | `matice/permissions.py` | strážce: pustí jen toho, kdo má `editace`, jinak **403** |
@@ -123,18 +127,22 @@ Příklady použití v kódu:
 ### Na frontendu (co vrací `/auth/me`)
 
 Frontend se po přihlášení ptá endpointu **`GET /auth/me`** (`backend/app/auth/routes.py`), který
-vrací vše potřebné, aby UI vědělo, co zobrazit a co zamknout:
+vrací vše potřebné, aby UI vědělo, co zobrazit:
 
 | Pole | Význam |
 |---|---|
-| `uzivatel` | `id`, `jmeno`, `email`, `je_admin` |
-| `dlazdice` | seznam **všech** dlaždic, každá s `klic`, `nazev`, `muze_otevrit` (False = ukázat, ale zamknout) |
+| `uzivatel` | `id`, `jmeno`, `email`, `je_admin`, `skupina` (název skupiny nebo `null`) |
+| `prava` | **efektivní práva** uživatele (setříděný seznam klíčů) — podle nich se skládá nabídka vlevo a skrývají prvky |
 | `muze_editovat` | zda smí editovat matici (má právo `editace`) |
-| `prava` | **efektivní práva** uživatele (setříděný seznam klíčů) — UI si podle nich zobrazuje/skrývá prvky |
+| `dlazdice` | seznam `klic`, `nazev`, `muze_otevrit` — **pozůstatek po dlaždicovém rozcestníku; frontend ho už nepoužívá** |
 | `musi_zmenit_heslo` | zda si uživatel musí při přihlášení nejdřív změnit heslo |
 
-Frontend tedy **nerozhoduje o bezpečnosti** — jen podle těchto příznaků skrývá/zamyká tlačítka
-a dlaždice. Skutečná ochrana je vždy na backendu (strážci výše).
+Rámec appky (`components/Layout.jsx`) si `/auth/me` bere přes `api.nactiMeSdilene()` — sdílenou
+odpověď s **minutovou platností**, ať se nedotazuje znovu při každém přechodu mezi stránkami.
+Změna práv se proto v nabídce projeví se zpožděním až minutu.
+
+Frontend **nerozhoduje o bezpečnosti** — jen podle těchto příznaků skrývá položky a tlačítka.
+Skutečná ochrana je vždy na backendu (strážci výše).
 
 ---
 
@@ -183,7 +191,7 @@ Díky tomu vždy zůstane aspoň jeden supersprávce, který má přístup do Ad
 ## Kde se to spravuje z UI
 
 Vše výše (uživatelé, jejich skupina a výjimky, `je_admin`, definice skupin a jejich práv,
-reset hesel) se nastavuje v modulu **Admin nastavení** — dlaždice `admin`, routa `/admin`.
+reset hesel) se nastavuje v modulu **Admin nastavení** — právo `admin`, routa `/admin`.
 Přístup má jen supersprávce, resp. kdo má právo `admin`.
 
 Viz [Admin nastavení](../moduly/admin-nastaveni.md).
@@ -192,17 +200,15 @@ Viz [Admin nastavení](../moduly/admin-nastaveni.md).
 
 ## Poznámky a úskalí (k ověření / nezřejmé)
 
-- **Frontend zamčené dlaždice zčásti skrývá.** Backend vrací všech sedm dlaždic a záměr je
-  „vidí všichni, bez práva zamčené (🔒) s proklikem na video". Rozcestník
-  (`frontend/src/pages/Rozcestnik.jsx`) ale drží seznam `SKRYT_BEZ_PRAVA` = `finance`,
-  `nabidkovac`, `logy`, `konektor` — ty se uživateli bez práva **úplně skryjí**. Zamčené (🔒)
-  se tak reálně ukazují jen dlaždice **mimo** tento seznam (`projekty`, `zmeny`, `admin`).
-  Klik na zamčenou/rozpracovanou dlaždici otevře výukové video (výchozí odkaz, s možností výjimky
-  per klíč přes `VIDEO_DLE_KLICE`, dnes prázdné). Chování se do budoucna může sjednotit —
-  k ověření, zda je skrývání záměr, nebo dočasné.
-- **`nabidkovac_katalog` je akční právo** (editace katalogu/výpočtů v Nabídkovači), ne dlaždice —
-  jak přesně se vynucuje uvnitř modulu Nabídkovač, patří do dokumentace toho modulu (zde jen
-  koncepčně z katalogu práv).
+- **Skrývání je dnes jednotné.** Dřív se část položek bez práva zamykala (🔒 s proklikem na
+  výukové video) a část se skrývala (`SKRYT_BEZ_PRAVA`). Od přechodu na levý panel se
+  **skrývá vždycky** — zamčená varianta ani video už v UI nejsou.
+- **Backend o změně neví.** `DLAZDICE` a `dlazdice_pro()` v `permissions.py` zůstaly a
+  `GET /auth/me` pole `dlazdice` dál vrací, ale frontend ho ignoruje (nabídka se skládá
+  z `prava`). Kandidát na úklid, až se nový rámec usadí.
+- **`nabidkovac_katalog` je akční právo** (editace katalogu/výpočtů v Nabídkovači), ale od
+  přechodu na levý panel má i vlastní položku nabídky (Nabídky → Katalog technologií). Jak se
+  vynucuje uvnitř modulu, patří do dokumentace Nabídkovače.
 - **Práva jsou volný textový seznam v DB**, validovaný jen proti katalogu při zápisu přes Admin
   nastavení. Když se z katalogu klíč odebere, historicky uložené hodnoty v `extra_prava`/`prava`
   se automaticky nečistí (fungují jen tam, kde se na klíč ptá kód).
@@ -215,6 +221,7 @@ Viz [Admin nastavení](../moduly/admin-nastaveni.md).
   `muze_otevrit`, `muze_editovat`, `vyzaduj_admina`), `backend/app/auth/models.py`
   (`User`, `Skupina`), `backend/app/auth/routes.py` (`/auth/me`), `backend/app/admin/routes.py`
   (správa + pojistky), `backend/app/matice/permissions.py` (`vyzaduj_editora`)
-- Frontend: `frontend/src/pages/Rozcestnik.jsx` (zobrazení dlaždic), `frontend/src/components/Tile.jsx`
+- Frontend: `frontend/src/navigace.js` (struktura nabídky + filtrování dle práv),
+  `frontend/src/components/Sidebar.jsx` (panel vlevo), `frontend/src/components/Layout.jsx` (rámec)
 - Související moduly: [Admin nastavení](../moduly/admin-nastaveni.md),
   [Přihlášení a změna hesla](../moduly/prihlaseni-zmena-hesla.md)

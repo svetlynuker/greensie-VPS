@@ -6,7 +6,7 @@
 
 Tenhle dokument popisuje **serverovou/provozní stránku** Greensie app: z čeho se aplikace skládá,
 kde běží, jak k ní teče požadavek z prohlížeče a jaké procesy a služby ji drží naživu. Je určený
-adminovi a údržbě. Návody k jednotlivým modulům (dlaždicím) jsou ve složce
+adminovi a údržbě. Návody k jednotlivým modulům (sekcím appky) jsou ve složce
 [`../moduly/`](../moduly/).
 
 > 📸 SCREENSHOT: přihlašovací obrazovka na veřejné adrese https://app.greensie.cz

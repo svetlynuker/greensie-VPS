@@ -1,7 +1,7 @@
 # Nabídkovač
 
-> **Dlaždice:** `nabidkovac` · **Adresy (routy):** `/nabidkovac` (rozcestník typů) · `/nabidkovac/:typ` (seznam nabídek podsekce) · `/nabidkovac/nabidka/:id` (detail nabídky) · `/nabidkovac/nabidka/:id/vystup/:typ` (editor + náhled nabídky pro zákazníka) · `/nabidkovac/katalog` (katalog a výpočtová nastavení)
-> **Kdo smí otevřít:** kdokoli s právem `nabidkovac` (dlaždici vidí všichni, bez práva je zamčená 🔒); katalog a výpočty jen s právem `nabidkovac_katalog` (vedení/admin)
+> **Sekce v nabídce:** `nabidkovac` · **Adresy (routy):** `/nabidkovac` (rozcestník typů) · `/nabidkovac/:typ` (seznam nabídek podsekce) · `/nabidkovac/nabidka/:id` (detail nabídky) · `/nabidkovac/nabidka/:id/vystup/:typ` (editor + náhled nabídky pro zákazníka) · `/nabidkovac/katalog` (katalog a výpočtová nastavení)
+> **Kdo smí otevřít:** kdokoli s právem `nabidkovac` (bez práva se sekce v nabídce vůbec nezobrazí); katalog a výpočty jen s právem `nabidkovac_katalog` (vedení/admin)
 > **Kód:** frontend `frontend/src/pages/Nabidkovac.jsx`, `NabidkovacSekce.jsx`, `NabidkaDetail.jsx`, `NabidkaVystupStranka.jsx`, `NabidkovacKatalog.jsx`; backend `backend/app/nabidkovac/`
 
 Nástroj obchodních zástupců (OZ) na tvorbu cenových nabídek ve třech produktových liniích –
@@ -193,7 +193,7 @@ interní čísla se nenabízejí.
 ## 🛠 Pro admina / provoz
 
 ### Práva — kdo co vidí a smí
-- Dlaždici **Nabídkovač** vidí v rozcestníku **všichni**, ale bez práva `nabidkovac` je **zamčená** (🔒).
+- Sekci **Nabídkovač** uvidí v panelu vlevo jen ten, kdo má právo `nabidkovac` — bez něj tam položka vůbec není.
 - **Práce s nabídkami** (seznam, založení, úprava, mazání, dokumenty, nabídkový výstup) vyžaduje
   právo **`nabidkovac`** (role „OZ" = běžná skupina s tímto právem). Strážce `vyzaduj_nabidkovac`.
 - **Editace katalogu a výpočtových nastavení** (technologie, vlastní sloupce, výpočtová nastavení,

@@ -1,13 +1,13 @@
 # Přihlášení a změna hesla
 
-> **Dlaždice:** — (není v rozcestníku, je to vstupní brána do appky) · **Adresa (routa):** `/` (přihlášení), `/zmena-hesla` (nastavení nového hesla), `/rozcestnik` (rozcestník po přihlášení) · **Kdo smí otevřít:** všichni (přihlášení je společné pro celou appku)
-> **Kód:** frontend `frontend/src/pages/Login.jsx`, `frontend/src/pages/ZmenaHesla.jsx`, `frontend/src/pages/Rozcestnik.jsx`, `frontend/src/components/Tile.jsx`, `frontend/src/api.js`, `frontend/src/App.jsx`; backend `backend/app/auth/` (routes, permissions, models), `backend/app/mailer.py`
+> **Sekce v nabídce:** — (vstupní brána do appky, v nabídce není) · **Adresa (routa):** `/` (přihlášení), `/zmena-hesla` (nastavení nového hesla), `/rozcestnik` (úvodní souhrn po přihlášení) · **Kdo smí otevřít:** všichni (přihlášení je společné pro celou appku)
+> **Kód:** frontend `frontend/src/pages/Login.jsx`, `frontend/src/pages/ZmenaHesla.jsx`, `frontend/src/pages/Rozcestnik.jsx`, `frontend/src/api.js`, `frontend/src/App.jsx`; backend `backend/app/auth/` (routes, permissions, models), `backend/app/mailer.py`
 
 Vstupní brána do celé aplikace. Uživatel se přihlásí e-mailem a heslem, při prvním
 přihlášení (nebo po resetu adminem) je **donucen si nastavit vlastní heslo**, a pak se
-dostane na **rozcestník** — mřížku dlaždic, odkud vede cesta do jednotlivých modulů.
-Co uživatel smí otevřít, řídí jeho práva; nedostupné dlaždice jsou buď zamčené (🔒),
-nebo se úplně skryjí.
+dostane na **Rozcestník** — úvodní souhrn stavu ke dnešnímu dni. Do modulů se pak chodí
+**panelem vlevo**, ve kterém jsou jen sekce, na které má uživatel právo; ostatní se
+vůbec nezobrazí.
 
 > 📸 SCREENSHOT: přihlašovací obrazovka (pole E-mail, Heslo, tlačítko „Přihlásit se", vpravo nahoře přepínače vzhledu)
 
@@ -19,7 +19,8 @@ nebo se úplně skryjí.
 Abyste se dostali do appky, musíte se přihlásit. Účet vám zakládá **správce** (admin) —
 sami se registrovat nelze. Správce vám pošle (nebo předá) **jednorázové heslo**; s ním se
 poprvé přihlásíte a appka vás rovnou vyzve, ať si zvolíte vlastní. Po přihlášení uvidíte
-**rozcestník** se všemi moduly, které máte k dispozici.
+**Rozcestník** (souhrn ke dnešnímu dni) a **vlevo panel** se všemi sekcemi, které máte
+k dispozici.
 
 ### Rozvržení obrazovky — přihlášení (`/`)
 Uprostřed stránky je jedna karta s formulářem:
@@ -43,26 +44,28 @@ Sem vás appka pošle automaticky, když máte příznak „musíš změnit hesl
 
 > 📸 SCREENSHOT: obrazovka „Nastav si nové heslo" se dvěma poli a tlačítky
 
-### Rozvržení obrazovky — rozcestník (`/rozcestnik`)
-1. **Horní lišta** — logo a název „Greensie", vpravo přepínač velikosti textu, motivu,
-   režimu pro barvoslepé, **vaše jméno** a tlačítko **„Odhlásit"**.
-2. **Mřížka dlaždic** — jedna dlaždice = jeden modul. Každá má ikonu, název, krátký
-   podtitulek a buď **šipku** (dá se otevřít), nebo **odznak „zamčeno" 🔒**.
+### Rozvržení obrazovky — po přihlášení (`/rozcestnik`)
+1. **Panel vlevo** — logo „Greensie" a pod ním sekce ve skupinách (Přehledy, Nabídky,
+   Systém, Nápověda). Otevřená sekce je zvýrazněná zeleně. Dole je **Zúžit panel**.
+2. **Lišta nahoře** — název stránky, ikona **„?"** (nápověda k té stránce, kde jste)
+   a vpravo **vaše jméno** s kolečkem iniciál.
+3. **Souhrn** — čísla ke dnešnímu dni (aktivní projekty, úkoly po termínu, neuhrazené
+   faktury, nabídky v přípravě) a pod nimi výpisy **Potřebuje pozornost** a **Blíží se
+   termín**. Ukazuje se jen to, na co máte právo.
 
-> 📸 SCREENSHOT: rozcestník s mřížkou dlaždic — některé s šipkou, jedna zamčená
+> 📸 SCREENSHOT: obrazovka po přihlášení — panel vlevo, souhrn s čísly a výpisy
 
-### Co je rozcestník a proč jsou některé dlaždice zamčené
-Rozcestník ukazuje moduly aplikace. Podle vašich práv se dlaždice chovají třemi způsoby:
+### Proč některé sekce v panelu nevidíte
+Panel ukazuje **jen ty sekce, na které máte právo**. Sekce bez práva se nezobrazuje vůbec —
+ani zašedle, ani se zámkem. **Rozcestník** a **Manuál** právo nepotřebují, ty má každý.
 
-- **Otevřená (se šipkou →)** — na modul máte právo; kliknutím se otevře.
-- **Zamčená (🔒 „zamčeno")** — dlaždici vidíte, ale nemáte právo ji otevřít. Po najetí
-  myší se ukáže vysvětlení „Zatím nedostupné – nemáš oprávnění tuto sekci otevřít".
-  Kliknutím se místo modulu otevře **video** (na nový panel), které modul představí.
-- **Úplně skrytá** — některé citlivé moduly (Přehled financí, Nabídkovač, Logy, Konektor)
-  se bez práva vůbec nezobrazí, takže o nich ani nevíte.
+O tom, co máte k dispozici, rozhoduje správce v modulu **Admin nastavení**. Když vám nějaká
+sekce chybí a potřebujete ji, ozvěte se správci.
 
-O tom, co máte odemčené, rozhoduje správce v modulu **Admin nastavení**. Když vám dlaždice
-chybí nebo je zamčená a potřebujete ji, ozvěte se správci.
+### Nastavení a odhlášení najdete pod svým jménem
+Vpravo nahoře klikněte na svoje jméno. V nabídce je tmavý/světlý režim, kompenzace barev pro
+červeno-zelenou vadu zraku, velikost textu, **Změnit heslo** a **Odhlásit se**. Podrobně to
+popisuje [Společné prvky UI](./spolecne-prvky.md).
 
 ### Ovládací prvky — políčko po políčku
 
@@ -72,23 +75,24 @@ Legenda „kdo vidí": **(vše)** = kdokoli · **(admin)** = jen supersprávce n
 |---|---|---|---|
 | **E-mail** | přihlášení | Vaše přihlašovací adresa (povinné) | vše |
 | **Heslo** | přihlášení | Heslo k účtu (povinné, skryté hvězdičkami) | vše |
-| **Přihlásit se** | přihlášení | Odešle přihlášení; při úspěchu jde na rozcestník (nebo na změnu hesla) | vše |
-| **Přepínač motivu / barvoslepost** | přihlášení i rozcestník | Přepne světlý/tmavý vzhled a režim pro barvoslepé | vše |
+| **Přihlásit se** | přihlášení | Odešle přihlášení; při úspěchu jde na Rozcestník (nebo na změnu hesla) | vše |
+| **Přepínač motivu / barvoslepost** | přihlašovací obrazovka | Přepne světlý/tmavý vzhled a režim pro barvoslepé | vše |
 | **Nové heslo** | změna hesla | Vaše nové vlastní heslo (min. 6 znaků) | vše |
 | **Nové heslo znovu** | změna hesla | Zopakování pro kontrolu překlepu | vše |
-| **Uložit nové heslo** | změna hesla | Uloží heslo a pustí vás dál na rozcestník | vše |
+| **Uložit nové heslo** | změna hesla | Uloží heslo a pustí vás dál na Rozcestník | vše |
 | **Odhlásit** (na změně hesla) | změna hesla | Zruší přihlášení a vrátí na přihlašovací obrazovku | vše |
-| **Velikost textu** | rozcestník (horní lišta) | Zvětší/zmenší text v celé appce | vše |
-| **Jméno uživatele** | rozcestník (horní lišta) | Ukazuje, kdo je přihlášený | vše |
-| **Odhlásit** (v liště) | rozcestník | Odhlásí a vrátí na přihlašovací obrazovku | vše |
-| **Dlaždice modulu** | rozcestník | Otevře modul (má-li právo), jinak přehraje video / je skrytá | vše (dle práv) |
+| **Položka nabídky** | panel vlevo | Otevře modul; v panelu jsou jen sekce, na které máte právo | vše (dle práv) |
+| **Jméno uživatele** | lišta vpravo nahoře | Rozbalí nabídku: vzhled, změna hesla, odhlášení | vše |
 
-> 📸 SCREENSHOT: horní lišta rozcestníku s jménem a tlačítkem „Odhlásit"
+Přepínače vzhledu a odhlášení po přihlášení najdete pod svým jménem — viz
+[Společné prvky UI](./spolecne-prvky.md).
+
+> 📸 SCREENSHOT: lišta s jménem a rozbalenou nabídkou uživatele
 
 ### Jak na…
 - **Přihlásit se poprvé:** zadejte e-mail a **jednorázové heslo** od správce → „Přihlásit se".
   Appka vás rovnou přesměruje na **Nastav si nové heslo** → zadejte vlastní heslo dvakrát →
-  „Uložit nové heslo". Hotovo, jste na rozcestníku.
+  „Uložit nové heslo". Hotovo, jste na Rozcestníku.
 - **Změnit si heslo:** změna hesla je v appce navázaná jen na povinnou první změnu / reset
   (obrazovka `/zmena-hesla`). Když chcete heslo změnit dobrovolně kdykoli jindy, požádejte
   správce o **reset** — ten vám nastaví nové jednorázové heslo a appka vás při dalším
@@ -97,10 +101,10 @@ Legenda „kdo vidí": **(vše)** = kdokoli · **(admin)** = jen supersprávce n
   vám udělá **reset hesla** — buď vám systém vygeneruje nové jednorázové heslo, nebo vám
   správce nastaví konkrétní. Po přihlášení tímto heslem si zase zvolíte vlastní. Samoobslužné
   „zapomenuté heslo" appka nemá.
-- **Nevidím dlaždici / je zamčená:** je to otázka práv — napište správci, ať vám přidá
+- **Nevidím sekci v panelu:** je to otázka práv — napište správci, ať vám přidá
   příslušné právo v Admin nastavení.
-- **Odhlásit se:** tlačítko **„Odhlásit"** v horní liště rozcestníku (nebo na obrazovce
-  změny hesla).
+- **Odhlásit se:** vpravo nahoře klikněte na svoje jméno → **Odhlásit se** (nebo tlačítko
+  „Odhlásit" na obrazovce změny hesla).
 
 ---
 
@@ -120,16 +124,19 @@ Legenda „kdo vidí": **(vše)** = kdokoli · **(admin)** = jen supersprávce n
 
   | Pole | Význam |
   |---|---|
-  | `uzivatel` | `{ id, jmeno, email, je_admin }` |
-  | `dlazdice` | seznam všech dlaždic: `{ klic, nazev, muze_otevrit }` — `muze_otevrit=false` = zamčená |
+  | `uzivatel` | `{ id, jmeno, email, je_admin, skupina }` — `skupina` je název skupiny (nebo `null`), ukazuje se u jména v liště |
+  | `prava` | **efektivní práva uživatele** (klíče z katalogu práv), seřazená — podle nich se skládá nabídka vlevo |
   | `muze_editovat` | zda smí editovat matici (Přehled projektů), tj. má právo `editace` |
-  | `prava` | efektivní práva uživatele (klíče z katalogu práv), seřazená |
+  | `dlazdice` | seznam `{ klic, nazev, muze_otevrit }` — **pozůstatek po dlaždicovém rozcestníku, frontend ho už nepoužívá** |
   | `musi_zmenit_heslo` | `true` = uživatel je přesměrován na `/zmena-hesla` |
 
 - **Práva** (`backend/app/auth/permissions.py`): supersprávce (`je_admin`) má **všechna
   práva**; ostatní mají sjednocení `extra_prava` (individuální výjimky) a práv své skupiny
   (`skupina.prava`). `muze_otevrit(user, klic)` = daný klíč je v efektivních právech.
-  Katalog dlaždic je `DLAZDICE`, katalog přidělitelných práv `PRAVA`.
+  Katalog přidělitelných práv je `PRAVA` (a `DLAZDICE` je zbytek po starém rozcestníku).
+- **Rámec appky** si `/auth/me` bere přes `api.nactiMeSdilene()` — sdílená odpověď
+  s minutovou platností, ať se nedotazuje znovu při každém přechodu mezi stránkami.
+  Jednotlivé stránky volají `nactiMe()` dál samy (bez cache).
 
 ### Pravidla hesel
 - **Minimální délka: 6 znaků.** Vynucuje se na frontendu (`ZmenaHesla.jsx`) i na backendu
@@ -172,10 +179,10 @@ Legenda „kdo vidí": **(vše)** = kdokoli · **(admin)** = jen supersprávce n
   `/zmena-hesla`.
 - **Backend**: skutečnou ochranu dělá `get_current_user` (ověří JWT) u chráněných endpointů;
   administrátorské endpointy chrání navíc `vyzaduj_admina`.
-- **Rozcestník a dlaždice** (`Rozcestnik.jsx`, `Tile.jsx`): dlaždice se filtrují — modul bez
-  práva se buď **zamkne** (🔒), nebo **úplně skryje**, pokud je v množině `SKRYT_BEZ_PRAVA`
-  (`finance`, `nabidkovac`, `logy`, `konektor`). Klik na otevřenou dlaždici jde na trasu
-  z `TRASY`; klik na zamčenou/rozpracovanou otevře video (`VYVOJ_VIDEO`).
+- **Nabídka vlevo** (`components/Sidebar.jsx` + `navigace.js`): `nabidkaPro(prava)`
+  profiltruje položky podle efektivních práv a zahodí prázdné skupiny — sekce bez práva se
+  **nezobrazí vůbec**, zamčená varianta neexistuje. `Rozcestník` a `Manuál` jsou označené
+  `vzdy: true`, ty právo nepotřebují.
 
 ### Synchronizace vzhledu po přihlášení
 Hned po `login` volá frontend `synchronizujVzhled()` — stáhne uložené nastavení vzhledu
@@ -187,7 +194,7 @@ není kritický).
 | Metoda + cesta | Účel |
 |---|---|
 | `POST /auth/login` | Ověří e-mail + heslo, vrátí JWT token. Úspěch i neúspěch se zapisuje do auditu. |
-| `GET /auth/me` | Profil přihlášeného: uživatel, dlaždice s `muze_otevrit`, `muze_editovat`, `prava`, `musi_zmenit_heslo`. |
+| `GET /auth/me` | Profil přihlášeného: uživatel (včetně názvu skupiny), `prava`, `muze_editovat`, `musi_zmenit_heslo` (+ historické `dlazdice`). |
 | `PUT /auth/heslo` | Změna vlastního hesla (min. 6 znaků); vypne `musi_zmenit_heslo`. |
 | `POST /admin/uzivatele` | (admin) Založí uživatele s jednorázovým heslem, `musi_zmenit_heslo=true`, pokusí se poslat e-mail. |
 | `POST /admin/uzivatele/{id}/reset-hesla` | (admin) Reset hesla (zadané nebo vygenerované), `musi_zmenit_heslo=true`. |
@@ -195,12 +202,12 @@ není kritický).
 
 ### Klíčové soubory
 - **Frontend:** `pages/Login.jsx` (přihlášení + synchronizace vzhledu), `pages/ZmenaHesla.jsx`
-  (vynucená změna), `pages/Rozcestnik.jsx` (dlaždice + filtrování dle práv), `components/Tile.jsx`
-  (dlaždice, zámek 🔒), `components/Layout.jsx` (horní lišta, Odhlásit), `api.js`
-  (`login`, `nactiMe`, `zmenHeslo`, `logout`, `getToken`, `nactiNastaveni`), `App.jsx`
-  (routy + guard `VyzadujePrihlaseni`).
+  (vynucená změna), `pages/Rozcestnik.jsx` (úvodní souhrn), `components/Layout.jsx` (rámec),
+  `components/Sidebar.jsx` (nabídka dle práv), `components/UserMenu.jsx` (nabídka uživatele),
+  `navigace.js` (struktura appky), `api.js` (`login`, `nactiMe`, `nactiMeSdilene`, `zmenHeslo`,
+  `logout`, `getToken`, `nactiNastaveni`), `App.jsx` (routy + guard `VyzadujePrihlaseni`).
 - **Backend:** `auth/routes.py` (login, /me, PUT /heslo), `auth/permissions.py`
-  (JWT, hashování, generování hesla, práva, dlaždice, guardy), `auth/models.py`
+  (JWT, hashování, generování hesla, práva, guardy), `auth/models.py`
   (tabulky `uzivatele`, `skupiny`; schémata `LoginRequest`, `Token`, `MeOut`, …),
   `mailer.py` (SMTP + e-mail s přístupem), `admin/routes.py` (`_posli_pristup`, reset hesla).
 
@@ -215,8 +222,9 @@ není kritický).
   založení/resetu. Zkontroluj `SMTP_HESLO` a `SMTP_HOST/PORT` v `.env`.
 - **Uživatel byl „vykopnut" na přihlášení uprostřed práce** → nejspíš vypršel token (platnost
   8 h) nebo je neplatný; `nactiMe()` selhal a frontend odhlásil. Řešení: přihlásit se znovu.
-- **Dlaždice chybí / je zamčená** → chybí právo se stejným klíčem. Přiděl ho ve skupině nebo
-  jako individuální výjimku (`extra_prava`) v Admin nastavení.
+- **Sekce v panelu chybí** → chybí právo se stejným klíčem. Přiděl ho ve skupině nebo
+  jako individuální výjimku (`extra_prava`) v Admin nastavení. Pozor: rámec drží práva
+  **minutu** v cache (`nactiMeSdilene`), takže se změna projeví až po chvíli / po F5.
 
 ---
 
@@ -234,12 +242,16 @@ není kritický).
   smaže (`logout` = odebrání klíče `greensie_token`).
 - **Neúspěšné přihlášení neznámého účtu** se do auditu ukládá bez surového vstupu (aby se
   omylem nezalogovalo heslo napsané do pole e-mail).
-- **Podtituly a ikony dlaždic** jsou napevno na frontendu (`Rozcestnik.jsx`), nechodí ze
-  serveru — server posílá jen klíč a název dlaždice.
+- **Názvy a ikony sekcí** jsou napevno na frontendu (`navigace.js`), nechodí ze serveru —
+  ze serveru přijdou jen klíče práv. Přidání nové sekce tedy znamená zásah do `navigace.js`
+  i do katalogu `PRAVA` na backendu.
+- **`GET /auth/me` dál vrací pole `dlazdice`**, ale frontend ho už nepoužívá (nabídka se řídí
+  polem `prava`). Zůstalo, aby se nerozbilo API — kandidát na úklid.
 
 ## Odkazy
 - Kód frontend: `frontend/src/pages/Login.jsx`, `ZmenaHesla.jsx`, `Rozcestnik.jsx`,
-  `components/Tile.jsx`, `components/Layout.jsx`, `api.js`, `App.jsx`
+  `components/Layout.jsx`, `components/Sidebar.jsx`, `components/UserMenu.jsx`,
+  `navigace.js`, `api.js`, `App.jsx`
 - Kód backend: `backend/app/auth/` (routes, permissions, models), `backend/app/mailer.py`,
   `backend/app/admin/routes.py`
 - Související dokumentace: [Admin nastavení](admin-nastaveni.md) — správa uživatelů, skupin,

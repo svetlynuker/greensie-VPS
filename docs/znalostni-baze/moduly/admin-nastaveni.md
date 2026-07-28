@@ -1,6 +1,6 @@
 # Admin nastavení
 
-> **Dlaždice:** `admin` · **Adresa (routa):** `/admin` · **Kdo smí otevřít:** jen kdo má právo `admin` (supersprávce ho má vždy). Dlaždici vidí v rozcestníku všichni, bez práva je zamčená 🔒.
+> **Sekce v nabídce:** `admin` · **Adresa (routa):** `/admin` · **Kdo smí otevřít:** jen kdo má právo `admin` (supersprávce ho má vždy). Bez práva se sekce v nabídce vlevo vůbec nezobrazí.
 > **Kód:** frontend `frontend/src/pages/AdminNastaveni.jsx`, backend `backend/app/admin/` (+ `backend/app/auth/permissions.py`, `backend/app/auth/models.py`); nastavení synchronizace `backend/app/matice/routes.py`.
 
 Centrální správa **uživatelů, skupin a práv** celé appky, **reset hesel** a **nastavení automatické synchronizace s Freelem**. Slouží správci systému (supersprávci nebo komukoli s právem `admin`).
@@ -19,7 +19,8 @@ Na jednom místě zakládáš a upravuješ **účty zaměstnanců**, přiděluje
 ### Rozvržení obrazovky
 Shora dolů, vše jsou karty pod sebou:
 
-1. **Odkaz „← Zpět na rozcestník"** — návrat na hlavní rozcestník.
+1. **Odkaz „← Zpět na rozcestník"** — návrat na úvodní souhrn (mezi moduly se ale chodí
+   panelem vlevo).
 2. **Nadpis „Admin nastavení".**
 3. **Karta „Uživatelé"** — počet uživatelů, tlačítko *+ Přidat uživatele* a tabulka všech účtů.
 4. **Karta „Skupiny"** — počet skupin, tlačítko *+ Přidat skupinu* a seznam skupin s jejich právy.
@@ -118,12 +119,12 @@ Efektivní práva uživatele počítá `prava_uzivatele` (`backend/app/auth/perm
 - **Ostatní** → **`extra_prava` ∪ `skupina.prava`** (individuální práva sjednocená s právy skupiny).
 
 Klíčové funkce:
-- `muze_otevrit(user, klic)` — smí uživatel otevřít danou dlaždici (klíč práva = klíč dlaždice).
+- `muze_otevrit(user, klic)` — smí uživatel otevřít danou sekci (klíč práva = klíč sekce).
 - `muze_editovat(user)` — má právo `editace` (editace matice v Přehledu projektů).
 - `vyzaduj_admina` — FastAPI závislost, která pustí dál jen toho, kdo `muze_otevrit(..., "admin")`; jinak vrátí **403**. Chrání **celý** router `/admin` i endpointy `/matice/sync-nastaveni`.
 
 ### Katalog práv (`PRAVA`)
-Práva se dělí na **otevírací** (stejný klíč jako dlaždice) a **akční**:
+Práva se dělí na **otevírací** (stejný klíč jako sekce v nabídce) a **akční**:
 
 | Klíč | Název v UI | Typ |
 |---|---|---|
@@ -137,8 +138,8 @@ Práva se dělí na **otevírací** (stejný klíč jako dlaždice) a **akční*
 | `logy` | Otevřít Logy (provoz, chyby, audit) | otevírací |
 | `konektor` | Otevřít Konektor Raynet ↔ Google Drive | otevírací |
 
-### Dlaždice (`DLAZDICE`)
-Položky rozcestníku. **Vidí je vždy všichni**, ale otevře je jen ten, kdo má právo se stejným klíčem (jinak zamčeno 🔒). Dlaždice: `projekty`, `finance`, `zmeny`, `nabidkovac`, `admin`, `logy`, `konektor`. Pozn.: `nabidkovac_katalog` a `editace` jsou jen práva, ne dlaždice.
+### Dlaždice (`DLAZDICE`) — pozůstatek
+Historický katalog položek starého dlaždicového rozcestníku: `projekty`, `finance`, `zmeny`, `nabidkovac`, `admin`, `logy`, `konektor`. **Frontend ho už nepoužívá** — nabídku vlevo skládá z pole `prava` (viz `frontend/src/navigace.js`) a sekce bez práva se vůbec nezobrazí. Katalog zůstal v `permissions.py` a `GET /auth/me` ho dál vrací, aby se nerozbilo API.
 
 ### Pojistky
 - **Nelze smazat sám sebe** — mazání účtu, který právě mažeš pod svým přihlášením, vrátí 409 („Nemůžeš smazat sám sebe.").
@@ -213,7 +214,8 @@ Ovládací prvky karty a jejich klíče (tabulka `nastaveni_synchronizace`, jede
 
 ## Poznámky a úskalí (k ověření / nezřejmé)
 - Stránka i všechny endpointy `/admin` jsou chráněné právem `admin`, ne příznakem `je_admin` — právo `admin` může mít i nesupersprávce (přes skupinu / práva navíc), a pak plnohodnotně spravuje uživatele. Supersprávce (`je_admin`) je nadmnožina (má všechna práva včetně `admin`).
-- Katalog práv i dlaždic je „napevno" v kódu (`permissions.py`), nedá se měnit z UI.
+- Katalog práv je „napevno" v kódu (`permissions.py`), nedá se měnit z UI; struktura nabídky
+  je stejně tak napevno na frontendu (`navigace.js`).
 - Karta Synchronizace patří logicky do Přehledu projektů (endpointy `/matice/…`), ale UI žije zde. Nastavení je globální (jeden řádek pro celou firmu).
 - Přesné chování jednotlivých přepínačů synchronizace (co přesně přepisují při běhu plánovače) je popsáno u modulu Přehled projektů — zde je jen ovládání.
 

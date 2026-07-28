@@ -1,6 +1,6 @@
 # Přehled změn
 
-> **Dlaždice:** `zmeny` · **Adresa (routa):** `/zmeny` · **Kdo smí otevřít:** kdokoli s právem `zmeny` (dlaždici vidí všichni, bez práva je zamčená 🔒; admin vždy)
+> **Sekce v nabídce:** `zmeny` · **Adresa (routa):** `/zmeny` · **Kdo smí otevřít:** kdokoli s právem `zmeny` (bez práva se sekce v nabídce vůbec nezobrazí; admin vždy)
 > **Kód:** frontend `frontend/src/pages/PrehledZmen.jsx`, backend `backend/app/zmeny/`
 
 Přehled toho, **co se v projektech za zvolené období pohnulo** — kolik úkolů se splnilo,
@@ -23,7 +23,8 @@ spadlo po termínu (👎). Navíc říká, kolik úkolů je **v prodlení teď**
 ### Rozvržení obrazovky
 Shora dolů:
 
-1. **Odkaz „← Rozcestník"** — návrat na hlavní rozcestník appky.
+1. **Odkaz „← Rozcestník"** — návrat na úvodní souhrn. Mezi moduly se ale chodí
+   **panelem vlevo**, tenhle odkaz je jen zkratka na úvodní stránku.
 2. **Filtr období** — tři přepínače (segment) „Od začátku / Posledních 7 dní / Vlastní rozmezí",
    u vlastního rozmezí dvě pole s datem, a vpravo popisek **Období: OD – DO** se skutečně
    použitými hranicemi.
@@ -112,7 +113,7 @@ Prázdný sloupec ukáže pomlčku „–".
 ## 🛠 Pro admina / provoz
 
 ### Práva — kdo co vidí a smí
-- Dlaždici **Přehled změn** vidí v rozcestníku **všichni**, ale bez práva `zmeny` je **zamčená** (🔒).
+- Sekci **Přehled změn** uvidí v panelu vlevo jen ten, kdo má právo `zmeny` — bez něj tam položka vůbec není.
 - Otevřít modul a číst data smí každý s právem **`zmeny`**; **supersprávce** (`uzivatel.je_admin`) má
   vše automaticky. Strážce endpointu je `vyzaduj_pravo_zmeny` (volá `muze_otevrit(user, "zmeny")`).
 - **Modul nemá žádnou editaci** — neexistuje tu právo typu `editace`. Všichni, kdo modul otevřou,
