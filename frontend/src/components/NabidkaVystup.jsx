@@ -134,14 +134,15 @@ function BlokHlavicka({ blok, zakaznik }) {
   );
 }
 
-// Kontakt firmy do zápatí — stejné údaje jako na hlavičkovém papíře
-// (grafika/3. papíry, varianta Bedřichovská).
+// Kontakt firmy do zápatí. Adresa a telefon jsou z hlavičkového papíru
+// (grafika/papiry, varianta Bedřichovská); e-mail je oproti papíru novější —
+// papír má ještě instalace@, nabídky mají chodit na info@.
 const FIRMA = {
   nazev: "GREENSIE",
   ulice: "Bedřichovská 2183/16",
   mesto: "182 00 Praha 8 – Libeň",
   telefon: "+420 222 703 031",
-  email: "instalace@greensie.cz",
+  email: "info@greensie.cz",
 };
 
 function Zapati() {
