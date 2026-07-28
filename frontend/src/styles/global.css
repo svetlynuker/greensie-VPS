@@ -20,6 +20,13 @@
   --line-soft: #eef2ef;
 
   /* ---- brand ---- */
+  /* Pozor na dvě zelené, každá má svou práci:
+     --brand-logo je zelená z firemního logotypu (#79c44f) a používá ji JEN
+     značka v logu, ať je identita přesná.
+     --brand je tmavší odstín pro rozhraní — na světlém podkladu má
+     dostatečný kontrast, takže na něm bílý text v tlačítkách je čitelný.
+     Světlá logová zelená by na to byla příliš málo kontrastní. */
+  --brand-logo:   #79c44f;
   --brand:        #2f9e44;
   --brand-strong: #237a34;
   --brand-wash:   #e7f3ea;

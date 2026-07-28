@@ -66,12 +66,12 @@
 
 /* Hlavička nabídky */
 .vy-hlavicka { border-bottom: 3px solid var(--brand, #2f9e44); padding-bottom: 14px; margin-bottom: 22px; }
+/* Logo v hlavičce nabídky. Text logotypu bere barvu odsud (currentColor) —
+   na papíře tedy tmavý, ne šedý jako okolní popisky. */
 .vy-logo {
-  width: 150px; height: 46px;
-  border: 1px dashed #b9c2be; border-radius: 6px;
-  display: flex; align-items: center; justify-content: center;
-  color: #99a3a0; font-size: 10px; letter-spacing: 0.04em;
+  display: flex;
   margin-bottom: 14px;
+  color: #17321f;
 }
 .vy-hlavicka h1 { font-size: 22px; margin: 0 0 4px; color: #17321f; }
 .vy-hlavicka .podnadpis { color: var(--brand, #2f9e44); font-weight: 600; font-size: 13px; }

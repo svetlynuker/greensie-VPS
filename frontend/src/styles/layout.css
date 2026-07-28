@@ -60,6 +60,9 @@
   overflow: hidden;
 }
 
+/* Hlavička panelu s logotypem. Text v logu dědí tuhle barvu (currentColor),
+   značka si drží firemní zelenou — proto stačí jeden soubor loga pro světlý
+   i tmavý režim. */
 .gs-sb-brand {
   display: flex;
   align-items: center;
@@ -76,34 +79,18 @@
   font: inherit;
   cursor: pointer;
   text-align: left;
-  color: inherit;
+  color: var(--sb-ink);
+  transition: color 0.14s;
 }
 
-.gs-sb-brand:hover .gs-sb-brand-name {
+.gs-sb-brand:hover {
   color: #fff;
 }
 
-.gs-sb-brand-text {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.gs-sb-brand-name {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--sb-ink);
-  white-space: nowrap;
-}
-
-.gs-sb-brand-sub {
-  font-size: 10.5px;
-  color: var(--sb-ink-2);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  font-weight: 600;
-  white-space: nowrap;
+/* V zúženém panelu je vidět jen značka, tak ať sedí na střed. */
+.gs-app[data-panel="mini"] .gs-sb-brand {
+  justify-content: center;
+  padding: 0;
 }
 
 .gs-sb-scroll {
@@ -236,7 +223,6 @@
 }
 
 .gs-app[data-panel="mini"] .gs-nav-txt,
-.gs-app[data-panel="mini"] .gs-sb-brand-text,
 .gs-app[data-panel="mini"] .gs-sb-foot-text {
   display: none;
 }
@@ -719,7 +705,6 @@
   }
 
   .gs-app .gs-nav-txt,
-  .gs-app .gs-sb-brand-text,
   .gs-app .gs-sb-foot-text {
     display: none;
   }

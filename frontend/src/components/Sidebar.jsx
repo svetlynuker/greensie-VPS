@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { aktivniKlic, nabidkaPro } from "../navigace";
 import Ikona from "./Ikona";
+import Logo from "./Logo";
 
 // Levý navigační panel. Vidí jen to, na co má uživatel právo — sekce bez
 // práva se neukazují vůbec (ani zamčené), takže se o nich uživatel nedozví.
@@ -17,13 +18,10 @@ export default function Sidebar({ prava, mini, onPrepnoutPanel }) {
         onClick={() => navigate("/rozcestnik")}
         title="Na úvodní stránku"
       >
-        <span className="gs-brand-mark">
-          <Ikona jmeno="logo" velikost={16} />
-        </span>
-        <span className="gs-sb-brand-text">
-          <span className="gs-sb-brand-name">Greensie</span>
-          <span className="gs-sb-brand-sub">Interní systém</span>
-        </span>
+        {/* Zúžený panel unese jen značku; v rozbaleném je logotyp celý.
+            Text v logu přebírá barvu panelu (currentColor), značka zůstává
+            firemně zelená. */}
+        <Logo jen={mini ? "znacka" : "plne"} vyska={mini ? 28 : 23} title="Greensie" />
       </button>
 
       <nav className="gs-sb-scroll" aria-label="Hlavní nabídka">

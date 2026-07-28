@@ -4,6 +4,7 @@
 
 import GrafVyrobaSpotreba from "./GrafVyrobaSpotreba";
 import GrafOdberu from "./GrafOdberu";
+import Logo from "./Logo";
 import { fmtDatum } from "../nabidkovac";
 
 // Pole, která v kartě zvýrazníme (úspora = to hlavní, co zákazníka zajímá).
@@ -115,8 +116,10 @@ function BlokTabulka({ blok, tabulka, tisk }) {
 function BlokHlavicka({ blok, zakaznik }) {
   return (
     <div className="vy-hlavicka">
-      {/* Branding obrázky zatím vynechány – jen jasně označené místo pro logo. */}
-      <div className="vy-logo">MÍSTO PRO LOGO</div>
+      {/* Logo je vektorové, takže se v PDF vytiskne ostře v každé velikosti. */}
+      <div className="vy-logo">
+        <Logo vyska={40} title="Greensie" />
+      </div>
       <h1>{blok.nadpis || "Nabídka"}</h1>
       {blok.text && <div className="podnadpis">{blok.text}</div>}
       <div className="vy-prijemce">
