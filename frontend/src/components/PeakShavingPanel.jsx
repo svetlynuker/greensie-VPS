@@ -76,11 +76,18 @@ const SLOUPCE_SROVNANI = [
   },
   { klic: "cena", nazev: "Cena", vychoziSmer: "asc", hodnota: (v) => v.cena_celkem_kc ?? null },
   {
+    // Reálná návratnost – stejné číslo, které rozhoduje o odznaku
+    // „nedoporučeno" ve stejném řádku. Starší výsledky ji nemají → prostá.
     klic: "navratnost",
     nazev: "Návratnost",
     vychoziSmer: "asc",
-    hodnota: (v, i, je2027) =>
-      je2027 ? v.navratnost_2027 ?? v.navratnost_2027_konzerv ?? null : v.navratnost_roky ?? null,
+    hodnota: (v, i, je2027, zaklad) => {
+      const payback = npvDleZakladu(v, zaklad).payback_roky;
+      if (payback !== undefined) return payback;
+      return je2027
+        ? v.navratnost_2027 ?? v.navratnost_2027_konzerv ?? null
+        : v.navratnost_roky ?? null;
+    },
   },
   {
     klic: "npv",
@@ -136,10 +143,11 @@ function VariantaRadek({ v, vybrana, rok, zakladNpv, onVyber }) {
   const uspora = je2027
     ? v.ekonomika_2027?.rocni_uspora_bez_aku ?? v.ekonomika_2027?.rocni_uspora
     : v.rocni_uspora_2026_kc;
-  const navratnost = je2027
-    ? v.navratnost_2027 ?? v.navratnost_2027_konzerv
-    : v.navratnost_roky;
   const npv = npvDleZakladu(v, zakladNpv);
+  // Reálná návratnost (drží odznak „nedoporučeno" ve stejném řádku); starší
+  // uložené výsledky ji nemají, tam se ukáže prostá návratnost roku.
+  const prosta = je2027 ? v.navratnost_2027 ?? v.navratnost_2027_konzerv : v.navratnost_roky;
+  const navratnost = npv.payback_roky !== undefined ? npv.payback_roky : prosta;
   return (
     <tr
       onClick={onVyber}
@@ -159,7 +167,9 @@ function VariantaRadek({ v, vybrana, rok, zakladNpv, onVyber }) {
       <td>{kw(v.nova_rezervovana_kapacita_kw)}</td>
       <td>{kc(uspora)}</td>
       <td>{kc(v.cena_celkem_kc)}</td>
-      <td>{roky(navratnost)}</td>
+      <td title={prosta != null ? `prostá návratnost ${roky(prosta)}` : undefined}>
+        {navratnost === null ? "nevrátí se" : roky(navratnost)}
+      </td>
       <td>{npv.npv_kc != null ? kc(npv.npv_kc) : "—"}</td>
     </tr>
   );
@@ -443,6 +453,11 @@ export default function PeakShavingPanel({ nabidka }) {
   const je2027 = rok === 2027;
   // NPV / reálná návratnost / doporučení dle zvoleného základu (bez přepočtu).
   const npvDop = npvDleZakladu(dop, zakladNpv);
+  // Prostá návratnost zobrazeného roku („cena ÷ úspora jednoho roku") – jen
+  // orientační doplněk k reálné návratnosti.
+  const prostaNavratnost = je2027
+    ? dop?.navratnost_2027 ?? dop?.navratnost_2027_konzerv
+    : dop?.navratnost_2026 ?? dop?.navratnost_roky;
   const zakladPopis = ZAKLADY_NPV.find((z) => z.klic === zakladNpv);
   const uspora2027 = ek27?.rocni_uspora_bez_aku ?? ek27?.rocni_uspora;
   const rpNovy2027 = ek27?.rp_novy_kw ?? ek27?.rezervovana_kapacita_kw;
@@ -787,24 +802,29 @@ export default function PeakShavingPanel({ nabidka }) {
                   </div>
                 </div>
                 <div className="gs-kpi">
+                  {/* Hlavní číslo = REÁLNÁ návratnost (ta, která rozhoduje o
+                      doporučení a mění se s přepínačem základu). Prostá
+                      návratnost je jen orientační – nezná O&M ani degradaci
+                      a počítá se vždy z celé úspory, takže se přepínačem
+                      nehnula a působilo to jako rozpor. */}
                   <div className="gs-kpi-label">Návratnost ({rok})</div>
                   <div className="gs-kpi-value">
-                    {roky(
-                      je2027
-                        ? dop.navratnost_2027 ?? dop.navratnost_2027_konzerv
-                        : dop.navratnost_2026 ?? dop.navratnost_roky
-                    )}
+                    {npvDop.payback_roky === undefined
+                      ? roky(prostaNavratnost)
+                      : npvDop.payback_roky === null
+                        ? "nevrátí se"
+                        : roky(npvDop.payback_roky)}
                   </div>
                   <div className="gs-kpi-sub">
-                    {/* Práh doporučení se poměřuje s reálnou návratností
-                        z kombinovaného cash flow, ne s prostou návratností
-                        jednoho roku – ať je jasné, které číslo rozhoduje. */}
-                    {je2027 ? "z úspory 2027" : "z přínosu baterie"}
-                    {npvDop.payback_roky === undefined
-                      ? ` · práh ${vysledek.max_navratnost_roky} let`
-                      : npvDop.payback_roky === null
-                        ? ` · reálně se v horizontu nevrátí (práh ${vysledek.max_navratnost_roky} let)`
-                        : ` · reálně ${roky(npvDop.payback_roky)} – to rozhoduje (práh ${vysledek.max_navratnost_roky} let)`}
+                    {npvDop.payback_roky === undefined ? (
+                      `prostá – ${je2027 ? "z úspory 2027" : "z přínosu baterie"} · práh ${vysledek.max_navratnost_roky} let`
+                    ) : (
+                      <>
+                        reálná ({zakladNpv === "prinos_baterie" ? "jen přínos baterie" : "celá úspora"}),
+                        vč. O&amp;M a degradace · prostá {roky(prostaNavratnost)} · práh{" "}
+                        {vysledek.max_navratnost_roky} let
+                      </>
+                    )}
                   </div>
                 </div>
                 {je2027 ? (
@@ -1305,9 +1325,14 @@ export default function PeakShavingPanel({ nabidka }) {
                               title="Kliknutím seřadíš podle tohoto sloupce"
                               style={{ cursor: "pointer", whiteSpace: "nowrap" }}
                             >
-                              {s.klic === "uspora" || s.klic === "navratnost"
+                              {/* Návratnost ve srovnání je REÁLNÁ (jede vždy na
+                                  modelu 2027) – nemá tedy v hlavičce rok jako
+                                  úspora, která se přepínačem roku mění. */}
+                              {s.klic === "uspora"
                                 ? `${s.nazev} (${rok})`
-                                : s.nazev}
+                                : s.klic === "navratnost"
+                                  ? "Návratnost (reálná)"
+                                  : s.nazev}
                               <span style={{ opacity: razeni.klic === s.klic ? 1 : 0.25 }}>
                                 {" "}
                                 {razeni.klic === s.klic && razeni.smer === "asc" ? "▲" : "▼"}
