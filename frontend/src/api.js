@@ -13,6 +13,7 @@ function setToken(token) {
 
 export function logout() {
   localStorage.removeItem(TOKEN_KEY);
+  zapomenMe();
 }
 
 export async function login(email, heslo) {
@@ -37,6 +38,36 @@ export async function nactiMe() {
     throw new Error("Nepodařilo se načíst uživatele");
   }
   return res.json();
+}
+
+// Sdílené /auth/me pro rámec appky (nabídka vlevo, uživatel vpravo nahoře).
+// Stránky si dál načítají svoje `me` samy; tohle je jen aby se rámec nemusel
+// dotazovat znovu při každém přechodu mezi stránkami. Krátká platnost, ať se
+// změna práv projeví bez odhlášení.
+const ME_PLATNOST_MS = 60_000;
+let mePromise = null;
+let meCas = 0;
+
+export function nactiMeSdilene() {
+  const nyni = Date.now();
+  if (!mePromise || nyni - meCas > ME_PLATNOST_MS) {
+    meCas = nyni;
+    mePromise = nactiMe().catch((chyba) => {
+      mePromise = null; // ať se po chybě zkusí znovu, ne že se zapamatuje selhání
+      throw chyba;
+    });
+  }
+  return mePromise;
+}
+
+export function zapomenMe() {
+  mePromise = null;
+  meCas = 0;
+}
+
+// ---- Souhrn pro úvodní stránku ----
+export function nactiDashboard() {
+  return zavolej("/dashboard");
 }
 
 export function zmenHeslo(nove_heslo) {

@@ -19,6 +19,7 @@ from app.logy.middleware import LogovaciMiddleware
 from app.zmeny import models as zmeny_models  # noqa: F401 - registrace modelů
 from app.zmeny.routes import router as zmeny_router
 from app.admin.routes import router as admin_router
+from app.dashboard.routes import router as dashboard_router
 from app.konektor import models as konektor_models  # noqa: F401 - registrace modelů
 from app.konektor.routes import router as konektor_router
 from app.manual.routes import router as manual_router
@@ -236,6 +237,7 @@ app.include_router(zmeny_router)
 app.include_router(admin_router)
 app.include_router(konektor_router)
 app.include_router(manual_router)
+app.include_router(dashboard_router)
 
 
 @app.on_event("startup")

@@ -1,69 +1,98 @@
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { logout } from "../api";
-import ThemeToggle from "./ThemeToggle";
-import CvdToggle from "./CvdToggle";
-import VelikostTextu from "./VelikostTextu";
+import { nactiMeSdilene } from "../api";
+import { popisStranky, strankaManualu } from "../navigace";
 import Ikona from "./Ikona";
+import Sidebar from "./Sidebar";
+import UserMenu from "./UserMenu";
 
-// Která stránka manuálu patří ke které routě (kontextová nápověda „?").
-function strankaManualu(pathname) {
-  if (pathname.startsWith("/projekty")) return "prehled-projektu";
-  if (pathname.startsWith("/finance")) return "prehled-financi";
-  if (pathname.startsWith("/zmeny")) return "prehled-zmen";
-  // Kalkulátory mají vlastní stránku manuálu – ta obecná o Nabídkovači
-  // nevysvětluje ani jedno políčko výpočtu.
-  if (pathname.startsWith("/nabidkovac/peak_shaving")) return "nabidkovac-peak-shaving";
-  if (pathname.startsWith("/nabidkovac/ppa")) return "nabidkovac-ppa-fve";
-  if (pathname.startsWith("/nabidkovac")) return "nabidkovac";
-  if (pathname.startsWith("/admin")) return "admin-nastaveni";
-  if (pathname.startsWith("/logy")) return "logy";
-  if (pathname.startsWith("/konektor")) return "konektor-raynet-gdrive";
-  return "uvod";
+// Zúžení panelu si pamatujeme lokálně — je to volba zařízení (malý notebook),
+// ne uživatele, takže se do DB neposílá.
+const KLIC_PANEL = "greensie_panel";
+
+// Supersprávce má v backendu vždy všechna práva (permissions.prava_uzivatele);
+// tohle je jen náhrada, dokud nedojde odpověď /auth/me, ať panel neproblikne.
+const VSECHNA_PRAVA = [
+  "projekty",
+  "finance",
+  "zmeny",
+  "nabidkovac",
+  "nabidkovac_katalog",
+  "admin",
+  "editace",
+  "logy",
+  "konektor",
+];
+
+function panelZPameti() {
+  return localStorage.getItem(KLIC_PANEL) === "mini" ? "mini" : "expanded";
 }
 
+// Rámec appky: navigace vlevo, lišta nahoře, obsah stránky uvnitř.
+// Stránky dál posílají `uzivatel` (kvůli okamžitému vykreslení jména);
+// práva pro nabídku si rámec dotáhne sám ze sdíleného /auth/me.
 export default function Layout({ uzivatel, children }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const [me, setMe] = useState(null);
+  const [panel, setPanel] = useState(panelZPameti);
+
+  useEffect(() => {
+    let zivy = true;
+    nactiMeSdilene()
+      .then((data) => {
+        if (zivy) setMe(data);
+      })
+      .catch(() => {
+        // Rámec se kvůli tomu neodhlašuje — o vypršené přihlášení se
+        // stará samotná stránka, která si data načítá taky.
+      });
+    return () => {
+      zivy = false;
+    };
+  }, []);
+
+  function prepnoutPanel() {
+    setPanel((p) => {
+      const novy = p === "mini" ? "expanded" : "mini";
+      localStorage.setItem(KLIC_PANEL, novy);
+      return novy;
+    });
+  }
+
   const naManualu = location.pathname.startsWith("/manual");
+  const [nazev, podnazev] = popisStranky(location.pathname);
+  // Dokud se práva nenačtou, kreslíme nabídku podle toho, co víme z prop
+  // (supersprávce vidí vše) — ať panel neproblikne prázdný.
+  const prava = me?.prava || (uzivatel?.je_admin ? VSECHNA_PRAVA : []);
+  const kdo = me?.uzivatel || uzivatel;
 
   return (
-    <div style={{ padding: "16px" }}>
-      <header className="gs-topbar">
-        <span className="gs-brand-mark">
-          <Ikona jmeno="logo" velikost={15} />
-        </span>
-        <span className="gs-brand-name">Greensie</span>
-        <div className="gs-topbar-spacer" />
-        <VelikostTextu />
-        <ThemeToggle />
-        <CvdToggle />
-        {uzivatel && !naManualu && (
-          <button
-            className="fm-btn fm-ghost"
-            title="Nápověda k této stránce"
-            onClick={() => navigate(`/manual?stranka=${strankaManualu(location.pathname)}`)}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-          >
-            <Ikona jmeno="napoveda" velikost={16} />
-            Nápověda
-          </button>
-        )}
-        {uzivatel && (
-          <>
-            <span className="gs-topbar-who">{uzivatel.jmeno}</span>
+    <div className="gs-app" data-panel={panel}>
+      <Sidebar prava={prava} mini={panel === "mini"} onPrepnoutPanel={prepnoutPanel} />
+
+      <div className="gs-main">
+        <header className="gs-tb">
+          <span className="gs-tb-title">{nazev}</span>
+          {podnazev && <span className="gs-tb-crumb">{podnazev}</span>}
+          <span className="gs-tb-spacer" />
+
+          {kdo && !naManualu && (
             <button
-              className="fm-btn"
-              onClick={() => {
-                logout();
-                window.location.href = "/";
-              }}
+              className="gs-icon-btn"
+              title="Nápověda k této stránce"
+              aria-label="Nápověda k této stránce"
+              onClick={() => navigate(`/manual?stranka=${strankaManualu(location.pathname)}`)}
             >
-              Odhlásit
+              <Ikona jmeno="napoveda" velikost={16} />
             </button>
-          </>
-        )}
-      </header>
-      {children}
+          )}
+
+          {kdo && <UserMenu uzivatel={kdo} prava={prava} />}
+        </header>
+
+        <main className="gs-obsah">{children}</main>
+      </div>
     </div>
   );
 }
