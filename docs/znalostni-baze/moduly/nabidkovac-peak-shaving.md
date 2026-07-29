@@ -294,6 +294,18 @@ Graf respektuje přepínač roku: **2026** ukazuje držení jednoho ročního st
 #### Citlivost návrhu
 V záložce *Grafy odběru*, pod grafem měsíčních maxim: co by se stalo, kdyby byl profil o **±5 %** silnější/slabší – jestli by nasazená rezerva RK zvládla i „silnější rok", nebo by hrozily měsíční dokupy/pokuty. Je to rychlá kontrola, jak moc je návrh „na hraně".
 
+#### Průběh v čase a spotová cena
+V obchodních režimech přidá nitkový graf **čtvrtý pás se spotovou cenou** (Kč/MWh,
+modrá) — je z něj vidět, proč se baterie zachovala tak, jak se zachovala: nabíjí
+v cenovém sedle, vybíjí ve špičce. Pás se dá vypnout zaškrtávátkem v legendě, a když
+je v datech záporná cena (v roce 2025 se to stalo 323 hodin), zobrazí se i nulová
+čára. V bublině u kurzoru je navíc rozpad **„z toho špička / obchod"** — kolik
+kilowattů šlo na srážení špičky a kolik na obchod.
+
+Graf jede ze **stejné simulace jako ekonomika**, ne z peak-shavingového modelu:
+čísla v grafu a v tabulkách se tedy nemohou rozejít. Přepínač roku (2026/2027) na
+průběh v obchodních režimech nemá vliv — stropy jsou dané výsledkem výpočtu.
+
 #### Obchod na spotu (záložka — jen v režimech Kombinace a SPOT)
 Tři karty, které odpovídají na otázku „kde ty peníze vlastně jsou":
 

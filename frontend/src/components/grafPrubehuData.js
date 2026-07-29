@@ -27,6 +27,10 @@ function vytvorKose(kapacita) {
     sMin: f(), sMax: f(), sPrum: f(),
     bMin: f(), bMax: f(), bPrum: f(),
     cPrum: f(),
+    // Spotová cena (jen v obchodních režimech; jinak zůstane nulová a pás se
+    // nekreslí). Min/max jsou tu podstatné – ve špičkách i sedlech je celý
+    // příběh toho, proč se baterie zachovala tak, jak se zachovala.
+    pMin: f(), pMax: f(), pPrum: f(),
   };
 }
 
@@ -34,6 +38,7 @@ function vytvorKose(kapacita) {
 // jsou důležitější než průměr: díky nim zůstane špička vidět i z celého roku.
 export function agreguj(data, od, doIdx, cil, kose) {
   const O = data.odber_kw, S = data.site_kw, B = data.baterie_kw, C = data.soc_pct, T = data.casy_min;
+  const P = data.cena_kc_mwh || null;
   const pocet = Math.max(1, doIdx - od);
   const krok = Math.max(1, Math.ceil(pocet / cil));
   const k = kose && kose.kapacita >= Math.ceil(pocet / krok) ? kose : vytvorKose(Math.max(cil, Math.ceil(pocet / krok)));
@@ -44,8 +49,15 @@ export function agreguj(data, od, doIdx, cil, kose) {
     let sMin = Infinity, sMax = -Infinity, sSum = 0;
     let bMin = Infinity, bMax = -Infinity, bSum = 0;
     let cSum = 0;
+    let pMin = Infinity, pMax = -Infinity, pSum = 0;
     for (let x = i; x < j; x++) {
       const o = O[x], s = S[x], b = B[x];
+      if (P) {
+        const p = P[x];
+        if (p < pMin) pMin = p;
+        if (p > pMax) pMax = p;
+        pSum += p;
+      }
       if (o < oMin) oMin = o;
       if (o > oMax) oMax = o;
       oSum += o;
@@ -65,6 +77,9 @@ export function agreguj(data, od, doIdx, cil, kose) {
     k.sMin[n] = sMin; k.sMax[n] = sMax; k.sPrum[n] = sSum / p;
     k.bMin[n] = bMin; k.bMax[n] = bMax; k.bPrum[n] = bSum / p;
     k.cPrum[n] = cSum / p;
+    if (P) {
+      k.pMin[n] = pMin; k.pMax[n] = pMax; k.pPrum[n] = pSum / p;
+    }
     n++;
   }
   k.pocet = n;
@@ -226,6 +241,11 @@ export function kresliData(ctx, k) {
     ctx.fill();
     ctx.globalAlpha = 1;
     nitka(kose.cPrum, yS, barvy.refnew, 1.3);
+  }
+  // spotová cena (jen obchodní režimy) – kvůli ní baterie nabíjí a vybíjí
+  if (serie.cena && k.yP) {
+    pasmo(kose.pMin, kose.pMax, k.yP, barvy.cena, 0.16);
+    nitka(kose.pPrum, k.yP, barvy.cena, 1.3);
   }
 }
 

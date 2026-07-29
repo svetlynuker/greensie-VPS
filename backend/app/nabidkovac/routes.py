@@ -1028,6 +1028,67 @@ def _profil_pro_peak_shaving(
 POCET_VARIANT_S_GRAFEM = 3
 
 
+def _prubeh_spot(
+    db: Session,
+    casy: list[datetime],
+    profil_kw: list[float],
+    mesice: list[int],
+    interval_h: float,
+    vykon_kw: float,
+    kapacita_kwh: float,
+    ucinnost: float,
+    vj: dict,
+    popis: dict,
+) -> tuple[dict, list[float] | None, list[str]]:
+    """Průběh baterie pro nitkový graf v režimech Kombinace/SPOT.
+
+    Bere **stropy a parametry z uloženého výsledku** (`ekonomika_spot`), ne
+    z aktuálního nastavení – graf tak ukazuje přesně to chování, ze kterého
+    vyšla uložená ekonomika. Když ceny nejde načíst (např. se vyhodil rok
+    z databáze), spadne se na čistě peak-shavingový průběh s upozorněním.
+    """
+    ek_spot = vj.get("ekonomika_spot") or {}
+    upozorneni: list[str] = []
+    rok_cen = (ek_spot.get("info_cen") or {}).get("rok_cen")
+    roky = spot_ceny.dostupne_roky(db)
+    if not roky:
+        return (
+            peak_shaving.prubeh_baterie(
+                profil_kw, float(vj["strop_kw"]), vykon_kw, kapacita_kwh, interval_h, ucinnost
+            ),
+            None,
+            ["Spotové ceny nejsou v databázi – graf ukazuje jen srážení špiček."],
+        )
+    if rok_cen not in roky:
+        upozorneni.append(
+            f"Ceny roku {rok_cen} už v databázi nejsou – graf jede na roce {max(roky)}, "
+            "takže se může lišit od uložené ekonomiky."
+        )
+        rok_cen = max(roky)
+    ceny, _ = spot_ceny.ceny_pro_casy(casy, spot_ceny.nacti_rok(db, int(rok_cen)))
+
+    stropy = {
+        int(m["mesic"]): float(m["strop_kw"])
+        for m in (ek_spot.get("mesice") or [])
+        if m.get("strop_kw") is not None
+    }
+    opotrebeni = float(ek_spot.get("opotrebeni_kc_mwh") or 0.0)
+    p = spot_arbitraz.prubeh_roku(
+        ceny,
+        profil_kw,
+        mesice,
+        [c.toordinal() for c in casy],
+        stropy,
+        vykon_kw,
+        kapacita_kwh,
+        spot_arbitraz.nastaveni_z_json(ek_spot.get("nastaveni")),
+        opotrebeni,
+        interval_h,
+        ucinnost,
+    )
+    return p, ceny, upozorneni
+
+
 def _spot_kontext(
     db: Session,
     casy_profilu: list[datetime],
@@ -1625,7 +1686,18 @@ def peak_shaving_prubeh(
     # Strop(y), na kterých simulace jede – přesně dle modelu zvoleného roku.
     # 2027 sráží každý měsíc zvlášť (a i simulaci startuje po měsících, stejně
     # jako ekonomika), 2026 drží jeden roční strop přes celý rok.
-    if rok == 2027:
+    # V obchodních režimech (Kombinace/SPOT) jde průběh ze SPOTOVÉ simulace se
+    # stropy, které rozhodovací vrstva zvolila – jinak by graf ukazoval jiné
+    # chování baterie, než na jakém stojí uložená ekonomika. Přepínač roku na
+    # něj nemá vliv: stropy jsou dané výsledkem, ne modelem tarifu.
+    ek_spot = vj.get("ekonomika_spot") or None
+    ceny_prubehu: list[float] | None = None
+    if ek_spot:
+        p, ceny_prubehu, upozorneni_spot = _prubeh_spot(
+            db, casy, profil_kw, mesice, interval_h, vykon, kapacita, ucinnost, vj, popis
+        )
+        upozorneni = list(upozorneni) + upozorneni_spot
+    elif rok == 2027:
         stropy_mesicu = peak_shaving.mesicni_maxima_po_baterii(
             profil_kw, mesice, vykon, kapacita, interval_h, ucinnost
         )
@@ -1688,6 +1760,17 @@ def peak_shaving_prubeh(
         "baterie_kw": [round(x, 2) for x in p["baterie_kw"]],
         "soc_pct": [round(x, 1) for x in p["soc_pct"]],
         "useky_stropu": _useky_stropu(p["stropy_kw"]),
+        # Obchodní režimy: cena, podle které se baterie rozhodovala, a rozpad
+        # výkonu na srážení špičky vs. obchod. U čistého peak shavingu None,
+        # takže FE ty pásy prostě nevykreslí.
+        "cena_kc_mwh": ([round(x, 1) for x in ceny_prubehu] if ceny_prubehu else None),
+        "baterie_ps_kw": (
+            [round(x, 2) for x in p["baterie_ps_kw"]] if "baterie_ps_kw" in p else None
+        ),
+        "baterie_obchod_kw": (
+            [round(x, 2) for x in p["baterie_obchod_kw"]] if "baterie_obchod_kw" in p else None
+        ),
+        "rezim": vj.get("rezim") or "peak_shaving",
         "referencni": {
             "rk_soucasna_kw": round(rk_soucasna_ref, 2) if rk_soucasna_ref else None,
             "rk_nova_kw": round(rk_nova, 2) if rk_nova else None,

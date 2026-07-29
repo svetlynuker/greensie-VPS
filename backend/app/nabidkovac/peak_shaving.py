@@ -1575,6 +1575,9 @@ def _ekonomika_spot_json(v, kapacita_jmenovita_kwh: float) -> dict:
         ],
         "upozorneni": list(v.upozorneni),
         "info_cen": dict(v.info_cen),
+        # Parametry obchodu, se kterými se počítalo – nitkový graf si podle nich
+        # dopočítá průběh, aby ukazoval totéž co tabulky.
+        "nastaveni": dict(v.nastaveni_json),
     }
 
 

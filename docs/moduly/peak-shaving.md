@@ -430,6 +430,25 @@ a na čtvrthodiny se rozpadají až při čtení. Profil zákazníka je typicky 
 roku než ceny, takže se páruje **podle měsíce a dne v týdnu**, aby pracovní dny
 dostaly ceny pracovních dnů.
 
+**Nitkový graf v obchodních režimech.** Endpoint `/prubeh` v režimech Kombinace/SPOT
+nepočítá průběh z peak-shavingové fyziky, ale ze **spotové simulace se stropy
+z uloženého výsledku** (`spot_arbitraz.prubeh_roku`) — jinak by graf ukazoval jiné
+chování baterie, než na jakém stojí ekonomika. Konkrétně: `simuluj_usek` umí se
+`zapisuj=True` zaznamenat průběh ze **stejného** projezdu, ze kterého vyšla čísla,
+a `prubeh_roku` z toho složí rok (každý měsíc startuje od plné baterie, stejně jako
+ekonomika — přenášet nabití mezi měsíci by bylo realističtější, ale graf by se
+s tabulkami rozešel o 7,5 % zisku). Parametry obchodu se ukládají do výsledku
+(`ekonomika_spot.nastaveni`), takže průběh jede na týchž číslech i po změně
+admin nastavení. Odpověď navíc nese `cena_kc_mwh` (spotová cena, podle které se
+baterie rozhodovala) a rozpad `baterie_ps_kw` / `baterie_obchod_kw`; frontend
+z toho kreslí čtvrtý pás grafu a doplňuje tooltip.
+
+Vedlejší nález: povinné dobíjení pro peak shaving míří na minimální trajektorii
+**plus bezpečnostní rezervu**. Dobíjení „jen na hranu" bylo křehké — trajektorie
+počítá s dobíjením plným výkonem, a jakmile se to o kousek nepovedlo, baterie
+špičku nesrazila (5 intervalů z 35 040, nejvíc o 31 kW). S rezervou je překročení
+nulové a zisk vyšel o 2 % vyšší, protože se neplatí vyšší měsíční maxima.
+
 **Výkon.** Obchodní režimy stojí ~**0,6 s na produkt** (proti 0,25 s u čistého peak
 shavingu): pro každý měsíc se zkoušejí kandidátní stropy a každý znamená
 odsimulovat měsíc po čtvrthodinách. U celého ceníku (84 produktů) je to ~50 s, což

@@ -116,6 +116,17 @@ _MAX_ITERACI_VOLBY = 3
 # Kolik pokusů o dodržení ročního limitu cyklů (zvyšováním nákladu opotřebení).
 _MAX_ITERACI_LIMITU_CYKLU = 5
 
+# Řady, které se zapisují do průběhu pro nitkový graf (`simuluj_usek(zapisuj=True)`).
+_KLICE_PRUBEHU = (
+    "site_kw",
+    "baterie_kw",
+    "baterie_ps_kw",
+    "baterie_obchod_kw",
+    "soc_pct",
+    "cena_kc_mwh",
+    "stropy_kw",
+)
+
 # Kalibrace denních cenových prahů (`optimalizuj_prahy`) probíhá ve dvou
 # průchodech: hrubá mřížka percentilů, pak zjemnění o `KROK_ZJEMNENI` kolem
 # nejlepšího nálezu. Plná mřížka 4×4 dávala stejné výsledky za dvojnásobek
@@ -237,6 +248,9 @@ class VysledekUseku:
     max_site_kw: float = 0.0  # nejvyšší síťový tok v úseku (měsíční maximum)
     prekroceni_stropu_kw: float = 0.0  # o kolik strop neudržel (0 = udržel)
     koncovy_soc_kwh: float = 0.0
+    # Rozepsaný průběh po intervalech – plní se jen se `zapisuj=True`
+    # (podklad pro nitkový graf, viz `prubeh_roku`).
+    prubeh: dict | None = None
 
 
 def simuluj_usek(
@@ -253,6 +267,7 @@ def simuluj_usek(
     ucinnost_rt: float = peak_shaving.VYCHOZI_UCINNOST_RT,
     pocatecni_soc_kwh: float | None = None,
     soc_minimum: list[float] | None = None,
+    zapisuj: bool = False,
 ) -> VysledekUseku:
     """Projede úsek interval po intervalu; peak shaving má vždy přednost.
 
@@ -271,6 +286,10 @@ def simuluj_usek(
 
     `zisk_energie_kc` je rozdíl proti scénáři bez baterie (kde by zákazník
     koupil celý odběr ze sítě).
+
+    Se `zapisuj=True` se navíc zaznamená průběh po intervalech (`prubeh`) pro
+    nitkový graf — ze **stejné** simulace, ze které vyšla ekonomika, aby graf
+    nemohl ukazovat jiné chování baterie než tabulky.
     """
     pocet = len(odber_kw)
     v = VysledekUseku()
@@ -285,6 +304,18 @@ def simuluj_usek(
         0.0, min(kapacita_kwh, pocatecni_soc_kwh)
     )
     rezerva = kapacita_kwh * max(0.0, min(90.0, n.bezpecnostni_rezerva_procenta)) / 100.0
+    if zapisuj:
+        # `baterie_kw` = kladné vybíjí, záporné nabíjí (stejná konvence jako
+        # `peak_shaving.prubeh_baterie`, aby FE nemusel rozlišovat zdroj dat).
+        v.prubeh = {
+            "site_kw": [],
+            "baterie_kw": [],
+            "baterie_ps_kw": [],  # z toho srážení špičky
+            "baterie_obchod_kw": [],  # z toho obchod (+ prodej, − nákup)
+            "soc_pct": [],
+            "cena_kc_mwh": [],
+            "stropy_kw": [],
+        }
 
     for i in range(pocet):
         odber = odber_kw[i]
@@ -312,9 +343,14 @@ def simuluj_usek(
         # minimální trajektorie – jinak by špičku, která přijde za chvíli,
         # nesrazila. Tohle je to, co dělá klasický peak shaving: dobíjí, kdykoli
         # je pod stropem místo. Obchodní logika se ptá na cenu, tato ne.
+        # Cílem je minimální trajektorie **plus bezpečnostní rezerva**: dobíjet
+        # jen „na hranu" se ukázalo jako křehké – trajektorie počítá s tím, že
+        # se dá dobíjet plným výkonem, a jakmile se to o kousek nepovede,
+        # baterie špičku nesrazí (na testovacím profilu 5 intervalů z 35 040,
+        # nejvíc o 31 kW).
         soc_cil = 0.0
         if soc_minimum is not None and i + 1 < len(soc_minimum):
-            soc_cil = soc_minimum[i + 1]
+            soc_cil = min(kapacita_kwh, soc_minimum[i + 1] + rezerva)
         if soc < soc_cil - 1e-9 and zbyly_vykon_kw > 1e-9:
             prostor_kw = min(zbyly_vykon_kw, max(0.0, strop_kw - site_kw))
             if prostor_kw > 1e-9:
@@ -371,6 +407,20 @@ def simuluj_usek(
         v.zisk_energie_kc += naklad_bez_baterie - naklad
         if site_kw > v.max_site_kw:
             v.max_site_kw = site_kw
+
+        if zapisuj:
+            # Co baterie v tomhle intervalu udělala: `odber − site` je čistý
+            # tok z baterie do odběru, přebytek nad odběr šel do sítě.
+            obchod_kw = (odber - site_kw) / 1.0 - ps_ac_kw
+            v.prubeh["site_kw"].append(site_kw)
+            v.prubeh["baterie_kw"].append(ps_ac_kw + obchod_kw)
+            v.prubeh["baterie_ps_kw"].append(ps_ac_kw)
+            v.prubeh["baterie_obchod_kw"].append(obchod_kw)
+            v.prubeh["soc_pct"].append(
+                100.0 * soc / kapacita_kwh if kapacita_kwh > 0 else 0.0
+            )
+            v.prubeh["cena_kc_mwh"].append(spot)
+            v.prubeh["stropy_kw"].append(strop_kw)
 
     v.naklad_opotrebeni_kc = v.obchodni_vybito_kwh / 1000.0 * opotrebeni_kc_mwh
     v.zisk_kc = v.zisk_energie_kc - v.naklad_opotrebeni_kc
@@ -511,6 +561,7 @@ def plan_mesice(
     interval_h: float = peak_shaving.VYCHOZI_INTERVAL_H,
     ucinnost_rt: float = peak_shaving.VYCHOZI_UCINNOST_RT,
     pocatecni_soc_kwh: float | None = None,
+    zapisuj: bool = False,
 ) -> VysledekUseku:
     """Odsimuluje měsíc **po dnech**, s prahy kalibrovanými na každý den zvlášť.
 
@@ -529,8 +580,10 @@ def plan_mesice(
     souhrn = VysledekUseku()
     soc = kapacita_kwh if pocatecni_soc_kwh is None else pocatecni_soc_kwh
     souhrn.koncovy_soc_kwh = soc
+    if zapisuj:
+        souhrn.prubeh = {k: [] for k in _KLICE_PRUBEHU}
     for indexy in _po_dnech(dny):
-        _, _, dil = optimalizuj_prahy(
+        prah_n, prah_p, dil = optimalizuj_prahy(
             [ceny_kc_mwh[i] for i in indexy],
             [odber_kw[i] for i in indexy],
             strop_kw,
@@ -543,6 +596,27 @@ def plan_mesice(
             soc,
             [soc_minimum[i] for i in indexy],
         )
+        if zapisuj:
+            # Kalibrace prahů projede den víckrát; průběh chceme jen z té
+            # vítězné kombinace, tak ji zopakujeme se zápisem.
+            dil = simuluj_usek(
+                [ceny_kc_mwh[i] for i in indexy],
+                [odber_kw[i] for i in indexy],
+                strop_kw,
+                vykon_kw,
+                kapacita_kwh,
+                n,
+                prah_n,
+                prah_p,
+                opotrebeni_kc_mwh,
+                interval_h,
+                ucinnost_rt,
+                soc,
+                [soc_minimum[i] for i in indexy],
+                zapisuj=True,
+            )
+            for klic in _KLICE_PRUBEHU:
+                souhrn.prubeh[klic].extend(dil.prubeh[klic])
         _pricti(souhrn, dil)
         soc = dil.koncovy_soc_kwh
     return souhrn
@@ -619,6 +693,9 @@ class VysledekRoku:
     upozorneni: list[str] = field(default_factory=list)
     # Odkud jsou ceny a jak se párovaly na profil (`spot_ceny.ceny_pro_casy`).
     info_cen: dict = field(default_factory=dict)
+    # Použité parametry obchodu (marže, poplatky, rezerva…) – aby se průběh
+    # pro nitkový graf dopočítal se stejnými čísly (`nastaveni_z_json`).
+    nastaveni_json: dict = field(default_factory=dict)
 
 
 def simuluj_rok(
@@ -872,4 +949,132 @@ def spocti_pro_variantu(
         ucinnost_rt=ucinnost_rt,
     )
     vysledek.info_cen = dict(kontext.info_cen)
+    # Parametry se ukládají do výsledku, aby se průběh pro nitkový graf dal
+    # dopočítat se stejnými čísly, i když se mezitím nastavení změní.
+    vysledek.nastaveni_json = nastaveni_do_json(kontext.nastaveni)
     return vysledek
+
+
+def prubeh_roku(
+    ceny_kc_mwh: list[float],
+    odber_kw: list[float],
+    mesice: list[int],
+    dny: list[int],
+    stropy_mesicu: dict[int, float],
+    vykon_kw: float,
+    kapacita_kwh: float,
+    n: NastaveniSpot,
+    opotrebeni_kc_mwh: float,
+    interval_h: float = peak_shaving.VYCHOZI_INTERVAL_H,
+    ucinnost_rt: float = peak_shaving.VYCHOZI_UCINNOST_RT,
+) -> dict:
+    """Rozepíše celý rok interval po intervalu — podklad pro nitkový graf.
+
+    Stropy si nevolí, ale **dostane je zadané** (z uloženého výsledku výpočtu),
+    takže graf ukazuje přesně to chování, ze kterého vyšla uložená ekonomika.
+    Fyzika i obchodní logika jsou tytéž (`simuluj_usek`) – nitkový graf a
+    tabulky se tak nemohou rozejít.
+
+    Vrací řady v pořadí intervalů profilu (`site_kw`, `baterie_kw`,
+    `baterie_ps_kw`, `baterie_obchod_kw`, `soc_pct`, `cena_kc_mwh`,
+    `stropy_kw`) a souhrn energií, stejně jako `peak_shaving.prubeh_baterie`.
+    """
+    pocet = len(odber_kw)
+    rady: dict[str, list[float]] = {k: [0.0] * pocet for k in _KLICE_PRUBEHU}
+    souhrn = VysledekUseku()
+    if pocet == 0 or vykon_kw <= 0 or kapacita_kwh <= 0:
+        return {**rady, "nabito_kwh": 0.0, "vybito_kwh": 0.0, "zisk_kc": 0.0}
+
+    indexy_mesicu: dict[int, list[int]] = {}
+    for i, m in enumerate(mesice):
+        indexy_mesicu.setdefault(m, []).append(i)
+
+    # Každý měsíc startuje od PLNÉ baterie – stejně jako ekonomika
+    # (`simuluj_rok` počítá měsíce nezávisle) a jako model 2027 u čistého peak
+    # shavingu. Přenášet nabití mezi měsíci by bylo realističtější, ale graf by
+    # se pak rozešel s čísly v tabulkách (na testovacím profilu o 7,5 % zisku).
+    for m in sorted(indexy_mesicu):
+        idx = indexy_mesicu[m]
+        maximum = max(odber_kw[i] for i in idx)
+        dil = plan_mesice(
+            [ceny_kc_mwh[i] for i in idx],
+            [odber_kw[i] for i in idx],
+            [dny[i] for i in idx],
+            stropy_mesicu.get(m, maximum),
+            vykon_kw,
+            kapacita_kwh,
+            n,
+            opotrebeni_kc_mwh,
+            interval_h,
+            ucinnost_rt,
+            zapisuj=True,
+        )
+        for klic in _KLICE_PRUBEHU:
+            for poradi, i in enumerate(idx):
+                if poradi < len(dil.prubeh[klic]):
+                    rady[klic][i] = dil.prubeh[klic][poradi]
+        _pricti(souhrn, dil)
+
+    return {
+        **rady,
+        # Nabito ze sítě zahrnuje i povinné dobíjení pro peak shaving, vybito
+        # je vše, co baterie vydala (do odběru i do sítě).
+        "nabito_kwh": souhrn.ze_site_kwh,
+        "vybito_kwh": souhrn.ps_vybito_kwh + souhrn.do_odberu_kwh + souhrn.do_site_kwh,
+        "do_site_kwh": souhrn.do_site_kwh,
+        "do_odberu_kwh": souhrn.do_odberu_kwh,
+        "ps_vybito_kwh": souhrn.ps_vybito_kwh,
+        "obchodnich_cyklu": souhrn.obchodnich_cyklu,
+        "zisk_kc": souhrn.zisk_kc,
+    }
+
+
+def nastaveni_z_json(data: dict | None) -> NastaveniSpot:
+    """Rekonstruuje `NastaveniSpot` z toho, co se uložilo do výsledku výpočtu.
+
+    Průběh pro graf se musí počítat se **stejnými** parametry jako uložená
+    ekonomika, ne s aktuálním nastavením – to se mohlo mezitím změnit.
+    """
+    d = data or {}
+
+    def cislo(klic: str, vychozi: float) -> float:
+        hodnota = d.get(klic)
+        try:
+            return float(hodnota) if hodnota is not None else vychozi
+        except (TypeError, ValueError):
+            return vychozi
+
+    return NastaveniSpot(
+        marze_nakup_kc_mwh=cislo("marze_nakup_kc_mwh", VYCHOZI_MARZE_KC_MWH),
+        marze_prodej_kc_mwh=cislo("marze_prodej_kc_mwh", VYCHOZI_MARZE_KC_MWH),
+        regulovane_nakup_kc_mwh=cislo(
+            "regulovane_nakup_kc_mwh", VYCHOZI_REGULOVANE_NAKUP_KC_MWH
+        ),
+        regulovane_prodej_kc_mwh=cislo(
+            "regulovane_prodej_kc_mwh", VYCHOZI_REGULOVANE_PRODEJ_KC_MWH
+        ),
+        dan_z_elektriny_kc_mwh=cislo("dan_z_elektriny_kc_mwh", VYCHOZI_DAN_Z_ELEKTRINY_KC_MWH),
+        cyklu_zivotnosti=int(cislo("cyklu_zivotnosti", VYCHOZI_CYKLU_ZIVOTNOSTI)),
+        max_cyklu_rok=(cislo("max_cyklu_rok", 0.0) or None),
+        umoznit_export=bool(d.get("umoznit_export", True)),
+        max_export_kw=(cislo("max_export_kw", 0.0) or None),
+        bezpecnostni_rezerva_procenta=cislo(
+            "bezpecnostni_rezerva_procenta", VYCHOZI_BEZPECNOSTNI_REZERVA_PROCENTA
+        ),
+    )
+
+
+def nastaveni_do_json(n: NastaveniSpot) -> dict:
+    """Uloží parametry obchodu do výsledku, ať jde průběh dopočítat stejně."""
+    return {
+        "marze_nakup_kc_mwh": n.marze_nakup_kc_mwh,
+        "marze_prodej_kc_mwh": n.marze_prodej_kc_mwh,
+        "regulovane_nakup_kc_mwh": n.regulovane_nakup_kc_mwh,
+        "regulovane_prodej_kc_mwh": n.regulovane_prodej_kc_mwh,
+        "dan_z_elektriny_kc_mwh": n.dan_z_elektriny_kc_mwh,
+        "cyklu_zivotnosti": n.cyklu_zivotnosti,
+        "max_cyklu_rok": n.max_cyklu_rok,
+        "umoznit_export": n.umoznit_export,
+        "max_export_kw": n.max_export_kw,
+        "bezpecnostni_rezerva_procenta": n.bezpecnostni_rezerva_procenta,
+    }

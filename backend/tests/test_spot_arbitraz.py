@@ -596,3 +596,129 @@ class TestEkonomikaSDodanymiMaximy:
         assert ek["status"] == "spocitano"
         # Maxima jako bez baterie → na platbě za výkon baterie nic nemění.
         assert ek["prinos_baterie"] == pytest.approx(0.0, abs=1.0)
+
+
+# ------------------------------------------- průběh pro nitkový graf
+class TestPrubehRoku:
+    """Rozepsaný průběh musí souhlasit s ekonomikou, ze které vyšel."""
+
+    def _zadani(self, dnu: int = 28):
+        ceny, odber, mesice, dny = _rok_ceny_a_profil(dnu)
+        return ceny, odber, mesice, dny
+
+    def test_rady_maji_delku_profilu(self):
+        ceny, odber, mesice, dny = self._zadani()
+        p = sa.prubeh_roku(
+            ceny, odber, mesice, dny, {1: 300.0}, 150.0, 400.0, sa.NastaveniSpot(), 200.0
+        )
+        for klic in sa._KLICE_PRUBEHU:
+            assert len(p[klic]) == len(odber), klic
+
+    def test_zisk_souhlasi_s_ekonomikou(self):
+        """Graf a tabulky musí vyjít ze stejné simulace – jinak se rozejdou."""
+        ceny, odber, mesice, dny = self._zadani()
+        naklad = lambda maxima: sum(maxima.values()) * 200.0  # noqa: E731
+        r = sa.simuluj_rok(
+            ceny, odber, mesice, dny, 150.0, 400.0, sa.NastaveniSpot(), 200.0, naklad,
+            rezim=sa.REZIM_KOMBINACE,
+        )
+        stropy = {v.mesic: v.strop_kw for v in r.volby}
+        p = sa.prubeh_roku(
+            ceny, odber, mesice, dny, stropy, 150.0, 400.0, sa.NastaveniSpot(), 200.0
+        )
+        assert p["zisk_kc"] == pytest.approx(r.zisk_kc, rel=1e-6)
+        assert p["obchodnich_cyklu"] == pytest.approx(r.obchodnich_cyklu, rel=1e-6)
+
+    def test_mesicni_maximum_souhlasi_s_ekonomikou(self):
+        ceny, odber, mesice, dny = self._zadani()
+        naklad = lambda maxima: sum(maxima.values()) * 200.0  # noqa: E731
+        r = sa.simuluj_rok(
+            ceny, odber, mesice, dny, 150.0, 400.0, sa.NastaveniSpot(), 200.0, naklad,
+            rezim=sa.REZIM_KOMBINACE,
+        )
+        stropy = {v.mesic: v.strop_kw for v in r.volby}
+        p = sa.prubeh_roku(
+            ceny, odber, mesice, dny, stropy, 150.0, 400.0, sa.NastaveniSpot(), 200.0
+        )
+        assert max(p["site_kw"]) == pytest.approx(r.cilova_maxima_kw[1], rel=1e-6)
+
+    def test_sitovy_tok_nepresahne_udrzitelny_strop(self):
+        """Na udržitelném stropu ho obchod nesmí prorazit ani o kilowatt."""
+        ceny, odber, mesice, dny = self._zadani()
+        udrzitelny = ps.min_udrzitelny_strop(odber, 150.0, 400.0, 0.25, 0.88)
+        p = sa.prubeh_roku(
+            ceny, odber, mesice, dny, {1: udrzitelny}, 150.0, 400.0, sa.NastaveniSpot(), 200.0
+        )
+        assert all(s <= p["stropy_kw"][i] + 0.5 for i, s in enumerate(p["site_kw"]))
+
+    def test_rozpad_vykonu_dava_soucet(self):
+        ceny, odber, mesice, dny = self._zadani()
+        p = sa.prubeh_roku(
+            ceny, odber, mesice, dny, {1: 300.0}, 150.0, 400.0, sa.NastaveniSpot(), 200.0
+        )
+        for i in range(len(odber)):
+            assert p["baterie_kw"][i] == pytest.approx(
+                p["baterie_ps_kw"][i] + p["baterie_obchod_kw"][i], abs=1e-6
+            )
+
+    def test_soc_zustava_v_rozsahu(self):
+        ceny, odber, mesice, dny = self._zadani()
+        p = sa.prubeh_roku(
+            ceny, odber, mesice, dny, {1: 300.0}, 150.0, 400.0, sa.NastaveniSpot(), 200.0
+        )
+        assert min(p["soc_pct"]) >= -0.01
+        assert max(p["soc_pct"]) <= 100.01
+
+    def test_ceny_v_prubehu_odpovidaji_vstupu(self):
+        ceny, odber, mesice, dny = self._zadani()
+        p = sa.prubeh_roku(
+            ceny, odber, mesice, dny, {1: 300.0}, 150.0, 400.0, sa.NastaveniSpot(), 200.0
+        )
+        assert p["cena_kc_mwh"] == pytest.approx(ceny)
+
+    def test_prazdny_profil(self):
+        p = sa.prubeh_roku([], [], [], [], {}, 100.0, 200.0, sa.NastaveniSpot(), 0.0)
+        assert p["zisk_kc"] == 0.0
+
+
+class TestSerializaceNastaveni:
+    """Parametry obchodu se ukládají do výsledku, ať průběh jede na stejných."""
+
+    def test_round_trip(self):
+        n = sa.NastaveniSpot(
+            marze_nakup_kc_mwh=180.0,
+            regulovane_nakup_kc_mwh=300.0,
+            dan_z_elektriny_kc_mwh=28.3,
+            cyklu_zivotnosti=8000,
+            max_cyklu_rok=300.0,
+            umoznit_export=False,
+            max_export_kw=120.0,
+            bezpecnostni_rezerva_procenta=15.0,
+        )
+        zpet = sa.nastaveni_z_json(sa.nastaveni_do_json(n))
+        assert zpet == n
+
+    def test_chybejici_hodnoty_padnou_na_defaulty(self):
+        zpet = sa.nastaveni_z_json({})
+        assert zpet.marze_nakup_kc_mwh == sa.VYCHOZI_MARZE_KC_MWH
+        assert zpet.regulovane_nakup_kc_mwh == sa.VYCHOZI_REGULOVANE_NAKUP_KC_MWH
+        assert zpet.max_cyklu_rok is None
+
+    def test_none_je_bezpecne(self):
+        assert sa.nastaveni_z_json(None).cyklu_zivotnosti == sa.VYCHOZI_CYKLU_ZIVOTNOSTI
+
+    def test_vysledek_nese_nastaveni_pro_graf(self):
+        ceny, odber, mesice, dny = _rok_ceny_a_profil()
+        kontext = sa.Kontext(
+            ceny_kc_mwh=ceny, mesice=mesice, dny=dny,
+            nastaveni=sa.NastaveniSpot(marze_nakup_kc_mwh=150.0),
+        )
+        v = sa.spocti_pro_variantu(
+            kontext, profil_kw=odber, vykon_kw=150.0, kapacita_kwh=400.0,
+            kapacita_jmenovita_kwh=470.0, cena_baterie_kc=3_000_000, cyklu_zivotnosti=6000,
+            rezim=sa.REZIM_KOMBINACE, interval_h=0.25, ucinnost_rt=0.88,
+            parametry_2027=None, rezervovany_prikon_kw=500.0, uvazovat_snizeni_rp=False,
+            cena_rezervace_kc_kw_rok=3030.78, cena_mesicni_rk_kc_kw_mesic=281.823,
+            rezerva_rk_procenta=5.0,
+        )
+        assert v.nastaveni_json["marze_nakup_kc_mwh"] == 150.0

@@ -60,6 +60,9 @@ const TOKENY = {
   brand: ["--brand", "#2f9e44"],
   refnew: ["--c-refnew", "#d97706"],
   grid: ["--c-grid", "#e9edea"],
+  // Spotová cena – modrá jako „export/trh", ať se nemíchá se zelenou (odběr)
+  // ani oranžovou (stav nabití).
+  cena: ["--c-export", "#1971c2"],
   spicka: ["--st-serious", "#d1652f"],
   sedlo: ["--c-export", "#1971c2"],
   prekroceni: ["--st-crit", "#d03b3b"],
@@ -152,7 +155,7 @@ export default function GrafPrubehu({ data, popisRoku }) {
   const uzky = sirka < 620;
 
   const [rozsah, setRozsah] = useState({ od: 0, do: n });
-  const [serie, setSerie] = useState({ bez: true, baterie: true, soc: true });
+  const [serie, setSerie] = useState({ bez: true, baterie: true, soc: true, cena: true });
   const [kategorie, setKategorie] = useState({ spicka: true, sedlo: false, baterie: true, prekroceni: true });
   const [vybranaUdalost, setVybranaUdalost] = useState(null);
   const [kurzor, setKurzor] = useState(null);
@@ -170,6 +173,10 @@ export default function GrafPrubehu({ data, popisRoku }) {
   const V_HLAVNI = uzky ? 186 : 260;
   const V_BATERIE = serie.baterie ? (uzky ? 74 : 104) : 0;
   const V_SOC = serie.soc ? (uzky ? 48 : 66) : 0;
+  // Cenový pás má smysl jen v obchodních režimech – bez cen v datech se vůbec
+  // nekreslí, takže čistý peak shaving vypadá stejně jako dřív.
+  const maCenu = Array.isArray(data.cena_kc_mwh) && data.cena_kc_mwh.length === n;
+  const V_CENA = maCenu && serie.cena ? (uzky ? 56 : 78) : 0;
   const V_PREHLED = uzky ? 32 : 42;
   const V_OSA = 20;
   const MEZERA = 8;
@@ -177,7 +184,8 @@ export default function GrafPrubehu({ data, popisRoku }) {
   const yHlavni = OKRAJ.t;
   const yBaterie = yHlavni + V_HLAVNI + MEZERA;
   const ySoc = yBaterie + V_BATERIE + (serie.baterie ? MEZERA : 0);
-  const yOsa = ySoc + V_SOC + (serie.soc ? MEZERA : 0);
+  const yCena = ySoc + V_SOC + (serie.soc ? MEZERA : 0);
+  const yOsa = yCena + V_CENA + (V_CENA ? MEZERA : 0);
   const yPrehled = yOsa + V_OSA + MEZERA;
   const vyska = yPrehled + V_PREHLED + 4;
   const x0 = OKRAJ.l;
@@ -235,6 +243,29 @@ export default function GrafPrubehu({ data, popisRoku }) {
   );
   const yS = useCallback((v) => ySoc + V_SOC - (v / 100) * V_SOC, [ySoc, V_SOC]);
 
+  // Osa ceny musí zvládnout i zápornou spotovou cenu (v roce 2025 jich bylo
+  // 323 hodin), takže se počítá z min i max výřezu, ne od nuly.
+  const rozsahCeny = useMemo(() => {
+    if (!V_CENA) return null;
+    let min = Infinity;
+    let max = -Infinity;
+    for (let i = 0; i < kose.pocet; i++) {
+      if (kose.pMin[i] < min) min = kose.pMin[i];
+      if (kose.pMax[i] > max) max = kose.pMax[i];
+    }
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+    const rezerva = Math.max(50, (max - min) * 0.08);
+    return { min: Math.min(0, min) - rezerva, max: max + rezerva };
+  }, [kose, V_CENA]);
+  const yP = useCallback(
+    (v) => {
+      if (!rozsahCeny) return yCena;
+      const podil = (v - rozsahCeny.min) / Math.max(1, rozsahCeny.max - rozsahCeny.min);
+      return yCena + V_CENA - podil * V_CENA;
+    },
+    [rozsahCeny, yCena, V_CENA]
+  );
+
   const tickyY = useMemo(() => ticky(0, yMax, uzky ? 3 : 4), [yMax, uzky]);
   const tickyCasu = useMemo(
     () => osaCasu(zaklad, tOd, tDo, uzky ? 0.5 : 1),
@@ -258,13 +289,14 @@ export default function GrafPrubehu({ data, popisRoku }) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     kresliData(ctx, {
       kose, x, yH, yB, yS, serie, barvy, sirka, vyska,
+      yP: V_CENA ? yP : null,
       mrizka: {
         x0, x1, yOd: yHlavni, yDo: yOsa,
         vodorovne: tickyY.map(yH),
         svisle: tickyCasu.map((t) => x(t.t)),
       },
     });
-  }, [kose, x, yH, yB, yS, serie, barvy, sirka, vyska, x0, x1, yHlavni, yOsa, tickyY, tickyCasu]);
+  }, [kose, x, yH, yB, yS, yP, V_CENA, serie, barvy, sirka, vyska, x0, x1, yHlavni, yOsa, tickyY, tickyCasu]);
 
   // Přehledová lišta se počítá zvlášť – nemění se se zoomem, jen s daty a šířkou.
   const prehledKose = useMemo(() => {
@@ -499,11 +531,37 @@ export default function GrafPrubehu({ data, popisRoku }) {
             <text x={x0 - 8} y={yS(0) + 3} textAnchor="end" fontSize="9" fill="var(--muted)">0</text>
           </>
         )}
+        {V_CENA > 0 && rozsahCeny && (
+          <>
+            {/* Nula je u ceny důležitá: pod ní se za odběr platí naopak. */}
+            {rozsahCeny.min < 0 && (
+              <line
+                x1={x0} y1={yP(0)} x2={x1} y2={yP(0)}
+                stroke="var(--c-grid)" strokeWidth="1" strokeDasharray="4 3"
+              />
+            )}
+            <text x={x0 - 8} y={yP(rozsahCeny.max) + 9} textAnchor="end" fontSize="9" fill="var(--muted)">
+              {Math.round(rozsahCeny.max)}
+            </text>
+            {rozsahCeny.min < 0 && (
+              <text x={x0 - 8} y={yP(0) + 3} textAnchor="end" fontSize="9" fill="var(--muted)">0</text>
+            )}
+            <text x={x0 - 8} y={yP(rozsahCeny.min) - 2} textAnchor="end" fontSize="9" fill="var(--muted)">
+              {Math.round(rozsahCeny.min)}
+            </text>
+            <text
+              x={x1 - 4} y={yP(rozsahCeny.max) + 10}
+              textAnchor="end" fontSize="9.5" fontWeight="600" fill="var(--c-export)"
+            >
+              spotová cena Kč/MWh
+            </text>
+          </>
+        )}
       </>
     );
   }, [
-    data.useky_stropu, data.casy_min, od, doIdx, tickyY, tickyCasu, x, yH, yB, yS,
-    x0, x1, yOsa, yMax, maxBaterie, serie.baterie, serie.soc, uzky,
+    data.useky_stropu, data.casy_min, od, doIdx, tickyY, tickyCasu, x, yH, yB, yS, yP,
+    x0, x1, yOsa, yMax, maxBaterie, serie.baterie, serie.soc, uzky, V_CENA, rozsahCeny,
     ref_.rk_soucasna_kw, ref_.rk_nova_kw, ref_.popisek_soucasna, ref_.popisek_nova,
   ]);
 
@@ -631,6 +689,17 @@ export default function GrafPrubehu({ data, popisRoku }) {
           <input type="checkbox" checked={serie.soc} onChange={(e) => setSerie((s) => ({ ...s, soc: e.target.checked }))} />
           <span style={{ display: "inline-block", width: 12, height: 3, background: "var(--c-refnew)" }} /> stav nabití
         </label>
+        {maCenu && (
+          <label style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <input
+              type="checkbox"
+              checked={serie.cena}
+              onChange={(e) => setSerie((s) => ({ ...s, cena: e.target.checked }))}
+            />
+            <span style={{ display: "inline-block", width: 12, height: 3, background: "var(--c-export)" }} />{" "}
+            spotová cena
+          </label>
+        )}
       </div>
 
       <div ref={obalRef} style={{ position: "relative", width: "100%" }}>
@@ -747,10 +816,36 @@ export default function GrafPrubehu({ data, popisRoku }) {
                   : `${Math.round(kose.bMin[kurzor.poradi])} … ${Math.round(kose.bMax[kurzor.poradi])} kW`}
               </b>
             </div>
+            {/* V obchodních režimech je zajímavé, kolik z výkonu šlo na
+                srážení špičky a kolik na obchod – to je jádro rozhodování. */}
+            {krok === 1 && data.baterie_ps_kw && data.baterie_obchod_kw && (
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  color: "var(--fm-muted)",
+                }}
+              >
+                <span>z toho špička / obchod</span>
+                <span>
+                  {Math.round(data.baterie_ps_kw[kurzor.i])} / {Math.round(data.baterie_obchod_kw[kurzor.i])} kW
+                </span>
+              </div>
+            )}
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span>stav nabití</span>
               <span>{Math.round(krok === 1 ? data.soc_pct[kurzor.i] : kose.cPrum[kurzor.poradi])} %</span>
             </div>
+            {maCenu && (
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>spotová cena</span>
+                <b style={{ color: "var(--c-export)" }}>
+                  {krok === 1
+                    ? `${Math.round(data.cena_kc_mwh[kurzor.i]).toLocaleString("cs-CZ")} Kč/MWh`
+                    : `${Math.round(kose.pMin[kurzor.poradi])} … ${Math.round(kose.pMax[kurzor.poradi])} Kč/MWh`}
+                </b>
+              </div>
+            )}
           </div>
         )}
       </div>
