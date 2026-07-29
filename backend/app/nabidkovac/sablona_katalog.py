@@ -99,43 +99,65 @@ class Pole:
 
     `extraktor(popis_json) -> hodnota|None`. `format` řídí český zápis.
     `nazev` je výchozí popisek (uživatel si ho v editoru může přepsat).
+    `skupina` řídí, pod kterou sekci pole spadne v paletě editoru.
     """
 
-    def __init__(self, klic: str, nazev: str, format: str, extraktor: Callable[[dict], Any]):
+    def __init__(
+        self,
+        klic: str,
+        nazev: str,
+        format: str,
+        extraktor: Callable[[dict], Any],
+        skupina: str = "Ostatní",
+    ):
         self.klic = klic
         self.nazev = nazev
         self.format = format
         self.extraktor = extraktor
+        self.skupina = skupina
 
     def slovnik(self) -> dict:
         """Podoba pro frontend (bez extraktoru)."""
-        return {"klic": self.klic, "nazev": self.nazev, "format": self.format}
+        return {
+            "klic": self.klic,
+            "nazev": self.nazev,
+            "format": self.format,
+            "skupina": self.skupina,
+        }
 
 
 # ---- PPA: katalog zákaznických polí -----------------------------------------
+# `skupina` = sekce v paletě editoru (pořadí sekcí = pořadí prvního výskytu).
+_S_ELEKTRARNA = "Elektrárna"
+_S_SPOTREBA = "Spotřeba a pokrytí"
+_S_CENA = "Cena a kontrakt"
+_S_USPORA = "Úspora"
+
 _POLE_PPA: list[Pole] = [
-    Pole("kwp", "Velikost elektrárny", "vykon_kwp", lambda p: _g(p, "vysledek", "kwp")),
-    Pole("rocni_spotreba_kwh", "Vaše roční spotřeba", "energie_mwh",
-         lambda p: _g(p, "vysledek", "rocni_spotreba_kwh")),
+    Pole("kwp", "Velikost elektrárny", "vykon_kwp", lambda p: _g(p, "vysledek", "kwp"),
+         _S_ELEKTRARNA),
     Pole("vyroba_rok1_kwh", "Roční výroba elektrárny", "energie_mwh",
-         lambda p: _g(p, "vysledek", "vyroba_rok1_kwh")),
-    Pole("samospotreba_rok1_kwh", "Přímo spotřebováno z elektrárny", "energie_mwh",
-         lambda p: _g(p, "vysledek", "samospotreba_rok1_kwh")),
-    Pole("pokryti_spotreby_fve", "Pokrytí spotřeby z elektrárny", "procento",
-         lambda p: _g(p, "vysledek", "pokryti_spotreby_fve")),
-    Pole("delka_kontraktu_roky", "Doba kontraktu", "roky_cele",
-         lambda p: _g(p, "vysledek", "delka_kontraktu_roky")),
-    Pole("cena_ppa_rok1_kc_mwh", "Cena elektřiny z elektrárny (1. rok)", "penize_mwh",
-         lambda p: _prvni_rok(p, "cena_ppa_kc_mwh")),
-    Pole("vyhnutelna_cena_rok1_kc_mwh", "Vaše dnešní cena elektřiny", "penize_mwh",
-         lambda p: _g(p, "vysledek", "vyhnutelna_cena_rok1_kc_mwh")),
-    Pole("uspora_rok1_kc", "Úspora v 1. roce", "penize",
-         lambda p: _prvni_rok(p, "uspora_klient_kc")),
-    Pole("uspora_kum_kc", "Celková úspora za dobu kontraktu", "penize",
-         lambda p: _g(p, "vysledek", "souhrn_klient", "uspora_kum_kc")),
-    Pole("sklon_st", "Sklon panelů", "stupne", lambda p: _g(p, "vysledek", "sklon_st")),
+         lambda p: _g(p, "vysledek", "vyroba_rok1_kwh"), _S_ELEKTRARNA),
+    Pole("sklon_st", "Sklon panelů", "stupne", lambda p: _g(p, "vysledek", "sklon_st"),
+         _S_ELEKTRARNA),
     Pole("azimut_st", "Orientace panelů (azimut)", "stupne",
-         lambda p: _g(p, "vysledek", "azimut_st")),
+         lambda p: _g(p, "vysledek", "azimut_st"), _S_ELEKTRARNA),
+    Pole("rocni_spotreba_kwh", "Vaše roční spotřeba", "energie_mwh",
+         lambda p: _g(p, "vysledek", "rocni_spotreba_kwh"), _S_SPOTREBA),
+    Pole("samospotreba_rok1_kwh", "Přímo spotřebováno z elektrárny", "energie_mwh",
+         lambda p: _g(p, "vysledek", "samospotreba_rok1_kwh"), _S_SPOTREBA),
+    Pole("pokryti_spotreby_fve", "Pokrytí spotřeby z elektrárny", "procento",
+         lambda p: _g(p, "vysledek", "pokryti_spotreby_fve"), _S_SPOTREBA),
+    Pole("delka_kontraktu_roky", "Doba kontraktu", "roky_cele",
+         lambda p: _g(p, "vysledek", "delka_kontraktu_roky"), _S_CENA),
+    Pole("cena_ppa_rok1_kc_mwh", "Cena elektřiny z elektrárny (1. rok)", "penize_mwh",
+         lambda p: _prvni_rok(p, "cena_ppa_kc_mwh"), _S_CENA),
+    Pole("vyhnutelna_cena_rok1_kc_mwh", "Vaše dnešní cena elektřiny", "penize_mwh",
+         lambda p: _g(p, "vysledek", "vyhnutelna_cena_rok1_kc_mwh"), _S_CENA),
+    Pole("uspora_rok1_kc", "Úspora v 1. roce", "penize",
+         lambda p: _prvni_rok(p, "uspora_klient_kc"), _S_USPORA),
+    Pole("uspora_kum_kc", "Celková úspora za dobu kontraktu", "penize",
+         lambda p: _g(p, "vysledek", "souhrn_klient", "uspora_kum_kc"), _S_USPORA),
 ]
 
 # Sloupce roční tabulky PPA (jen zákaznické). Pořadí = pořadí sloupců.
@@ -186,45 +208,58 @@ def _zisk_obchodu(p: dict) -> Any:
     return _prvni(_dop(p, "zisk_spot_kc"), _dop(p, "ekonomika_spot", "zisk_kc"))
 
 
+_S_RESENI = "Navržené řešení"
+_S_KAPACITA = "Rezervovaná kapacita"
+_S_USPORA_2026 = "Úspora 2026"
+_S_USPORA_2027 = "Úspora od 2027"
+_S_OBCHOD = "Obchod s elektřinou"
+
 _POLE_PS: list[Pole] = [
-    Pole("nazev", "Navržená baterie", "text", lambda p: _dop(p, "nazev")),
-    Pole("pocet_kusu", "Počet kusů", "pocet", lambda p: _dop(p, "pocet_kusu")),
-    Pole("celkovy_vykon_kw", "Výkon baterie", "vykon_kw", lambda p: _dop(p, "celkovy_vykon_kw")),
+    Pole("nazev", "Navržená baterie", "text", lambda p: _dop(p, "nazev"), _S_RESENI),
+    Pole("pocet_kusu", "Počet kusů", "pocet", lambda p: _dop(p, "pocet_kusu"), _S_RESENI),
+    Pole("celkovy_vykon_kw", "Výkon baterie", "vykon_kw",
+         lambda p: _dop(p, "celkovy_vykon_kw"), _S_RESENI),
     Pole("celkova_kapacita_kwh", "Kapacita baterie", "kapacita_kwh",
-         lambda p: _dop(p, "celkova_kapacita_kwh")),
-    Pole("cena_celkem_kc", "Investice do baterie", "penize", lambda p: _dop(p, "cena_celkem_kc")),
+         lambda p: _dop(p, "celkova_kapacita_kwh"), _S_RESENI),
+    Pole("cena_celkem_kc", "Investice do baterie", "penize",
+         lambda p: _dop(p, "cena_celkem_kc"), _S_RESENI),
     Pole("rezervovana_kapacita_kw", "Současná rezervovaná kapacita", "vykon_kw",
-         lambda p: _g(p, "vstup", "rezervovana_kapacita_kw")),
+         lambda p: _g(p, "vstup", "rezervovana_kapacita_kw"), _S_KAPACITA),
     Pole("nova_rezervovana_kapacita_kw", "Nová rezervovaná kapacita", "vykon_kw",
-         lambda p: _dop(p, "nova_rezervovana_kapacita_kw")),
-    Pole("strop_kw", "Špičku snížíme na", "vykon_kw", lambda p: _dop(p, "strop_kw")),
+         lambda p: _dop(p, "nova_rezervovana_kapacita_kw"), _S_KAPACITA),
+    Pole("strop_kw", "Špičku snížíme na", "vykon_kw", lambda p: _dop(p, "strop_kw"),
+         _S_KAPACITA),
     # Model 2026 = platba za rezervovanou kapacitu. Rok je v názvu schválně:
     # od 2027 platí jiná tarifní struktura a čísla se liší (viz pole níž).
     Pole("soucasny_naklad_celkem", "Dnešní roční náklad za rezervaci (2026)", "penize",
-         lambda p: _dop(p, "ekonomika_2026", "soucasny_naklad_celkem")),
+         lambda p: _dop(p, "ekonomika_2026", "soucasny_naklad_celkem"), _S_USPORA_2026),
     Pole("rocni_uspora_2026_kc", "Roční úspora (2026)", "penize",
-         lambda p: _dop(p, "rocni_uspora_2026_kc")),
+         lambda p: _dop(p, "rocni_uspora_2026_kc"), _S_USPORA_2026),
     Pole("navratnost_roky", "Návratnost investice (2026)", "roky",
-         lambda p: _dop(p, "navratnost_roky")),
+         lambda p: _dop(p, "navratnost_roky"), _S_USPORA_2026),
     # Model od 2027 (nová tarifní struktura ERÚ) – přesně ta čísla, která
     # nabídkovač ukazuje jako výchozí. Bez oficiálních sazeb ERÚ zůstanou
     # prázdná (`ekonomika_2027.status != "spocitano"`) a v tisku se skryjí.
     Pole("rezervovany_prikon_kw", "Současný rezervovaný příkon", "vykon_kw",
-         lambda p: _dop(p, "ekonomika_2027", "rp_soucasny_kw")),
+         lambda p: _dop(p, "ekonomika_2027", "rp_soucasny_kw"), _S_USPORA_2027),
     Pole("novy_rezervovany_prikon_kw", "Rezervovaný příkon po instalaci", "vykon_kw",
          lambda p: _prvni(_dop(p, "ekonomika_2027", "rp_novy_kw"),
-                          _dop(p, "ekonomika_2027", "rezervovana_kapacita_kw"))),
+                          _dop(p, "ekonomika_2027", "rezervovana_kapacita_kw")),
+         _S_USPORA_2027),
     Pole("soucasny_naklad_2027_kc", "Dnešní roční náklad (tarify od 2027)", "penize",
-         lambda p: _dop(p, "ekonomika_2027", "soucasny_rocni_naklad")),
+         lambda p: _dop(p, "ekonomika_2027", "soucasny_rocni_naklad"), _S_USPORA_2027),
     Pole("novy_naklad_2027_kc", "Roční náklad s baterií (od 2027)", "penize",
-         lambda p: _dop(p, "ekonomika_2027", "novy_rocni_naklad")),
-    Pole("rocni_uspora_2027_kc", "Roční úspora (od 2027)", "penize", _uspora_2027),
+         lambda p: _dop(p, "ekonomika_2027", "novy_rocni_naklad"), _S_USPORA_2027),
+    Pole("rocni_uspora_2027_kc", "Roční úspora (od 2027)", "penize", _uspora_2027,
+         _S_USPORA_2027),
     Pole("navratnost_2027_roky", "Návratnost investice (od 2027)", "roky",
-         lambda p: _prvni(_dop(p, "navratnost_2027"), _dop(p, "navratnost_2027_konzerv"))),
+         lambda p: _prvni(_dop(p, "navratnost_2027"), _dop(p, "navratnost_2027_konzerv")),
+         _S_USPORA_2027),
     # Obchodování na spotu (režim Kombinace/Spot). U čistého peak shavingu
     # zůstane prázdné, takže se blok v tisku sám neukáže.
-    Pole("rezim", "Provozní režim baterie", "text", _rezim_nazev),
-    Pole("zisk_spot_kc", "Roční výnos z obchodu s elektřinou", "penize", _zisk_obchodu),
+    Pole("rezim", "Provozní režim baterie", "text", _rezim_nazev, _S_OBCHOD),
+    Pole("zisk_spot_kc", "Roční výnos z obchodu s elektřinou", "penize", _zisk_obchodu,
+         _S_OBCHOD),
 ]
 
 # Sloupce roční tabulky peak shavingu (jen zákaznické).

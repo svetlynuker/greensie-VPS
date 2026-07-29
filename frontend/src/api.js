@@ -349,6 +349,24 @@ export function nabidkaVystupUloz(nabidkaId, typReseni, konfigurace) {
   });
 }
 
+// Pojmenované šablony rozvržení nabídky (napříč nabídkami) + rozvržení
+// převzatá z už hotových nabídek stejného typu řešení.
+export function nabidkaVystupSablony(typReseni, kromeNabidky) {
+  const q = kromeNabidky ? `?krome_nabidky=${kromeNabidky}` : "";
+  return zavolej(`/nabidkovac/vystup-sablony/${typReseni}${q}`);
+}
+
+export function nabidkaVystupSablonaUloz(typReseni, nazev, konfigurace) {
+  return zavolej(`/nabidkovac/vystup-sablony/${typReseni}`, {
+    method: "POST",
+    body: JSON.stringify({ nazev, konfigurace }),
+  });
+}
+
+export function nabidkaVystupSablonaSmaz(typReseni, sablonaId) {
+  return zavolej(`/nabidkovac/vystup-sablony/${typReseni}/${sablonaId}`, { method: "DELETE" });
+}
+
 // ---- Uživatelská nastavení (pohledy + vzhled, uložená v DB) ----
 export function nactiNastaveni() {
   return zavolej("/nastaveni");

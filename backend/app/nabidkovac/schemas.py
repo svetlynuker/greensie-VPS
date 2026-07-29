@@ -2,7 +2,7 @@
 
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 TypNabidky = Literal["ppa", "prodej", "peak_shaving"]
 StavNabidky = Literal["koncept", "data_nahrana", "zkontrolovano_oz", "spocitano", "hotovo"]
@@ -268,11 +268,22 @@ class PpaVstup(BaseModel):
 
 # ---- Nabídková šablona / výstup (viz sablona_katalog.py) ----
 TypReseniVystup = Literal["ppa", "peak_shaving"]
-DruhBloku = Literal["hlavicka", "text", "udaje", "graf", "tabulka"]
+# `udaj` = jedna dlaždice s hodnotou (tahá se z palety), `zlom` = ruční zlom
+# stránky. `udaje` (celý blok s několika poli) zůstává kvůli starším nabídkám.
+DruhBloku = Literal["hlavicka", "text", "udaje", "udaj", "graf", "tabulka", "zlom"]
+
+# Šířka prvku v mřížce papíru: 12 sloupců = celá šířka. Editor nabízí 3/4/6/8/12.
+SIRKA_PLNA = 12
 
 
 class VystupBlok(BaseModel):
-    """Jeden blok nabídky. `pole` se používá u druhů udaje/tabulka."""
+    """Jeden prvek nabídky.
+
+    `pole` se používá u druhů udaje/tabulka, `klic` u druhu udaj (jedna
+    dlaždice). `sirka` je šířka v mřížce papíru (12 = celá) – prvky se skládají
+    do řádků po 12 sloupcích, takže dvě dlaždice po 6 stojí vedle sebe.
+    Starší uložené nabídky `sirka` nemají a dostanou celou šířku jako dřív.
+    """
 
     id: str
     druh: DruhBloku
@@ -280,10 +291,39 @@ class VystupBlok(BaseModel):
     nadpis: str = ""
     text: str = ""
     pole: list[str] = []
+    klic: str = ""
+    sirka: int = Field(default=SIRKA_PLNA, ge=1, le=SIRKA_PLNA)
 
 
 class VystupKonfigurace(BaseModel):
     bloky: list[VystupBlok] = []
+
+
+class VystupSablonaOut(BaseModel):
+    """Pojmenovaná šablona rozvržení (bez zákaznických čísel)."""
+
+    id: int
+    nazev: str
+    konfigurace: VystupKonfigurace
+    aktualizovano_at: Optional[str] = None
+
+
+class VystupSablonaZNabidky(BaseModel):
+    """Rozvržení převzaté z jiné nabídky – „udělej to jako tehdy"."""
+
+    nabidka_id: int
+    nazev: str
+    konfigurace: VystupKonfigurace
+
+
+class VystupSablonySeznam(BaseModel):
+    sablony: list[VystupSablonaOut] = []
+    nabidky: list[VystupSablonaZNabidky] = []
+
+
+class VystupSablonaVstup(BaseModel):
+    nazev: str
+    konfigurace: VystupKonfigurace
 
 
 class VystupOut(BaseModel):
