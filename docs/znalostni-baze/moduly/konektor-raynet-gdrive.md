@@ -1,6 +1,6 @@
 # Konektor Raynet CRM ↔ Google Disk
 
-> **Dlaždice:** `konektor` · **Adresa (routa):** `/konektor` · **Kdo smí otevřít:** kdokoli s právem `konektor` (dlaždici vidí všichni, bez práva je zamčená 🔒; admin ji má vždy)
+> **Sekce v nabídce:** `konektor` · **Adresa (routa):** `/konektor` · **Kdo smí otevřít:** kdokoli s právem `konektor` (bez práva se sekce v nabídce vůbec nezobrazí; admin ji má vždy)
 > **Kód:** frontend `frontend/src/pages/Konektor.jsx`, backend `backend/app/konektor/`
 
 Modul, který **propojuje Raynet CRM s Google Diskem**. Když v Raynetu vznikne zákazník, obchodní případ,
@@ -183,7 +183,7 @@ Tajemství jsou **Raynet API klíč** a **Google service-account JSON**. Funguj�
 ## 🛠 Pro admina / provoz
 
 ### Práva — kdo co vidí a smí
-- Dlaždici **Konektor** vidí v rozcestníku **všichni**, ale bez práva `konektor` je **zamčená** (🔒).
+- Sekci **Konektor** uvidí v panelu vlevo jen ten, kdo má právo `konektor` — bez něj tam položka vůbec není.
 - **Všechny chráněné endpointy** konektoru (nastavení, logy, test spojení, ruční akce, import, reconcile,
   watch, zrcadlení, sken) hlídá jeden strážce `vyzaduj_pravo_konektor`, který volá `muze_otevrit(user, "konektor")`.
   Uvnitř stránky se práva **dál nedělí** – kdo Konektor otevře, může na něm cokoli (včetně zadání tajemství).

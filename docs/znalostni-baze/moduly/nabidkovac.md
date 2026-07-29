@@ -1,7 +1,7 @@
 # Nabídkovač
 
-> **Dlaždice:** `nabidkovac` · **Adresy (routy):** `/nabidkovac` (rozcestník typů) · `/nabidkovac/:typ` (seznam nabídek podsekce) · `/nabidkovac/nabidka/:id` (detail nabídky) · `/nabidkovac/nabidka/:id/vystup/:typ` (editor + náhled nabídky pro zákazníka) · `/nabidkovac/katalog` (katalog a výpočtová nastavení)
-> **Kdo smí otevřít:** kdokoli s právem `nabidkovac` (dlaždici vidí všichni, bez práva je zamčená 🔒); katalog a výpočty jen s právem `nabidkovac_katalog` (vedení/admin)
+> **Sekce v nabídce:** `nabidkovac` · **Adresy (routy):** `/nabidkovac` (rozcestník typů) · `/nabidkovac/:typ` (seznam nabídek podsekce) · `/nabidkovac/nabidka/:id` (detail nabídky) · `/nabidkovac/nabidka/:id/vystup/:typ` (editor + náhled nabídky pro zákazníka) · `/nabidkovac/katalog` (katalog a výpočtová nastavení)
+> **Kdo smí otevřít:** kdokoli s právem `nabidkovac` (bez práva se sekce v nabídce vůbec nezobrazí); katalog a výpočty jen s právem `nabidkovac_katalog` (vedení/admin)
 > **Kód:** frontend `frontend/src/pages/Nabidkovac.jsx`, `NabidkovacSekce.jsx`, `NabidkaDetail.jsx`, `NabidkaVystupStranka.jsx`, `NabidkovacKatalog.jsx`; backend `backend/app/nabidkovac/`
 
 Nástroj obchodních zástupců (OZ) na tvorbu cenových nabídek ve třech produktových liniích –
@@ -37,6 +37,19 @@ Rozcestník `/nabidkovac` nabízí tři dlaždice (klíč = typ nabídky na serv
 > [nabidkovac-ppa-fve.md](nabidkovac-ppa-fve.md). Tenhle návod je o obecné práci s nabídkami,
 > katalogem, podklady a nabídkovým výstupem (PDF).
 
+#### Linie Prodej — výpočet se připravuje
+U prodeje **zatím není výpočtová metodika**, takže tam nic nepočítá. Panel má ale **stejné
+rozvržení jako ostatní linie**, aby se OZ nemusel nic přeučovat, až výpočet přijde:
+
+- vlevo **funkční načtení profilu odběru** (uloží se k nabídce a použije ho i budoucí návrh) a
+  seznam **podkladů, které si vyžádat od zákazníka** (spotřeba, požadovaný výkon nebo plocha
+  střechy, jestli má být součástí baterie, marže a záruka),
+- vpravo napsané, co se připravuje, s odkazem do katalogu produktů.
+
+Vypnutá políčka pro parametry, které server neumí přijmout, tam **schválně nejsou** — vypadala by
+jako funkce, kterou jen někdo nezapnul. Nabídku prodeje jde zatím připravit ručně: nahrát podklady,
+načíst profil a technologii vybrat z katalogu.
+
 ### Tok práce (od založení po PDF)
 1. **Vyber podsekci** na rozcestníku (PPA / Prodej / Peak shaving).
 2. **Založ nabídku** tlačítkem „+ Nová nabídka" – vznikne prázdný záznam ve stavu *Koncept* a
@@ -45,7 +58,7 @@ Rozcestník `/nabidkovac` nabízí tři dlaždice (klíč = typ nabídky na serv
 4. **Nahraj podklady** – fakturu (PDF) a/nebo diagram spotřeby (CSV/XLSX). Prvním nahraným
    dokumentem se koncept posune do stavu *Data nahrána*.
 5. **Spočítej řešení** – u PPA a Peak shavingu v panelu v detailu nabídky (viz samostatné návody).
-6. **Sestav nabídku pro zákazníka** – tlačítko „Otevřít nabídku pro zákazníka" (jen u PPA a
+6. **Sestav nabídku pro zákazníka** – tlačítko „Nabídka pro zákazníka" v hlavičce detailu (jen u PPA a
    Peak shavingu): v editoru zapneš/vypneš bloky, upravíš texty a vybereš zobrazená pole.
 7. **Ulož do PDF** – tlačítko „Uložit do PDF" otevře tiskový dialog prohlížeče (tisk / uložit jako PDF).
 
@@ -73,16 +86,21 @@ vpravo nahoře tlačítko **⚙ Katalog a výpočty** (jen s právem na katalog)
 lišta s tlačítkem **+ Nová nabídka** a počítadlem, a tabulka nabídek (Zákazník · Stav · Vytvořil ·
 Datum). Klik na řádek otevře detail.
 
-**C) Detail nabídky `/nabidkovac/nabidka/:id`** – shora: odkaz zpět, hlavička s názvem zákazníka
-a štítky (linie + stav), karta **Zákazník** (formulář), karta **Podklady** (nahrávání dokumentů),
-u PPA/Peak shavingu karta **Nabídka pro zákazníka** (tlačítko do editoru výstupu) a nakonec panel
-**Navržená řešení** (u PPA/Peak shavingu kalkulátor, u Prodeje zatím jen upozornění).
+**C) Detail nabídky `/nabidkovac/nabidka/:id`** – shora: odkaz zpět, pak **hlavička zákazníka**
+na jeden řádek (název, adresa, štítky linie + stav, tlačítka *Upravit zákazníka* a u PPA/Peak
+shavingu *Nabídka pro zákazníka*), sbalená karta **Podklady** (nahrávání dokumentů) a pak už
+**panel řešení** — u Peak shavingu „pracovní stůl" (vlevo vstupy, vpravo výsledek), u PPA
+kalkulátor, u Prodeje stejný stůl s prázdným výsledkem (výpočet se připravuje).
+
+Formulář s údaji zákazníka a karta Podklady se rozbalují na vyžádání; u čerstvě založené nabídky
+(bez názvu zákazníka, resp. bez dokumentů) se otevřou samy. Důvod: do obojího se sahá jednou na
+začátku, zbytek času tam patří výpočet.
 
 **D) Nabídka pro zákazníka `/nabidkovac/nabidka/:id/vystup/:typ`** – nahoře lišta s tlačítky
 (Zpět, Obnovit výchozí, Uložit, Uložit do PDF), pod ní vlevo **editor bloků**, vpravo **živý
 náhled** tiskové A4 stránky.
 
-> 📸 SCREENSHOT: detail nabídky – karty Zákazník, Podklady, Nabídka pro zákazníka
+> 📸 SCREENSHOT: detail nabídky – hlavička zákazníka, sbalené Podklady a pod nimi panel řešení
 > 📸 SCREENSHOT: obrazovka „Nabídka pro zákazníka" – vlevo editor bloků, vpravo náhled
 
 ### Ovládací prvky — políčko po políčku
@@ -100,23 +118,24 @@ Legenda „kdo vidí": **(vše)** = každý, kdo Nabídkovač otevře (právo `n
 | **Počítadlo „N nabídek"** | seznam podsekce | Kolik je v podsekci nabídek | vše |
 | **Řádek nabídky** | tabulka | Klik otevře detail nabídky | vše |
 
-#### Detail nabídky – karta Zákazník
+#### Detail nabídky – údaje zákazníka (rozbalovací formulář)
 | Prvek | Co dělá | Kdo vidí |
 |---|---|---|
 | **Název zákazníka** | Jméno/firma zákazníka (zobrazí se i v hlavičce PDF) | vše |
 | **Adresa** | Adresa zákazníka (zobrazí se v hlavičce PDF) | vše |
 | **GPS šířka (lat) / délka (lng)** | Souřadnice pro budoucí PVGIS; zatím jen uložení | vše |
+| **Upravit zákazníka / Zavřít údaje** | Rozbalí a zavře formulář v hlavičce detailu | vše |
 | **Uložit** | Uloží změny zákazníka | vše |
 | **Smazat nabídku** | Smaže celou nabídku včetně nahraných souborů (s potvrzením) | vše |
 
-#### Detail nabídky – karta Podklady (nahrávání dokumentů)
+#### Detail nabídky – sbalená karta Podklady (nahrávání dokumentů)
 | Prvek | Co dělá | Kdo vidí |
 |---|---|---|
 | **Přetáhni sem soubor / klikni** | Nahraje soubor (drag & drop nebo výběr); typ se pozná sám z přípony, max 25 MB | vše |
 | **Typ (u řádku dokumentu)** | Rozpoznaný typ; rozbalovátkem jde opravit, pokud to přípona dovolí (PDF = faktura / jiný, tabulka = spotřeba / jiný) | vše |
 | **Řádek dokumentu** | Ukáže název, velikost, typ a stav zpracování | vše |
 | **Smazat (u dokumentu)** | Smaže dokument (soubor i záznam) | vše |
-| **Otevřít nabídku pro zákazníka** | Jen u PPA/Peak shavingu – přejde do editoru výstupu | vše |
+| **Nabídka pro zákazníka** | Jen u PPA/Peak shavingu – tlačítko v hlavičce detailu, přejde do editoru výstupu | vše |
 
 #### Nabídka pro zákazníka – lišta a editor
 | Prvek | Kde | Co dělá | Kdo vidí |
@@ -137,18 +156,40 @@ Legenda „kdo vidí": **(vše)** = každý, kdo Nabídkovač otevře (právo `n
 ### Práce s katalogem a vlastními sloupci
 Katalog technologií je **společný** (jeden pro celý Nabídkovač) a najdeš ho přes **⚙ Katalog
 a výpočty** (`/nabidkovac/katalog`). **Prohlížet ho může každý s právem `nabidkovac`, editovat
-jen s právem `nabidkovac_katalog`.** Obrazovka má tři části: Katalog technologií, Výpočtová
-nastavení a Sazby distributorů.
+jen s právem `nabidkovac_katalog`.**
+
+Obrazovka je rozdělená do **pěti záložek**, jedna na každou spravovanou věc:
+
+| Záložka | Co v ní je |
+|---|---|
+| **Produkty** (s počtem) | katalog technologií — hledání, filtr typu, přepínač výšky okna, vlastní sloupce |
+| **Sazby distributorů** (s počtem) | ceny pro peak shaving po distributorech a hladinách |
+| **Peak shaving** | výchozí hodnoty výpočtu baterie (práh doporučení, NPV, O&M, degradace) |
+| **PPA pro FVE** | marže, délky kontraktu a výchozí hodnoty PPA výpočtu |
+| **Verze nastavení** | historie verzí — jen ke čtení, doklad, s čím se počítala která nabídka |
+
+Dřív bylo všechno na jedné stránce pod sebou a katalog produktů ji roztáhl na několik obrazovek.
+
+**Záložka Produkty** má tři ovládací prvky nad tabulkou:
+
+| Prvek | Co dělá |
+|---|---|
+| **Hledání** | filtruje podle názvu a modelu |
+| **Filtr typu** | Vše / FVE panel / Invertor / Baterie / Jiná |
+| **Okno: nízké / vysoké / celé** | jak vysoký je výřez seznamu; *celé* limit zruší a tabulka roste, jak potřebuje. Volba se pamatuje v prohlížeči. |
+
+Pod tabulkou je vidět, **kolik z kolika** produktů je zobrazeno, takže filtr nejde přehlédnout.
 
 | Prvek | Co dělá | Kdo vidí |
 |---|---|---|
-| **+ Technologie** | Otevře dialog nové položky katalogu | katalog |
-| **+ Sloupec** | Přidá vlastní sloupec katalogu (např. „Záruka"), text nebo číslo | katalog |
-| **Řádek technologie** | Klik otevře editaci | katalog |
-| **Smazat (u technologie / sloupce)** | Smaže položku / definici sloupce | katalog |
+| **+ Produkt** | Otevře dialog nové položky katalogu | katalog |
+| **+ Vlastní sloupec** | Přidá vlastní sloupec katalogu (např. „Záruka"), text nebo číslo | katalog |
+| **Řádek produktu** | Klik otevře editaci | katalog |
+| **Smazat (u produktu / sloupce)** | Smaže položku / definici sloupce | katalog |
 | **Vlastní sloupec (štítek)** | Klik na název upraví sloupec, × ho smaže (uložené hodnoty osiřejí, neškodí) | katalog |
+| **Uložit jako novou verzi** | V záložkách *Peak shaving* a *PPA* — uloží **obě** sady parametrů jako novou verzi (drží se ve stavu, přepnutím záložky se nic neztratí) | katalog |
 
-**Dialog technologie** obsahuje: *Typ* (FVE panel / Invertor / Baterie / Jiná), *Název*, *Model*,
+**Dialog produktu** obsahuje: *Typ* (FVE panel / Invertor / Baterie / Jiná), *Název*, *Model*,
 *Výkon (kW)*, *Kapacita (kWh)*, *Cena (Kč)*, *Účinnost (0–1)*, přepínač *Dostupná v katalogu* a
 vstupy pro případné vlastní sloupce. **U typu Baterie musí být vyplněný výkon i kapacita** (obojí
 kladné) – bez nich nelze počítat peak shaving.
@@ -179,13 +220,14 @@ interní čísla se nenabízejí.
 
 ### Jak na…
 - **Založit novou nabídku:** rozcestník → vyber linii → *+ Nová nabídka* → vyplň zákazníka → *Uložit*.
-- **Nahrát fakturu / diagram spotřeby:** detail nabídky → karta *Podklady* → vyber typ → přetáhni
+- **Nahrát fakturu / diagram spotřeby:** detail nabídky → rozbal *Podklady* → vyber typ → přetáhni
   soubor. (Soubor se zatím jen uloží, automatické čtení se připravuje.)
-- **Sestavit nabídku do PDF:** detail (PPA/Peak shaving) → *Otevřít nabídku pro zákazníka* →
+- **Sestavit nabídku do PDF:** detail (PPA/Peak shaving) → *Nabídka pro zákazníka* →
   zapni/vypni bloky, uprav texty a vyber údaje → *Uložit* → *Uložit do PDF* (dialog tisku prohlížeče).
 - **Vrátit se k výchozí předloze:** v editoru výstupu *Obnovit výchozí* (přepíše se až po *Uložit*).
-- **Přidat technologii do katalogu:** *Katalog a výpočty* → *+ Technologie* → vyplň a *Uložit*.
-- **Přidat vlastní sloupec katalogu:** *Katalog a výpočty* → *+ Sloupec* → název + typ (text/číslo).
+- **Přidat technologii do katalogu:** *Katalog a výpočty* → záložka *Produkty* → *+ Produkt* → vyplň a *Uložit*.
+- **Přidat vlastní sloupec katalogu:** *Katalog a výpočty* → záložka *Produkty* → *+ Vlastní sloupec* → název + typ (text/číslo).
+- **Najít produkt v dlouhém katalogu:** záložka *Produkty* → napiš část názvu do hledání, případně zvol typ. Přepínačem **Okno** si nastavíš, jak vysoký výřez seznamu chceš.
 - **Smazat nabídku:** detail nabídky → *Smazat nabídku* (smaže i nahrané soubory).
 
 ---
@@ -193,7 +235,7 @@ interní čísla se nenabízejí.
 ## 🛠 Pro admina / provoz
 
 ### Práva — kdo co vidí a smí
-- Dlaždici **Nabídkovač** vidí v rozcestníku **všichni**, ale bez práva `nabidkovac` je **zamčená** (🔒).
+- Sekci **Nabídkovač** uvidí v panelu vlevo jen ten, kdo má právo `nabidkovac` — bez něj tam položka vůbec není.
 - **Práce s nabídkami** (seznam, založení, úprava, mazání, dokumenty, nabídkový výstup) vyžaduje
   právo **`nabidkovac`** (role „OZ" = běžná skupina s tímto právem). Strážce `vyzaduj_nabidkovac`.
 - **Editace katalogu a výpočtových nastavení** (technologie, vlastní sloupce, výpočtová nastavení,

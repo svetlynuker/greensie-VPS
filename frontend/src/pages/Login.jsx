@@ -5,7 +5,7 @@ import { setTheme, setCvd } from "../theme";
 import { setVelikost } from "../velikost";
 import ThemeToggle from "../components/ThemeToggle";
 import CvdToggle from "../components/CvdToggle";
-import Ikona from "../components/Ikona";
+import Logo from "../components/Logo";
 
 // Po přihlášení stáhne uložený vzhled z DB a použije ho (přenos mezi zařízeními).
 async function synchronizujVzhled() {
@@ -57,11 +57,8 @@ export default function Login() {
         className="fm-card"
         style={{ padding: 32, width: 320, display: "flex", flexDirection: "column", gap: 14 }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-          <span className="gs-brand-mark">
-            <Ikona jmeno="logo" velikost={15} />
-          </span>
-          <strong style={{ fontSize: 17 }}>Greensie</strong>
+        <div style={{ marginBottom: 10 }}>
+          <Logo vyska={30} title="Greensie" />
         </div>
 
         <label style={{ fontSize: 13, fontWeight: 600 }}>

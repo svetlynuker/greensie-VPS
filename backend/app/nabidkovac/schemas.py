@@ -174,6 +174,10 @@ class SazbaVstup(BaseModel):
 
 
 # ---- Peak shaving výpočet (METODIKA kap. 4–5) ----
+# Co má baterie dělat (drží se `spot_arbitraz.REZIMY`).
+RezimBaterie = Literal["peak_shaving", "kombinace", "spot"]
+
+
 class PeakShavingVstup(BaseModel):
     """Vstupy, které OZ zadá/vybere (METODIKA kap. 2). Profil odběru se čte
     z uložené tabulky `spotreba_profil` dané nabídky.
@@ -201,6 +205,18 @@ class PeakShavingVstup(BaseModel):
     # Ruční výběr baterií z katalogu (id z `technologie`). Prázdné/None =
     # počítá se celý dostupný katalog. Zúžení výběr zrychlí a zpřehlední.
     baterie_ids: Optional[list[int]] = None
+
+    # Co má baterie dělat (viz spot_arbitraz.REZIMY):
+    #  - `peak_shaving` (výchozí) – jen sráží špičky, dnešní chování,
+    #  - `kombinace` – sráží špičky a ve zbytku obchoduje na spotovém trhu,
+    #  - `spot` – jen obchoduje (rezervovaná kapacita zůstává, jak je).
+    rezim: RezimBaterie = "peak_shaving"
+    # Rok referenčních spotových cen; prázdné = manažerské nastavení
+    # `spot_referencni_rok`, jinak nejnovější rok v DB.
+    spot_referencni_rok: Optional[int] = None
+    # Limit dodávky do sítě (kW). Prázdné = výkon baterie. 0 = bez dodávky
+    # (baterie jen posouvá vlastní spotřebu).
+    max_export_kw: Optional[float] = None
 
 
 class VariantaDetailVstup(BaseModel):

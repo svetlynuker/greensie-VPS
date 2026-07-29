@@ -514,6 +514,7 @@ def ekonomika_2026(
     cena_mesicni_rk_kc_kw_mesic: float | None = None,
     rezerva_rk_procenta: float = 0.0,
     naklad_ztrat_baterie: float = 0.0,
+    mesicni_maxima_s_baterii: dict[int, float] | None = None,
 ) -> Ekonomika2026:
     """Ekonomika 2026 s fair baseline (kap. 4.1–4.4 + audit PS-7).
 
@@ -532,6 +533,10 @@ def ekonomika_2026(
 
     Chybí-li měsíční sazba RK, odvodí se z pokuty (pokuta = 1,5× měsíční RK
     dle bodu 4.24).
+
+    `mesicni_maxima_s_baterii` (režimy Kombinace/SPOT, `spot_arbitraz.py`):
+    měsíční maxima ze simulace obchodování. Bez nich se použije dnešní
+    předpoklad „maximum sražené na roční strop", tedy čistý peak shaving.
     """
     rez, prekr = vychozi_rocni_naklad_2026(
         profil_kw,
@@ -553,8 +558,15 @@ def ekonomika_2026(
         cena_rezervace_kc_kw_rok,
         cena_mesicni_rk_kc_kw_mesic,
     )
+    if mesicni_maxima_s_baterii is not None:
+        maxima_s = {
+            m: min(maximum, mesicni_maxima_s_baterii.get(m, maximum))
+            for m, maximum in raw.items()
+        }
+    else:
+        maxima_s = {m: min(maximum, strop_kw) for m, maximum in raw.items()}
     opt_s = optimalizuj_rk(
-        {m: min(maximum, strop_kw) * faktor_rezervy for m, maximum in raw.items()},
+        {m: maximum * faktor_rezervy for m, maximum in maxima_s.items()},
         cena_rezervace_kc_kw_rok,
         cena_mesicni_rk_kc_kw_mesic,
     )
@@ -715,6 +727,7 @@ def ekonomika_2027(
     cena_energie_kc_mwh: float = 0.0,
     optimalizovat_rp: bool = False,
     rezerva_rk_procenta: float = 0.0,
+    mesicni_maxima_s_baterii: dict[int, float] | None = None,
 ) -> dict:
     """Ekonomika roku 2027 (nová dvousložková struktura ERÚ, METODIKA kap. 4.6).
 
@@ -778,13 +791,19 @@ def ekonomika_2027(
     naklad_baseline = min(soucasny, naklad_opt_bez)
 
     # S peak shavingem: po měsících srazit M co nejhlouběji (kap. 4.6)
-    # + sečíst nabíjení pro ocenění ztrát (PS-5).
+    # + sečíst nabíjení pro ocenění ztrát (PS-5). V režimech Kombinace/SPOT
+    # přebíráme měsíční maxima ze simulace obchodování (`spot_arbitraz.py`) –
+    # tam už není cílem srazit maximum co nejhlouběji, ale vydělat celkem
+    # nejvíc; energetickou stránku (včetně ztrát) tam nese zisk obchodu.
     po_mesicich: dict[int, list[float]] = {}
     for odber, m in zip(profil_kw, mesice):
         po_mesicich.setdefault(m, []).append(odber)
     mesicni_po: dict[int, float] = {}
     nabito_celkem = 0.0
     for m, vals in po_mesicich.items():
+        if mesicni_maxima_s_baterii is not None:
+            mesicni_po[m] = min(max(vals), mesicni_maxima_s_baterii.get(m, max(vals)))
+            continue
         strop_m = min_udrzitelny_strop(vals, vykon_kw, kapacita_kwh, interval_h, ucinnost_rt)
         mesicni_po[m] = strop_m
         nabito, _ = energie_pri_stropu(
@@ -799,7 +818,17 @@ def ekonomika_2027(
         _, rp_opt = optimalizuj_rp_2027(
             {m: v * faktor_rezervy for m, v in mesicni_po.items()}, parametry
         )
-        rp_pouzity = rp_opt
+        # Stejně jako u baseline platí, že RP se mění jen když se to vyplatí:
+        # optimalizace nese bezpečnostní rezervu (PS-6), takže u zákazníka
+        # s velkým RP ze smlouvy umí vyjít DRÁŽ než nechat RP být. Bez téhle
+        # symetrie vycházel přínos baterie záporný i tam, kde baterie platbu
+        # za výkon vůbec nezhoršuje – typicky v režimu SPOT, kde nic nesráží
+        # (oprava 28. 7. 2026).
+        naklad_opt, _, _ = _rocni_naklad_2027(rp_opt, mesicni_po, parametry)
+        naklad_bez_zmeny, _, _ = _rocni_naklad_2027(
+            rezervovana_kapacita_kw, mesicni_po, parametry
+        )
+        rp_pouzity = rp_opt if naklad_opt <= naklad_bez_zmeny else rezervovana_kapacita_kw
 
     novy, poc_t1, poc_t2 = _rocni_naklad_2027(rp_pouzity, mesicni_po, parametry)
     # Transparentnost: kolik měsíců počítáme s překročením RP a co to stojí.
@@ -1183,6 +1212,10 @@ class Baterie:
     #    roste s počtem kusů rychleji než výkon střídačů, drží AC strop.
     uzitna_kapacita_kwh: float | None = None
     max_vykon_stridacu_kw: float | None = None
+    # Počet ekvivalentních plných cyklů životnosti (katalogový sloupec
+    # `technologie.extra.cyklu_zivotnosti`). Používá se jen v režimech
+    # Kombinace/SPOT na náklad opotřebení; bez něj se vezme admin default.
+    cyklu_zivotnosti: int | None = None
 
 
 @dataclass
@@ -1231,6 +1264,13 @@ class Varianta:
     # Klíč → {npv_kc, irr, payback_roky, doporuceno, roky}.
     npv_varianty: dict = field(default_factory=dict)
     zaklad_npv: str = VYCHOZI_ZAKLAD_NPV
+    # Režim výpočtu (`spot_arbitraz.REZIMY`) a ekonomika obchodování na spotu.
+    # `ekonomika_spot = None` u čistého peak shavingu (dnešní chování).
+    rezim: str = "peak_shaving"
+    ekonomika_spot: dict | None = None
+    # Roční zisk obchodu po odečtu opotřebení (0 u čistého peak shavingu) –
+    # vstupuje do cash flow NPV vedle úspory na platbě za výkon.
+    zisk_spot_kc: float = 0.0
 
     def _radici_klic(self) -> tuple:
         # Vítěze řadí NPV na horizontu životnosti (celý horizont na NTS 2027);
@@ -1279,6 +1319,8 @@ def spocti_variantu(
     npv_nastaveni: NastaveniNpv | None = None,
     max_vykon_stridace_kw: float | None = None,
     zaklad_npv: str = VYCHOZI_ZAKLAD_NPV,
+    rezim: str = "peak_shaving",
+    spot_kontext=None,
 ) -> Varianta:
     """Spočítá jednu variantu (produkt × počet kusů): kap. 4.2–4.6 + PS-4…9.
 
@@ -1289,6 +1331,12 @@ def spocti_variantu(
     `zaklad_npv` (`ZAKLADY_NPV`) říká, která ze dvou vždy spočítaných variant
     NPV se propíše do plochých polí a řídí výběr vítěze; obě zůstávají
     k dispozici v `npv_varianty` pro přepínač v UI.
+
+    `rezim` + `spot_kontext` (`spot_arbitraz.Kontext`) zapínají obchodování na
+    spotovém trhu. Pro `peak_shaving` (výchozí) se nic nemění. Pro `kombinace`
+    a `spot` se nejdřív odsimuluje obchodní rok (včetně ekonomické volby
+    měsíčních cílových stropů), a měsíční maxima z něj pak vstupují do
+    ekonomiky rezervované kapacity místo „sraženo co to dá".
     """
     vykon = baterie.vykon_kw * pocet_kusu
     # AC strop reálných střídačů z katalogu (na kus × počet); u modulárních
@@ -1311,10 +1359,56 @@ def spocti_variantu(
     cena = baterie.cena_kc * pocet_kusu
 
     novy_strop = min_udrzitelny_strop(profil_kw, vykon, kapacita_uzitecna, interval_h, ucinnost)
-    nabito_2026, _ = energie_pri_stropu(
-        profil_kw, novy_strop, vykon, kapacita_uzitecna, interval_h, ucinnost_rt=ucinnost
-    )
-    ztraty_2026 = naklad_ztrat_baterie_kc(nabito_2026, ucinnost, cena_energie_kc_mwh)
+
+    # Obchodování na spotu (režimy Kombinace/SPOT). Musí se spočítat PŘED
+    # ekonomikami, protože z něj vypadnou měsíční maxima, za která se pak platí
+    # rezervovaná kapacita – volba stropů je právě ten kompromis mezi platbou
+    # za výkon a výnosem obchodu (`spot_arbitraz.simuluj_rok`).
+    vysledek_spot = None
+    maxima_spot: dict[int, float] | None = None
+    zisk_spot = 0.0
+    if spot_kontext is not None and rezim in ("kombinace", "spot"):
+        from app.nabidkovac import spot_arbitraz  # lokálně kvůli kruhovému importu
+
+        vysledek_spot = spot_arbitraz.spocti_pro_variantu(
+            spot_kontext,
+            profil_kw=profil_kw,
+            vykon_kw=vykon,
+            kapacita_kwh=kapacita_uzitecna,
+            kapacita_jmenovita_kwh=kapacita,
+            cena_baterie_kc=cena,
+            cyklu_zivotnosti=baterie.cyklu_zivotnosti,
+            rezim=rezim,
+            interval_h=interval_h,
+            ucinnost_rt=ucinnost,
+            # Náklad na platbu za výkon pro dané měsíční maxima – rozhodovací
+            # vrstva podle něj volí stropy. Preferuje se model 2027 (celý
+            # horizont NPV jede na NTS), fallback na 2026.
+            parametry_2027=parametry_2027,
+            rezervovany_prikon_kw=(
+                rezervovany_prikon_kw if rezervovany_prikon_kw else rezervovana_kapacita_kw
+            ),
+            uvazovat_snizeni_rp=uvazovat_snizeni_rp,
+            cena_rezervace_kc_kw_rok=cena_rezervace_kc_kw_rok,
+            cena_mesicni_rk_kc_kw_mesic=(
+                cena_mesicni_rk_kc_kw_mesic
+                if cena_mesicni_rk_kc_kw_mesic is not None
+                else cena_prekroceni_kc_kw / NASOBEK_POKUTY_PREKROCENI_RK
+            ),
+            rezerva_rk_procenta=rezerva_rk_procenta,
+        )
+        maxima_spot = vysledek_spot.cilova_maxima_kw
+        zisk_spot = vysledek_spot.zisk_kc
+
+    if maxima_spot is not None:
+        # Energetickou stránku (nabíjení, ztráty, vyhnutý nákup) nese zisk
+        # obchodu, takže se ztráty cyklování nepočítají podruhé.
+        ztraty_2026 = 0.0
+    else:
+        nabito_2026, _ = energie_pri_stropu(
+            profil_kw, novy_strop, vykon, kapacita_uzitecna, interval_h, ucinnost_rt=ucinnost
+        )
+        ztraty_2026 = naklad_ztrat_baterie_kc(nabito_2026, ucinnost, cena_energie_kc_mwh)
     ek = ekonomika_2026(
         profil_kw,
         mesice,
@@ -1325,11 +1419,12 @@ def spocti_variantu(
         cena_mesicni_rk_kc_kw_mesic=cena_mesicni_rk_kc_kw_mesic,
         rezerva_rk_procenta=rezerva_rk_procenta,
         naklad_ztrat_baterie=ztraty_2026,
+        mesicni_maxima_s_baterii=maxima_spot,
     )
     # Výběr varianty i doporučení řídí PŘÍNOS BATERIE proti optimalizované RK
     # (fair baseline, rozhodnuto 16. 7. 2026) – úspora z pouhého snížení RK
     # se bateriím nepřipisuje.
-    navratnost = _navratnost(cena, ek.prinos_baterie)
+    navratnost = _navratnost(cena, ek.prinos_baterie + zisk_spot)
 
     # Rok 2027 (audit PS-4): baseline RP = hodnota ze smlouvy o připojení
     # (fallback = současná RK); scénář s PS drží STEJNÝ RP (přínos jen na
@@ -1352,15 +1447,18 @@ def spocti_variantu(
         je_modelovy_2027,
         interval_h,
         ucinnost_rt=ucinnost,
-        cena_energie_kc_mwh=cena_energie_kc_mwh,
+        cena_energie_kc_mwh=(0.0 if maxima_spot is not None else cena_energie_kc_mwh),
         optimalizovat_rp=uvazovat_snizeni_rp,
         rezerva_rk_procenta=rezerva_rk_procenta,
+        mesicni_maxima_s_baterii=maxima_spot,
     )
 
     # Prostá návratnost 2027 (jediný model – bez slevy AKU, PS-3), informativní.
     spocitano_2027 = ek_2027.get("status") == "spocitano"
     navratnost_2027 = (
-        _navratnost(cena, ek_2027.get("rocni_uspora", 0.0)) if spocitano_2027 else None
+        _navratnost(cena, ek_2027.get("rocni_uspora", 0.0) + zisk_spot)
+        if spocitano_2027
+        else None
     )
 
     # NPV na horizontu životnosti (PS-8/PS-9): celý horizont na modelu 2027.
@@ -1369,15 +1467,18 @@ def spocti_variantu(
     # po instalaci", tj. včetně úspory ze souběžné úpravy RK/RP), nebo přísnější
     # pohled jen na to, co přinese sama baterie (PS-7). Bez sazeb 2027 se obě
     # větve konzervativně počítají z modelu 2026.
+    # Zisk obchodu na spotu se přičítá do OBOU základů: je to peníze, které
+    # baterie vydělá nad rámec platby za výkon, a bez investice je zákazník
+    # nezíská (na rozdíl od úpravy RK/RP). U čistého peak shavingu je 0.
     nast_npv = npv_nastaveni or NastaveniNpv()
     zaklady = {
         ZAKLAD_NPV_USPORA: (
-            ek.rocni_uspora,
-            ek_2027.get("rocni_uspora", 0.0) if spocitano_2027 else None,
+            ek.rocni_uspora + zisk_spot,
+            (ek_2027.get("rocni_uspora", 0.0) + zisk_spot) if spocitano_2027 else None,
         ),
         ZAKLAD_NPV_PRINOS_BATERIE: (
-            ek.prinos_baterie,
-            ek_2027.get("prinos_baterie", 0.0) if spocitano_2027 else None,
+            ek.prinos_baterie + zisk_spot,
+            (ek_2027.get("prinos_baterie", 0.0) + zisk_spot) if spocitano_2027 else None,
         ),
     }
     npv_varianty: dict[str, dict] = {}
@@ -1433,7 +1534,51 @@ def spocti_variantu(
         doporuceno=doporuceno,
         npv_varianty=npv_varianty,
         zaklad_npv=zaklad_npv if zaklad_npv in npv_varianty else VYCHOZI_ZAKLAD_NPV,
+        rezim=rezim,
+        ekonomika_spot=(
+            _ekonomika_spot_json(vysledek_spot, kapacita) if vysledek_spot is not None else None
+        ),
+        zisk_spot_kc=zisk_spot,
     )
+
+
+def _ekonomika_spot_json(v, kapacita_jmenovita_kwh: float) -> dict:
+    """Výsledek obchodování do `popis_json` (co uvidí FE i nabídka)."""
+    return {
+        "zisk_kc": v.zisk_kc,
+        "zisk_energie_kc": v.zisk_energie_kc,
+        "naklad_opotrebeni_kc": v.naklad_opotrebeni_kc,
+        "zisk_pri_prioritnim_ps_kc": v.zisk_pri_prioritnim_ps_kc,
+        "ze_site_kwh": v.ze_site_kwh,
+        "do_site_kwh": v.do_site_kwh,
+        "do_odberu_kwh": v.do_odberu_kwh,
+        "obchodni_vybito_kwh": v.obchodni_vybito_kwh,
+        "obchodnich_cyklu": v.obchodnich_cyklu,
+        "opotrebeni_kc_mwh": v.opotrebeni_pouzite_kc_mwh,
+        "zisk_kc_kwh_rok": (
+            v.zisk_kc / kapacita_jmenovita_kwh if kapacita_jmenovita_kwh > 0 else 0.0
+        ),
+        "mesice": [
+            {
+                "mesic": m.mesic,
+                "strop_kw": m.strop_kw,
+                "strop_nejnizsi_udrzitelny_kw": m.strop_nejnizsi_udrzitelny_kw,
+                "maximum_bez_baterie_kw": m.maximum_bez_baterie_kw,
+                "zisk_obchodu_kc": m.zisk_obchodu_kc,
+                "zisk_pri_nejnizsim_stropu_kc": m.zisk_pri_nejnizsim_stropu_kc,
+                "obchodnich_cyklu": m.obchodnich_cyklu,
+                "ze_site_kwh": m.ze_site_kwh,
+                "do_site_kwh": m.do_site_kwh,
+                "do_odberu_kwh": m.do_odberu_kwh,
+            }
+            for m in v.volby
+        ],
+        "upozorneni": list(v.upozorneni),
+        "info_cen": dict(v.info_cen),
+        # Parametry obchodu, se kterými se počítalo – nitkový graf si podle nich
+        # dopočítá průběh, aby ukazoval totéž co tabulky.
+        "nastaveni": dict(v.nastaveni_json),
+    }
 
 
 def vyber_reseni(
@@ -1456,6 +1601,8 @@ def vyber_reseni(
     npv_nastaveni: NastaveniNpv | None = None,
     max_vykon_stridace_kw: float | None = None,
     zaklad_npv: str = VYCHOZI_ZAKLAD_NPV,
+    rezim: str = "peak_shaving",
+    spot_kontext=None,
 ) -> VysledekPeakShaving:
     """Kap. 4.5 + PS-8/PS-9: projede produkty × počty kusů, vítěze řadí dle NPV.
 
@@ -1504,6 +1651,8 @@ def vyber_reseni(
                 npv_nastaveni,
                 max_vykon_stridace_kw,
                 zaklad_npv,
+                rezim,
+                spot_kontext,
             )
             if nejlepsi is None or v._radici_klic() < nejlepsi._radici_klic():
                 nejlepsi = v

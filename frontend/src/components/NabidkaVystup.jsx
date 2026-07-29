@@ -4,6 +4,7 @@
 
 import GrafVyrobaSpotreba from "./GrafVyrobaSpotreba";
 import GrafOdberu from "./GrafOdberu";
+import Logo from "./Logo";
 import { fmtDatum } from "../nabidkovac";
 
 // Pole, která v kartě zvýrazníme (úspora = to hlavní, co zákazníka zajímá).
@@ -115,8 +116,10 @@ function BlokTabulka({ blok, tabulka, tisk }) {
 function BlokHlavicka({ blok, zakaznik }) {
   return (
     <div className="vy-hlavicka">
-      {/* Branding obrázky zatím vynechány – jen jasně označené místo pro logo. */}
-      <div className="vy-logo">MÍSTO PRO LOGO</div>
+      {/* Logo je vektorové, takže se v PDF vytiskne ostře v každé velikosti. */}
+      <div className="vy-logo">
+        <Logo vyska={40} title="Greensie" />
+      </div>
       <h1>{blok.nadpis || "Nabídka"}</h1>
       {blok.text && <div className="podnadpis">{blok.text}</div>}
       <div className="vy-prijemce">
@@ -131,11 +134,46 @@ function BlokHlavicka({ blok, zakaznik }) {
   );
 }
 
+// Kontakt firmy do zápatí. Adresa a telefon jsou z hlavičkového papíru
+// (grafika/papiry, varianta Bedřichovská); e-mail je oproti papíru novější —
+// papír má ještě instalace@, nabídky mají chodit na info@.
+const FIRMA = {
+  nazev: "GREENSIE",
+  ulice: "Bedřichovská 2183/16",
+  mesto: "182 00 Praha 8 – Libeň",
+  telefon: "+420 222 703 031",
+  email: "info@greensie.cz",
+};
+
+function Zapati() {
+  return (
+    <div className="vy-zapati">
+      <span className="vy-zapati-znacka">
+        <Logo jen="znacka" vyska={26} />
+      </span>
+      <span className="vy-zapati-adresa">
+        <b>{FIRMA.nazev}</b>
+        <span>
+          {FIRMA.ulice} · {FIRMA.mesto}
+        </span>
+      </span>
+      <span className="vy-zapati-kontakt">
+        <span>{FIRMA.telefon}</span>
+        <span>{FIRMA.email}</span>
+      </span>
+    </div>
+  );
+}
+
 export default function NabidkaVystup({ data, konfigurace, tisk = false }) {
   if (!data) return null;
   const bloky = (konfigurace?.bloky || []).filter((b) => b.viditelny);
   return (
     <div className={"vystup-sheet" + (tisk ? " vystup-tisk" : "")}>
+      {/* Vodoznak leží pod obsahem a nic nepřekrývá (pointer-events: none). */}
+      <div className="vy-vodoznak" aria-hidden="true">
+        <Logo jen="znacka" vyska={420} />
+      </div>
       {bloky.map((blok) => {
         switch (blok.druh) {
           case "hlavicka":
@@ -160,6 +198,7 @@ export default function NabidkaVystup({ data, konfigurace, tisk = false }) {
             return null;
         }
       })}
+      <Zapati />
     </div>
   );
 }

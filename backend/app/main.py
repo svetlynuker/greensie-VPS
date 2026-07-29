@@ -19,6 +19,7 @@ from app.logy.middleware import LogovaciMiddleware
 from app.zmeny import models as zmeny_models  # noqa: F401 - registrace modelů
 from app.zmeny.routes import router as zmeny_router
 from app.admin.routes import router as admin_router
+from app.dashboard.routes import router as dashboard_router
 from app.konektor import models as konektor_models  # noqa: F401 - registrace modelů
 from app.konektor.routes import router as konektor_router
 from app.manual.routes import router as manual_router
@@ -200,8 +201,27 @@ def _seed_baterie():
         db.close()
 
 
+def _seed_spotove_ceny():
+    """Naseeduje spotové ceny z přiložených datových souborů (spot_ceny.py).
+
+    Idempotentní a offline – produkce nechodí na internet, ceny jsou v repu
+    jako `app/nabidkovac/data/spot_dam_cz_<rok>.csv.gz`. Když už jsou ceny roku
+    v DB v plném počtu, seed se přeskočí (35 tis. řádků na rok by zdržovalo
+    každý restart). Další rok se přidává skriptem `scripts/import_spot_ceny.py`.
+    """
+    from app.database import SessionLocal
+    from app.nabidkovac.spot_ceny import seed_z_datovych_souboru
+
+    db = SessionLocal()
+    try:
+        seed_z_datovych_souboru(db)
+    finally:
+        db.close()
+
+
 _seed_sazby()
 _seed_baterie()
+_seed_spotove_ceny()
 
 app = FastAPI(title="Greensie")
 
@@ -236,6 +256,7 @@ app.include_router(zmeny_router)
 app.include_router(admin_router)
 app.include_router(konektor_router)
 app.include_router(manual_router)
+app.include_router(dashboard_router)
 
 
 @app.on_event("startup")

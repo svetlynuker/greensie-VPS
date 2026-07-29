@@ -4,6 +4,7 @@ import Layout from "../components/Layout";
 import DokumentUpload from "../components/DokumentUpload";
 import PeakShavingPanel from "../components/PeakShavingPanel";
 import PpaPanel from "../components/PpaPanel";
+import ProdejPanel from "../components/ProdejPanel";
 import { nactiMe, logout, nabidkaDetail, nabidkaUprav, nabidkaSmaz } from "../api";
 import { PODSEKCE, STAV_NABIDKY, fmtDatum } from "../nabidkovac";
 import "../styles/nabidkovac.css";
@@ -16,6 +17,11 @@ export default function NabidkaDetail() {
   const [chyba, setChyba] = useState(null);
   const [uklada, setUklada] = useState(false);
   const [zprava, setZprava] = useState(null);
+  // Údaje zákazníka a podklady se rozbalují na vyžádání – u rozpracované
+  // nabídky by jen zabíraly místo, které patří výpočtu. U nové nabídky se
+  // otevřou samy (viz useEffect níž), protože tam se teprve vyplňují.
+  const [upravaZakaznika, setUpravaZakaznika] = useState(false);
+  const [podkladyOtevrene, setPodkladyOtevrene] = useState(false);
 
   // editovatelná pole zákazníka
   const [nazev, setNazev] = useState("");
@@ -50,6 +56,9 @@ export default function NabidkaDetail() {
         setMe(m);
         setNabidka(n);
         naplnFormular(n);
+        // Čerstvě založená nabídka: otevři to, co se v ní teprve vyplňuje.
+        if (!n.zakaznik_nazev) setUpravaZakaznika(true);
+        if (!(n.dokumenty || []).length) setPodkladyOtevrene(true);
       })
       .catch((e) => {
         const msg = String(e.message);
@@ -104,104 +113,120 @@ export default function NabidkaDetail() {
   if (!me || !nabidka) return null;
 
   const sekce = PODSEKCE.find((s) => s.klic === nabidka.typ);
+  const pocetDokumentu = (nabidka.dokumenty || []).length;
 
   return (
     <Layout uzivatel={me.uzivatel}>
-      <div className="nb-app">
+      {/* Pracovní stůl (vstupy + výsledek vedle sebe) potřebuje šířku na dva
+          sloupce — mají ho všechny tři linie, takže platí pro celý detail. */}
+      <div className="nb-app siroky">
         <Link to={`/nabidkovac/${nabidka.typ}`} className="nb-backlink">
           ← Zpět na {sekce?.nazev || "seznam"}
         </Link>
 
-        <div className="nb-head">
-          <span className="nb-dot" />
-          <h1>{nabidka.zakaznik_nazev || "Nová nabídka"}</h1>
-          <span className="nb-badge" style={{ marginLeft: 8 }}>
-            {sekce?.nazev || nabidka.typ}
-          </span>
+        {/* Zákazník: jeden řádek, formulář se rozbalí až na vyžádání. Do adresy
+            a GPS se sahá jednou na začátku, takže tu nemusí trvale zabírat
+            místo, které patří vstupům výpočtu a výsledku. */}
+        <div className="nb-zakaznik">
+          <div style={{ minWidth: 0 }}>
+            <h1>{nabidka.zakaznik_nazev || "Nová nabídka"}</h1>
+            <div className="nb-zakaznik-radek">
+              {nabidka.zakaznik_adresa || "adresa nevyplněná"}
+              {nabidka.zakaznik_gps_lat != null && nabidka.zakaznik_gps_lng != null && (
+                <> · {nabidka.zakaznik_gps_lat} N, {nabidka.zakaznik_gps_lng} E</>
+              )}
+              {" · založil "}
+              {nabidka.vytvoril_jmeno || "—"} {fmtDatum(nabidka.vytvoreno_at)}
+            </div>
+          </div>
+          <span className="nb-mezera" />
+          <span className="nb-badge">{sekce?.nazev || nabidka.typ}</span>
           <span className="nb-badge">{STAV_NABIDKY[nabidka.stav] || nabidka.stav}</span>
-        </div>
-        <p className="nb-popis">
-          Založil {nabidka.vytvoril_jmeno || "—"} · {fmtDatum(nabidka.vytvoreno_at)}
-        </p>
-
-        {/* Zákazník */}
-        <div className="fm-card" style={{ padding: 18, marginBottom: 16 }}>
-          <h3 style={{ margin: "0 0 12px", fontSize: 14 }}>Zákazník</h3>
-          <div className="nb-form-grid">
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label className="nb-label">Název zákazníka</label>
-              <input className="nb-pole" value={nazev} onChange={(e) => setNazev(e.target.value)} placeholder="např. Firma s.r.o." />
-            </div>
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label className="nb-label">Adresa</label>
-              <input className="nb-pole" value={adresa} onChange={(e) => setAdresa(e.target.value)} placeholder="Ulice, město" />
-            </div>
-            <div>
-              <label className="nb-label">GPS šířka (lat) – pro budoucí PVGIS</label>
-              <input className="nb-pole" value={lat} onChange={(e) => setLat(e.target.value)} placeholder="např. 50.087" inputMode="decimal" />
-            </div>
-            <div>
-              <label className="nb-label">GPS délka (lng) – pro budoucí PVGIS</label>
-              <input className="nb-pole" value={lng} onChange={(e) => setLng(e.target.value)} placeholder="např. 14.421" inputMode="decimal" />
-            </div>
-          </div>
-          {zprava && <div style={{ color: "var(--fm-brand-dk)", fontSize: 13, marginTop: 10 }}>{zprava}</div>}
-          {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13, marginTop: 10 }}>{chyba}</div>}
-          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-            <button className="fm-btn fm-primary" onClick={uloz} disabled={uklada}>
-              {uklada ? "Ukládám…" : "Uložit"}
-            </button>
-            <span style={{ flex: 1 }} />
-            <button className="fm-btn" style={{ color: "var(--st-crit)" }} onClick={smaz}>
-              Smazat nabídku
-            </button>
-          </div>
-        </div>
-
-        {/* Dokumenty */}
-        <div className="fm-card" style={{ padding: 18, marginBottom: 16 }}>
-          <h3 style={{ margin: "0 0 4px", fontSize: 14 }}>Podklady</h3>
-          <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 12px" }}>
-            Nahraj fakturu za elektřinu (PDF) a/nebo diagram spotřeby (CSV). Soubory se zatím jen
-            uloží – automatické zpracování (extrakce z faktury, parsování spotřeby) se připravuje.
-          </p>
-          <DokumentUpload nabidkaId={nabidka.id} dokumenty={nabidka.dokumenty} onZmena={nactiZnovu} />
-        </div>
-
-        {/* Nabídka pro zákazníka (PDF) – jen tam, kde už je výpočet (PPA / peak shaving) */}
-        {(nabidka.typ === "ppa" || nabidka.typ === "peak_shaving") && (
-          <div className="fm-card" style={{ padding: 18, marginBottom: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: 200 }}>
-              <h3 style={{ margin: "0 0 4px", fontSize: 14 }}>Nabídka pro zákazníka</h3>
-              <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: 0 }}>
-                Sestav a uprav nabídkovou stránku (jen zákaznická data) a ulož ji do PDF.
-              </p>
-            </div>
+          <button className="fm-btn" onClick={() => setUpravaZakaznika((s) => !s)}>
+            {upravaZakaznika ? "Zavřít údaje" : "Upravit zákazníka"}
+          </button>
+          {/* Nabídka pro zákazníka (PDF) – jen tam, kde už je výpočet. */}
+          {(nabidka.typ === "ppa" || nabidka.typ === "peak_shaving") && (
             <button
               className="fm-btn fm-primary"
               onClick={() => navigate(`/nabidkovac/nabidka/${nabidka.id}/vystup/${nabidka.typ}`)}
+              title="Sestav a uprav nabídkovou stránku (jen zákaznická data) a ulož ji do PDF"
             >
-              Otevřít nabídku pro zákazníka
+              Nabídka pro zákazníka
             </button>
+          )}
+        </div>
+
+        {upravaZakaznika && (
+          <div className="fm-card" style={{ padding: 18, marginBottom: 14 }}>
+            <h3 style={{ margin: "0 0 12px", fontSize: 14 }}>Údaje zákazníka</h3>
+            <div className="nb-form-grid">
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label className="nb-label">Název zákazníka</label>
+                <input className="nb-pole" value={nazev} onChange={(e) => setNazev(e.target.value)} placeholder="např. Firma s.r.o." />
+              </div>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label className="nb-label">Adresa</label>
+                <input className="nb-pole" value={adresa} onChange={(e) => setAdresa(e.target.value)} placeholder="Ulice, město" />
+              </div>
+              <div>
+                <label className="nb-label">GPS šířka (lat) – pro budoucí PVGIS</label>
+                <input className="nb-pole" value={lat} onChange={(e) => setLat(e.target.value)} placeholder="např. 50.087" inputMode="decimal" />
+              </div>
+              <div>
+                <label className="nb-label">GPS délka (lng) – pro budoucí PVGIS</label>
+                <input className="nb-pole" value={lng} onChange={(e) => setLng(e.target.value)} placeholder="např. 14.421" inputMode="decimal" />
+              </div>
+            </div>
+            {zprava && <div style={{ color: "var(--fm-brand-dk)", fontSize: 13, marginTop: 10 }}>{zprava}</div>}
+            {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13, marginTop: 10 }}>{chyba}</div>}
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <button className="fm-btn fm-primary" onClick={uloz} disabled={uklada}>
+                {uklada ? "Ukládám…" : "Uložit"}
+              </button>
+              <span style={{ flex: 1 }} />
+              <button className="fm-btn" style={{ color: "var(--st-crit)" }} onClick={smaz}>
+                Smazat nabídku
+              </button>
+            </div>
           </div>
         )}
 
-        {/* Navržená řešení */}
+        {/* Podklady: sbalené, když už je co nahráno – profil se načítá ve vstupech
+            výpočtu, takže sem OZ chodí jen při zakládání nabídky. */}
+        <details
+          className="fm-card nb-sbal"
+          open={podkladyOtevrene}
+          onToggle={(e) => setPodkladyOtevrene(e.currentTarget.open)}
+        >
+          <summary>
+            Podklady
+            <span className="nb-badge">
+              {pocetDokumentu === 0
+                ? "nic nenahráno"
+                : `${pocetDokumentu} ${pocetDokumentu === 1 ? "soubor" : pocetDokumentu < 5 ? "soubory" : "souborů"}`}
+            </span>
+            <span className="nb-mezera" />
+            <span style={{ fontSize: 12, fontWeight: 400, color: "var(--fm-muted)" }}>
+              faktura za elektřinu (PDF), diagram spotřeby (XLS/CSV)
+            </span>
+          </summary>
+          <div className="nb-sbal-in">
+            <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 12px" }}>
+              Nahraj fakturu za elektřinu (PDF) a/nebo diagram spotřeby (CSV). Soubory se zatím jen
+              uloží – automatické zpracování (extrakce z faktury, parsování spotřeby) se připravuje.
+            </p>
+            <DokumentUpload nabidkaId={nabidka.id} dokumenty={nabidka.dokumenty} onZmena={nactiZnovu} />
+          </div>
+        </details>
+
+        {/* Navržená řešení — všechny tři linie mají stejný pracovní stůl */}
         {nabidka.typ === "peak_shaving" ? (
           <PeakShavingPanel nabidka={nabidka} />
         ) : nabidka.typ === "ppa" ? (
           <PpaPanel nabidka={nabidka} />
         ) : (
-          <div className="fm-card" style={{ padding: 18 }}>
-            <h3 style={{ margin: "0 0 8px", fontSize: 14 }}>Navržená řešení</h3>
-            <div className="nb-warn" style={{ margin: 0 }}>
-              <span>⚠️</span>
-              <span>
-                Výpočet zatím není aktivní. Až bude doladěná metodika, tady se objeví navržená řešení
-                (velikost elektrárny/baterie, cena, délka kontraktu, ROI) – i víc variant najednou.
-              </span>
-            </div>
-          </div>
+          <ProdejPanel nabidka={nabidka} />
         )}
       </div>
     </Layout>

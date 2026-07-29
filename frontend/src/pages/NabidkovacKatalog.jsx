@@ -105,6 +105,53 @@ const PS_POLE = [
   { klic: "ps_degradace_uspor_procenta_rok", label: "Degradace úspor (%/rok, default 1.5)" },
 ];
 
+// Obchodování na spotovém trhu (režimy Kombinace/SPOT) – `spot_arbitraz.py`.
+// Marže není naše, ale obchodníkova: rozdíl mezi spotem a cenou, kterou
+// zákazník zaplatí (nákup) resp. dostane (prodej).
+const SPOT_POLE = [
+  { klic: "spot_marze_nakup_kc_mwh", label: "Marže obchodníka – nákup (Kč/MWh, default 200)" },
+  { klic: "spot_marze_prodej_kc_mwh", label: "Marže obchodníka – prodej (Kč/MWh, default 200)" },
+  // Co zákazník platí za MWh ze sítě navíc: použití sítí + systémové služby
+  // + POZE. Stejná logika jako `ppa_vyhnutelne_regulovane_kc_mwh`.
+  {
+    klic: "spot_regulovane_nakup_kc_mwh",
+    label: "Regulované složky za odebranou MWh (Kč/MWh, default 260)",
+  },
+  {
+    klic: "spot_regulovane_prodej_kc_mwh",
+    label: "Složky za dodanou MWh (Kč/MWh, default 0)",
+  },
+  // U akumulace je otázka osvobození od daně z elektřiny (28,30 Kč/MWh) → 0.
+  { klic: "spot_dan_z_elektriny_kc_mwh", label: "Daň z elektřiny (Kč/MWh, default 0)" },
+  // Náklad opotřebení = cena baterie / (cykly × kapacita). Produkt může mít
+  // vlastní hodnotu v katalogu (sloupec „cyklu_zivotnosti").
+  { klic: "spot_cyklu_zivotnosti", label: "Cyklů životnosti baterie (default 6000)" },
+  { klic: "spot_max_cyklu_rok", label: "Limit obchodních cyklů za rok (0 = bez limitu)" },
+  {
+    klic: "spot_bezpecnostni_rezerva_procenta",
+    label: "Rezerva kapacity pro peak shaving (%, default 10)",
+  },
+  { klic: "spot_referencni_rok", label: "Referenční rok spotových cen (0 = nejnovější)" },
+];
+
+// Záložky: jedna na každou spravovanou věc. Dřív bylo všechno pod sebou na jedné
+// stránce a katalog produktů ji roztáhl na několik obrazovek.
+const ZALOZKY = [
+  { klic: "produkty", nazev: "Produkty" },
+  { klic: "sazby", nazev: "Sazby distributorů" },
+  { klic: "peak", nazev: "Peak shaving" },
+  { klic: "ppa", nazev: "PPA pro FVE" },
+  { klic: "verze", nazev: "Verze nastavení" },
+];
+
+// Jak vysoké okno se seznamem produktů. „Celé" limit zruší (tabulka roste, jak
+// potřebuje) — proto hodnota null, ne nějaká velká výška.
+const VELIKOSTI_OKNA = [
+  { klic: "nizke", nazev: "nízké", vyska: "320px" },
+  { klic: "vysoke", nazev: "vysoké", vyska: "60vh" },
+  { klic: "cele", nazev: "celé", vyska: null },
+];
+
 function num(v) {
   return v.trim() === "" ? null : Number(v.replace(",", "."));
 }
@@ -470,8 +517,31 @@ export default function NabidkovacKatalog() {
   const [maxRoky, setMaxRoky] = useState("");
   const [ppaParam, setPpaParam] = useState({});
   const [psParam, setPsParam] = useState({});
+  const [spotParam, setSpotParam] = useState({});
   const [nastavZprava, setNastavZprava] = useState(null);
   const [nastavUklada, setNastavUklada] = useState(false);
+
+  // Zobrazení katalogu produktů: záložka, hledání, filtr typu a výška okna.
+  // Volba okna se pamatuje v prohlížeči — kdo má velký monitor, nechce si ji
+  // nastavovat po každém otevření.
+  const [zalozka, setZalozka] = useState("produkty");
+  const [hledani, setHledani] = useState("");
+  const [filtrTypu, setFiltrTypu] = useState("vse");
+  const [velikostOkna, setVelikostOkna] = useState(() => {
+    try {
+      const s = localStorage.getItem("gs-katalog-okno");
+      return VELIKOSTI_OKNA.some((v) => v.klic === s) ? s : "vysoke";
+    } catch {
+      return "vysoke";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("gs-katalog-okno", velikostOkna);
+    } catch {
+      // plné/zakázané úložiště nesmí shodit stránku
+    }
+  }, [velikostOkna]);
 
   async function nactiVse() {
     const [ts, ns, sz, sl] = await Promise.all([
@@ -491,6 +561,9 @@ export default function NabidkovacKatalog() {
     const p = akt?.parametry || {};
     setPpaParam(Object.fromEntries(PPA_POLE.map((f) => [f.klic, p[f.klic] == null ? "" : String(p[f.klic])])));
     setPsParam(Object.fromEntries(PS_POLE.map((f) => [f.klic, p[f.klic] == null ? "" : String(p[f.klic])])));
+    setSpotParam(
+      Object.fromEntries(SPOT_POLE.map((f) => [f.klic, p[f.klic] == null ? "" : String(p[f.klic])]))
+    );
   }
 
   useEffect(() => {
@@ -564,8 +637,10 @@ export default function NabidkovacKatalog() {
       // Zachovej existující (neznámé) klíče parametrů a přepiš/doplň jen
       // PPA + peak shaving pole; prázdné pole klíč odebere.
       const parametry = { ...(nastaveni?.[0]?.parametry || {}) };
-      for (const f of [...PPA_POLE, ...PS_POLE]) {
-        const val = num((f.klic in psParam ? psParam : ppaParam)[f.klic] ?? "");
+      for (const f of [...PPA_POLE, ...PS_POLE, ...SPOT_POLE]) {
+        const zdroj =
+          f.klic in psParam ? psParam : f.klic in spotParam ? spotParam : ppaParam;
+        const val = num(zdroj[f.klic] ?? "");
         if (val == null) delete parametry[f.klic];
         else parametry[f.klic] = val;
       }
@@ -595,224 +670,383 @@ export default function NabidkovacKatalog() {
 
   const aktualni = nastaveni[0];
 
+  // Filtr katalogu: hledání v názvu/modelu + typ produktu.
+  const dotaz = hledani.trim().toLowerCase();
+  const videnaTech = tech.filter(
+    (t) =>
+      (filtrTypu === "vse" || t.typ === filtrTypu) &&
+      (dotaz === "" || `${t.nazev} ${t.model || ""}`.toLowerCase().includes(dotaz))
+  );
+  const vyskaOkna = VELIKOSTI_OKNA.find((v) => v.klic === velikostOkna)?.vyska ?? null;
+
+  // Formulář parametrů výpočtu — stejný pro peak shaving i PPA, jen jiná sada
+  // polí. Uložení posílá VŽDY obě sady (drží se ve stavu), takže se přepnutím
+  // záložky nic neztratí.
+  const formularParametru = (pole, hodnoty, setHodnoty, popis) => (
+    <>
+      <div className="fm-card" style={{ padding: 18 }}>
+        <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 12px" }}>{popis}</p>
+        <div className="gs-form-grid">
+          {pole.map((f) => (
+            <div key={f.klic}>
+              <label className="gs-label">{f.label}</label>
+              <input
+                className="gs-input"
+                value={hodnoty[f.klic] ?? ""}
+                onChange={(e) => setHodnoty((s) => ({ ...s, [f.klic]: e.target.value }))}
+                inputMode="decimal"
+                placeholder="prázdné = kódový default"
+              />
+            </div>
+          ))}
+        </div>
+        {nastavZprava && (
+          <div style={{ fontSize: 13, marginTop: 12, color: "var(--brand-strong)" }}>{nastavZprava}</div>
+        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 14, flexWrap: "wrap" }}>
+          <button className="fm-btn fm-primary" onClick={ulozNastaveni} disabled={nastavUklada}>
+            {nastavUklada ? "Ukládám…" : "Uložit jako novou verzi"}
+          </button>
+          <span className="gs-pozn" style={{ margin: 0 }}>
+            Ukládá se celé nastavení (peak shaving i PPA) jako nová verze
+            {aktualni ? ` — teď platí v${aktualni.verze}` : " — první verze"}.
+          </span>
+        </div>
+      </div>
+      <details className="gs-meta" style={{ marginTop: 12 }}>
+        <summary>Proč se ukládá nová verze a co to znamená</summary>
+        <div className="gs-meta-in">
+          Stará verze zůstává, aby šlo dohledat, <b>s jakými parametry se počítala konkrétní
+          nabídka</b>. Uložené výsledky se tím nepřepočítají — nová verze platí pro výpočty spuštěné
+          od teď. Prázdné pole klíč z nastavení odebere a použije se <b>kódový default</b>.
+        </div>
+      </details>
+    </>
+  );
+
   return (
     <Layout uzivatel={me.uzivatel}>
-      <div className="nb-app">
-        <Link to="/nabidkovac" className="nb-backlink">← Zpět na Nabídkovač</Link>
-        <div className="nb-head">
-          <span className="nb-dot" />
-          <h1>Katalog a výpočtová nastavení</h1>
-        </div>
-        <p className="nb-popis">Spravuje jen vedení/admin. Katalog se zatím plní ručně (napojení na Raynet přijde později).</p>
+      <div className="gs-modul">
+        <Link to="/nabidkovac" className="gs-backlink">← Zpět na Nabídkovač</Link>
 
-        {/* Katalog technologií */}
-        <div className="nb-toolbar">
-          <h3 style={{ margin: 0, fontSize: 15 }}>Katalog technologií</h3>
-          <span className="nb-spacer" />
-          <button className="fm-btn" onClick={() => setEditaceSloupce(null)}>+ Sloupec</button>
-          <button className="fm-btn fm-primary" onClick={() => setEditace(null)}>+ Technologie</button>
-        </div>
-        {sloupce.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", margin: "0 0 12px" }}>
-            <span style={{ fontSize: 12, color: "var(--fm-muted)" }}>Vlastní sloupce:</span>
-            {sloupce.map((s) => (
-              <span key={s.klic} className="nb-badge" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <button
-                  onClick={() => setEditaceSloupce(s)}
-                  title="Upravit sloupec"
-                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit", color: "inherit" }}
-                >
-                  {s.nazev}{s.typ === "cislo" ? " (č.)" : ""}
-                </button>
-                <button
-                  onClick={() => smazSloupec(s)}
-                  title="Smazat sloupec"
-                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--st-crit)", fontWeight: 700 }}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-        <div className="nb-scroll" style={{ marginBottom: 24 }}>
-          <table className="nb-table">
-            <thead>
-              <tr>
-                <th>Typ</th><th>Název</th><th>Model</th><th>Výkon (kW)</th><th>Kapacita (kWh)</th><th>Cena</th><th>Dostupná</th>
-                {sloupce.map((s) => <th key={s.klic}>{s.nazev}</th>)}
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {tech.map((t) => (
-                <tr key={t.id} onClick={() => setEditace(t)}>
-                  <td>{NAZEV_TYPU[t.typ] || t.typ}</td>
-                  <td>{t.nazev}</td>
-                  <td>{t.model || "—"}</td>
-                  <td>{t.vykon_kw != null ? t.vykon_kw.toLocaleString("cs-CZ") : "—"}</td>
-                  <td>{t.kapacita_kwh != null ? t.kapacita_kwh.toLocaleString("cs-CZ") : "—"}</td>
-                  <td>{t.cena_kc != null ? `${t.cena_kc.toLocaleString("cs-CZ")} Kč` : "—"}</td>
-                  <td>{t.dostupnost ? "Ano" : "Ne"}</td>
-                  {sloupce.map((s) => {
-                    const v = t.extra?.[s.klic];
-                    return (
-                      <td key={s.klic}>
-                        {v == null || v === ""
-                          ? "—"
-                          : s.typ === "cislo" && typeof v === "number"
-                          ? v.toLocaleString("cs-CZ")
-                          : String(v)}
-                      </td>
-                    );
-                  })}
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <button className="fm-btn" style={{ padding: "4px 10px", color: "var(--st-crit)" }} onClick={() => smazTech(t)}>Smazat</button>
-                  </td>
-                </tr>
-              ))}
-              {tech.length === 0 && (
-                <tr><td colSpan={8 + sloupce.length} className="nb-empty">Katalog je zatím prázdný.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Výpočtová nastavení (verzovaná) */}
-        <h3 style={{ margin: "0 0 6px", fontSize: 15 }}>Výpočtová nastavení</h3>
-        <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 12px" }}>
-          Uložení vytvoří <b>novou verzi</b> (stará zůstává kvůli dohledatelnosti, s jakými parametry se počítala konkrétní nabídka).
-          {aktualni ? ` Aktuální je verze ${aktualni.verze}.` : " Zatím žádná verze – ulož první."}
-        </p>
-        <div className="fm-card" style={{ padding: 18, marginBottom: 16 }}>
-          <div className="nb-form-grid">
-            <div>
-              <label className="nb-label">Koeficient zisku (marže PPA)</label>
-              <input className="nb-pole" value={koef} onChange={(e) => setKoef(e.target.value)} inputMode="decimal" placeholder="např. 1.3" />
-            </div>
-            <div>
-              <label className="nb-label">Min. délka kontraktu (roky)</label>
-              <input className="nb-pole" value={minRoky} onChange={(e) => setMinRoky(e.target.value)} inputMode="numeric" placeholder="např. 10" />
-            </div>
-            <div>
-              <label className="nb-label">Max. délka kontraktu (roky)</label>
-              <input className="nb-pole" value={maxRoky} onChange={(e) => setMaxRoky(e.target.value)} inputMode="numeric" placeholder="např. 20" />
-            </div>
-          </div>
-
-          <div style={{ marginTop: 16, marginBottom: 4, fontSize: 13, fontWeight: 600 }}>PPA pro FVE – náklady a defaulty</div>
-          <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 10px" }}>
-            Cena za kWp (zjednodušený režim CAPEX), degradace, indexy eskalace a další výchozí hodnoty PPA výpočtu. OZ je u konkrétní nabídky může přepsat. Prázdné pole = použije se kódový default.
-          </p>
-          <div className="nb-form-grid">
-            {PPA_POLE.map((f) => (
-              <div key={f.klic}>
-                <label className="nb-label">{f.label}</label>
-                <input
-                  className="nb-pole"
-                  value={ppaParam[f.klic] ?? ""}
-                  onChange={(e) => setPpaParam((s) => ({ ...s, [f.klic]: e.target.value }))}
-                  inputMode="decimal"
-                />
-              </div>
-            ))}
-          </div>
-
-          <div style={{ marginTop: 16, marginBottom: 4, fontSize: 13, fontWeight: 600 }}>Peak shaving – defaulty</div>
-          <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 10px" }}>
-            Práh doporučení a ocenění ztrát baterie (audit PS-5). Prázdné pole = kódový default.
-          </p>
-          <div className="nb-form-grid">
-            {PS_POLE.map((f) => (
-              <div key={f.klic}>
-                <label className="nb-label">{f.label}</label>
-                <input
-                  className="nb-pole"
-                  value={psParam[f.klic] ?? ""}
-                  onChange={(e) => setPsParam((s) => ({ ...s, [f.klic]: e.target.value }))}
-                  inputMode="decimal"
-                />
-              </div>
-            ))}
-          </div>
-
-          {nastavZprava && <div style={{ fontSize: 13, marginTop: 10, color: "var(--fm-brand-dk)" }}>{nastavZprava}</div>}
-          <div style={{ marginTop: 14 }}>
-            <button className="fm-btn fm-primary" onClick={ulozNastaveni} disabled={nastavUklada}>
-              {nastavUklada ? "Ukládám…" : "Uložit jako novou verzi"}
+        <div className="gs-tabs" role="tablist" aria-label="Nastavení nabídkovače">
+          {ZALOZKY.map((z) => (
+            <button
+              key={z.klic}
+              type="button"
+              role="tab"
+              aria-selected={zalozka === z.klic}
+              onClick={() => setZalozka(z.klic)}
+            >
+              {z.nazev}
+              {z.klic === "produkty" && <span className="gs-tab-cnt"> ({tech.length})</span>}
+              {z.klic === "sazby" && <span className="gs-tab-cnt"> ({sazby.length})</span>}
             </button>
-          </div>
+          ))}
         </div>
 
-        {nastaveni.length > 0 && (
-          <div className="nb-scroll" style={{ marginBottom: 24 }}>
-            <table className="nb-table">
-              <thead>
-                <tr><th>Verze</th><th>Koef. zisku</th><th>Min. roky</th><th>Max. roky</th><th>Platné od</th></tr>
-              </thead>
-              <tbody>
-                {nastaveni.map((v) => (
-                  <tr key={v.id} style={{ cursor: "default" }}>
-                    <td><span className="nb-badge">v{v.verze}</span></td>
-                    <td>{v.koeficient_zisku ?? "—"}</td>
-                    <td>{v.min_delka_kontraktu_roky ?? "—"}</td>
-                    <td>{v.max_delka_kontraktu_roky ?? "—"}</td>
-                    <td>{String(v.platne_od || "").slice(0, 10)}</td>
-                  </tr>
+        {/* ---------- záložka: produkty (katalog technologií) ---------- */}
+        {zalozka === "produkty" && (
+          <div role="tabpanel">
+            <div className="gs-sekce-t">
+              Produkty v katalogu
+              <span className="gs-mezera" />
+              <button className="fm-btn" onClick={() => setEditaceSloupce(null)}>+ Vlastní sloupec</button>
+              <button className="fm-btn fm-primary" onClick={() => setEditace(null)}>+ Produkt</button>
+            </div>
+
+            {/* Hledání, filtr typu a velikost okna — celý katalog v jedné dlouhé
+                tabulce se nedal přehlédnout, tohle ho drží v rozumném výřezu. */}
+            <div className="gs-toolbar">
+              <input
+                className="gs-input"
+                value={hledani}
+                onChange={(e) => setHledani(e.target.value)}
+                placeholder="Hledat v názvu a modelu…"
+                aria-label="Hledat produkt"
+                style={{ flex: "1 1 200px", maxWidth: 320 }}
+              />
+              <span className="gs-seg" role="group" aria-label="Filtr typu produktu">
+                <button
+                  type="button"
+                  aria-pressed={filtrTypu === "vse"}
+                  onClick={() => setFiltrTypu("vse")}
+                >
+                  Vše
+                </button>
+                {TYPY_TECH.map((t) => (
+                  <button
+                    key={t.klic}
+                    type="button"
+                    aria-pressed={filtrTypu === t.klic}
+                    onClick={() => setFiltrTypu(t.klic)}
+                  >
+                    {t.nazev}
+                  </button>
                 ))}
-              </tbody>
-            </table>
+              </span>
+              <span className="gs-spacer" />
+              <span className="gs-prepinac">
+                <span className="gs-ctrl-label">Okno</span>
+                <span className="gs-seg" role="group" aria-label="Výška okna se seznamem">
+                  {VELIKOSTI_OKNA.map((v) => (
+                    <button
+                      key={v.klic}
+                      type="button"
+                      aria-pressed={velikostOkna === v.klic}
+                      onClick={() => setVelikostOkna(v.klic)}
+                    >
+                      {v.nazev}
+                    </button>
+                  ))}
+                </span>
+              </span>
+            </div>
+
+            {sloupce.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", margin: "0 0 10px" }}>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>Vlastní sloupce:</span>
+                {sloupce.map((s) => (
+                  <span key={s.klic} className="gs-pill">
+                    <button
+                      onClick={() => setEditaceSloupce(s)}
+                      title="Upravit sloupec"
+                      style={{ background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit", color: "inherit" }}
+                    >
+                      {s.nazev}{s.typ === "cislo" ? " (č.)" : ""}
+                    </button>
+                    <button
+                      onClick={() => smazSloupec(s)}
+                      title="Smazat sloupec"
+                      style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--st-crit)", fontWeight: 700 }}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div
+              className={"gs-scroll" + (vyskaOkna ? " okno" : "")}
+              style={vyskaOkna ? { "--gs-okno": vyskaOkna } : undefined}
+            >
+              <table className="gs-table">
+                <thead>
+                  <tr>
+                    <th>Typ</th><th>Název</th><th>Model</th>
+                    <th className="n">Výkon (kW)</th><th className="n">Kapacita (kWh)</th><th className="n">Cena</th>
+                    <th>Dostupná</th>
+                    {sloupce.map((s) => <th key={s.klic} className={s.typ === "cislo" ? "n" : undefined}>{s.nazev}</th>)}
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {videnaTech.map((t) => (
+                    <tr key={t.id} onClick={() => setEditace(t)} title="Kliknutím otevřeš úpravu produktu">
+                      <td>{NAZEV_TYPU[t.typ] || t.typ}</td>
+                      <td style={{ fontWeight: 600 }}>{t.nazev}</td>
+                      <td>{t.model || "—"}</td>
+                      <td className="n">{t.vykon_kw != null ? t.vykon_kw.toLocaleString("cs-CZ") : "—"}</td>
+                      <td className="n">{t.kapacita_kwh != null ? t.kapacita_kwh.toLocaleString("cs-CZ") : "—"}</td>
+                      <td className="n">{t.cena_kc != null ? `${t.cena_kc.toLocaleString("cs-CZ")} Kč` : "—"}</td>
+                      <td>
+                        {t.dostupnost ? (
+                          <span className="gs-pill dobre">ano</span>
+                        ) : (
+                          <span className="gs-pill">ne</span>
+                        )}
+                      </td>
+                      {sloupce.map((s) => {
+                        const v = t.extra?.[s.klic];
+                        return (
+                          <td key={s.klic} className={s.typ === "cislo" ? "n" : undefined}>
+                            {v == null || v === ""
+                              ? "—"
+                              : s.typ === "cislo" && typeof v === "number"
+                              ? v.toLocaleString("cs-CZ")
+                              : String(v)}
+                          </td>
+                        );
+                      })}
+                      <td className="n" onClick={(e) => e.stopPropagation()}>
+                        <button className="fm-btn" style={{ padding: "4px 10px", fontSize: 12, color: "var(--st-crit)" }} onClick={() => smazTech(t)}>Smazat</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {videnaTech.length === 0 && (
+                    <tr className="staticky">
+                      <td colSpan={8 + sloupce.length} className="gs-empty">
+                        {tech.length === 0
+                          ? "Katalog je zatím prázdný."
+                          : "Hledání ani filtr nic nenašly."}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="gs-pozn">
+              Zobrazeno <b>{videnaTech.length}</b> z {tech.length} produktů
+              {filtrTypu !== "vse" && ` · typ ${NAZEV_TYPU[filtrTypu]}`}
+              {dotaz !== "" && ` · hledání „${hledani.trim()}"`}. Klik na řádek otevře úpravu.
+              Katalog se zatím plní ručně (napojení na Raynet přijde později).
+            </div>
           </div>
         )}
 
-        {/* Sazby distributorů (peak shaving) */}
-        <div className="nb-toolbar">
-          <h3 style={{ margin: 0, fontSize: 15 }}>Sazby distributorů (peak shaving)</h3>
-          <span className="nb-spacer" />
-          <button className="fm-btn fm-primary" onClick={() => setEditaceSazby(null)}>+ Sazba</button>
-        </div>
-        <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 12px" }}>
-          Ceny bez DPH. Naostro jede zatím jen ČEZ Distribuce 2026 – EG.D, PRE a sazby 2027
-          (nová struktura ERÚ) se doplní tady, až budou čísla ověřená, resp. zveřejněná.
-        </p>
-        <div className="nb-scroll">
-          <table className="nb-table">
-            <thead>
-              <tr>
-                <th>Distributor</th><th>Hladina</th><th>Struktura</th><th>Ceny</th><th>Platnost</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sazby.map((s) => (
-                <tr key={s.id} onClick={() => setEditaceSazby(s)}>
-                  <td>{NAZEV_DISTRIB[s.distributor] || s.distributor}</td>
-                  <td>{NAZEV_HLADINY[s.napetova_hladina] || s.napetova_hladina}</td>
-                  <td>
-                    {NAZEV_STRUKTURY[s.struktura_tarifu] || s.struktura_tarifu}
-                    {s.je_modelovy_odhad && (
-                      <span className="nb-badge" style={{ marginLeft: 6 }} title="Nezávazný odhad, ne finální cena ERÚ">
-                        modelový odhad
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ fontSize: 12, color: s.parametry == null ? "var(--fm-muted)" : undefined }}>
-                    {shrnParametry(s)}
-                  </td>
-                  <td style={{ whiteSpace: "nowrap" }}>
-                    {String(s.platne_od || "").slice(0, 10)}
-                    {s.platne_do ? ` – ${String(s.platne_do).slice(0, 10)}` : ""}
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <button className="fm-btn" style={{ padding: "4px 10px", color: "var(--st-crit)" }} onClick={() => smazSazbu(s)}>Smazat</button>
-                  </td>
-                </tr>
-              ))}
-              {sazby.length === 0 && (
-                <tr><td colSpan={6} className="nb-empty">Zatím žádné sazby.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        {/* ---------- záložka: sazby distributorů ---------- */}
+        {zalozka === "sazby" && (
+          <div role="tabpanel">
+            <div className="gs-sekce-t">
+              Sazby distributorů
+              <span className="gs-pill">peak shaving</span>
+              <span className="gs-mezera" />
+              <button className="fm-btn fm-primary" onClick={() => setEditaceSazby(null)}>+ Sazba</button>
+            </div>
+            <div className="gs-scroll">
+              <table className="gs-table">
+                <thead>
+                  <tr>
+                    <th>Distributor</th><th>Hladina</th><th>Struktura</th><th>Ceny</th><th>Platnost</th><th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sazby.map((s) => (
+                    <tr key={s.id} onClick={() => setEditaceSazby(s)} title="Kliknutím otevřeš úpravu sazby">
+                      <td>{NAZEV_DISTRIB[s.distributor] || s.distributor}</td>
+                      <td>{NAZEV_HLADINY[s.napetova_hladina] || s.napetova_hladina}</td>
+                      <td>
+                        {NAZEV_STRUKTURY[s.struktura_tarifu] || s.struktura_tarifu}
+                        {s.je_modelovy_odhad && (
+                          <span className="gs-pill pozor" style={{ marginLeft: 6 }} title="Nezávazný odhad, ne finální cena ERÚ">
+                            modelový odhad
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ fontSize: 12, color: s.parametry == null ? "var(--muted)" : undefined }}>
+                        {shrnParametry(s)}
+                      </td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        {String(s.platne_od || "").slice(0, 10)}
+                        {s.platne_do ? ` – ${String(s.platne_do).slice(0, 10)}` : ""}
+                      </td>
+                      <td className="n" onClick={(e) => e.stopPropagation()}>
+                        <button className="fm-btn" style={{ padding: "4px 10px", fontSize: 12, color: "var(--st-crit)" }} onClick={() => smazSazbu(s)}>Smazat</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {sazby.length === 0 && (
+                    <tr className="staticky"><td colSpan={6} className="gs-empty">Zatím žádné sazby.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="gs-pozn">
+              Ceny bez DPH. Naostro jede zatím jen ČEZ Distribuce 2026 — EG.D, PRE a sazby 2027
+              (nová struktura ERÚ) se doplní tady, až budou čísla ověřená, resp. zveřejněná.
+            </div>
+          </div>
+        )}
+
+        {/* ---------- záložka: parametry peak shavingu ---------- */}
+        {zalozka === "peak" && (
+          <div role="tabpanel">
+            <div className="gs-sekce-t">Peak shaving — výchozí hodnoty výpočtu</div>
+            {formularParametru(
+              PS_POLE,
+              psParam,
+              setPsParam,
+              "Práh doporučení, ocenění ztrát baterie a parametry NPV. Tyhle hodnoty řídí, která varianta se v kalkulátoru označí jako doporučená."
+            )}
+            <div className="gs-sekce-t" style={{ marginTop: 18 }}>
+              Obchodování na spotu — režimy Kombinace a SPOT
+            </div>
+            {formularParametru(
+              SPOT_POLE,
+              spotParam,
+              setSpotParam,
+              "Marže je obchodníkova, ne naše: rozdíl mezi spotovou cenou a tím, co zákazník " +
+                "zaplatí (nákup) nebo dostane (prodej). K nákupu se přičítají regulované složky " +
+                "za odebranou MWh, aby model počítal skutečnou cenu. Náklad opotřebení se " +
+                "odvozuje z ceny baterie a počtu cyklů životnosti (produkt může mít vlastní " +
+                "hodnotu v katalogu)."
+            )}
+          </div>
+        )}
+
+        {/* ---------- záložka: parametry PPA ---------- */}
+        {zalozka === "ppa" && (
+          <div role="tabpanel">
+            <div className="gs-sekce-t">PPA pro FVE — výchozí hodnoty výpočtu</div>
+            <div className="fm-card" style={{ padding: 18, marginBottom: 12 }}>
+              <div className="gs-form-grid">
+                <div>
+                  <label className="gs-label">Koeficient zisku (marže PPA)</label>
+                  <input className="gs-input" value={koef} onChange={(e) => setKoef(e.target.value)} inputMode="decimal" placeholder="např. 1.3" />
+                </div>
+                <div>
+                  <label className="gs-label">Min. délka kontraktu (roky)</label>
+                  <input className="gs-input" value={minRoky} onChange={(e) => setMinRoky(e.target.value)} inputMode="numeric" placeholder="např. 10" />
+                </div>
+                <div>
+                  <label className="gs-label">Max. délka kontraktu (roky)</label>
+                  <input className="gs-input" value={maxRoky} onChange={(e) => setMaxRoky(e.target.value)} inputMode="numeric" placeholder="např. 20" />
+                </div>
+              </div>
+            </div>
+            {formularParametru(
+              PPA_POLE,
+              ppaParam,
+              setPpaParam,
+              "Cena za kWp (zjednodušený režim CAPEX), degradace, indexy eskalace a další výchozí hodnoty PPA výpočtu. OZ je u konkrétní nabídky může přepsat."
+            )}
+          </div>
+        )}
+
+        {/* ---------- záložka: historie verzí ---------- */}
+        {zalozka === "verze" && (
+          <div role="tabpanel">
+            <div className="gs-sekce-t">
+              Verze výpočtových nastavení
+              <span className="gs-mezera" />
+              {aktualni && <span className="gs-pill znacka">teď platí v{aktualni.verze}</span>}
+            </div>
+            {nastaveni.length === 0 ? (
+              <div className="fm-card gs-empty">
+                Zatím žádná verze — ulož první v záložce Peak shaving nebo PPA.
+              </div>
+            ) : (
+              <div className="gs-scroll">
+                <table className="gs-table">
+                  <thead>
+                    <tr>
+                      <th>Verze</th><th className="n">Koef. zisku</th><th className="n">Min. roky</th>
+                      <th className="n">Max. roky</th><th>Platné od</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {nastaveni.map((v) => (
+                      <tr key={v.id} className="staticky">
+                        <td>
+                          <span className={"gs-pill" + (v.id === aktualni?.id ? " znacka" : "")}>v{v.verze}</span>
+                        </td>
+                        <td className="n">{v.koeficient_zisku ?? "—"}</td>
+                        <td className="n">{v.min_delka_kontraktu_roky ?? "—"}</td>
+                        <td className="n">{v.max_delka_kontraktu_roky ?? "—"}</td>
+                        <td>{String(v.platne_od || "").slice(0, 10)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="gs-pozn">
+              Verze se nedají mazat ani upravovat — jsou to doklady o tom, s jakými parametry se
+              počítala konkrétní nabídka. Nová vzniká uložením v záložkách Peak shaving / PPA.
+            </div>
+          </div>
+        )}
       </div>
 
       {editace !== undefined && (

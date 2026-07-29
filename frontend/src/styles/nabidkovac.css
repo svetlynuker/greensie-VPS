@@ -4,6 +4,74 @@
   max-width: 1100px;
   margin: 0 auto;
 }
+/* Detail nabídky nese pracovní stůl (vstupy + výsledek vedle sebe), do 1100 px
+   by se dva sloupce nevešly a stůl by se pořád zalamoval pod sebe. */
+.nb-app.siroky {
+  max-width: 1560px;
+}
+
+/* Hlavička zákazníka nad stolem – jeden řádek místo velké karty s formulářem.
+   Formulář se rozbalí až na vyžádání, protože se do něj sahá jednou na začátku. */
+.nb-zakaznik {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  padding: 12px 16px;
+  margin-bottom: 14px;
+}
+.nb-zakaznik h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+.nb-zakaznik .nb-zakaznik-radek {
+  font-size: 12px;
+  color: var(--muted);
+}
+.nb-zakaznik .nb-mezera {
+  flex: 1;
+}
+
+/* Sbalitelná karta (Podklady) */
+.nb-sbal {
+  margin-bottom: 14px;
+}
+.nb-sbal > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 700;
+  list-style: none;
+}
+.nb-sbal > summary::-webkit-details-marker {
+  display: none;
+}
+.nb-sbal > summary::before {
+  content: "▸";
+  color: var(--muted);
+  font-weight: 400;
+}
+.nb-sbal[open] > summary::before {
+  content: "▾";
+}
+.nb-sbal[open] > summary {
+  border-bottom: 1px solid var(--line-soft);
+}
+.nb-sbal > summary .nb-mezera {
+  flex: 1;
+}
+.nb-sbal > .nb-sbal-in {
+  padding: 14px 16px;
+}
 
 .nb-backlink {
   display: inline-block;
@@ -80,102 +148,10 @@
   color: var(--fm-muted);
 }
 
-/* Upozornění, že výpočet zatím neběží — stavové tokeny (light/dark/CVD samy) */
-.nb-warn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--st-warn-w);
-  border: 1px solid color-mix(in srgb, var(--st-warn) 35%, transparent);
-  color: color-mix(in srgb, var(--st-warn) 72%, var(--ink));
-  border-radius: var(--radius-sm);
-  padding: 10px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  margin: 14px 0;
-}
-
-/* Tabulky (seznam nabídek, katalog) */
-.nb-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.nb-table th,
-.nb-table td {
-  text-align: left;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--fm-line);
-}
-.nb-table th {
-  background: var(--fm-head);
-  font-size: 12px;
-  color: var(--fm-muted);
-  position: sticky;
-  top: 0;
-}
-.nb-table tbody tr {
-  cursor: pointer;
-}
-.nb-table tbody tr:hover {
-  background: var(--fm-brand-soft);
-}
-.nb-scroll {
-  overflow-x: auto;
-  border: 1px solid var(--fm-line);
-  border-radius: var(--radius);
-  background: var(--fm-card);
-  box-shadow: var(--shadow-1);
-}
-
-.nb-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-  background: var(--fm-head);
-  color: var(--fm-text);
-  white-space: nowrap;
-}
-
-.nb-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 12px 0;
-  flex-wrap: wrap;
-}
-.nb-spacer {
-  flex: 1;
-}
-
-.nb-empty {
-  padding: 32px;
-  text-align: center;
-  color: var(--fm-muted);
-}
-
-.nb-pole {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--fm-line);
-  border-radius: 8px;
-  font-size: 14px;
-  font-family: inherit;
-}
-.nb-label {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--fm-muted);
-  margin-bottom: 4px;
-}
-.nb-form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-}
+/* Tabulky, pilulky, pole, upozornění, toolbar a prázdný stav se přestěhovaly do
+   global.css — používá je i admin a katalog, ne jen nabídkovač. Jména `nb-*`
+   tam zůstala jako druhá polovina selektoru, takže zdejší kód funguje dál;
+   nový kód píše `gs-*`. Viz sekce „SDÍLENÉ PRVKY MODULŮ". */
 
 /* Drag & drop zóna pro nahrání dokumentu */
 .nb-drop {
@@ -204,3 +180,24 @@
   font-size: 12px;
   font-weight: 600;
 }
+
+/* ---------- Ruční výběr produktů z katalogu (nabídkovač) ---------- */
+.nb-katalog {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px;
+  margin-bottom: 10px;
+}
+.nb-katalog-seznam {
+  max-height: 190px;
+  overflow-y: auto;
+}
+.nb-katalog-radek {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 2px 0;
+  cursor: pointer;
+}
+

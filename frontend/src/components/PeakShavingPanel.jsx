@@ -33,6 +33,8 @@ function nactiUlozeneVstupy(nabidka) {
       snizeniRp: !!v.uvazovat_snizeni_rp,
       maxVykonStridace: v.max_vykon_stridace_kw != null ? String(v.max_vykon_stridace_kw) : "",
       baterieIds: v.baterie_ids || null,
+      rezim: v.rezim || "peak_shaving",
+      maxExport: v.max_export_kw != null ? String(v.max_export_kw) : "",
     };
   }
   try {
@@ -51,48 +53,61 @@ const SLOUPCE_SROVNANI = [
     klic: "nazev",
     nazev: "Baterie",
     vychoziSmer: "asc",
+    cislo: false,
     hodnota: (v) => `${v.nazev} ${String(v.pocet_kusu ?? "").padStart(3, "0")}`,
   },
   {
     klic: "vykon",
     nazev: "Výkon / kapacita",
     vychoziSmer: "desc",
+    cislo: true,
     hodnota: (v) => v.celkovy_vykon_kw ?? null,
   },
   {
     klic: "nova_rez",
     nazev: "Nová rez.",
     vychoziSmer: "asc",
+    cislo: true,
     hodnota: (v) => v.nova_rezervovana_kapacita_kw ?? null,
   },
   {
     klic: "uspora",
     nazev: "Úspora/rok",
     vychoziSmer: "desc",
+    cislo: true,
     hodnota: (v, i, je2027) =>
       je2027
         ? v.ekonomika_2027?.rocni_uspora_bez_aku ?? v.ekonomika_2027?.rocni_uspora ?? null
         : v.rocni_uspora_2026_kc ?? null,
   },
-  { klic: "cena", nazev: "Cena", vychoziSmer: "asc", hodnota: (v) => v.cena_celkem_kc ?? null },
+  {
+    klic: "cena",
+    nazev: "Cena",
+    vychoziSmer: "asc",
+    cislo: true,
+    hodnota: (v) => v.cena_celkem_kc ?? null,
+  },
   {
     // Reálná návratnost – stejné číslo, které rozhoduje o odznaku
     // „nedoporučeno" ve stejném řádku. Starší výsledky ji nemají → prostá.
     klic: "navratnost",
     nazev: "Návratnost",
     vychoziSmer: "asc",
+    cislo: true,
+    // Řadí se podle čísla, které je v řádku vidět – včetně dopočtu za horizontem,
+    // jinak by varianty s odhadem padaly na konec bez ohledu na svou hodnotu.
     hodnota: (v, i, je2027, zaklad) => {
-      const payback = npvDleZakladu(v, zaklad).payback_roky;
-      if (payback !== undefined) return payback;
-      return je2027
-        ? v.navratnost_2027 ?? v.navratnost_2027_konzerv ?? null
-        : v.navratnost_roky ?? null;
+      const prosta = je2027
+        ? v.navratnost_2027 ?? v.navratnost_2027_konzerv
+        : v.navratnost_roky;
+      return navratnostKZobrazeni(npvDleZakladu(v, zaklad), prosta)?.hodnota ?? null;
     },
   },
   {
     klic: "npv",
     nazev: "NPV",
     vychoziSmer: "desc",
+    cislo: true,
     hodnota: (v, i, je2027, zaklad) => npvDleZakladu(v, zaklad).npv_kc ?? null,
   },
 ];
@@ -105,6 +120,42 @@ const DISTRIB = [
 const HLADINY = [
   { klic: "vn", nazev: "VN" },
   { klic: "vvn", nazev: "VVN" },
+];
+
+// Názvy měsíců pro tabulku rozhodnutí obchodu (graf používá vlastní zkratky).
+const MESICE_NAZVY = [
+  "Leden",
+  "Únor",
+  "Březen",
+  "Duben",
+  "Květen",
+  "Červen",
+  "Červenec",
+  "Srpen",
+  "Září",
+  "Říjen",
+  "Listopad",
+  "Prosinec",
+];
+
+// Co má baterie dělat (drží se `spot_arbitraz.REZIMY` na backendu).
+const REZIMY = [
+  {
+    klic: "peak_shaving",
+    nazev: "Peak shaving",
+    popis: "baterie jen sráží špičky a šetří na platbě za výkon",
+  },
+  {
+    klic: "kombinace",
+    nazev: "Kombinace",
+    popis:
+      "sráží špičky a ve zbytku obchoduje; model si u každého měsíce sám vybere, co vydělá víc",
+  },
+  {
+    klic: "spot",
+    nazev: "Spot",
+    popis: "baterie jen obchoduje, rezervovaná kapacita zůstává jak je",
+  },
 ];
 
 function kc(x) {
@@ -136,6 +187,73 @@ function npvDleZakladu(v, zaklad) {
   };
 }
 
+// Reálnou návratnost počítá server jen do horizontu NPV (default 10 let); co se
+// v něm nevrátí, nese `payback_roky = null`. Místo „nevrátí se" dopočítáme rok
+// za horizontem z rozpisu po letech: chybějící část investice se dělí cash flow
+// dalších let, které dál klesá stejným tempem jako na konci rozpisu (degradace
+// úspor). Je to odhad za hranicí modelu – v UI se proto značí vlnovkou.
+function navratnostZaHorizontem(rozpis) {
+  if (!rozpis?.length) return null;
+  const posledni = rozpis[rozpis.length - 1];
+  if (posledni.cf_kum_kc >= 0) return null; // vrátila se v horizontu (má payback)
+  let cf = posledni.cf_kc;
+  if (!(cf > 0)) return null; // úspora nepokryje ani provoz – nevrátí se nikdy
+  // Tempo poklesu z posledních dvou let rozpisu. Rostoucí CF neextrapolujeme
+  // (byl by to optimismus navíc), počítáme s ním jako s konstantním.
+  const predchozi = rozpis.length > 1 ? rozpis[rozpis.length - 2].cf_kc : null;
+  let q = predchozi > 0 ? cf / predchozi : 1;
+  if (!(q > 0) || q > 1) q = 1;
+  let dluh = -posledni.cf_kum_kc;
+  // Klesající řada má konečný součet cf·q/(1−q); když na dluh nestačí, nevrátí se.
+  if (q < 1 && (cf * q) / (1 - q) <= dluh) return null;
+  let let_ = rozpis.length;
+  for (let i = 0; i < 200 && dluh > 0; i++) {
+    cf *= q;
+    if (dluh <= cf) {
+      let_ += dluh / cf;
+      dluh = 0;
+    } else {
+      dluh -= cf;
+      let_ += 1;
+    }
+  }
+  return dluh > 0 ? null : let_;
+}
+
+// Návratnost k zobrazení – vždy číslo, ať už spočítané serverem, dopočítané za
+// horizontem, nebo (když ani to nejde, protože úspora nepokryje provoz) prostá.
+// `druh` říká, o které z těch tří jde, ať se dá číslo správně popsat.
+function navratnostKZobrazeni(npv, prosta) {
+  if (npv?.payback_roky != null) return { hodnota: npv.payback_roky, druh: "realna" };
+  if (npv?.payback_roky === undefined) {
+    // Starší uložený výsledek reálnou návratnost vůbec nemá.
+    return prosta != null ? { hodnota: prosta, druh: "prosta" } : null;
+  }
+  const odhad = navratnostZaHorizontem(npv.roky);
+  if (odhad != null) return { hodnota: odhad, druh: "odhad" };
+  return prosta != null ? { hodnota: prosta, druh: "prosta" } : null;
+}
+
+// Text návratnosti: vlnovka u odhadu za horizontem, „prostá" u posledního
+// fallbacku, ať je z čísla poznat, jak vzniklo.
+function navratnostText(n) {
+  if (!n) return "—";
+  if (n.druh === "odhad") return `~${roky(n.hodnota)}`;
+  if (n.druh === "prosta") return `${roky(n.hodnota)} (prostá)`;
+  return roky(n.hodnota);
+}
+
+function navratnostTitulek(n, horizont) {
+  if (!n) return undefined;
+  if (n.druh === "odhad") {
+    return `Investice se v horizontu ${horizont ?? 10} let nevrátí. Číslo je dopočítané za horizont modelu z klesajícího cash flow posledních let – orientační.`;
+  }
+  if (n.druh === "prosta") {
+    return "Reálná návratnost neexistuje – roční úspora nepokryje ani provozní náklady (O&M). Ukazuje se proto prostá návratnost (cena ÷ úspora jednoho roku), která O&M ani degradaci nezná.";
+  }
+  return undefined;
+}
+
 function VariantaRadek({ v, vybrana, rok, zakladNpv, onVyber }) {
   // Úspora a návratnost dle přepínače roku (2027 = NTS odhad; starší uložené
   // výsledky nesou rocni_uspora_bez_aku / navratnost_2027_konzerv – PS-3).
@@ -147,30 +265,43 @@ function VariantaRadek({ v, vybrana, rok, zakladNpv, onVyber }) {
   // Reálná návratnost (drží odznak „nedoporučeno" ve stejném řádku); starší
   // uložené výsledky ji nemají, tam se ukáže prostá návratnost roku.
   const prosta = je2027 ? v.navratnost_2027 ?? v.navratnost_2027_konzerv : v.navratnost_roky;
-  const navratnost = npv.payback_roky !== undefined ? npv.payback_roky : prosta;
+  const navratnost = navratnostKZobrazeni(npv, prosta);
   return (
     <tr
       onClick={onVyber}
       title="Kliknutím zobrazíš detail této varianty"
       style={{
         cursor: "pointer",
-        ...(vybrana ? { fontWeight: 700, background: "color-mix(in srgb, var(--brand) 9%, transparent)" } : {}),
+        ...(vybrana
+          ? { fontWeight: 700, background: "color-mix(in srgb, var(--brand) 9%, transparent)" }
+          : {}),
       }}
     >
       <td>
-        {vybrana ? "◄ " : ""}{v.nazev} × {v.pocet_kusu}
+        {vybrana ? "◄ " : ""}
+        {v.nazev} × {v.pocet_kusu}
         {!npv.doporuceno && (
-          <span className="nb-badge" style={{ marginLeft: 6, color: "var(--st-crit)" }}>nedoporučeno</span>
+          <span className="nb-badge spatne" style={{ marginLeft: 6 }}>
+            nedoporučeno
+          </span>
         )}
       </td>
-      <td>{kw(v.celkovy_vykon_kw)} / {v.celkova_kapacita_kwh?.toLocaleString("cs-CZ")} kWh</td>
-      <td>{kw(v.nova_rezervovana_kapacita_kw)}</td>
-      <td>{kc(uspora)}</td>
-      <td>{kc(v.cena_celkem_kc)}</td>
-      <td title={prosta != null ? `prostá návratnost ${roky(prosta)}` : undefined}>
-        {navratnost === null ? "nevrátí se" : roky(navratnost)}
+      <td className="n">
+        {kw(v.celkovy_vykon_kw)} / {v.celkova_kapacita_kwh?.toLocaleString("cs-CZ")} kWh
       </td>
-      <td>{npv.npv_kc != null ? kc(npv.npv_kc) : "—"}</td>
+      <td className="n">{kw(v.nova_rezervovana_kapacita_kw)}</td>
+      <td className="n">{kc(uspora)}</td>
+      <td className="n">{kc(v.cena_celkem_kc)}</td>
+      <td
+        className="n"
+        title={
+          navratnostTitulek(navratnost, v.npv_horizont_roky) ||
+          (prosta != null ? `prostá návratnost ${roky(prosta)}` : undefined)
+        }
+      >
+        {navratnostText(navratnost)}
+      </td>
+      <td className="n">{npv.npv_kc != null ? kc(npv.npv_kc) : "—"}</td>
     </tr>
   );
 }
@@ -181,47 +312,37 @@ function VariantaRadek({ v, vybrana, rok, zakladNpv, onVyber }) {
 const ZAKLADY_NPV = [
   {
     klic: "uspora",
-    nazev: "Celá úspora",
+    nazev: "celé úspory",
     popis:
       "Celý rozdíl proti dnešnímu stavu („dnešní faktura → faktura po instalaci“), " +
       "včetně úspory ze souběžné úpravy rezervace. Ekonomika projektu jako celku.",
   },
   {
     klic: "prinos_baterie",
-    nazev: "Jen přínos baterie",
+    nazev: "přínosu baterie",
     popis:
       "Jen to, co přinese sama baterie nad rámec toho, co klient získá i bez investice " +
       "(pouhou úpravou rezervace). Přísnější pohled na samotnou investici.",
   },
 ];
 
-function ZakladNpvPrepinac({ zaklad, onZmena }) {
-  const btn = { padding: "3px 12px", fontSize: 12, lineHeight: 1.5 };
+// Segmentovaný přepínač zobrazení (styl .gs-seg z global.css). Používá se
+// jen na volby, které překreslují už spočítaná data – nic nepočítá.
+function SegPrepinac({ popis, aria, volby, hodnota, onZmena }) {
   return (
-    <span
-      role="group"
-      aria-label="Z čeho počítat návratnost a NPV"
-      style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-    >
-      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--fm-muted)" }}>
-        Počítat návratnost z
-      </span>
-      <span style={{ display: "inline-flex" }}>
-        {ZAKLADY_NPV.map((z, i) => (
+    <span className="gs-prepinac">
+      <span className="gs-ctrl-label">{popis}</span>
+      <span className="gs-seg" role="group" aria-label={aria}>
+        {volby.map((v) => (
           <button
-            key={z.klic}
+            key={String(v.klic)}
             type="button"
-            className="fm-btn"
-            aria-pressed={zaklad === z.klic}
-            onClick={() => onZmena(z.klic)}
-            title={z.popis}
-            style={{
-              ...btn,
-              borderRadius: i === 0 ? "9px 0 0 9px" : "0 9px 9px 0",
-              marginLeft: i === 0 ? 0 : -1,
-            }}
+            aria-pressed={hodnota === v.klic}
+            disabled={!!v.zakazano}
+            title={v.title}
+            onClick={() => onZmena(v.klic)}
           >
-            {z.nazev}
+            {v.nazev}
           </button>
         ))}
       </span>
@@ -229,38 +350,211 @@ function ZakladNpvPrepinac({ zaklad, onZmena }) {
   );
 }
 
-function RokPrepinac({ rok, ma2027, onZmena }) {
-  const btn = { padding: "3px 12px", fontSize: 12, lineHeight: 1.5 };
+// Rozpad úspory za rok 2026 (dnešní tarif) – jen informativní srovnání.
+function Ekonomika2026({ dop, vysledek }) {
+  const e = dop.ekonomika_2026;
+  // Starší uložené výsledky (před PS-7) rozpad úspory nenesou.
+  if (e?.uspora_bez_investice == null) {
+    return (
+      <table className="nb-table">
+        <tbody>
+          <tr>
+            <td>Roční náklad bez peak shavingu</td>
+            <td className="n">{kc(e?.soucasny_naklad_celkem)}</td>
+          </tr>
+          <tr>
+            <td>Roční náklad s peak shavingem</td>
+            <td className="n">{kc(e?.novy_naklad_rezervace)}</td>
+          </tr>
+          {e?.naklad_ztrat_baterie > 0 && (
+            <tr>
+              <td className="dim">− ztráty baterie (cyklování)</td>
+              <td className="n dim">{kc(e.naklad_ztrat_baterie)}</td>
+            </tr>
+          )}
+          <tr className="soucet">
+            <td>Roční úspora</td>
+            <td className="n">{kc(e?.rocni_uspora)}</td>
+          </tr>
+        </tbody>
+      </table>
+    );
+  }
   return (
-    <span
-      role="group"
-      aria-label="Rok zobrazených hodnot"
-      style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-    >
-      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--fm-muted)" }}>Zobrazit rok</span>
-      <span style={{ display: "inline-flex" }}>
-        <button
-          type="button"
-          className="fm-btn"
-          aria-pressed={rok === 2026}
-          onClick={() => onZmena(2026)}
-          style={{ ...btn, borderRadius: "9px 0 0 9px" }}
-        >
-          2026
-        </button>
-        <button
-          type="button"
-          className="fm-btn"
-          aria-pressed={rok === 2027}
-          onClick={() => onZmena(2027)}
-          disabled={!ma2027}
-          title={ma2027 ? undefined : "Čeká se na oficiální sazby ERÚ"}
-          style={{ ...btn, borderRadius: "0 9px 9px 0", marginLeft: -1 }}
-        >
-          2027
-        </button>
-      </span>
-    </span>
+    <table className="nb-table">
+      <tbody>
+        <tr>
+          <td>
+            Náklad dnes{" "}
+            <span style={{ color: "var(--muted)" }}>
+              (RK {kw(vysledek.vstup?.rezervovana_kapacita_kw)})
+            </span>
+          </td>
+          <td className="n">{kc(e.soucasny_naklad_celkem)}</td>
+        </tr>
+        <tr>
+          <td>
+            Optimalizace kapacity bez baterie{" "}
+            <span style={{ color: "var(--muted)" }}>
+              (roční RK {kw(e.optimalni_rk_bez_baterie_kw)}
+              {e.dokupy_bez_baterie_pocet_mesicu > 0
+                ? ` + měsíční RK v ${e.dokupy_bez_baterie_pocet_mesicu} měs.`
+                : ""}
+              )
+            </span>
+          </td>
+          <td className="n">{kc(e.naklad_optimalni_bez_baterie)}</td>
+        </tr>
+        <tr className="soucet">
+          <td>Úspora hned bez investice</td>
+          <td className="n">{kc(e.uspora_bez_investice)}</td>
+        </tr>
+        {/* Optimalizace nese bezpečnostní rezervu nad naměřená maxima, dnešní RK
+            ne – s drahou rezervou umí vyjít dráž než nedělat nic. Pak je
+            baseline dnešní stav a přínos baterie se počítá proti němu. */}
+        {e.naklad_optimalni_bez_baterie > e.soucasny_naklad_celkem && (
+          <tr>
+            <td colSpan={2} className="dim" style={{ fontSize: 11 }}>
+              Optimalizovaná RK (s rezervou {dop.rezerva_rk_procenta ?? 0} % nad naměřená maxima) by
+              byla o {kc(e.naklad_optimalni_bez_baterie - e.soucasny_naklad_celkem)} dražší než
+              dnešní stav — zákazník dnes vědomě riskuje pokuty a vyplácí se mu to. Bez investice
+              tedy nemá co ušetřit a přínos baterie se počítá proti dnešnímu nákladu.
+            </td>
+          </tr>
+        )}
+        <tr>
+          <td>
+            Náklad s baterií
+            {e.naklad_ztrat_baterie > 0 && (
+              <span style={{ color: "var(--muted)", fontSize: 11 }}>
+                {" "}
+                + ztráty {kc(e.naklad_ztrat_baterie)}
+              </span>
+            )}
+          </td>
+          <td className="n">{kc(e.novy_naklad_rezervace)}</td>
+        </tr>
+        <tr className="soucet">
+          <td>Přínos baterie</td>
+          <td className="n">{kc(e.prinos_baterie)}</td>
+        </tr>
+        <tr className="soucet">
+          <td>Roční úspora celkem</td>
+          <td className="n">{kc(e.rocni_uspora)}</td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+// Rozpad úspory v nové struktuře ERÚ (2027) – tenhle rok rozhoduje.
+function Ekonomika2027({ dop, rpJeFallbackRk }) {
+  const e = dop.ekonomika_2027;
+  if (e?.status !== "spocitano") {
+    return (
+      <div style={{ padding: 14, fontSize: 13, color: "var(--muted)" }}>
+        Čeká se na oficiální sazby ERÚ.
+      </div>
+    );
+  }
+  return (
+    <table className="nb-table">
+      <tbody>
+        {/* Starší uložené výsledky (před PS-3) nesou *_bez_aku – zobrazí se
+            konzervativní čísla; sleva AKU pro BTM baterii neexistuje. */}
+        <tr>
+          <td>
+            Náklad dnes <span style={{ color: "var(--muted)" }}>(RP {kw(e.rp_soucasny_kw)})</span>
+            {rpJeFallbackRk && (
+              <div className="gs-pozn pozor">
+                Příkon ze smlouvy nezadán → dosazena RK. Skutečný RP bývá vyšší, náklad 2027 i
+                úspora jsou tak podhodnocené.
+              </div>
+            )}
+          </td>
+          <td className="n">{kc(e.soucasny_rocni_naklad)}</td>
+        </tr>
+        {/* Třetí výpočet: nejlevnější RP bez baterie (fér baseline 2027). */}
+        {e.naklad_optimalni_bez_baterie != null && (
+          <>
+            <tr>
+              <td>
+                Optimalizace příkonu bez baterie{" "}
+                <span style={{ color: "var(--muted)" }}>
+                  (RP {kw(e.optimalni_rp_bez_baterie_kw)})
+                </span>
+              </td>
+              <td className="n">{kc(e.naklad_optimalni_bez_baterie)}</td>
+            </tr>
+            <tr className="soucet">
+              <td>Úspora hned bez investice</td>
+              <td className="n">{kc(e.uspora_optimalizaci_bez_baterie)}</td>
+            </tr>
+            {/* Stejná úvaha jako u roku 2026: optimalizace nese rezervu,
+                dnešní RP ze smlouvy ne – může vyjít dráž než nechat vše být. */}
+            {e.naklad_optimalni_bez_baterie > e.soucasny_rocni_naklad && (
+              <tr>
+                <td colSpan={2} className="dim" style={{ fontSize: 11 }}>
+                  Optimalizované RP (s rezervou {dop.rezerva_rk_procenta ?? 0} %) by bylo dražší než
+                  dnešní příkon ze smlouvy — bez investice není co ušetřit, přínos baterie se počítá
+                  proti dnešnímu nákladu.
+                </td>
+              </tr>
+            )}
+          </>
+        )}
+        <tr>
+          <td>Náklad s peak shavingem</td>
+          <td className="n">{kc(e.novy_rocni_naklad_bez_aku ?? e.novy_rocni_naklad)}</td>
+        </tr>
+        {e.mesicu_s_prekrocenim_rp > 0 && (
+          <tr>
+            <td className="dim">
+              … z toho vědomé překročení RP{" "}
+              <span style={{ fontSize: 11 }}>
+                (v {e.mesicu_s_prekrocenim_rp} měs. – nižší RP se i s penalizací vyplatí)
+              </span>
+            </td>
+            <td className="n dim">{kc(e.naklad_prekroceni_rp)}</td>
+          </tr>
+        )}
+        {e.naklad_ztrat_baterie > 0 && (
+          <tr>
+            <td className="dim">… z toho ztráty baterie</td>
+            <td className="n dim">{kc(e.naklad_ztrat_baterie)}</td>
+          </tr>
+        )}
+        {e.prinos_baterie != null && (
+          <tr className="soucet">
+            <td>Přínos baterie</td>
+            <td className="n">{kc(e.prinos_baterie)}</td>
+          </tr>
+        )}
+        <tr className="soucet">
+          <td>Roční úspora celkem</td>
+          <td className="n">{kc(e.rocni_uspora_bez_aku ?? e.rocni_uspora)}</td>
+        </tr>
+        <tr>
+          <td className="dim">Měsíců na tarifu T1 / T2</td>
+          <td className="n dim">
+            {e.pocet_mesicu_t1} / {e.pocet_mesicu_t2}
+          </td>
+        </tr>
+        {e.rp_soucasny_kw != null && (
+          <tr>
+            <td className="dim">Rezervovaný příkon (RP)</td>
+            <td className="n dim">
+              {kw(e.rp_soucasny_kw)}
+              {e.rp_novy_kw !== e.rp_soucasny_kw
+                ? ` → ${kw(e.rp_novy_kw)} (${
+                    e.rp_novy_kw < e.rp_soucasny_kw ? "snížení" : "navýšení"
+                  })`
+                : " (beze změny smlouvy)"}
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
   );
 }
 
@@ -278,6 +572,9 @@ export default function PeakShavingPanel({ nabidka }) {
   // Ruční override max. AC výkonu střídače (kW) – omezuje výkon modulárních
   // baterií, kde kapacita roste s počtem kusů, ale výkon drží sdílený PCS.
   const [maxVykonStridace, setMaxVykonStridace] = useState(ulozene.maxVykonStridace || "");
+  // Co má baterie dělat (viz REZIMY) + limit dodávky do sítě pro obchodování.
+  const [rezim, setRezim] = useState(ulozene.rezim || "peak_shaving");
+  const [maxExport, setMaxExport] = useState(ulozene.maxExport || "");
   // Které baterie se mají počítat: null = celý katalog, pole id = ruční výběr.
   const [baterieIds, setBaterieIds] = useState(ulozene.baterieIds || null);
   const [katalogBaterii, setKatalogBaterii] = useState(null);
@@ -299,6 +596,9 @@ export default function PeakShavingPanel({ nabidka }) {
   const [dopocitava, setDopocitava] = useState(false);
   // Rok zobrazených hodnot (dlaždice, graf, srovnání) – default 2027 (NTS).
   const [rokZobrazeni, setRokZobrazeni] = useState(2027);
+  // Která záložka výsledku je otevřená. Výsledek býval jedna dlouhá rolovačka
+  // (~2500 px), takže se srovnání variant nepotkalo s čísly, která přepisuje.
+  const [zalozka, setZalozka] = useState("ekonomika");
   // Základ NPV/návratnosti – volba OZ, pamatuje se per prohlížeč (bez přepočtu).
   const [zakladNpv, setZakladNpv] = useState(() => {
     try {
@@ -342,19 +642,35 @@ export default function PeakShavingPanel({ nabidka }) {
       snizeniRp,
       maxVykonStridace,
       baterieIds,
+      rezim,
+      maxExport,
     };
     try {
       localStorage.setItem(KLIC_ULOZISTE(nabidka.id), JSON.stringify(data));
     } catch {
       // plné/zakázané úložiště nesmí shodit panel
     }
-  }, [nabidka.id, distributor, hladina, rezKap, rezPrikon, snizeniRp, maxVykonStridace, baterieIds]);
+  }, [
+    nabidka.id,
+    distributor,
+    hladina,
+    rezKap,
+    rezPrikon,
+    snizeniRp,
+    maxVykonStridace,
+    baterieIds,
+    rezim,
+    maxExport,
+  ]);
 
   const profilDoklady = (nabidka.dokumenty || []).filter(
     (d) => d.typ === "spotreba_csv" || d.typ === "jiny"
   );
   const sazba = (sazby || []).find(
-    (s) => s.distributor === distributor && s.napetova_hladina === hladina && s.struktura_tarifu === "stara_2026"
+    (s) =>
+      s.distributor === distributor &&
+      s.napetova_hladina === hladina &&
+      s.struktura_tarifu === "stara_2026"
   );
   // Pokuta za překročení se odvozuje z měsíční RK (1,5×, bod 4.24 výměru);
   // starší pole cena_prekroceni_kc_kw drží jen ručně založené sazby.
@@ -371,6 +687,8 @@ export default function PeakShavingPanel({ nabidka }) {
     `${b.nazev} ${b.model || ""}`.toLowerCase().includes(hledaniBaterie.trim().toLowerCase())
   );
   const vyberBateriiOk = baterieIds === null || baterieIds.length > 0;
+  const nazevDistributora = DISTRIB.find((d) => d.klic === distributor)?.nazev;
+  const vsePripraveno = profilOk && rezOk && sazbaOk && vyberBateriiOk;
 
   async function nactiProfil(dokId) {
     setZpracovavaId(dokId);
@@ -403,11 +721,18 @@ export default function PeakShavingPanel({ nabidka }) {
         max_vykon_stridace_kw:
           maxVykonStridace.trim() === "" || !(maxVykon > 0) ? null : maxVykon,
         baterie_ids: baterieIds && baterieIds.length ? baterieIds : null,
+        rezim,
+        // Prázdné = výkon baterie; „0" je platná volba (bez dodávky do sítě).
+        max_export_kw:
+          rezim === "peak_shaving" || String(maxExport).trim() === ""
+            ? null
+            : Number(String(maxExport).replace(",", ".")),
       });
       setVysledek(r.popis_json);
       setVybranyIdx(0);
       setDopoctene({});
       setPrubehy({}); // nový výpočet = staré průběhy už neplatí
+      setZalozka("ekonomika");
     } catch (e) {
       setChyba(e.message);
     } finally {
@@ -449,6 +774,9 @@ export default function PeakShavingPanel({ nabidka }) {
   // ukázat nedají – zobrazení spadne na 2026 a tlačítko 2027 se zakáže.
   const ek27 = dop?.ekonomika_2027;
   const ma2027 = ek27?.status === "spocitano";
+  // Ekonomika obchodování na spotu – u čistého peak shavingu chybí (null).
+  const spot = dop?.ekonomika_spot || null;
+  const rezimVysledku = dop?.rezim || vysledek?.vstup?.rezim || "peak_shaving";
   const rok = ma2027 ? rokZobrazeni : 2026;
   const je2027 = rok === 2027;
   // NPV / reálná návratnost / doporučení dle zvoleného základu (bez přepočtu).
@@ -458,6 +786,8 @@ export default function PeakShavingPanel({ nabidka }) {
   const prostaNavratnost = je2027
     ? dop?.navratnost_2027 ?? dop?.navratnost_2027_konzerv
     : dop?.navratnost_2026 ?? dop?.navratnost_roky;
+  // Návratnost k zobrazení – vždy číslo (viz navratnostKZobrazeni výš).
+  const navratnostDop = navratnostKZobrazeni(npvDop, prostaNavratnost);
   const zakladPopis = ZAKLADY_NPV.find((z) => z.klic === zakladNpv);
   const uspora2027 = ek27?.rocni_uspora_bez_aku ?? ek27?.rocni_uspora;
   const rpNovy2027 = ek27?.rp_novy_kw ?? ek27?.rezervovana_kapacita_kw;
@@ -539,6 +869,10 @@ export default function PeakShavingPanel({ nabidka }) {
   const zobrazeneVarianty = vsechnyVarianty
     ? serazeneVarianty
     : serazeneVarianty.slice(0, POCET_TOP_VARIANT);
+  // Kolikátá je zobrazená varianta v právě platném řazení. Index `vybranyIdx`
+  // drží pořadí ze serveru, které po přepnutí základu NPV nebo řazení sloupce
+  // už neplatí – proto se pořadí čte odsud, ne z indexu.
+  const poradiVybrane = serazeneVarianty.findIndex((x) => x.i === vybranyIdx) + 1;
 
   function prepniRazeni(klic) {
     const s = SLOUPCE_SROVNANI.find((x) => x.klic === klic);
@@ -548,769 +882,1141 @@ export default function PeakShavingPanel({ nabidka }) {
         : { klic, smer: s?.vychoziSmer || "asc" }
     );
   }
-  // Zvýraznění karty vybraného roku v porovnání let.
-  const kartaAktivni = { borderColor: "color-mix(in srgb, var(--brand) 45%, var(--line))" };
 
-  return (
-    <div className="fm-card" style={{ padding: 18 }}>
-      {/* Nápověda je u kalkulátoru po ruce – tlačítko „?" v hlavičce appky
-          z detailu nabídky netrefí stránku kalkulátoru (typ nabídky není v URL). */}
-      <div
-        style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          gap: 10, flexWrap: "wrap", margin: "0 0 8px",
-        }}
-      >
-        <h3 style={{ margin: 0, fontSize: 14 }}>Peak shaving – výpočet</h3>
-        <a
-          className="fm-btn"
-          href="/manual?stranka=nabidkovac-peak-shaving"
-          target="_blank"
-          rel="noreferrer"
-          style={{ padding: "3px 10px", fontSize: 12, textDecoration: "none" }}
-          title="Návod k výpočtu: co která hodnota znamená, RK vs. RP, tři čísla návratnosti"
-        >
-          ? Nápověda k výpočtu
-        </a>
+  // Varianty k rozhodnutí. Tabulka srovnání odpovídá na „která je nejlepší podle
+  // NPV"; tyhle karty na otázky, které klade zákazník — co doporučujeme a co je
+  // nejlevnější. Vítěz se hledá nezávisle na řazení tabulky (to si uživatel mění
+  // po svém). Kritérium „největší osekání špiček" tu bylo taky, ale nejnižší
+  // rezervace sama o sobě o ničem nevypovídá – jen ukazovala na nejdražší baterii.
+  const novaRezervace = (v) =>
+    je2027
+      ? v.ekonomika_2027?.rp_novy_kw ?? v.nova_rezervovana_kapacita_kw
+      : v.nova_rezervovana_kapacita_kw;
+  // Nejvyšší NPV napříč variantami – měřítko pro pruh na kartě.
+  const npvMax = Math.max(
+    0,
+    ...varianty.map((v) => npvDleZakladu(v, zakladNpv).npv_kc ?? 0)
+  );
+  const kartyVariant = (() => {
+    if (varianty.length < 2) return [];
+    const vse = varianty.map((v, i) => ({ v, i }));
+    // Nejmenší / největší podle hodnoty; varianty bez hodnoty se nepočítají.
+    const nej = (hodnota, sestupne) => {
+      const s = vse.filter((x) => hodnota(x.v) != null);
+      if (!s.length) return null;
+      return s.reduce((a, b) =>
+        (sestupne ? hodnota(b.v) > hodnota(a.v) : hodnota(b.v) < hodnota(a.v)) ? b : a
+      );
+    };
+    const kriteria = [
+      {
+        popis: "◆ Nejvhodnější",
+        detail: "nejvyšší NPV — tuhle doporučujeme",
+        vitez: nej((v) => npvDleZakladu(v, zakladNpv).npv_kc, true),
+      },
+      {
+        popis: "Nejlevnější",
+        detail: "nejnižší investice",
+        vitez: nej((v) => v.cena_celkem_kc, false),
+      },
+    ].filter((k) => k.vitez);
+    // Když je jedna varianta vítěz ve víc kritériích, ukáže se jednou a nese
+    // všechny štítky – dvě stejné karty vedle sebe by nikomu nepomohly.
+    const podleIndexu = new Map();
+    for (const k of kriteria) {
+      const zapis = podleIndexu.get(k.vitez.i) || { ...k.vitez, kriteria: [] };
+      zapis.kriteria.push(k);
+      podleIndexu.set(k.vitez.i, zapis);
+    }
+    return [...podleIndexu.values()];
+  })();
+
+  // ==================== VSTUPNÍ PANEL (levý sloupec) ====================
+  const panelVstupu = (
+    <form className="gs-panel" onSubmit={(e) => e.preventDefault()}>
+      <div className="gs-panel-h">
+        <h3>Vstupy výpočtu</h3>
+        <span style={{ flex: 1 }} />
+        {vsePripraveno ? (
+          <span className="nb-badge dobre">✓ připraveno</span>
+        ) : (
+          <span className="nb-badge pozor">chybí vstupy</span>
+        )}
       </div>
 
-      {/* 1) Profil spotřeby */}
-      <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 8px" }}>
-        <b>1. Profil odběru.</b> Načti 15minutový profil z nahraného souboru (XLS/CSV export z portálu distributora).
-      </p>
-      {profilOk ? (
-        <div style={{ fontSize: 13, marginBottom: 8 }}>
-          ✅ Načteno <b>{souhrn.pocet.toLocaleString("cs-CZ")}</b> intervalů,{" "}
-          {fmtDatumCas(souhrn.od)} – {fmtDatumCas(souhrn.do)}, špička <b>{kw(souhrn.max_kw)}</b>.
-        </div>
-      ) : (
-        <div style={{ fontSize: 13, marginBottom: 8, color: "var(--fm-muted)" }}>
-          Profil zatím není načtený.
-        </div>
-      )}
-      {profilDoklady.length === 0 ? (
-        <div className="nb-warn" style={{ margin: "0 0 12px" }}>
-          <span>⚠️</span>
-          <span>Nejdřív nahraj soubor se spotřebou (sekce Podklady výše).</span>
-        </div>
-      ) : (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-          {profilDoklady.map((d) => (
-            <button
-              key={d.id}
-              className="fm-btn"
-              onClick={() => nactiProfil(d.id)}
-              disabled={zpracovavaId === d.id}
-            >
-              {zpracovavaId === d.id ? "Načítám…" : `Načíst profil: ${d.puvodni_nazev}`}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* 2) Vstupy */}
-      <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 8px" }}>
-        <b>2. Parametry odběrného místa.</b>
-      </p>
-      <div className="nb-form-grid" style={{ marginBottom: 8 }}>
-        <div>
-          <label className="nb-label">Distributor</label>
-          <select className="nb-pole" value={distributor} onChange={(e) => setDistributor(e.target.value)}>
-            {DISTRIB.map((d) => <option key={d.klic} value={d.klic}>{d.nazev}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="nb-label">Napěťová hladina</label>
-          <select className="nb-pole" value={hladina} onChange={(e) => setHladina(e.target.value)}>
-            {HLADINY.map((h) => <option key={h.klic} value={h.klic}>{h.nazev}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="nb-label">Sjednaná rezervovaná kapacita (kW)</label>
-          <input className="nb-pole" value={rezKap} onChange={(e) => setRezKap(e.target.value)} inputMode="decimal" placeholder="z faktury, např. 150" />
-        </div>
-        <div>
-          <label className="nb-label">Rezervovaný příkon (kW, volit.)</label>
-          <input
-            className="nb-pole"
-            value={rezPrikon}
-            onChange={(e) => setRezPrikon(e.target.value)}
-            inputMode="decimal"
-            placeholder={rezOk ? `nezadáno → použije se RK ${rezKap}` : "ze smlouvy o připojení; pro model 2027"}
-          />
-          {/* Prázdné pole není neutrální volba: RP ze smlouvy o připojení bývá
-              výrazně vyšší než RK, takže fallback podhodnotí náklad 2027 i úsporu. */}
-          <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 2 }}>
-            Ze smlouvy o připojení; řídí model 2027. Necháš-li prázdné, počítá se{" "}
-            <b>RP = RK{rezOk ? ` (${rezKap} kW)` : ""}</b> — skutečný příkon bývá vyšší, náklad 2027
-            i úspora pak vyjdou podhodnocené.
-          </div>
-        </div>
-        <div>
-          <label className="nb-label">Max. výkon střídače (kW, volit.)</label>
-          <input
-            className="nb-pole"
-            value={maxVykonStridace}
-            onChange={(e) => setMaxVykonStridace(e.target.value)}
-            inputMode="decimal"
-            placeholder="omezí výkon baterie, např. sdílený PCS"
-          />
-        </div>
-      </div>
-      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 8 }}>
-        <input type="checkbox" checked={snizeniRp} onChange={(e) => setSnizeniRp(e.target.checked)} />
-        V modelu 2027 uvažovat snížení rezervovaného příkonu na novou kapacitu
-        <span style={{ fontSize: 11, color: "var(--fm-muted)" }}>(jednosměrná změna smlouvy o připojení)</span>
-      </label>
-
-      {/* 2b) Které baterie počítat */}
-      <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "10px 0 6px" }}>
-        <b>Baterie do výpočtu.</b> Míň produktů = rychlejší výpočet.
-      </p>
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 13, marginBottom: 6 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <input
-            type="radio"
-            checked={baterieIds === null}
-            onChange={() => setBaterieIds(null)}
-          />
-          Všechny dostupné z katalogu
-          {katalogBaterii && <span style={{ color: "var(--fm-muted)" }}>({katalogBaterii.length})</span>}
-        </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <input
-            type="radio"
-            checked={baterieIds !== null}
-            onChange={() => setBaterieIds(baterieIds || [])}
-          />
-          Jen ručně vybrané
-          {baterieIds !== null && (
-            <span style={{ color: "var(--fm-muted)" }}>({baterieIds.length} vybráno)</span>
+      <div className="gs-panel-body">
+        {/* 1) Profil spotřeby */}
+        <section className="gs-step">
+          <span className="gs-step-num">1</span>
+          <h4>Profil odběru</h4>
+          <div className="gs-step-sub">15minutový export z portálu distributora.</div>
+          {profilOk ? (
+            <div className="gs-stav">
+              <span aria-hidden="true">✓</span>
+              <div>
+                <div>
+                  <b>{souhrn.pocet.toLocaleString("cs-CZ")}</b> intervalů ·{" "}
+                  {fmtDatumCas(souhrn.od)} – {fmtDatumCas(souhrn.do)}
+                </div>
+                <div style={{ color: "var(--ink-2)" }}>
+                  špička <b>{kw(souhrn.max_kw)}</b>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="gs-stav chybi">
+              <span aria-hidden="true">○</span>
+              <div>Profil zatím není načtený — bez něj výpočet nejde spustit.</div>
+            </div>
           )}
-        </label>
+          {profilDoklady.length === 0 ? (
+            <div className="nb-warn" style={{ margin: "8px 0 0" }}>
+              <span>⚠️</span>
+              <span>Nejdřív nahraj soubor se spotřebou (sekce Podklady výše).</span>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+              {profilDoklady.map((d) => (
+                <button
+                  key={d.id}
+                  className="fm-btn"
+                  style={{ padding: "4px 10px", fontSize: 12 }}
+                  onClick={() => nactiProfil(d.id)}
+                  disabled={zpracovavaId === d.id}
+                  title={`Naparsuje 15min profil ze souboru ${d.puvodni_nazev}. Nahradí celý dosavadní profil nabídky.`}
+                >
+                  {zpracovavaId === d.id ? "Načítám…" : `Načíst: ${d.puvodni_nazev}`}
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* 2) Parametry odběrného místa */}
+        <section className="gs-step">
+          <span className="gs-step-num">2</span>
+          <h4>Odběrné místo</h4>
+          <div className="gs-step-sub">Ze smlouvy o připojení a z faktury za elektřinu.</div>
+          <div className="gs-dva">
+            <div className="gs-pole">
+              <label className="nb-label" htmlFor="ps-distributor">
+                Distributor
+              </label>
+              <select
+                id="ps-distributor"
+                className="nb-pole"
+                value={distributor}
+                onChange={(e) => setDistributor(e.target.value)}
+              >
+                {DISTRIB.map((d) => (
+                  <option key={d.klic} value={d.klic}>
+                    {d.nazev}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="gs-pole">
+              <label className="nb-label" htmlFor="ps-hladina">
+                Hladina
+              </label>
+              <select
+                id="ps-hladina"
+                className="nb-pole"
+                value={hladina}
+                onChange={(e) => setHladina(e.target.value)}
+              >
+                {HLADINY.map((h) => (
+                  <option key={h.klic} value={h.klic}>
+                    {h.nazev}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="gs-pole">
+            <label className="nb-label" htmlFor="ps-rk">
+              Rezervovaná kapacita <span style={{ fontWeight: 400 }}>(z faktury)</span>
+            </label>
+            <div className="gs-unit">
+              <input
+                id="ps-rk"
+                className="nb-pole"
+                value={rezKap}
+                onChange={(e) => setRezKap(e.target.value)}
+                inputMode="decimal"
+                placeholder="např. 150"
+              />
+              <span className="gs-unit-txt">kW</span>
+            </div>
+          </div>
+          <div className="gs-pole">
+            <label className="nb-label" htmlFor="ps-rp">
+              Rezervovaný příkon <span style={{ fontWeight: 400 }}>(ze smlouvy o připojení)</span>
+            </label>
+            <div className="gs-unit">
+              <input
+                id="ps-rp"
+                className="nb-pole"
+                value={rezPrikon}
+                onChange={(e) => setRezPrikon(e.target.value)}
+                inputMode="decimal"
+                placeholder={rezOk ? `nezadáno → použije se RK ${rezKap}` : "pro model 2027"}
+              />
+              <span className="gs-unit-txt">kW</span>
+            </div>
+            {/* Prázdné pole není neutrální volba: RP ze smlouvy o připojení bývá
+                výrazně vyšší než RK, takže fallback podhodnotí náklad 2027 i úsporu. */}
+            <div className="gs-pozn">
+              Řídí model 2027. Necháš-li prázdné, počítá se{" "}
+              <b>RP = RK{rezOk ? ` (${rezKap} kW)` : ""}</b> — skutečný příkon bývá vyšší, náklad
+              2027 i úspora pak vyjdou podhodnocené.
+            </div>
+          </div>
+          <label className="gs-zaskrt" style={{ margin: "4px 0 12px" }}>
+            <input
+              type="checkbox"
+              checked={snizeniRp}
+              onChange={(e) => setSnizeniRp(e.target.checked)}
+            />
+            <span>
+              V modelu 2027 uvažovat snížení rezervovaného příkonu na novou kapacitu{" "}
+              <span style={{ color: "var(--muted)" }}>
+                (jednosměrná změna smlouvy o připojení)
+              </span>
+            </span>
+          </label>
+          <div className="gs-pole">
+            <label className="nb-label" htmlFor="ps-stridac">
+              Max. výkon střídače <span style={{ fontWeight: 400 }}>(nepovinné)</span>
+            </label>
+            <div className="gs-unit">
+              <input
+                id="ps-stridac"
+                className="nb-pole"
+                value={maxVykonStridace}
+                onChange={(e) => setMaxVykonStridace(e.target.value)}
+                inputMode="decimal"
+                placeholder="např. sdílený PCS"
+              />
+              <span className="gs-unit-txt">kW</span>
+            </div>
+          </div>
+        </section>
+
+        {/* 3) Co má baterie dělat – peak shaving / kombinace / spot */}
+        <section className="gs-step">
+          <span className="gs-step-num">3</span>
+          <h4>Co má baterie dělat</h4>
+          <div className="gs-step-sub">
+            Kromě srážení špiček umí baterie obchodovat na spotovém trhu — nakupovat v levných
+            hodinách a dodávat v drahých.
+          </div>
+          {REZIMY.map((r) => (
+            <label key={r.klic} className="gs-volba">
+              <input type="radio" checked={rezim === r.klic} onChange={() => setRezim(r.klic)} />
+              <span>
+                <b>{r.nazev}</b>
+                <span style={{ color: "var(--muted)" }}> — {r.popis}</span>
+              </span>
+            </label>
+          ))}
+          {rezim !== "peak_shaving" && (
+            <>
+              <div className="gs-pole" style={{ marginTop: 10 }}>
+                <label className="nb-label" htmlFor="ps-export">
+                  Max. dodávka do sítě <span style={{ fontWeight: 400 }}>(nepovinné)</span>
+                </label>
+                <div className="gs-unit">
+                  <input
+                    id="ps-export"
+                    className="nb-pole"
+                    value={maxExport}
+                    onChange={(e) => setMaxExport(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="prázdné = výkon baterie, 0 = bez dodávky"
+                  />
+                  <span className="gs-unit-txt">kW</span>
+                </div>
+                <div className="gs-pozn">
+                  Vybít do vlastní spotřeby je <b>cennější než dodat do sítě</b> — zákazník se
+                  vyhne celé nákupní ceně včetně distribuce, kdežto za dodávku dostane jen spot
+                  mínus marže obchodníka. Dodávka do sítě navíc potřebuje licenci a rezervovaný
+                  výkon pro dodávku; zadej 0, pokud se má jen posouvat vlastní spotřeba.
+                </div>
+              </div>
+              <div className="gs-pozn">
+                Marže obchodníka i regulované složky za odebranou MWh se berou z výpočtových
+                nastavení (admin). Model počítá <b>skutečnou cenu, kterou zákazník zaplatí a
+                kterou dostane</b>, a odečítá opotřebení baterie obchodními cykly.
+              </div>
+              <div className="gs-pozn">
+                Obchodní režimy počítají ~0,6 s na produkt (u každého měsíce se hledá nejlepší
+                strop), takže u celého katalogu je to skoro minuta — <b>vyplatí se zúžit výběr
+                baterií</b> v sekci níž.
+              </div>
+            </>
+          )}
+        </section>
+
+        {/* 4) Které baterie počítat */}
+        <section className="gs-step">
+          <span className="gs-step-num">4</span>
+          <h4>
+            Baterie do výpočtu
+            {katalogBaterii && <span className="nb-badge">{katalogBaterii.length}</span>}
+          </h4>
+          <div className="gs-step-sub">Míň produktů = rychlejší výpočet.</div>
+          <label className="gs-volba">
+            <input type="radio" checked={baterieIds === null} onChange={() => setBaterieIds(null)} />
+            <span>Všechny dostupné z katalogu</span>
+          </label>
+          <label className="gs-volba">
+            <input
+              type="radio"
+              checked={baterieIds !== null}
+              onChange={() => setBaterieIds(baterieIds || [])}
+            />
+            <span>
+              Jen ručně vybrané
+              {baterieIds !== null && (
+                <span style={{ color: "var(--muted)" }}> ({baterieIds.length} vybráno)</span>
+              )}
+            </span>
+          </label>
+
+          {baterieIds !== null && (
+            <div className="nb-katalog" style={{ marginTop: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+                <input
+                  className="nb-pole"
+                  value={hledaniBaterie}
+                  onChange={(e) => setHledaniBaterie(e.target.value)}
+                  placeholder="Hledat v katalogu…"
+                  style={{ flex: "1 1 120px", minWidth: 110 }}
+                  aria-label="Hledat baterii v katalogu"
+                />
+                <button
+                  className="fm-btn"
+                  style={{ padding: "4px 10px", fontSize: 12 }}
+                  onClick={() => setBaterieIds(viditelneBaterie.map((b) => b.id))}
+                >
+                  Označit ({viditelneBaterie.length})
+                </button>
+                <button
+                  className="fm-btn"
+                  style={{ padding: "4px 10px", fontSize: 12 }}
+                  onClick={() => setBaterieIds([])}
+                >
+                  Zrušit
+                </button>
+              </div>
+              <div className="nb-katalog-seznam">
+                {katalogBaterii === null && (
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Načítám katalog…</div>
+                )}
+                {katalogBaterii !== null && viditelneBaterie.length === 0 && (
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                    {katalogBaterii.length === 0
+                      ? "V katalogu nejsou žádné dostupné baterie."
+                      : "Hledání nic nenašlo."}
+                  </div>
+                )}
+                {viditelneBaterie.map((b) => (
+                  <label key={b.id} className="nb-katalog-radek">
+                    <input
+                      type="checkbox"
+                      checked={baterieIds.includes(b.id)}
+                      onChange={(e) =>
+                        setBaterieIds((s) =>
+                          e.target.checked ? [...s, b.id] : s.filter((x) => x !== b.id)
+                        )
+                      }
+                    />
+                    <span style={{ fontWeight: 600 }}>{b.nazev}</span>
+                    <span style={{ color: "var(--muted)" }}>
+                      {kw(b.vykon_kw)} / {b.kapacita_kwh?.toLocaleString("cs-CZ")} kWh ·{" "}
+                      {kc(b.cena_kc)}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
       </div>
 
-      {baterieIds !== null && (
-        <div style={{ border: "1px solid var(--line)", borderRadius: 9, padding: 8, marginBottom: 10 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
-            <input
-              className="nb-pole"
-              value={hledaniBaterie}
-              onChange={(e) => setHledaniBaterie(e.target.value)}
-              placeholder="Hledat v katalogu…"
-              style={{ flex: "1 1 180px", minWidth: 140 }}
-            />
-            <button
-              className="fm-btn"
-              style={{ padding: "4px 10px", fontSize: 12 }}
-              onClick={() => setBaterieIds(viditelneBaterie.map((b) => b.id))}
-            >
-              Označit zobrazené ({viditelneBaterie.length})
-            </button>
-            <button
-              className="fm-btn"
-              style={{ padding: "4px 10px", fontSize: 12 }}
-              onClick={() => setBaterieIds([])}
-            >
-              Zrušit výběr
-            </button>
-          </div>
-          <div style={{ maxHeight: 190, overflowY: "auto" }}>
-            {katalogBaterii === null && (
-              <div style={{ fontSize: 12, color: "var(--fm-muted)" }}>Načítám katalog…</div>
-            )}
-            {katalogBaterii !== null && viditelneBaterie.length === 0 && (
-              <div style={{ fontSize: 12, color: "var(--fm-muted)" }}>
-                {katalogBaterii.length === 0
-                  ? "V katalogu nejsou žádné dostupné baterie."
-                  : "Hledání nic nenašlo."}
-              </div>
-            )}
-            {viditelneBaterie.map((b) => (
-              <label
-                key={b.id}
-                style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, padding: "2px 0" }}
-              >
-                <input
-                  type="checkbox"
-                  checked={baterieIds.includes(b.id)}
-                  onChange={(e) =>
-                    setBaterieIds((s) =>
-                      e.target.checked ? [...s, b.id] : s.filter((x) => x !== b.id)
-                    )
-                  }
-                />
-                <span style={{ fontWeight: 600 }}>{b.nazev}</span>
-                <span style={{ color: "var(--fm-muted)" }}>
-                  {kw(b.vykon_kw)} / {b.kapacita_kwh?.toLocaleString("cs-CZ")} kWh · {kc(b.cena_kc)}
-                </span>
-              </label>
-            ))}
-          </div>
-        </div>
-      )}
-      {sazby && !sazbaOk && (
-        <div className="nb-warn" style={{ margin: "0 0 12px" }}>
-          <span>⚠️</span>
-          <span>
-            Pro {DISTRIB.find((d) => d.klic === distributor)?.nazev} / {hladina.toUpperCase()} nejsou
-            vyplněné sazby 2026. Doplň je v Katalogu a výpočtech (sazby distributorů), nebo zvol jinou kombinaci.
-          </span>
-        </div>
-      )}
+      {/* Patička panelu: akce + co ještě chybí */}
+      <div className="gs-panel-f">
+        <button className="fm-btn fm-primary" onClick={spocti} disabled={pocita || !vsePripraveno}>
+          {pocita ? "Počítám…" : "Spočítat peak shaving"}
+        </button>
 
-      <button
-        className="fm-btn fm-primary"
-        onClick={spocti}
-        disabled={pocita || !profilOk || !rezOk || !sazbaOk || !vyberBateriiOk}
-      >
-        {pocita ? "Počítám…" : "Spočítat peak shaving"}
-      </button>
-      {!vyberBateriiOk && (
-        <span style={{ fontSize: 12, color: "var(--fm-muted)", marginLeft: 10 }}>
-          Vyber aspoň jednu baterii (nebo přepni na celý katalog).
+        {/* Zakázané tlačítko samo neřekne, co chybí – proto tenhle seznam. */}
+        <ul className="gs-chk" style={{ marginTop: 10 }}>
+          <li className={profilOk ? "gs-chk-ok" : "gs-chk-no"}>
+            <span className="gs-chk-mark" aria-hidden="true">
+              {profilOk ? "✓" : "!"}
+            </span>
+            <span>{profilOk ? "Profil odběru načtený" : "Načti 15min profil odběru"}</span>
+          </li>
+          <li className={rezOk ? "gs-chk-ok" : "gs-chk-no"}>
+            <span className="gs-chk-mark" aria-hidden="true">
+              {rezOk ? "✓" : "!"}
+            </span>
+            <span>
+              {rezOk ? "Rezervovaná kapacita zadaná" : "Zadej rezervovanou kapacitu z faktury"}
+            </span>
+          </li>
+          <li className={sazbaOk ? "gs-chk-ok" : "gs-chk-no"}>
+            <span className="gs-chk-mark" aria-hidden="true">
+              {sazbaOk ? "✓" : "!"}
+            </span>
+            <span>
+              {sazbaOk
+                ? `Sazby ${nazevDistributora} / ${hladina.toUpperCase()} vyplněné`
+                : `Chybí sazby 2026 pro ${nazevDistributora} / ${hladina.toUpperCase()} — doplň je v Katalogu a výpočtech, nebo zvol jinou kombinaci`}
+            </span>
+          </li>
+          {!vyberBateriiOk && (
+            <li className="gs-chk-no">
+              <span className="gs-chk-mark" aria-hidden="true">
+                !
+              </span>
+              <span>Vyber aspoň jednu baterii (nebo přepni na celý katalog)</span>
+            </li>
+          )}
+        </ul>
+
+        {zprava && (
+          <div style={{ color: "var(--fm-brand-dk)", fontSize: 12, marginTop: 8 }}>{zprava}</div>
+        )}
+        {chyba && <div style={{ color: "var(--st-crit)", fontSize: 12, marginTop: 8 }}>{chyba}</div>}
+
+        <div className="gs-pozn" style={{ marginTop: 10 }}>
+          Vstupy se pamatují u nabídky —{" "}
+          <a
+            href="/manual?stranka=nabidkovac-peak-shaving"
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: "var(--brand-strong)" }}
+            title="Návod k výpočtu: co která hodnota znamená, RK vs. RP, tři čísla návratnosti"
+          >
+            nápověda k výpočtu
+          </a>
+        </div>
+      </div>
+    </form>
+  );
+
+  // ==================== VÝSLEDEK (pravý sloupec) ====================
+  let vysledekObsah;
+  if (!vysledek) {
+    vysledekObsah = (
+      <div className="fm-card" style={{ padding: 32, textAlign: "center", color: "var(--muted)" }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: "var(--ink)" }}>
+          Výsledek se objeví tady
+        </div>
+        <div style={{ fontSize: 12.5 }}>
+          Vlevo doplň vstupy a spusť výpočet. Panel vlevo zůstane po ruce, takže půjde měnit
+          rezervaci a hned vedle sledovat, co to udělá s návratností.
+        </div>
+      </div>
+    );
+  } else if (!dop) {
+    vysledekObsah = (
+      <div className="nb-warn" style={{ margin: 0 }}>
+        <span>⚠️</span>
+        <span>
+          Výpočet nenašel použitelnou variantu. {(vysledek.upozorneni || []).join(" ")}
         </span>
-      )}
-      {zprava && <div style={{ color: "var(--fm-brand-dk)", fontSize: 13, marginTop: 10 }}>{zprava}</div>}
-      {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13, marginTop: 10 }}>{chyba}</div>}
-
-      {/* 3) Výsledek */}
-      {vysledek && (
-        <div style={{ marginTop: 18 }}>
-          {dop ? (
-            <>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 10,
-                  flexWrap: "wrap",
-                  margin: "0 0 8px",
-                }}
-              >
-                <h4 style={{ margin: 0, fontSize: 13 }}>
-                  {vybranyIdx === 0 ? "Doporučená varianta" : "Vybraná varianta"}
-                  {vybranyIdx !== 0 && (
-                    <span className="nb-badge" style={{ marginLeft: 8, color: "color-mix(in srgb, var(--st-warn) 72%, var(--ink))" }}>
-                      alternativa — doporučená je {varianty[0]?.nazev} × {varianty[0]?.pocet_kusu}
-                    </span>
-                  )}
-                  {!npvDop.doporuceno && (
-                    <span className="nb-badge" style={{ marginLeft: 8, color: "var(--st-crit)" }}>
-                      nad prahem {vysledek.max_navratnost_roky}&nbsp;let – nedoporučeno
-                    </span>
-                  )}
-                </h4>
-                <span style={{ display: "inline-flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
-                  <ZakladNpvPrepinac zaklad={zakladNpv} onZmena={setZakladNpv} />
-                  <RokPrepinac rok={rok} ma2027={ma2027} onZmena={setRokZobrazeni} />
+      </div>
+    );
+  } else {
+    vysledekObsah = (
+      <>
+        {/* --- hlavička výsledku + přepínače zobrazení --- */}
+        <div className="gs-res-h">
+          <div>
+            <div className="gs-nadtitul">
+              {vybranyIdx === 0 ? "Doporučená varianta" : "Vybraná varianta"}
+              {varianty.length > 1 && poradiVybrane > 0 && (
+                <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+                  {" "}
+                  — {poradiVybrane}. z {varianty.length}{" "}
+                  {sloupecRazeni
+                    ? `podle ${sloupecRazeni.nazev.toLowerCase()}`
+                    : "podle NPV"}
                 </span>
-              </div>
-              {/* KPI přehled doporučené varianty — hlavní čísla na první pohled */}
-              <div className="gs-kpis" style={{ marginBottom: 12 }}>
-                <div className="gs-kpi accent">
-                  <div className="gs-kpi-label">Roční úspora ({rok})</div>
-                  <div className="gs-kpi-value">{kc(je2027 ? uspora2027 : dop.rocni_uspora_2026_kc)}</div>
-                  <div className="gs-kpi-sub">
-                    {je2027
-                      ? "modelový odhad NTS (výměr ERÚ ~11/2026)"
-                      : dop.uspora_bez_investice_2026_kc != null
-                        ? `z toho bez investice ${kc(dop.uspora_bez_investice_2026_kc)}`
-                        : "bez DPH"}
-                  </div>
-                </div>
-                <div className="gs-kpi">
-                  {/* Hlavní číslo = REÁLNÁ návratnost (ta, která rozhoduje o
-                      doporučení a mění se s přepínačem základu). Prostá
-                      návratnost je jen orientační – nezná O&M ani degradaci
-                      a počítá se vždy z celé úspory, takže se přepínačem
-                      nehnula a působilo to jako rozpor. */}
-                  <div className="gs-kpi-label">Návratnost ({rok})</div>
-                  <div className="gs-kpi-value">
-                    {npvDop.payback_roky === undefined
-                      ? roky(prostaNavratnost)
-                      : npvDop.payback_roky === null
-                        ? "nevrátí se"
-                        : roky(npvDop.payback_roky)}
-                  </div>
-                  <div className="gs-kpi-sub">
-                    {npvDop.payback_roky === undefined ? (
-                      `prostá – ${je2027 ? "z úspory 2027" : "z přínosu baterie"} · práh ${vysledek.max_navratnost_roky} let`
-                    ) : (
-                      <>
-                        reálná ({zakladNpv === "prinos_baterie" ? "jen přínos baterie" : "celá úspora"}),
-                        vč. O&amp;M a degradace · prostá {roky(prostaNavratnost)} · práh{" "}
-                        {vysledek.max_navratnost_roky} let
-                      </>
-                    )}
-                  </div>
-                </div>
-                {je2027 ? (
-                  <div className="gs-kpi">
-                    <div className="gs-kpi-label">Rezervovaný příkon</div>
-                    <div className="gs-kpi-value">{kw(rpNovy2027)}</div>
-                    <div className="gs-kpi-sub">
-                      {/* „snížení" jen když nové RP je opravdu nižší – optimalizace
-                          nad maximy + rezervou umí vyjít i vyšší než dnešní RP. */}
-                      {ek27?.rp_soucasny_kw == null || rpNovy2027 === ek27.rp_soucasny_kw
-                        ? "beze změny smlouvy · platí se RP + měsíční maxima"
-                        : `${rpNovy2027 < ek27.rp_soucasny_kw ? "snížení" : "navýšení"} z ${kw(ek27.rp_soucasny_kw)}${
-                            rpZeSmlouvy ? "" : " (= RK, příkon ze smlouvy nezadán)"
-                          } · ${
-                            ek27?.mesicu_s_prekrocenim_rp > 0
-                              ? `záměrně pod špičku, překročení v ${ek27.mesicu_s_prekrocenim_rp} měs.`
-                              : "platí se RP + měsíční maxima"
-                          }`}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="gs-kpi">
-                    <div className="gs-kpi-label">Nová rez. kapacita</div>
-                    <div className="gs-kpi-value">{kw(dop.nova_rezervovana_kapacita_kw)}</div>
-                    <div className="gs-kpi-sub">
-                      {dop.strop_kw != null
-                        ? `roční RK; strop baterie ${kw(dop.strop_kw)}, rezerva ${dop.rezerva_rk_procenta ?? 0} %`
-                        : "sjednaný příkon po instalaci"}
-                    </div>
-                  </div>
-                )}
-                <div className="gs-kpi">
-                  <div className="gs-kpi-label">Baterie</div>
-                  <div className="gs-kpi-value" style={{ fontSize: 18 }}>
-                    {dop.nazev} × {dop.pocet_kusu}
-                  </div>
-                  <div className="gs-kpi-sub">
-                    {kw(dop.celkovy_vykon_kw)} / {dop.celkova_kapacita_kwh?.toLocaleString("cs-CZ")} kWh · {kc(dop.cena_celkem_kc)}
-                  </div>
-                </div>
-                {npvDop.npv_kc != null && (
-                  <div className="gs-kpi">
-                    <div className="gs-kpi-label">NPV ({dop.npv_horizont_roky} let)</div>
-                    <div className="gs-kpi-value">{kc(npvDop.npv_kc)}</div>
-                    <div className="gs-kpi-sub">
-                      {npvDop.irr != null ? `IRR ${Math.round(npvDop.irr * 100)} % · ` : ""}
-                      {npvDop.pouzit_model_2027 === false
-                        ? "chybí sazby 2027 → model 2026"
-                        : "celý horizont NTS 2027"}
-                      {" · z "}
-                      {zakladNpv === "prinos_baterie" ? "přínosu baterie" : "celé úspory"}
-                      {" · řídí výběr varianty"}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="fm-card" style={{ padding: 14, marginBottom: 14 }}>
-                <div style={{ marginTop: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Návratnost investice dle modelu</div>
-                  <table className="nb-table">
-                    <tbody>
-                      {/* Starší uložené výsledky nesou navratnost_2027_konzerv (PS-3). */}
-                      <tr><td>Model 2027 (nová struktura ERÚ) — z celé roční úspory</td><td>{roky(dop.navratnost_2027 ?? dop.navratnost_2027_konzerv)}</td></tr>
-                      <tr>
-                        <td style={{ color: "var(--fm-muted)" }}>
-                          Model 2026 (dnešní tarif) — jen informativně, do rozhodování nevstupuje
-                        </td>
-                        <td style={{ color: "var(--fm-muted)" }}>{roky(dop.navratnost_2026 ?? dop.navratnost_roky)}</td>
-                      </tr>
-                      {npvDop.payback_roky !== undefined && (
-                        <tr>
-                          <td>
-                            <b>Reálně (celý horizont v NTS 2027)</b>
-                            <div style={{ fontSize: 11, color: "var(--fm-muted)" }}>
-                              z {zakladNpv === "prinos_baterie" ? "přínosu baterie" : "celé roční úspory"},
-                              vč. O&amp;M a degradace úspor — <b>tohle rozhoduje o doporučení</b>
-                            </div>
-                          </td>
-                          <td>
-                            <b>
-                              {npvDop.payback_roky === null
-                                ? `nevrátí se do ${dop.npv_horizont_roky ?? 10} let`
-                                : roky(npvDop.payback_roky)}
-                            </b>
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                  <div style={{ fontSize: 11, color: "color-mix(in srgb, var(--st-warn) 72%, var(--ink))", marginTop: 4 }}>
-                    Vítěznou variantu vybírá NPV, práh doporučení se poměřuje s reálnou návratností —
-                    obojí počítá <b>celý horizont v NTS 2027</b>, protože co se dnes nabízí, se
-                    instaluje a spouští už v nové struktuře. Základem je{" "}
-                    <b>{zakladPopis?.nazev?.toLowerCase()}</b> ({zakladPopis?.popis}) — přepínač je
-                    nad dlaždicemi, obě varianty jsou spočítané, přepnutí nic nepřepočítává. Reálné
-                    číslo je delší než prostá návratnost proto, že odečítá O&amp;M a degradaci
-                    úspor. Hodnoty 2027 jsou
-                    modelový odhad (závazný výměr ERÚ ~11/2026). Sleva AKU se dle definice ERÚ na
-                    peak-shavingovou baterii bez exportu nevztahuje.
-                  </div>
-                </div>
-              </div>
-
-              <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Ekonomika – porovnání let</h4>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12, marginBottom: 12 }}>
-                {/* Rok 2026 */}
-                <div className="fm-card" style={{ padding: 14, ...(je2027 ? {} : kartaAktivni) }}>
-                  <div style={{ fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                    Rok 2026
-                    <span
-                      className="nb-badge"
-                      title="Instalace i spuštění spadá už do NTS 2027 – tahle karta je jen srovnání „co by to bylo dnes“"
-                    >
-                      informativní
-                    </span>
-                  </div>
-                  {dop.ekonomika_2026?.uspora_bez_investice != null ? (
-                    /* Rozpad úspory (PS-7): audit RK zdarma + přínos baterie. */
-                    <table className="nb-table">
-                      <tbody>
-                        <tr><td>Roční náklad dnes (RK {kw(vysledek.vstup?.rezervovana_kapacita_kw)})</td><td>{kc(dop.ekonomika_2026.soucasny_naklad_celkem)}</td></tr>
-                        <tr>
-                          <td>Optimalizace RK bez baterie</td>
-                          <td>
-                            {kc(dop.ekonomika_2026.naklad_optimalni_bez_baterie)}
-                            <span style={{ fontSize: 11, color: "var(--fm-muted)" }}>
-                              {" "}(roční RK {kw(dop.ekonomika_2026.optimalni_rk_bez_baterie_kw)}
-                              {dop.ekonomika_2026.dokupy_bez_baterie_pocet_mesicu > 0
-                                ? ` + měsíční RK v ${dop.ekonomika_2026.dokupy_bez_baterie_pocet_mesicu} měs.`
-                                : ""})
-                            </span>
-                          </td>
-                        </tr>
-                        <tr><td><b>Úspora hned bez investice</b></td><td><b>{kc(dop.ekonomika_2026.uspora_bez_investice)}</b></td></tr>
-                        {/* Optimalizace nese bezpečnostní rezervu nad naměřená maxima,
-                            dnešní RK ne – s drahou rezervou umí vyjít dráž než nedělat nic.
-                            Pak je baseline dnešní stav a přínos baterie se počítá proti němu. */}
-                        {dop.ekonomika_2026.naklad_optimalni_bez_baterie >
-                          dop.ekonomika_2026.soucasny_naklad_celkem && (
-                          <tr>
-                            <td colSpan={2} style={{ fontSize: 11, color: "var(--fm-muted)" }}>
-                              Optimalizovaná RK (s rezervou {dop.rezerva_rk_procenta ?? 0} % nad
-                              naměřená maxima) by byla o{" "}
-                              {kc(
-                                dop.ekonomika_2026.naklad_optimalni_bez_baterie -
-                                  dop.ekonomika_2026.soucasny_naklad_celkem
-                              )}{" "}
-                              dražší než dnešní stav — zákazník dnes vědomě riskuje pokuty a vyplácí
-                              se mu to. Bez investice tedy nemá co ušetřit a přínos baterie se počítá
-                              proti dnešnímu nákladu.
-                            </td>
-                          </tr>
-                        )}
-                        <tr>
-                          <td>Náklad s baterií</td>
-                          <td>
-                            {kc(dop.ekonomika_2026.novy_naklad_rezervace)}
-                            {dop.ekonomika_2026.naklad_ztrat_baterie > 0 && (
-                              <span style={{ fontSize: 11, color: "var(--fm-muted)" }}>
-                                {" "}+ ztráty {kc(dop.ekonomika_2026.naklad_ztrat_baterie)}
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                        <tr><td><b>Přínos baterie</b></td><td><b>{kc(dop.ekonomika_2026.prinos_baterie)}</b></td></tr>
-                        <tr><td><b>Celková roční úspora</b></td><td><b>{kc(dop.ekonomika_2026.rocni_uspora)}</b></td></tr>
-                      </tbody>
-                    </table>
-                  ) : (
-                    /* Starší uložené výsledky (před PS-7). */
-                    <table className="nb-table">
-                      <tbody>
-                        <tr><td>Roční náklad bez peak shavingu</td><td>{kc(dop.ekonomika_2026?.soucasny_naklad_celkem)}</td></tr>
-                        <tr><td>Roční náklad s peak shavingem</td><td>{kc(dop.ekonomika_2026?.novy_naklad_rezervace)}</td></tr>
-                        {dop.ekonomika_2026?.naklad_ztrat_baterie > 0 && (
-                          <tr><td>− ztráty baterie (cyklování)</td><td>{kc(dop.ekonomika_2026.naklad_ztrat_baterie)}</td></tr>
-                        )}
-                        <tr><td><b>Roční úspora</b></td><td><b>{kc(dop.ekonomika_2026?.rocni_uspora)}</b></td></tr>
-                      </tbody>
-                    </table>
-                  )}
-                  <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 6 }}>
-                    Čísla dnešního tarifu slouží jen jako srovnávací základ — ekonomika,
-                    NPV i doporučení jedou na modelu 2027. Přínos baterie se i tady měří
-                    proti optimalizované RK: úsporu z pouhého snížení RK klient získá
-                    i bez investice.
-                  </div>
-                </div>
-
-                {/* Rok 2027 */}
-                <div className="fm-card" style={{ padding: 14, ...(je2027 ? kartaAktivni : {}) }}>
-                  <div style={{ fontWeight: 600, marginBottom: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                    Rok 2027
-                    {dop.ekonomika_2027?.je_modelovy_odhad && (
-                      <span className="nb-badge" style={{ color: "color-mix(in srgb, var(--st-warn) 72%, var(--ink))" }} title="Nezávazný odhad, ne finální cena ERÚ">
-                        ⚠ modelový odhad
-                      </span>
-                    )}
-                  </div>
-                  {dop.ekonomika_2027?.status === "spocitano" ? (
-                    <>
-                      <table className="nb-table">
-                        <tbody>
-                          {/* Starší uložené výsledky (před PS-3) nesou *_bez_aku – zobrazí se
-                              konzervativní čísla; sleva AKU pro BTM baterii neexistuje. */}
-                          <tr>
-                            <td>
-                              Roční náklad dnes (RP {kw(dop.ekonomika_2027.rp_soucasny_kw)})
-                              {rpJeFallbackRk && (
-                                <div style={{ fontSize: 11, color: "color-mix(in srgb, var(--st-warn) 72%, var(--ink))" }}>
-                                  příkon ze smlouvy nezadán → dosazena RK. Skutečný RP bývá vyšší,
-                                  náklad 2027 i úspora jsou tak podhodnocené.
-                                </div>
-                              )}
-                            </td>
-                            <td>{kc(dop.ekonomika_2027.soucasny_rocni_naklad)}</td>
-                          </tr>
-                          {/* Třetí výpočet: nejlevnější RP bez baterie (fér baseline 2027). */}
-                          {dop.ekonomika_2027.naklad_optimalni_bez_baterie != null && (
-                            <>
-                              <tr>
-                                <td>Optimalizace RP bez baterie</td>
-                                <td>
-                                  {kc(dop.ekonomika_2027.naklad_optimalni_bez_baterie)}
-                                  <span style={{ fontSize: 11, color: "var(--fm-muted)" }}>
-                                    {" "}(RP {kw(dop.ekonomika_2027.optimalni_rp_bez_baterie_kw)})
-                                  </span>
-                                </td>
-                              </tr>
-                              <tr><td><b>Úspora hned bez investice</b></td><td><b>{kc(dop.ekonomika_2027.uspora_optimalizaci_bez_baterie)}</b></td></tr>
-                              {/* Stejná úvaha jako u roku 2026: optimalizace nese rezervu,
-                                  dnešní RP ze smlouvy ne – může vyjít dráž než nechat vše být. */}
-                              {dop.ekonomika_2027.naklad_optimalni_bez_baterie >
-                                dop.ekonomika_2027.soucasny_rocni_naklad && (
-                                <tr>
-                                  <td colSpan={2} style={{ fontSize: 11, color: "var(--fm-muted)" }}>
-                                    Optimalizované RP (s rezervou {dop.rezerva_rk_procenta ?? 0} %) by
-                                    bylo dražší než dnešní příkon ze smlouvy — bez investice není co
-                                    ušetřit, přínos baterie se počítá proti dnešnímu nákladu.
-                                  </td>
-                                </tr>
-                              )}
-                            </>
-                          )}
-                          <tr><td>Roční náklad s peak shavingem</td><td>{kc(dop.ekonomika_2027.novy_rocni_naklad_bez_aku ?? dop.ekonomika_2027.novy_rocni_naklad)}</td></tr>
-                          {dop.ekonomika_2027.mesicu_s_prekrocenim_rp > 0 && (
-                            <tr>
-                              <td>… z toho vědomé překročení RP</td>
-                              <td>
-                                {kc(dop.ekonomika_2027.naklad_prekroceni_rp)}
-                                <span style={{ fontSize: 11, color: "var(--fm-muted)" }}>
-                                  {" "}(v {dop.ekonomika_2027.mesicu_s_prekrocenim_rp} měs. – nižší RP
-                                  se i s penalizací vyplatí)
-                                </span>
-                              </td>
-                            </tr>
-                          )}
-                          {dop.ekonomika_2027.prinos_baterie != null && (
-                            <tr><td><b>Přínos baterie</b></td><td><b>{kc(dop.ekonomika_2027.prinos_baterie)}</b></td></tr>
-                          )}
-                          {dop.ekonomika_2027.naklad_ztrat_baterie > 0 && (
-                            <tr><td>… z toho ztráty baterie</td><td>{kc(dop.ekonomika_2027.naklad_ztrat_baterie)}</td></tr>
-                          )}
-                          <tr><td><b>Roční úspora</b></td><td><b>{kc(dop.ekonomika_2027.rocni_uspora_bez_aku ?? dop.ekonomika_2027.rocni_uspora)}</b></td></tr>
-                          <tr><td>Měsíců na tarifu T1 / T2</td><td>{dop.ekonomika_2027.pocet_mesicu_t1} / {dop.ekonomika_2027.pocet_mesicu_t2}</td></tr>
-                          {dop.ekonomika_2027.rp_soucasny_kw != null && (
-                            <tr>
-                              <td>Rezervovaný příkon (RP)</td>
-                              <td>
-                                {kw(dop.ekonomika_2027.rp_soucasny_kw)}
-                                {dop.ekonomika_2027.rp_novy_kw !== dop.ekonomika_2027.rp_soucasny_kw
-                                  ? ` → ${kw(dop.ekonomika_2027.rp_novy_kw)} (${
-                                      dop.ekonomika_2027.rp_novy_kw < dop.ekonomika_2027.rp_soucasny_kw
-                                        ? "snížení"
-                                        : "navýšení"
-                                    })`
-                                  : " (beze změny smlouvy)"}
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                      <div style={{ fontSize: 11, color: "color-mix(in srgb, var(--st-warn) 72%, var(--ink))", marginTop: 6 }}>
-                        Modelový odhad, ne finální cena ERÚ (závazné rozhodnutí ~11/2026). Bez slevy AKU –
-                        dle ERÚ se počítá z toku na předávacím místě a pro baterii uvnitř odběru vychází nulová.
-                      </div>
-                    </>
-                  ) : (
-                    <div style={{ fontSize: 13, color: "var(--fm-muted)" }}>Čeká se na oficiální sazby ERÚ.</div>
-                  )}
-                </div>
-              </div>
-
-              {dop.ekonomika_2027?.status === "spocitano" && (
-                <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 14px", lineHeight: 1.5 }}>
-                  <b>Tarif T1</b> (dražší paušál, levná špička) obvykle vyjde levněji při provozu naplno blízko rezervovanému příkonu.{" "}
-                  <b>Tarif T2</b> (levný paušál, drahá špička) vyjde levněji při utlumeném provozu nebo velké rezervě.{" "}
-                  Zákazník si tarif nevybírá, distributor ho určuje automaticky každý měsíc podle skutečné spotřeby.
-                </p>
               )}
-
-              {graf && (
-                <>
-                  <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>Odběr ze sítě – měsíční maxima</h4>
-                  <div style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                      {je2027 ? "Rok 2027 (srážení po měsících)" : "Rok 2026 (držení ročního stropu)"}
-                    </div>
-                    <GrafOdberu
-                      mesice={graf.mesice}
-                      bezBaterie={graf.bez_baterie_kw}
-                      sBaterii={je2027 ? graf.s_baterii_2027_kw : graf.s_baterii_2026_kw}
-                      {...refCaryGrafu}
-                    />
-                  </div>
-                </>
+            </div>
+            <h3>
+              {dop.nazev} × {dop.pocet_kusu}
+              {npvDop.doporuceno ? (
+                <span className="nb-badge dobre">doporučeno</span>
+              ) : (
+                <span className="nb-badge spatne">
+                  nad prahem {vysledek.max_navratnost_roky} let – nedoporučeno
+                </span>
               )}
-              {!graf && vybranyIdx !== 0 && (
-                <div style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 14px" }}>
-                  {dopocitava
-                    ? "Počítám graf pro tuhle variantu…"
-                    : "Graf pro tuhle variantu zatím není — spusť „Spočítat peak shaving“ znovu."}
-                </div>
+              {vybranyIdx !== 0 && (
+                <span className="nb-badge pozor">
+                  alternativa — doporučená je {varianty[0]?.nazev} × {varianty[0]?.pocet_kusu}
+                </span>
               )}
+            </h3>
+          </div>
+          <span className="gs-mezera" />
+          <div className="gs-prepinace">
+            <SegPrepinac
+              popis="Rok"
+              aria="Rok zobrazených hodnot"
+              hodnota={rok}
+              onZmena={setRokZobrazeni}
+              volby={[
+                { klic: 2026, nazev: "2026" },
+                {
+                  klic: 2027,
+                  nazev: "2027",
+                  zakazano: !ma2027,
+                  title: ma2027 ? undefined : "Čeká se na oficiální sazby ERÚ",
+                },
+              ]}
+            />
+            <SegPrepinac
+              popis="Návratnost z"
+              aria="Z čeho počítat návratnost a NPV"
+              hodnota={zakladNpv}
+              onZmena={setZakladNpv}
+              volby={ZAKLADY_NPV.map((z) => ({ klic: z.klic, nazev: z.nazev, title: z.popis }))}
+            />
+          </div>
+        </div>
 
-              {/* Průběh v čase – nitkový graf 15min simulace se zoomem */}
-              <div style={{ marginBottom: 16 }}>
-                <div
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                    gap: 10, flexWrap: "wrap", marginBottom: 6,
-                  }}
-                >
-                  <h4 style={{ margin: 0, fontSize: 13 }}>
-                    Průběh v čase{" "}
-                    <span style={{ fontWeight: 400, color: "var(--fm-muted)" }}>
-                      (15min simulace – kdy baterie kryje špičku a kdy se dobíjí)
-                    </span>
-                  </h4>
+        {(vysledek.upozorneni || []).length > 0 && (
+          <div className="nb-warn" style={{ margin: "0 0 12px" }}>
+            <span>⚠️</span>
+            <span>{vysledek.upozorneni.join(" ")}</span>
+          </div>
+        )}
+
+        {/* --- KPI: hlavní čísla na první pohled --- */}
+        <div className="gs-kpis">
+          {spot && (
+            <div className="gs-kpi accent">
+              <div className="gs-kpi-label">Zisk z obchodu (rok)</div>
+              <div className="gs-kpi-value">{kc(spot.zisk_kc)}</div>
+              <div className="gs-kpi-sub">
+                {`${Math.round(spot.zisk_kc_kwh_rok)} Kč/kWh baterie · ${Math.round(
+                  spot.obchodnich_cyklu
+                )} cyklů · po opotřebení ${kc(spot.naklad_opotrebeni_kc)}`}
+              </div>
+            </div>
+          )}
+          <div className="gs-kpi accent">
+            <div className="gs-kpi-label">Roční úspora ({rok})</div>
+            <div className="gs-kpi-value">
+              {kc(je2027 ? uspora2027 : dop.rocni_uspora_2026_kc)}
+            </div>
+            <div className="gs-kpi-sub">
+              {je2027
+                ? ek27?.uspora_optimalizaci_bez_baterie != null
+                  ? `z toho ${kc(ek27.uspora_optimalizaci_bez_baterie)} i bez investice`
+                  : "modelový odhad NTS (výměr ERÚ ~11/2026)"
+                : dop.uspora_bez_investice_2026_kc != null
+                  ? `z toho bez investice ${kc(dop.uspora_bez_investice_2026_kc)}`
+                  : "bez DPH"}
+            </div>
+          </div>
+          <div className="gs-kpi">
+            {/* Hlavní číslo = REÁLNÁ návratnost (ta, která rozhoduje o
+                doporučení a mění se s přepínačem základu). Prostá návratnost
+                je jen orientační – nezná O&M ani degradaci a počítá se vždy
+                z celé úspory, takže se přepínačem nehnula a působilo to jako
+                rozpor. */}
+            <div className="gs-kpi-label">
+              {navratnostDop?.druh === "prosta" ? "Návratnost (prostá)" : "Reálná návratnost"}
+            </div>
+            <div
+              className="gs-kpi-value"
+              title={navratnostTitulek(navratnostDop, dop.npv_horizont_roky)}
+            >
+              {navratnostDop?.druh === "prosta"
+                ? roky(navratnostDop.hodnota)
+                : navratnostText(navratnostDop)}
+            </div>
+            <div className="gs-kpi-sub">
+              {navratnostDop?.druh === "odhad"
+                ? `dopočet za horizont ${dop.npv_horizont_roky ?? 10} let · prostá ${roky(prostaNavratnost)} · práh ${vysledek.max_navratnost_roky} let`
+                : navratnostDop?.druh === "prosta"
+                  ? `úspora nepokryje ani O&M, reálná návratnost neexistuje · práh ${vysledek.max_navratnost_roky} let`
+                  : `vč. O&M a degradace · prostá ${roky(prostaNavratnost)} · práh ${vysledek.max_navratnost_roky} let`}
+            </div>
+          </div>
+          {npvDop.npv_kc != null && (
+            <div className="gs-kpi">
+              <div className="gs-kpi-label">NPV ({dop.npv_horizont_roky} let)</div>
+              <div className="gs-kpi-value">{kc(npvDop.npv_kc)}</div>
+              <div className="gs-kpi-sub">
+                {npvDop.irr != null ? `IRR ${Math.round(npvDop.irr * 100)} % · ` : ""}
+                {npvDop.pouzit_model_2027 === false
+                  ? "chybí sazby 2027 → model 2026"
+                  : "celý horizont NTS 2027"}
+                {" · řídí výběr varianty"}
+              </div>
+            </div>
+          )}
+          {je2027 ? (
+            <div className="gs-kpi">
+              <div className="gs-kpi-label">Rezervovaný příkon</div>
+              <div className="gs-kpi-value">{kw(rpNovy2027)}</div>
+              <div className="gs-kpi-sub">
+                {/* „snížení" jen když nové RP je opravdu nižší – optimalizace
+                    nad maximy + rezervou umí vyjít i vyšší než dnešní RP. */}
+                {ek27?.rp_soucasny_kw == null || rpNovy2027 === ek27.rp_soucasny_kw
+                  ? "beze změny smlouvy · platí se RP + měsíční maxima"
+                  : `${rpNovy2027 < ek27.rp_soucasny_kw ? "snížení" : "navýšení"} z ${kw(ek27.rp_soucasny_kw)}${
+                      rpZeSmlouvy ? "" : " (= RK, příkon ze smlouvy nezadán)"
+                    } · ${
+                      ek27?.mesicu_s_prekrocenim_rp > 0
+                        ? `záměrně pod špičku, překročení v ${ek27.mesicu_s_prekrocenim_rp} měs.`
+                        : "platí se RP + měsíční maxima"
+                    }`}
+              </div>
+            </div>
+          ) : (
+            <div className="gs-kpi">
+              <div className="gs-kpi-label">Nová rez. kapacita</div>
+              <div className="gs-kpi-value">{kw(dop.nova_rezervovana_kapacita_kw)}</div>
+              <div className="gs-kpi-sub">
+                {dop.strop_kw != null
+                  ? `roční RK; strop baterie ${kw(dop.strop_kw)}, rezerva ${dop.rezerva_rk_procenta ?? 0} %`
+                  : "sjednaný příkon po instalaci"}
+              </div>
+            </div>
+          )}
+          <div className="gs-kpi">
+            <div className="gs-kpi-label">Investice</div>
+            <div className="gs-kpi-value">{kc(dop.cena_celkem_kc)}</div>
+            <div className="gs-kpi-sub">
+              {kw(dop.celkovy_vykon_kw)} /{" "}
+              {dop.celkova_kapacita_kwh?.toLocaleString("cs-CZ")} kWh · bez DPH
+            </div>
+          </div>
+        </div>
+
+        {/* --- tři varianty k rozhodnutí, každá podle jiného kritéria --- */}
+        {kartyVariant.length > 1 && (
+          <>
+            <div className="gs-sekce-t" style={{ marginTop: 20 }}>
+              Varianty k rozhodnutí
+              <span className="gs-mezera" />
+              <button
+                className="fm-btn"
+                style={{ padding: "4px 10px", fontSize: 12 }}
+                onClick={() => setZalozka("varianty")}
+              >
+                Všech {varianty.length} v tabulce
+              </button>
+            </div>
+            <div className="gs-varianty">
+              {kartyVariant.map((k) => {
+                const npv = npvDleZakladu(k.v, zakladNpv);
+                const uspora = je2027
+                  ? k.v.ekonomika_2027?.rocni_uspora_bez_aku ?? k.v.ekonomika_2027?.rocni_uspora
+                  : k.v.rocni_uspora_2026_kc;
+                const prosta = je2027
+                  ? k.v.navratnost_2027 ?? k.v.navratnost_2027_konzerv
+                  : k.v.navratnost_roky;
+                const navratnost = navratnostKZobrazeni(npv, prosta);
+                // Pruh má smysl jen když je vůbec nějaké kladné NPV, ke kterému
+                // se dá poměřovat; záporná NPV se kreslí jako nulový pruh.
+                const podil = npvMax > 0 ? Math.max(0, ((npv.npv_kc ?? 0) / npvMax) * 100) : null;
+                return (
                   <button
-                    className="fm-btn"
-                    style={{ padding: "4px 10px", fontSize: 12 }}
-                    onClick={() => setPrubehOtevren((s) => !s)}
+                    type="button"
+                    key={k.i}
+                    className={"gs-varianta" + (k.i === vybranyIdx ? " vybrana" : "")}
+                    onClick={() => vyberVariantu(k.i)}
+                    title="Kliknutím se celý výsledek překreslí pro tuhle variantu"
                   >
-                    {prubehOtevren ? "Skrýt průběh" : "Zobrazit průběh v čase"}
-                  </button>
-                </div>
-                {prubehOtevren && (
-                  <>
-                    {prubehChyba && (
-                      <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{prubehChyba}</div>
-                    )}
-                    {!prubeh && prubehNacita && (
-                      <div style={{ fontSize: 12, color: "var(--fm-muted)" }}>
-                        Počítám 15min simulaci celého roku…
-                      </div>
-                    )}
-                    {prubeh && (
+                    <div className="gs-varianta-lb">
+                      {k.kriteria.map((x) => x.popis).join(" · ")}
+                      {!npv.doporuceno && <span className="nb-badge spatne">nad prahem</span>}
+                    </div>
+                    <h4>
+                      {k.v.nazev} × {k.v.pocet_kusu}
+                    </h4>
+                    <div className="gs-varianta-spec">
+                      {kw(k.v.celkovy_vykon_kw)} /{" "}
+                      {k.v.celkova_kapacita_kwh?.toLocaleString("cs-CZ")} kWh · nová rezervace{" "}
+                      {kw(novaRezervace(k.v))}
+                    </div>
+                    <dl>
+                      <dt>Úspora {rok}</dt>
+                      <dd className={k.i === vybranyIdx ? "hlavni" : undefined}>{kc(uspora)}</dd>
+                      <dt>Investice</dt>
+                      <dd>{kc(k.v.cena_celkem_kc)}</dd>
+                      <dt>Návratnost</dt>
+                      <dd title={navratnostTitulek(navratnost, k.v.npv_horizont_roky)}>
+                        {navratnostText(navratnost)}
+                      </dd>
+                      <dt>NPV{npv.irr != null ? " / IRR" : ""}</dt>
+                      <dd>
+                        {npv.npv_kc != null ? kc(npv.npv_kc) : "—"}
+                        {npv.irr != null ? ` · ${Math.round(npv.irr * 100)} %` : ""}
+                      </dd>
+                    </dl>
+                    {podil != null && (
                       <>
-                        {prubehNacita && (
-                          <div style={{ fontSize: 11, color: "var(--fm-muted)" }}>Přepočítávám…</div>
-                        )}
-                        <GrafPrubehu
-                          key={`${prubeh.varianta_index}-${prubeh.rok}`}
-                          data={prubeh}
-                          popisRoku={
-                            prubeh.rok === 2027
-                              ? "Model 2027: baterie sráží špičku v každém měsíci tak hluboko, jak to zvládne (platí se za měsíční maximum)."
-                              : "Model 2026: baterie drží jeden roční strop, na který je nasmlouvaná rezervovaná kapacita."
-                          }
-                        />
-                        <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 6 }}>
-                          Za rok baterie dodala {prubeh.souhrn?.vybito_kwh?.toLocaleString("cs-CZ")} kWh,
-                          ze sítě si na to vzala {prubeh.souhrn?.nabito_kwh?.toLocaleString("cs-CZ")} kWh
-                          (ztráty cyklováním {prubeh.souhrn?.ztraty_kwh?.toLocaleString("cs-CZ")} kWh).
-                          Špička odběru {kw(prubeh.souhrn?.max_odber_kw)} → ze sítě {kw(prubeh.souhrn?.max_site_kw)}.
+                        <div className="gs-pruh">
+                          <i style={{ width: `${Math.min(100, podil)}%` }} />
+                        </div>
+                        <div className="gs-pruh-popis">
+                          <span>{k.kriteria[0].detail}</span>
+                          <span>{Math.round(podil)} % NPV nejlepší</span>
                         </div>
                       </>
                     )}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* --- záložky výsledku --- */}
+        <div className="gs-tabs gs-tabs-odsazeni" role="tablist" aria-label="Části výsledku">
+          {[
+            { klic: "ekonomika", nazev: "Ekonomika" },
+            ...(spot ? [{ klic: "spot", nazev: "Obchod na spotu" }] : []),
+            { klic: "grafy", nazev: "Grafy odběru" },
+            { klic: "varianty", nazev: "Srovnání variant", pocet: varianty.length },
+            { klic: "roky", nazev: "Po letech" },
+          ].map((z) => (
+            <button
+              key={z.klic}
+              type="button"
+              role="tab"
+              aria-selected={zalozka === z.klic}
+              onClick={() => setZalozka(z.klic)}
+            >
+              {z.nazev}
+              {z.pocet > 1 && <span className="gs-tab-cnt"> ({z.pocet})</span>}
+            </button>
+          ))}
+        </div>
+
+        {/* ---------- záložka: ekonomika ---------- */}
+        {zalozka === "ekonomika" && (
+          <div role="tabpanel">
+            <div className="gs-dve-karty">
+              <div className={"fm-card gs-karta" + (je2027 ? " aktivni" : "")}>
+                <div className="gs-karta-h">
+                  <span className="gs-karta-nazev">2027</span>
+                  <span className="nb-badge znacka">rozhoduje</span>
+                  <span className="gs-mezera" />
+                  {dop.ekonomika_2027?.je_modelovy_odhad && (
+                    <span className="nb-badge pozor" title="Nezávazný odhad, ne finální cena ERÚ">
+                      ⚠ modelový odhad
+                    </span>
+                  )}
+                </div>
+                <Ekonomika2027 dop={dop} rpJeFallbackRk={rpJeFallbackRk} />
+              </div>
+
+              <div className={"fm-card gs-karta" + (je2027 ? "" : " aktivni")}>
+                <div className="gs-karta-h">
+                  <span className="gs-karta-nazev">2026</span>
+                  <span className="gs-mezera" />
+                  <span
+                    className="nb-badge"
+                    title="Instalace i spuštění spadá už do NTS 2027 – tahle karta je jen srovnání „co by to bylo dnes“"
+                  >
+                    informativní
+                  </span>
+                </div>
+                <Ekonomika2026 dop={dop} vysledek={vysledek} />
+              </div>
+            </div>
+
+            <div className="gs-sekce-t">
+              Tři čísla návratnosti
+              <span className="gs-mezera" />
+              <span className="nb-badge">práh doporučení {vysledek.max_navratnost_roky} let</span>
+            </div>
+            <div className="fm-card" style={{ padding: 0 }}>
+              <table className="nb-table">
+                <tbody>
+                  {npvDop.payback_roky !== undefined && navratnostDop && (
+                    <tr
+                      className="soucet"
+                      style={{ background: "color-mix(in srgb, var(--brand) 9%, transparent)" }}
+                    >
+                      <td>
+                        Reálná{" "}
+                        <span style={{ fontWeight: 400, color: "var(--muted)" }}>
+                          — celý horizont v NTS 2027, z{" "}
+                          {zakladNpv === "prinos_baterie" ? "přínosu baterie" : "celé roční úspory"},
+                          vč. O&amp;M a degradace
+                        </span>
+                        <div className="gs-pozn">
+                          Tohle rozhoduje o doporučení i o výběru varianty.
+                          {navratnostDop.druh === "odhad" && (
+                            <>
+                              {" "}
+                              Investice se do {dop.npv_horizont_roky ?? 10} let nevrátí — číslo je{" "}
+                              <b>dopočtené za horizont modelu</b> z klesajícího cash flow posledních
+                              let, takže je orientační.
+                            </>
+                          )}
+                          {navratnostDop.druh === "prosta" && (
+                            <>
+                              {" "}
+                              Roční úspora nepokryje ani provozní náklady, takže reálná návratnost
+                              neexistuje — ukazuje se <b>prostá</b>, která O&amp;M ani degradaci
+                              nezná.
+                            </>
+                          )}
+                        </div>
+                      </td>
+                      <td
+                        className="n"
+                        style={{ fontSize: 15 }}
+                        title={navratnostTitulek(navratnostDop, dop.npv_horizont_roky)}
+                      >
+                        {navratnostText(navratnostDop)}
+                      </td>
+                    </tr>
+                  )}
+                  {/* Starší uložené výsledky nesou navratnost_2027_konzerv (PS-3). */}
+                  <tr>
+                    <td>
+                      Prostá 2027{" "}
+                      <span style={{ color: "var(--muted)" }}>— cena ÷ úspora jednoho roku</span>
+                    </td>
+                    <td className="n">{roky(dop.navratnost_2027 ?? dop.navratnost_2027_konzerv)}</td>
+                  </tr>
+                  <tr>
+                    <td className="dim">
+                      Prostá 2026{" "}
+                      <span style={{ color: "var(--muted)" }}>
+                        — dnešní tarif, do rozhodování nevstupuje
+                      </span>
+                    </td>
+                    <td className="n dim">{roky(dop.navratnost_2026 ?? dop.navratnost_roky)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <details className="gs-meta" style={{ marginTop: 10 }}>
+              <summary>Proč se čísla liší a co do rozhodování vstupuje</summary>
+              <div className="gs-meta-in">
+                Vítěznou variantu vybírá <b>NPV</b>, práh doporučení se poměřuje s{" "}
+                <b>reálnou návratností</b> — obojí počítá <b>celý horizont v NTS 2027</b>, protože co
+                se dnes nabízí, se instaluje a spouští už v nové struktuře. Základem je{" "}
+                <b>{zakladPopis?.nazev}</b> ({zakladPopis?.popis}) — přepínač je v hlavičce
+                výsledku, obě varianty jsou spočítané, přepnutí nic nepřepočítává. Reálné číslo je
+                delší než prostá návratnost proto, že odečítá O&amp;M a degradaci úspor. Karta roku
+                2026 je jen srovnávací základ „co by to bylo dnes“. Hodnoty 2027 jsou modelový odhad
+                (závazný výměr ERÚ ~11/2026). Sleva AKU se dle definice ERÚ na peak-shavingovou
+                baterii bez exportu nevztahuje.
+                {dop.ekonomika_2027?.status === "spocitano" && (
+                  <>
+                    {" "}
+                    <b>Tarif T1</b> (dražší paušál, levná špička) obvykle vyjde levněji při provozu
+                    naplno blízko rezervovanému příkonu, <b>tarif T2</b> (levný paušál, drahá
+                    špička) při utlumeném provozu nebo velké rezervě. Zákazník si tarif nevybírá,
+                    distributor ho určuje automaticky každý měsíc podle skutečné spotřeby.
                   </>
                 )}
               </div>
+            </details>
+          </div>
+        )}
 
-              {citlivost && (
-                <div style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 14px" }}>
-                  <b>Citlivost návrhu (PS-10):</b> při profilu ±{citlivost.procenta} %
-                  by udržitelný strop byl {kw(citlivost.strop_minus_kw)} až{" "}
-                  {kw(citlivost.strop_plus_kw)}.{" "}
-                  {citlivost.rezerva_pokryje_horni_scenar
-                    ? `Rezerva RK (${kw(citlivost.strop_s_rezervou_kw)}) horní scénář pokryje.`
-                    : `Rezerva RK (${kw(citlivost.strop_s_rezervou_kw)}) horní scénář nepokryje – při silnějším roce hrozí měsíční dokupy/pokuty.`}
-                </div>
-              )}
+        {/* ---------- záložka: grafy ---------- */}
+        {/* ---------- záložka: obchod na spotu ---------- */}
+        {zalozka === "spot" && spot && (
+          <div role="tabpanel">
+            <div className="fm-card" style={{ marginBottom: 12 }}>
+              <div className="gs-karta-h">
+                <span className="gs-karta-nazev">Co obchod přinesl</span>
+                <span className="gs-mezera" />
+                <span className="nb-badge">
+                  {`ceny ${spot.info_cen?.rok_cen ?? "?"} · ${
+                    REZIMY.find((r) => r.klic === rezimVysledku)?.nazev ?? rezimVysledku
+                  }`}
+                </span>
+              </div>
+              <table className="fm-tabulka">
+                <tbody>
+                  <tr>
+                    <td className="dim">Vyhnutý nákup a dodávka do sítě</td>
+                    <td className="cislo">{kc(spot.zisk_energie_kc)}</td>
+                  </tr>
+                  <tr>
+                    <td className="dim">
+                      Opotřebení baterie obchodními cykly
+                      <div className="gs-pozn">
+                        {`${Math.round(spot.opotrebeni_kc_mwh)} Kč/MWh × ${Math.round(
+                          spot.obchodni_vybito_kwh / 1000
+                        ).toLocaleString("cs-CZ")} MWh`}
+                      </div>
+                    </td>
+                    <td className="cislo">−{kc(spot.naklad_opotrebeni_kc)}</td>
+                  </tr>
+                  <tr className="soucet">
+                    <td>Zisk z obchodu za rok</td>
+                    <td className="cislo">{kc(spot.zisk_kc)}</td>
+                  </tr>
+                  <tr>
+                    <td className="dim">Kdyby měl peak shaving absolutní prioritu</td>
+                    <td className="cislo">{kc(spot.zisk_pri_prioritnim_ps_kc)}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div className="gs-pozn" style={{ padding: "0 14px 12px" }}>
+                Model v každém měsíci porovnal, co vydělá víc: srazit špičku (a šetřit na platbě
+                za výkon), nebo obchodovat. Rozdíl proti řádku „absolutní priorita" je to, co
+                získal tím, že v některých měsících špičku vědomě pustil výš — celkový přínos je
+                pak vždy vyšší, jinak by u nejnižšího stropu zůstal.
+              </div>
+            </div>
 
-              {npvDop.roky?.length > 0 ? (
-                <>
-                  <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>
-                    Ekonomika po letech (horizont {dop.npv_horizont_roky ?? npvDop.roky.length} let)
-                  </h4>
-                  <div className="nb-scroll">
-                    <table className="nb-table">
-                      <thead>
-                        <tr>
-                          <th>Rok</th>
-                          <th>Tarif</th>
-                          <th>Roční úspora</th>
-                          <th>O&M</th>
-                          <th>CF roku</th>
-                          <th>Kum. úspora</th>
-                          <th>Kum. CF vč. investice</th>
-                          <th>Kum. disk. CF</th>
+            <div className="fm-card" style={{ marginBottom: 12 }}>
+              <div className="gs-karta-h">
+                <span className="gs-karta-nazev">Energie</span>
+              </div>
+              <table className="fm-tabulka">
+                <tbody>
+                  <tr>
+                    <td className="dim">Nabito ze sítě</td>
+                    <td className="cislo">
+                      {(spot.ze_site_kwh / 1000).toLocaleString("cs-CZ", {
+                        maximumFractionDigits: 1,
+                      })}{" "}
+                      MWh
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="dim">Vybito do vlastní spotřeby</td>
+                    <td className="cislo">
+                      {(spot.do_odberu_kwh / 1000).toLocaleString("cs-CZ", {
+                        maximumFractionDigits: 1,
+                      })}{" "}
+                      MWh
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="dim">Dodáno do sítě</td>
+                    <td className="cislo">
+                      {(spot.do_site_kwh / 1000).toLocaleString("cs-CZ", {
+                        maximumFractionDigits: 1,
+                      })}{" "}
+                      MWh
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="dim">Obchodních cyklů za rok</td>
+                    <td className="cislo">{Math.round(spot.obchodnich_cyklu)}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div className="gs-pozn" style={{ padding: "0 14px 12px" }}>
+                Vybít do vlastní spotřeby je cennější než dodat do sítě: zákazník se vyhne celé
+                nákupní ceně včetně distribuce, za dodávku dostane jen spot mínus marže
+                obchodníka. U velkého odběru proto model do sítě téměř nedodává.
+              </div>
+            </div>
+
+            <div className="fm-card">
+              <div className="gs-karta-h">
+                <span className="gs-karta-nazev">Rozhodnutí po měsících</span>
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table className="fm-tabulka">
+                  <thead>
+                    <tr>
+                      <th>Měsíc</th>
+                      <th className="cislo">Cílový strop</th>
+                      <th className="cislo">Nejnižší udržitelný</th>
+                      <th className="cislo">Maximum bez baterie</th>
+                      <th className="cislo">Zisk obchodu</th>
+                      <th className="cislo">Při prioritě PS</th>
+                      <th className="cislo">Cyklů</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(spot.mesice || []).map((m) => {
+                      const pusteno = m.strop_kw > m.strop_nejnizsi_udrzitelny_kw + 0.5;
+                      return (
+                        <tr key={m.mesic}>
+                          <td>
+                            {MESICE_NAZVY[m.mesic - 1] || m.mesic}
+                            {pusteno && (
+                              <span className="nb-badge" style={{ marginLeft: 6 }}>
+                                strop puštěn výš
+                              </span>
+                            )}
+                          </td>
+                          <td className="cislo">{kw(m.strop_kw)}</td>
+                          <td className="cislo">{kw(m.strop_nejnizsi_udrzitelny_kw)}</td>
+                          <td className="cislo">{kw(m.maximum_bez_baterie_kw)}</td>
+                          <td className="cislo">{kc(m.zisk_obchodu_kc)}</td>
+                          <td className="cislo">{kc(m.zisk_pri_nejnizsim_stropu_kc)}</td>
+                          <td className="cislo">{Math.round(m.obchodnich_cyklu)}</td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {npvDop.roky.map((r, i) => {
-                          // ◄ = rok, kdy kumulovaný CF poprvé pokryje investici.
-                          const paybackRok = r.cf_kum_kc >= 0 && (i === 0 || npvDop.roky[i - 1].cf_kum_kc < 0);
-                          return (
-                            <tr
-                              key={r.rok}
-                              style={paybackRok ? { fontWeight: 700, background: "color-mix(in srgb, var(--brand) 9%, transparent)" } : undefined}
-                            >
-                              <td>{r.rok}{paybackRok ? " ◄" : ""}</td>
-                              <td>{r.model === "2027" ? "NTS 2027" : "2026"}</td>
-                              <td>{kc(r.prinos_kc)}</td>
-                              <td>{kc(r.oam_kc)}</td>
-                              <td>{kc(r.cf_kc)}</td>
-                              <td>{kc(r.uspora_kum_kc)}</td>
-                              <td>{kc(r.cf_kum_kc)}</td>
-                              <td>{kc(r.cf_kum_disk_kc)}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--fm-muted)", margin: "4px 0 14px" }}>
-                    Roční úspora = celý rozdíl proti dnešnímu stavu v modelu NTS 2027 (celý
-                    horizont), klesá degradací úspor; CF roku = úspora − O&M. Řádek ◄ = kumulovaný CF
-                    poprvé pokryje investici; poslední „Kum. disk. CF“ = NPV varianty.
-                  </div>
-                </>
-              ) : (
-                <div style={{ fontSize: 12, color: "var(--fm-muted)", margin: "0 0 14px" }}>
-                  Rozpis ekonomiky po letech se ukládá až od nové verze výpočtu — spusť „Spočítat peak shaving“ znovu.
-                </div>
-              )}
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="gs-pozn" style={{ padding: "10px 14px 12px" }}>
+                Cílový strop je maximum, na které se odběr v daném měsíci sráží. Kde je vyšší než
+                nejnižší udržitelný, tam model usoudil, že obchod vydělá víc, než stojí vyšší
+                platba za výkon — typicky v měsících, jejichž maximum roční rezervaci neurčuje.
+              </div>
+            </div>
+          </div>
+        )}
 
-              {varianty.length > 1 && (
-                <>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      flexWrap: "wrap",
-                      margin: "0 0 6px",
-                    }}
-                  >
-                    <h4 style={{ margin: 0, fontSize: 13 }}>
-                      Srovnání variant{" "}
-                      <span style={{ fontWeight: 400, color: "var(--fm-muted)" }}>
-                        ({zobrazeneVarianty.length} z {varianty.length})
-                      </span>
-                    </h4>
+        {zalozka === "grafy" && (
+          <div role="tabpanel">
+            {graf ? (
+              <div className="fm-card" style={{ padding: 0 }}>
+                <div className="gs-karta-h">
+                  <span style={{ fontSize: 13, fontWeight: 700 }}>
+                    Odběr ze sítě — měsíční maxima
+                  </span>
+                  <span className="gs-mezera" />
+                  <span className="nb-badge">
+                    {je2027 ? "2027 · srážení po měsících" : "2026 · držení ročního stropu"}
+                  </span>
+                </div>
+                <div style={{ padding: 14 }}>
+                  <GrafOdberu
+                    mesice={graf.mesice}
+                    bezBaterie={graf.bez_baterie_kw}
+                    sBaterii={je2027 ? graf.s_baterii_2027_kw : graf.s_baterii_2026_kw}
+                    {...refCaryGrafu}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="fm-card" style={{ padding: 16, fontSize: 12.5, color: "var(--muted)" }}>
+                {dopocitava
+                  ? "Počítám graf pro tuhle variantu…"
+                  : "Graf pro tuhle variantu zatím není — spusť „Spočítat peak shaving“ znovu."}
+              </div>
+            )}
+
+            {citlivost && (
+              <>
+                <div className="gs-sekce-t">Citlivost návrhu na sílu roku</div>
+                <div className="fm-card" style={{ padding: 14, fontSize: 12.5 }}>
+                  Při profilu ±{citlivost.procenta} % by udržitelný strop byl{" "}
+                  <b>
+                    {kw(citlivost.strop_minus_kw)} až {kw(citlivost.strop_plus_kw)}
+                  </b>
+                  .{" "}
+                  {citlivost.rezerva_pokryje_horni_scenar ? (
+                    <>Rezerva RK ({kw(citlivost.strop_s_rezervou_kw)}) horní scénář pokryje.</>
+                  ) : (
+                    <>
+                      Rezerva RK ({kw(citlivost.strop_s_rezervou_kw)}) horní scénář{" "}
+                      <b>nepokryje</b> – při silnějším roce hrozí měsíční dokupy nebo pokuty.
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* Průběh v čase – nitkový graf 15min simulace se zoomem */}
+            <div className="gs-sekce-t">
+              Průběh v čase
+              <span style={{ fontWeight: 400, color: "var(--muted)" }}>
+                (kdy baterie kryje špičku a kdy se dobíjí)
+              </span>
+              <span className="gs-mezera" />
+              <button
+                className="fm-btn"
+                style={{ padding: "4px 10px", fontSize: 12 }}
+                onClick={() => setPrubehOtevren((s) => !s)}
+              >
+                {prubehOtevren ? "Skrýt průběh" : "Zobrazit 15min simulaci roku"}
+              </button>
+            </div>
+            {prubehOtevren ? (
+              <div className="fm-card" style={{ padding: 14 }}>
+                {prubehChyba && (
+                  <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{prubehChyba}</div>
+                )}
+                {!prubeh && prubehNacita && (
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                    Počítám 15min simulaci celého roku…
+                  </div>
+                )}
+                {prubeh && (
+                  <>
+                    {prubehNacita && (
+                      <div style={{ fontSize: 11, color: "var(--muted)" }}>Přepočítávám…</div>
+                    )}
+                    <GrafPrubehu
+                      key={`${prubeh.varianta_index}-${prubeh.rok}`}
+                      data={prubeh}
+                      popisRoku={
+                        prubeh.rok === 2027
+                          ? "Model 2027: baterie sráží špičku v každém měsíci tak hluboko, jak to zvládne (platí se za měsíční maximum)."
+                          : "Model 2026: baterie drží jeden roční strop, na který je nasmlouvaná rezervovaná kapacita."
+                      }
+                    />
+                    <div className="gs-pozn">
+                      Za rok baterie dodala {prubeh.souhrn?.vybito_kwh?.toLocaleString("cs-CZ")} kWh,
+                      ze sítě si na to vzala {prubeh.souhrn?.nabito_kwh?.toLocaleString("cs-CZ")} kWh
+                      (ztráty cyklováním {prubeh.souhrn?.ztraty_kwh?.toLocaleString("cs-CZ")} kWh).
+                      Špička odběru {kw(prubeh.souhrn?.max_odber_kw)} → ze sítě{" "}
+                      {kw(prubeh.souhrn?.max_site_kw)}.
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="fm-card" style={{ padding: 14, fontSize: 12.5, color: "var(--muted)" }}>
+                Nitkový graf se dopočítává na vyžádání — je to ~35 tisíc hodnot na variantu a rok.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ---------- záložka: srovnání variant ---------- */}
+        {zalozka === "varianty" && (
+          <div role="tabpanel">
+            {varianty.length > 1 ? (
+              <>
+                <div className="fm-card" style={{ padding: 0 }}>
+                  <div className="gs-karta-h">
+                    <span style={{ fontSize: 13, fontWeight: 700 }}>Srovnání variant</span>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                      {zobrazeneVarianty.length} z {varianty.length} ·{" "}
+                      {sloupecRazeni
+                        ? `řazeno podle ${sloupecRazeni.nazev.toLowerCase()} ${
+                            razeni.smer === "asc" ? "vzestupně" : "sestupně"
+                          }`
+                        : `řazeno podle NPV z ${
+                            zakladNpv === "prinos_baterie" ? "přínosu baterie" : "celé úspory"
+                          }`}
+                    </span>
+                    <span className="gs-mezera" />
+                    {sloupecRazeni && (
+                      <button
+                        className="fm-btn"
+                        style={{ padding: "4px 10px", fontSize: 12 }}
+                        onClick={() => setRazeni({ klic: null, smer: "asc" })}
+                      >
+                        Zpět na doporučené pořadí
+                      </button>
+                    )}
                     {varianty.length > POCET_TOP_VARIANT && (
                       <button
                         className="fm-btn"
@@ -1328,18 +2034,19 @@ export default function PeakShavingPanel({ nabidka }) {
                         }}
                       >
                         {vsechnyVarianty
-                          ? `Zobrazit jen ${POCET_TOP_VARIANT} nejlepší`
-                          : `Zobrazit všechny baterie (${varianty.length})`}
+                          ? `Jen ${POCET_TOP_VARIANT} nejlepší`
+                          : `Zobrazit všechny (${varianty.length})`}
                       </button>
                     )}
                   </div>
-                  <div className="nb-scroll">
+                  <div className="nb-scroll" style={{ border: 0, borderRadius: 0, boxShadow: "none" }}>
                     <table className="nb-table">
                       <thead>
                         <tr>
                           {SLOUPCE_SROVNANI.map((s) => (
                             <th
                               key={s.klic}
+                              className={s.cislo ? "n" : undefined}
                               onClick={() => prepniRazeni(s.klic)}
                               title="Kliknutím seřadíš podle tohoto sloupce"
                               style={{ cursor: "pointer", whiteSpace: "nowrap" }}
@@ -1374,51 +2081,108 @@ export default function PeakShavingPanel({ nabidka }) {
                       </tbody>
                     </table>
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--fm-muted)", marginTop: 4 }}>
-                    <b>Kliknutím na řádek se celý detail (čísla, ekonomika, grafy) překreslí pro danou variantu</b> (◄ = zobrazená).
-                    {" "}Klik na záhlaví sloupce mění řazení
-                    {sloupecRazeni ? (
-                      <>
-                        {" "}(teď: <b>{sloupecRazeni.nazev}</b>{" "}
-                        {razeni.smer === "asc" ? "vzestupně" : "sestupně"} —{" "}
-                        <button
-                          className="fm-btn"
-                          style={{ padding: "0 6px", fontSize: 11 }}
-                          onClick={() => setRazeni({ klic: null, smer: "asc" })}
-                        >
-                          zpět na doporučené pořadí
-                        </button>
-                        )
-                      </>
-                    ) : (
-                      <>
-                        {" "}(teď doporučené pořadí dle NPV z{" "}
-                        {zakladNpv === "prinos_baterie" ? "přínosu baterie" : "celé úspory"})
-                      </>
-                    )}
-                    .
-                    {!vsechnyVarianty && varianty.length > POCET_TOP_VARIANT && (
-                      <>
-                        {" "}Spočítané jsou všechny baterie z výběru – tlačítkem výš je ukážeš všechny.
-                      </>
-                    )}
+                </div>
+                <div className="gs-pozn">
+                  <b>Kliknutím na řádek se celý výsledek překreslí pro danou variantu</b> (◄ =
+                  zobrazená) — čísla jsou nad tabulkou, takže je změna hned vidět. Klik na záhlaví
+                  sloupce mění řazení.
+                  {!vsechnyVarianty && varianty.length > POCET_TOP_VARIANT && (
+                    <> Spočítané jsou všechny baterie z výběru, tlačítkem výš je ukážeš všechny.</>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="fm-card" style={{ padding: 16, fontSize: 12.5, color: "var(--muted)" }}>
+                Výpočet našel jen jednu použitelnou variantu — není co srovnávat.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ---------- záložka: ekonomika po letech ---------- */}
+        {zalozka === "roky" && (
+          <div role="tabpanel">
+            {npvDop.roky?.length > 0 ? (
+              <>
+                <div className="fm-card" style={{ padding: 0 }}>
+                  <div className="gs-karta-h">
+                    <span style={{ fontSize: 13, fontWeight: 700 }}>Ekonomika po letech</span>
+                    <span className="gs-mezera" />
+                    <span className="nb-badge">
+                      horizont {dop.npv_horizont_roky ?? npvDop.roky.length} let
+                    </span>
                   </div>
-                </>
-              )}
-            </>
-          ) : (
-            <div className="nb-warn" style={{ margin: 0 }}>
-              <span>⚠️</span>
-              <span>Výpočet nenašel použitelnou variantu. {(vysledek.upozorneni || []).join(" ")}</span>
-            </div>
-          )}
-          {dop && (vysledek.upozorneni || []).length > 0 && (
-            <div style={{ fontSize: 12, color: "var(--fm-muted)", marginTop: 10 }}>
-              {vysledek.upozorneni.map((u, i) => <div key={i}>• {u}</div>)}
-            </div>
-          )}
-        </div>
-      )}
+                  <div className="nb-scroll" style={{ border: 0, borderRadius: 0, boxShadow: "none" }}>
+                    <table className="nb-table">
+                      <thead>
+                        <tr>
+                          <th>Rok</th>
+                          <th>Tarif</th>
+                          <th className="n">Roční úspora</th>
+                          <th className="n">O&amp;M</th>
+                          <th className="n">CF roku</th>
+                          <th className="n">Kum. úspora</th>
+                          <th className="n">Kum. CF vč. investice</th>
+                          <th className="n">Kum. disk. CF</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {npvDop.roky.map((r, i) => {
+                          // ◄ = rok, kdy kumulovaný CF poprvé pokryje investici.
+                          const paybackRok =
+                            r.cf_kum_kc >= 0 && (i === 0 || npvDop.roky[i - 1].cf_kum_kc < 0);
+                          return (
+                            <tr
+                              key={r.rok}
+                              style={
+                                paybackRok
+                                  ? {
+                                      fontWeight: 700,
+                                      background: "color-mix(in srgb, var(--brand) 9%, transparent)",
+                                    }
+                                  : undefined
+                              }
+                            >
+                              <td>
+                                {r.rok}
+                                {paybackRok ? " ◄" : ""}
+                              </td>
+                              <td>{r.model === "2027" ? "NTS 2027" : "2026"}</td>
+                              <td className="n">{kc(r.prinos_kc)}</td>
+                              <td className="n">{kc(r.oam_kc)}</td>
+                              <td className="n">{kc(r.cf_kc)}</td>
+                              <td className="n">{kc(r.uspora_kum_kc)}</td>
+                              <td className="n">{kc(r.cf_kum_kc)}</td>
+                              <td className="n">{kc(r.cf_kum_disk_kc)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div className="gs-pozn">
+                  Roční úspora = celý rozdíl proti dnešnímu stavu v modelu NTS 2027 (celý horizont),
+                  klesá degradací úspor; CF roku = úspora − O&amp;M. Řádek ◄ = kumulovaný CF poprvé
+                  pokryje investici; poslední „Kum. disk. CF“ = NPV varianty.
+                </div>
+              </>
+            ) : (
+              <div className="fm-card" style={{ padding: 16, fontSize: 12.5, color: "var(--muted)" }}>
+                Rozpis ekonomiky po letech se ukládá až od nové verze výpočtu — spusť „Spočítat peak
+                shaving“ znovu.
+              </div>
+            )}
+          </div>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <div className="gs-desk">
+      {panelVstupu}
+      <div>{vysledekObsah}</div>
     </div>
   );
 }

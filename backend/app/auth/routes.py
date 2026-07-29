@@ -62,7 +62,13 @@ def login(udaje: LoginRequest, db: Session = Depends(get_db)):
 @router.get("/me", response_model=MeOut)
 def me(user: User = Depends(get_current_user)):
     return MeOut(
-        uzivatel=UserOut(id=user.id, jmeno=user.jmeno, email=user.email, je_admin=user.je_admin),
+        uzivatel=UserOut(
+            id=user.id,
+            jmeno=user.jmeno,
+            email=user.email,
+            je_admin=user.je_admin,
+            skupina=user.skupina.nazev if user.skupina is not None else None,
+        ),
         dlazdice=dlazdice_pro(user),
         muze_editovat=muze_editovat(user),
         prava=sorted(prava_uzivatele(user)),

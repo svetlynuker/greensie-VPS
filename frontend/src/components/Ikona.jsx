@@ -43,8 +43,47 @@ const CESTY = {
     </>
   ),
 
+  // rozcestník = domů (úvodní souhrn), katalog technologií
+  domu: <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" />,
+  katalog: (
+    <>
+      <rect x="3" y="4" width="7" height="7" rx="1.5" />
+      <rect x="14" y="4" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </>
+  ),
+
   // UI drobnosti
   sipka: <path d="M7 17 17 7M9 7h8v8" />,
+  chevron: <path d="m6 9 6 6 6-6" />,
+  // zúžení / rozšíření levého panelu
+  panel: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+      <path d="m13.5 10 2 2-2 2" />
+    </>
+  ),
+  hledat: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m16.5 16.5 4 4" />
+    </>
+  ),
+  klic: (
+    <>
+      <circle cx="8" cy="15" r="4" />
+      <path d="M11 12 20 3M17 3h3v3" />
+    </>
+  ),
+  odhlasit: (
+    <>
+      <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" />
+      <path d="M11 8 7 12l4 4M7 12h9" />
+    </>
+  ),
+  pismo: <path d="M4 19 10 5l6 14M6.5 14h7M17 19l3-7 3 7M18.2 16.6h3.6" />,
   napoveda: (
     <>
       <circle cx="12" cy="12" r="9" />

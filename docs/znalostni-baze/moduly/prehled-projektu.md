@@ -1,6 +1,6 @@
 # Přehled projektů
 
-> **Dlaždice:** `projekty` · **Adresa (routa):** `/projekty` · **Kdo smí otevřít:** kdokoli s právem `projekty` (dlaždici vidí všichni, bez práva je zamčená 🔒)
+> **Sekce v nabídce:** `projekty` · **Adresa (routa):** `/projekty` · **Kdo smí otevřít:** kdokoli s právem `projekty` (bez práva se sekce v nabídce vůbec nezobrazí)
 > **Kód:** frontend `frontend/src/pages/PrehledProjektu.jsx`, backend `backend/app/matice/`
 
 Hlavní přehledová tabulka firmy — **matice**, kde řádky jsou projekty a sloupce jsou úkoly
@@ -21,7 +21,8 @@ se úkol edituje. Data si appka umí sama natáhnout z Freela.
 ### Rozvržení obrazovky
 Shora dolů:
 
-1. **Odkaz „← Zpět na rozcestník"** — návrat na hlavní rozcestník appky.
+1. **Odkaz „← Zpět na rozcestník"** — návrat na úvodní souhrn. Mezi moduly se ale chodí
+   **panelem vlevo**, tenhle odkaz je jen zkratka na úvodní stránku.
 2. **Horní lišta (nástroje)** — tlačítka pro práci s daty a zobrazením (viz níže). Dá se celá
    skrýt tlačítkem **„Skrýt nástroje ▴ / Zobrazit nástroje ▾"**, aby zbylo víc místa na tabulku.
 3. **Legenda termínů** — čtyři barvy a jejich prahy (kdy je co zelené/žluté/oranžové/červené).
@@ -135,7 +136,7 @@ V obou případech: **úkoly, které Freelo nemá, se nemažou** a **poznámky s
 ## 🛠 Pro admina / provoz
 
 ### Práva — kdo co vidí a smí
-- Dlaždici **Přehled projektů** vidí v rozcestníku **všichni**, ale bez práva `projekty` je **zamčená** (🔒).
+- Sekci **Přehled projektů** uvidí v panelu vlevo jen ten, kdo má právo `projekty` — bez něj tam položka vůbec není.
 - **Čtení matice** (`GET /matice`) může každý přihlášený uživatel, kdo modul otevře.
 - **Editace** (buňky, přidání projektu/sloupce, prahy barev, skrytí projektu, odkazy na Disk, párování,
   ruční načtení z Freela) vyžaduje právo **`editace`** — v kódu strážce `vyzaduj_editora`.

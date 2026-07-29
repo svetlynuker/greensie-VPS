@@ -31,6 +31,11 @@ _SLOUPCE = (
     ("typ_clanku", "Typ článku", "text", 3),
     ("doporucena_cena_kc", "Doporučená prodejní cena (Kč)", "cislo", 4),
     ("zaruka_roky", "Záruka (roky)", "cislo", 5),
+    # Počet ekvivalentních plných cyklů ze záruky/datasheetu. Z něj a z ceny
+    # vychází náklad opotřebení při obchodování na spotu (`spot_arbitraz.py`);
+    # bez hodnoty se použije admin default `spot_cyklu_zivotnosti`. Ceník ho
+    # neuvádí, takže se u produktů nechává prázdný a doplní se ručně.
+    ("cyklu_zivotnosti", "Cyklů životnosti", "cislo", 6),
 )
 
 # Řádky ceníku 1:1 (bez dopočítávání – co v XLSX chybí, je None):

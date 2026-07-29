@@ -331,6 +331,14 @@ přínos ≤ 0) — zobrazuje se doplňkově (PS-9). Dvě návratnosti:
 pokryje investici (lineární interpolace v rámci roku); `None` = v horizontu se nevrátí.
 Počítá se pro oba základy zvlášť (`npv_varianty[…]["payback_roky"]`).
 
+> **`None` se od 28. 7. 2026 v UI neukazuje jako „nevrátí se".** Frontend
+> (`navratnostKZobrazeni` v `PeakShavingPanel.jsx`) číslo dopočítá **za horizont**: dělí
+> nepokrytý zbytek investice cash flow dalších let, které dál klesá stejným tempem jako
+> mezi posledními dvěma roky rozpisu, a zobrazí ho s vlnovkou (`~14,24 let`). Když je CF
+> posledního roku nekladné (úspora nepokryje O&M) nebo klesající řada na zbytek nikdy
+> nestačí, ukáže prostou návratnost s poznámkou „(prostá)". Backend se tím **nemění** — je to
+> jen zobrazení a do NPV, prahu doporučení ani výběru varianty nevstupuje.
+
 > **Oprava 27. 7. 2026 — doporučení nesmí viset na jednom roce.** Práh se poměřoval
 > s prostou návratností **modelu 2026**, takže varianta s výbornou ekonomikou 2027
 > a slabým rokem 2026 vyšla „nedoporučeno" — a naopak si OZ nemohl srovnat, proč se
@@ -345,6 +353,118 @@ Počítá se pro oba základy zvlášť (`npv_varianty[…]["payback_roky"]`).
 
 Starší uložené výsledky nesou pole `navratnost_2027_optim`/`navratnost_2027_konzerv`
 a `*_bez_aku` — FE u nich zobrazuje konzervativní hodnoty.
+
+### 4.6b Obchodní flexibilita na spotu — režimy (28. 7. 2026)
+
+Modul `app/nabidkovac/spot_arbitraz.py` + data `app/nabidkovac/spot_ceny.py`.
+Rešerše s čísly: `docs/reserze_kalkulator/spot-arbitraz-cr-2025.md`.
+
+OZ volí u výpočtu **režim** (`vstup.rezim`):
+
+| Režim | Co baterie dělá | Cílový síťový strop |
+|---|---|---|
+| `peak_shaving` (výchozí) | jen sráží špičky — dnešní chování, nic se nemění | nejnižší udržitelný |
+| `kombinace` | sráží špičky a ve zbytku obchoduje | **volí se ekonomicky** |
+| `spot` | jen obchoduje, rezervovaná kapacita zůstává | naměřené maximum (nesmí ho zvýšit) |
+
+**Cena pro zákazníka.** Marže 200 Kč/MWh není naše, ale **obchodníkova** — rozdíl
+proti spotu je vždy 200 Kč na každou stranu. K nákupu se přičítají regulované
+složky za odebranou MWh (default 260 Kč/MWh, stejná hodnota jako
+`ppa_vyhnutelne_regulovane_kc_mwh`: použití sítí 83–106 dle DSO + systémové
+služby 164,24 + POZE 0 u VN):
+
+```
+nákup  = spot + marže + regulované složky (+ daň z elektřiny, default 0)
+prodej = spot − marže − složky za dodávku (default 0)
+```
+
+Z toho plyne klíčová asymetrie: **krytí vlastní spotřeby je cennější než dodávka
+do sítě** (vyhnutá nákupní cena vs. spot mínus marže). Model proto vybíjí nejdřív
+do odběru; u zákazníka s velkým odběrem do sítě prakticky nedodává.
+
+**Náklad opotřebení** = `cena baterie / (cyklů životnosti × kapacita)`, účtuje se
+jen za **obchodní** energii (ekonomika peak shavingu se tím proti dnešku nemění).
+Cykly životnosti bere z katalogu (`technologie.extra.cyklu_zivotnosti`), fallback
+admin parametr `spot_cyklu_zivotnosti` (6 000). Na datech 2025 tahle jediná
+položka snižuje hodnotu 2h baterie ze 742 na 362 Kč/kWh/rok a zároveň sama
+reguluje počet cyklů ze 427 na 215 za rok — `spot_max_cyklu_rok` je až druhá
+pojistka (kvůli záruce).
+
+**Rozhodovací vrstva.** Hodnota peak shavingu není cena energie, ale **měsíční
+maximum** — jeden skalár za měsíc, takže lokální rozhodnutí „teď prodám" nejde
+ocenit bez znalosti, jaké maximum nakonec padne. Řeší se dvěma úrovněmi:
+
+1. **Volba měsíčního cílového stropu** (`simuluj_rok`): pro každý měsíc se zkusí
+   kandidátní stropy od nejnižšího udržitelného po naměřené maximum a vybere se
+   ten s nejvyšším `− náklad na výkon + zisk obchodu`. Protože roční složka
+   rezervace spojuje měsíce dohromady, hledá se souřadnicovým zlepšováním
+   z výchozího bodu = dnešní chování → **kombinace nikdy nevyjde horší než čistý
+   peak shaving**. Náklad na výkon dodává callback do `ekonomika_2026/2027`,
+   takže modul nezná tarifní strukturu.
+2. **Rozhodování po čtvrthodinách** (`simuluj_usek`): spojitá simulace, kde peak
+   shaving má absolutní přednost — nejdřív povinné vybití nad strop, pak povinné
+   dobití podle `minimalni_soc_trajektorie` (kolik energie je potřeba na všechny
+   budoucí špičky), a teprve zbytek kapacity a výkonu dostane obchod. Obchodní
+   rozhodnutí řídí **cenové prahy kalibrované na každý den zvlášť**
+   (`optimalizuj_prahy`, mřížka percentilů) — schválně strategie, kterou umí
+   i reálná řídicí jednotka. Proti optimálnímu plánu (DP, referenčně v testech)
+   ztrácí jednotky procent.
+
+Měsíční maxima ze simulace pak vstupují do `ekonomika_2026` / `ekonomika_2027`
+místo „sraženo co to dá" (parametr `mesicni_maxima_s_baterii`); ztráty cyklování
+se v těchto režimech nepočítají zvlášť, protože energetiku nese zisk obchodu.
+Zisk po opotřebení se přičítá do **obou** základů NPV — bez investice ho zákazník
+nezíská, na rozdíl od úpravy RK/RP.
+
+**Koeficient AKU zůstává K = 0** i pro spotové režimy (rozhodnuto 28. 7. 2026):
+u baterie, která do sítě dodává, by podíl export/import nulový nebyl, ale prahy
+U1/U2 jsou předběžné (VKP ERÚ 10/2026) — radši konzervativně bez slevy.
+
+**Data cen.** Tabulka `spotove_ceny` (`trh`, `cas_utc`, `interval_min`,
+`cena_eur_mwh`, `cena_kc_mwh`), seed při startu z přiloženého
+`app/nabidkovac/data/spot_dam_cz_2025.csv.gz` (167 kB) — produkce nechodí na
+internet. Další rok přidá `python -m scripts.import_spot_ceny --rok 2026 --csv`
+(energy-charts + denní kurzy ČNB, ověřeno proti OTE na 0,00 EUR/MWh). Ceny se
+ukládají v granularitě trhu (hodinové do 30. 9. 2025, pak 15min — přechod SDAC)
+a na čtvrthodiny se rozpadají až při čtení. Profil zákazníka je typicky z jiného
+roku než ceny, takže se páruje **podle měsíce a dne v týdnu**, aby pracovní dny
+dostaly ceny pracovních dnů.
+
+**Nitkový graf v obchodních režimech.** Endpoint `/prubeh` v režimech Kombinace/SPOT
+nepočítá průběh z peak-shavingové fyziky, ale ze **spotové simulace se stropy
+z uloženého výsledku** (`spot_arbitraz.prubeh_roku`) — jinak by graf ukazoval jiné
+chování baterie, než na jakém stojí ekonomika. Konkrétně: `simuluj_usek` umí se
+`zapisuj=True` zaznamenat průběh ze **stejného** projezdu, ze kterého vyšla čísla,
+a `prubeh_roku` z toho složí rok (každý měsíc startuje od plné baterie, stejně jako
+ekonomika — přenášet nabití mezi měsíci by bylo realističtější, ale graf by se
+s tabulkami rozešel o 7,5 % zisku). Parametry obchodu se ukládají do výsledku
+(`ekonomika_spot.nastaveni`), takže průběh jede na týchž číslech i po změně
+admin nastavení. Odpověď navíc nese `cena_kc_mwh` (spotová cena, podle které se
+baterie rozhodovala) a rozpad `baterie_ps_kw` / `baterie_obchod_kw`; frontend
+z toho kreslí čtvrtý pás grafu a doplňuje tooltip.
+
+Vedlejší nález: povinné dobíjení pro peak shaving míří na minimální trajektorii
+**plus bezpečnostní rezervu**. Dobíjení „jen na hranu" bylo křehké — trajektorie
+počítá s dobíjením plným výkonem, a jakmile se to o kousek nepovedlo, baterie
+špičku nesrazila (5 intervalů z 35 040, nejvíc o 31 kW). S rezervou je překročení
+nulové a zisk vyšel o 2 % vyšší, protože se neplatí vyšší měsíční maxima.
+
+**Výkon.** Obchodní režimy stojí ~**0,6 s na produkt** (proti 0,25 s u čistého peak
+shavingu): pro každý měsíc se zkoušejí kandidátní stropy a každý znamená
+odsimulovat měsíc po čtvrthodinách. U celého ceníku (84 produktů) je to ~50 s, což
+je nad hranicí pohodlí — panel proto doporučuje zúžit výběr baterií (`baterie_ids`).
+Zrychleno dvěma věcmi: cenové prahy se hledají **dvouprůchodově** (hrubá mřížka
+2×2 percentilů + zjemnění kolem nejlepšího nálezu místo plné 4×4 mřížky, stejné
+výsledky za polovinu času) a kandidátních stropů jsou **3**, ne 4. Výsledky mezi
+variantami se cachují podle `(měsíc, strop)`, takže souřadnicové zlepšování
+neplatí za opakované simulace.
+
+**Oprava symetrie RP (28. 7. 2026).** Scénář s baterií volí rezervovaný příkon
+stejně jako baseline — levnější z {nechat RP ze smlouvy, optimalizovat}.
+Optimalizace nese bezpečnostní rezervu (PS-6), takže u zákazníka s velkým RP umí
+vyjít dráž než nechat RP být; bez téhle symetrie vycházel přínos baterie záporný
+i tam, kde baterie platbu za výkon vůbec nezhoršuje (režim SPOT ukazoval umělou
+ztrátu 76 tis. Kč/rok).
 
 ### 4.7b Citlivost stropu (bughunt PS-10)
 Levná bootstrap alternativa walk-forward validace (ta by chtěla ≥ 2 roky dat,
@@ -453,12 +573,16 @@ profilu, takže FE umí na okamžik skočit (zoom).
 
 ```
 backend/app/nabidkovac/
-  models.py         – tabulky (sazby_distributoru, katalog_sloupce, technologie.extra …)
+  models.py         – tabulky (sazby_distributoru, katalog_sloupce, spotove_ceny, technologie.extra …)
   schemas.py        – pydantic schémata
   routes.py         – API (sazby, sloupce, profil, výpočet)
   peak_shaving.py   – VÝPOČETNÍ JÁDRO (simulace, ekonomika 2026/2027, AKU, návratnosti, graf)
+  spot_arbitraz.py  – obchodování na spotu (režimy, volba měsíčních stropů, opotřebení)
+  spot_ceny.py      – spotové ceny (seed z dat, párování na profil)
+  data/             – přiložené ceny denního trhu (spot_dam_cz_2025.csv.gz)
   profil_import.py  – parser XLS/XLSX/CSV profilu
   seed.py           – seed sazeb ČEZ (2026 + 2027) + backfill U1/U2
+backend/scripts/import_spot_ceny.py – přidání dalšího roku cen (energy-charts + ČNB)
 backend/app/main.py – create_all + _lehka_migrace + seed při startu
 frontend/src/
   pages/NabidkovacKatalog.jsx      – admin (katalog, nastavení, sazby)

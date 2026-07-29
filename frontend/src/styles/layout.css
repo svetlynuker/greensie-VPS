@@ -1,0 +1,729 @@
+/* ============================================================
+   GREENSIE — rámec appky: levý navigační panel + horní lišta
+   Navazuje na tokeny z global.css. Panel je záměrně tmavý ve
+   obou režimech (odděluje navigaci od dat); přepínače vzhledu
+   sedí v nabídce uživatele vpravo nahoře.
+   ============================================================ */
+
+:root {
+  --sb-w:       248px;
+  --sb-w-mini:   68px;
+  --sb-bg:      #14211b;
+  --sb-bg-2:    #1b2a23;
+  --sb-ink:     #dbe5df;
+  --sb-ink-2:   #93a49b;
+  --sb-line:    #24352c;
+  --tb-h:        58px;
+  --nav-item-h:  37px;
+  --pad-obsah:   20px;
+}
+
+/* V tmavém režimu je panel ještě o stupeň hlubší než plochy appky. */
+:root[data-theme="dark"] {
+  --sb-bg:   #0a100d;
+  --sb-bg-2: #121b16;
+  --sb-line: #1e2a24;
+}
+
+/* ---------- Skelet ---------- */
+.gs-app {
+  display: grid;
+  grid-template-columns: var(--sb-w) minmax(0, 1fr);
+  min-height: 100vh;
+  transition: grid-template-columns 0.18s ease;
+}
+
+.gs-app[data-panel="mini"] {
+  grid-template-columns: var(--sb-w-mini) minmax(0, 1fr);
+}
+
+.gs-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.gs-obsah {
+  padding: var(--pad-obsah);
+  min-width: 0;
+}
+
+/* ---------- Levý panel ---------- */
+.gs-sb {
+  background: var(--sb-bg);
+  border-right: 1px solid var(--sb-line);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Hlavička panelu s logotypem. Text v logu dědí tuhle barvu (currentColor),
+   značka si drží firemní zelenou — proto stačí jeden soubor loga pro světlý
+   i tmavý režim. */
+.gs-sb-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--tb-h);
+  padding: 0 14px;
+  flex: none;
+  border-bottom: 1px solid var(--sb-line);
+  background: none;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  width: 100%;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  color: var(--sb-ink);
+  transition: color 0.14s;
+}
+
+.gs-sb-brand:hover {
+  color: #fff;
+}
+
+/* V zúženém panelu je vidět jen značka, tak ať sedí na střed. */
+.gs-app[data-panel="mini"] .gs-sb-brand {
+  justify-content: center;
+  padding: 0;
+}
+
+.gs-sb-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 10px 0 14px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--sb-line) transparent;
+}
+
+.gs-nav-grp-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sb-ink-2);
+  padding: 12px 18px 6px;
+  white-space: nowrap;
+}
+
+/* V úzkém režimu se z popisku skupiny stane jen dělicí linka. */
+.gs-app[data-panel="mini"] .gs-nav-grp-label {
+  padding: 12px 0 6px;
+  font-size: 0;
+}
+
+.gs-app[data-panel="mini"] .gs-nav-grp-label::after {
+  content: "";
+  display: block;
+  height: 1px;
+  background: var(--sb-line);
+  margin: 0 16px;
+}
+
+.gs-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: var(--nav-item-h);
+  padding: 0 14px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 550;
+  color: var(--sb-ink);
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+  transition: background 0.14s, color 0.14s;
+}
+
+.gs-nav-item .gs-nav-ico {
+  width: 34px;
+  height: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--sb-ink-2);
+  transition: color 0.14s, background 0.14s;
+}
+
+.gs-nav-item .gs-nav-ico svg {
+  width: 18px;
+  height: 18px;
+}
+
+.gs-nav-item .gs-nav-txt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gs-nav-item:hover {
+  background: var(--sb-bg-2);
+}
+
+.gs-nav-item:hover .gs-nav-ico {
+  color: var(--sb-ink);
+}
+
+.gs-nav-item:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+.gs-nav-item[aria-current="page"] {
+  color: #fff;
+}
+
+.gs-nav-item[aria-current="page"] .gs-nav-ico {
+  background: var(--brand);
+  color: #fff;
+}
+
+/* Svislý pásek u aktivní položky — druhý signál kromě barvy. */
+.gs-nav-item[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--brand);
+}
+
+.gs-nav-badge {
+  margin-left: auto;
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 20px;
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--st-crit);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.gs-app[data-panel="mini"] .gs-nav-item {
+  padding: 0 17px;
+}
+
+.gs-app[data-panel="mini"] .gs-nav-txt,
+.gs-app[data-panel="mini"] .gs-sb-foot-text {
+  display: none;
+}
+
+/* Odznak se v úzkém režimu scvrkne na tečku u ikony. */
+.gs-app[data-panel="mini"] .gs-nav-badge {
+  position: absolute;
+  top: 4px;
+  right: 12px;
+  min-width: 8px;
+  height: 8px;
+  padding: 0;
+  font-size: 0;
+}
+
+.gs-sb-foot {
+  flex: none;
+  border-top: 1px solid var(--sb-line);
+  padding: 8px 0;
+}
+
+.gs-sb-collapse {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--sb-ink-2);
+  cursor: pointer;
+}
+
+.gs-sb-collapse:hover {
+  background: var(--sb-bg-2);
+  color: var(--sb-ink);
+}
+
+.gs-sb-collapse:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+.gs-sb-collapse .gs-nav-ico {
+  width: 34px;
+  display: grid;
+  place-items: center;
+}
+
+.gs-sb-collapse svg {
+  width: 17px;
+  height: 17px;
+  transition: transform 0.18s;
+}
+
+.gs-app[data-panel="mini"] .gs-sb-collapse svg {
+  transform: rotate(180deg);
+}
+
+/* ---------- Horní lišta ---------- */
+.gs-tb {
+  height: var(--tb-h);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 var(--pad-obsah);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.gs-tb-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gs-tb-crumb {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.gs-tb-crumb::before {
+  content: "/";
+  margin: 0 7px;
+  color: var(--line);
+}
+
+.gs-tb-spacer {
+  flex: 1;
+}
+
+/* ---------- Uživatel vpravo nahoře ---------- */
+.gs-who-wrap {
+  position: relative;
+  flex: none;
+}
+
+.gs-who {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 9px 4px 4px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font: inherit;
+  cursor: pointer;
+  color: var(--ink);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.gs-who:hover {
+  border-color: var(--brand);
+  background: var(--surface-2);
+}
+
+.gs-who:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.gs-avatar {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  background: linear-gradient(140deg, var(--brand), var(--brand-strong));
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.gs-who-meta {
+  text-align: left;
+  line-height: 1.2;
+  display: flex;
+  flex-direction: column;
+}
+
+.gs-who-name {
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.gs-who-role {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.gs-who > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+  flex: none;
+}
+
+/* ---------- Nabídka uživatele ---------- */
+.gs-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 286px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+  padding: 6px;
+  z-index: 60;
+}
+
+.gs-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 10px 12px;
+}
+
+.gs-menu-head .gs-avatar {
+  width: 38px;
+  height: 38px;
+  font-size: 14px;
+}
+
+.gs-menu-head-name {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.gs-menu-head-mail {
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.gs-menu-chip-wrap {
+  padding: 0 10px 8px;
+}
+
+.gs-menu-sep {
+  height: 1px;
+  background: var(--line);
+  margin: 5px 0;
+}
+
+.gs-menu-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 9px 10px 4px;
+}
+
+.gs-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.gs-menu-item:hover {
+  background: var(--surface-2);
+}
+
+.gs-menu-item:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+.gs-menu-item svg {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  flex: none;
+}
+
+.gs-menu-item.danger,
+.gs-menu-item.danger svg {
+  color: var(--st-crit);
+}
+
+.gs-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.gs-menu-row .gs-menu-lbl {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gs-menu-row .gs-menu-lbl svg {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  flex: none;
+}
+
+/* Segmentový přepínač (režim, kompenzace vady, velikost textu) */
+.gs-seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  flex: none;
+}
+
+.gs-seg button {
+  border: 0;
+  background: var(--surface);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  padding: 4px 9px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+}
+
+.gs-seg button + button {
+  border-left: 1px solid var(--line);
+}
+
+.gs-seg button[aria-pressed="true"] {
+  background: var(--brand-wash);
+  color: var(--brand-strong);
+}
+
+.gs-seg button:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+.gs-seg svg {
+  width: 14px;
+  height: 14px;
+}
+
+.gs-chip-role {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--brand-strong);
+  background: var(--brand-wash);
+  border: 1px solid color-mix(in srgb, var(--brand) 30%, transparent);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+/* ---------- Hlavička stránky (nadpis + akce) ---------- */
+.gs-page-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.gs-page-h1 {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.gs-page-lead {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  max-width: 62ch;
+}
+
+/* ---------- Karta s hlavou (souhrn na úvodní stránce) ---------- */
+.gs-karta-hlava {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.gs-karta-titulek {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.gs-karta-popis {
+  margin: 0;
+  padding: 11px 16px 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* ---------- Jednoduchá tabulka (souhrn) ---------- */
+.gs-tabulka-obal {
+  overflow-x: auto;
+}
+
+.gs-tabulka {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 560px;
+  font-size: 13px;
+}
+
+.gs-tabulka th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.gs-tabulka td {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: middle;
+}
+
+.gs-tabulka tbody tr:hover {
+  background: var(--surface-2);
+}
+
+.gs-tabulka tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.gs-cell-name {
+  font-weight: 650;
+}
+
+.ta-r {
+  text-align: right;
+}
+
+/* ---------- Prázdný stav ---------- */
+.gs-prazdno {
+  padding: 40px 22px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.gs-prazdno-znak {
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  margin: 0 auto 12px;
+  color: var(--muted);
+}
+
+.gs-prazdno h3 {
+  margin: 0 0 5px;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.gs-prazdno p {
+  margin: 0 auto;
+  font-size: 13px;
+  max-width: 48ch;
+}
+
+/* ---------- Užší okna ---------- */
+@media (max-width: 860px) {
+  .gs-who-meta,
+  .gs-tb-crumb {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .gs-app,
+  .gs-app[data-panel="expanded"] {
+    grid-template-columns: var(--sb-w-mini) minmax(0, 1fr);
+  }
+
+  .gs-app .gs-nav-txt,
+  .gs-app .gs-sb-foot-text {
+    display: none;
+  }
+
+  .gs-app .gs-nav-item {
+    padding: 0 17px;
+  }
+
+  .gs-sb-foot {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gs-app,
+  .gs-nav-item,
+  .gs-nav-ico,
+  .gs-sb-collapse svg,
+  .gs-who {
+    transition: none;
+  }
+}

@@ -1,6 +1,6 @@
 # Logy
 
-> **Dlaždice:** `logy` · **Adresa (routa):** `/logy` · **Kdo smí otevřít:** kdokoli s právem `logy` (dlaždici vidí všichni, bez práva je zamčená 🔒; supersprávce má vždy)
+> **Sekce v nabídce:** `logy` · **Adresa (routa):** `/logy` · **Kdo smí otevřít:** kdokoli s právem `logy` (bez práva se sekce v nabídce vůbec nezobrazí; supersprávce má vždy)
 > **Kód:** frontend `frontend/src/pages/Logy.jsx`, backend `backend/app/logy/`
 
 Přehled **systémových a aplikačních záznamů** appky — kdo co dělal (audit), jak server odpovídal
@@ -23,7 +23,8 @@ schovaný technický detail (jen pro supersprávce).
 ### Rozvržení obrazovky
 Shora dolů:
 
-1. **Odkaz „← Zpět na rozcestník"** — návrat na hlavní rozcestník appky.
+1. **Odkaz „← Zpět na rozcestník"** — návrat na úvodní souhrn. Mezi moduly se ale chodí
+   **panelem vlevo**, tenhle odkaz je jen zkratka na úvodní stránku.
 2. **Nadpis „Logy"** a vedle něj **počítadlo** — kolik záznamů je právě zobrazeno a čas poslední
    aktualizace (např. „300 záznamů · aktualizováno 14:23:05").
 3. **Ovládací panel** (karta) — filtr druhu, pole hledání, zaškrtávátko automatického obnovování,
@@ -98,7 +99,7 @@ vidět víc konkrétního druhu, použij **filtr** nebo **hledání**, které li
 ## 🛠 Pro admina / provoz
 
 ### Práva — kdo co vidí a smí
-- Dlaždici **Logy** vidí v rozcestníku **všichni**, ale bez práva `logy` je **zamčená** (🔒).
+- Sekci **Logy** uvidí v panelu vlevo jen ten, kdo má právo `logy` — bez něj tam položka vůbec není.
 - **Otevření a čtení logů i mazání** vyžaduje právo **`logy`** — na backendu strážce
   `vyzaduj_pravo_logy` (volá `muze_otevrit(user, "logy")`). Platí pro `GET /logy` i `DELETE /logy`.
   Kdo právo nemá, dostane 403 („Na zobrazení logů nemáš oprávnění.").

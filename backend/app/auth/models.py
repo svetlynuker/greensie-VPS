@@ -65,6 +65,8 @@ class UserOut(BaseModel):
     jmeno: str
     email: str
     je_admin: bool = False
+    # název skupiny, do které uživatel patří — ukazuje se u jeho jména v liště
+    skupina: str | None = None
 
 
 class MeOut(BaseModel):

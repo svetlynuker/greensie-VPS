@@ -1,6 +1,6 @@
 # Přehled financí
 
-> **Dlaždice:** `finance` · **Adresa (routa):** `/finance` · **Kdo smí otevřít:** jen s právem `finance` (dlaždici vidí všichni, bez práva je zamčená 🔒; v praxi Rosťa + skupina „vedení")
+> **Sekce v nabídce:** `finance` · **Adresa (routa):** `/finance` · **Kdo smí otevřít:** jen s právem `finance` (bez práva se sekce v nabídce vůbec nezobrazí; v praxi Rosťa + skupina „vedení")
 > **Kód:** frontend `frontend/src/pages/PrehledFinanci.jsx` + dialog `frontend/src/components/FakturaDialog.jsx`, backend `backend/app/finance/`
 
 Přehledová tabulka **fakturace po projektech** (interně „Pohled 2"). Řádky jsou projekty (tytéž jako
@@ -23,7 +23,8 @@ v budoucnu stavy faktur samo potvrzovat podle účetnictví — **zatím napojen
 ### Rozvržení obrazovky
 Shora dolů:
 
-1. **Odkaz „← Zpět na rozcestník"** — návrat na hlavní rozcestník appky.
+1. **Odkaz „← Zpět na rozcestník"** — návrat na úvodní souhrn. Mezi moduly se ale chodí
+   **panelem vlevo**, tenhle odkaz je jen zkratka na úvodní stránku.
 2. **Horní lišta (topbar)** — název „Přehled financí", tlačítko **↻ Synchronizovat s Pohodou**
    (jen kdo smí editovat), místo pro hlášku po synchronizaci a vpravo počítadlo **„N projektů"**.
 3. **Legenda stavů** — čtyři stavy faktury, každý s barvou **i ikonou i textem** (appka se nikdy
@@ -104,7 +105,7 @@ Otevře se klikem do buňky (jen editor). V hlavičce je „Faktura N" a název 
 ## 🛠 Pro admina / provoz
 
 ### Práva — kdo co vidí a smí
-- Dlaždici **Přehled financí** vidí v rozcestníku **všichni**, ale bez práva `finance` je **zamčená** (🔒).
+- Sekci **Přehled financí** uvidí v panelu vlevo jen ten, kdo má právo `finance` — bez něj tam položka vůbec není.
 - Právo **`finance`** je v tomto modulu **jediné** a zároveň otevírá modul i povoluje editaci
   (backend: `vyzaduj_finance`; do odpovědi se posílá `muze_editovat = muze_finance(user)`, což je totéž
   právo). Kdo modul otevře, může tedy i upravovat faktury, přidávat je, mazat a spouštět synchronizaci.

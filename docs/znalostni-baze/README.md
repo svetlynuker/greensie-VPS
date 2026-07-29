@@ -12,7 +12,7 @@ a jak appka funguje, bez pročítání kódu.
 
 ## Jak je to organizované
 
-Každý **modul** (= dlaždice v rozcestníku appky) má jeden soubor ve složce [`moduly/`](moduly/).
+Každý **modul** (= sekce v nabídce vlevo) má jeden soubor ve složce [`moduly/`](moduly/).
 Uvnitř je návod rozdělený na dvě roviny:
 
 - **🧑 Pro uživatele** — co která obrazovka, pole a tlačítko dělá a jak na běžné úkoly.
@@ -24,7 +24,7 @@ Serverová a provozní dokumentace (VPS, nasazení, databáze, e-maily, práva) 
 
 ## Obsah
 
-### Moduly (dlaždice appky)
+### Moduly (sekce appky)
 - [x] [**Přehled projektů**](moduly/prehled-projektu.md) — matice projektů z Freela, barvy termínů, buňky
 - [x] [**Přehled financí**](moduly/prehled-financi.md) — faktury, napojení na Pohodu
 - [x] [**Přehled změn**](moduly/prehled-zmen.md) — denní snímky stavu, net-rozdíl dvou fotek
@@ -34,7 +34,7 @@ Serverová a provozní dokumentace (VPS, nasazení, databáze, e-maily, práva) 
 - [x] [**Konektor Raynet ↔ Google Drive**](moduly/konektor-raynet-gdrive.md) — viz i technický spec [`docs/moduly/raynet-gdrive-konektor-spec.md`](../moduly/raynet-gdrive-konektor-spec.md)
 - [x] [**Logy**](moduly/logy.md)
 - [x] [**Admin nastavení**](moduly/admin-nastaveni.md) — uživatelé, skupiny, práva
-- [x] [**Přihlášení a změna hesla**](moduly/prihlaseni-zmena-hesla.md) — login, nucená změna, rozcestník
+- [x] [**Přihlášení a změna hesla**](moduly/prihlaseni-zmena-hesla.md) — login, nucená změna, úvodní souhrn
 - [x] [**Společné prvky**](moduly/spolecne-prvky.md) — layout, přepínač tématu, velikost textu
 
 ### Server a provoz
@@ -58,7 +58,7 @@ Aby to šlo, drží se obsah v čistém Markdownu a screenshoty se odkazují př
 
 ## Konvence psaní
 
-- **Jeden soubor na modul**, název v kebab-case podle dlaždice (`prehled-projektu.md`).
+- **Jeden soubor na modul**, název v kebab-case podle sekce (`prehled-projektu.md`).
 - Piš tak, aby to pochopil i **nováček** — vysvětluj i „samozřejmosti".
 - U každého ovládacího prvku uveď: **co to je → co to udělá → kdo to vidí** (podle práv).
 - **Screenshoty** označuj značkou, ať se dají později hromadně doplnit:
