@@ -210,14 +210,15 @@ class Baterie:
         return max(0.0, self.kapacita_kwh * self.dod)
 
 
-def sparuj_s_baterii(
+def toky_energie(
     vyroba_kwh: list[float],
     spotreba_kwh: list[float],
     baterie: Baterie | None,
     rezervovany_vykon_dodavky_kw: float | None,
     interval_h: float,
-) -> Bilance:
-    """Spárování výroby a spotřeby s baterií (metodika kap. 3.1, bod 4).
+):
+    """Generátor toků energie po intervalech: `(výroba, spotřeba, samospotřeba,
+    export, ořez, dokup)` v kWh (metodika kap. 3.1, bod 4).
 
     Greedy dispatch, deterministický: v každém intervalu se nejdřív spotřebuje
     výroba přímo, přebytek se **nabíjí** do baterie (do volné kapacity a výkonu),
@@ -226,52 +227,122 @@ def sparuj_s_baterii(
 
     Ztráty v baterii se nikde nezpeněží – `samospotřeba` obsahuje jen energii, která
     reálně dorazila k zákazníkovi, takže `SS/V` účinnost baterie zohledňuje.
+    Bez baterie (nebo s nulovou) se chová jako přímé párování.
+
+    Sdílí ho roční bilance (`sparuj_s_baterii`) i měsíční data pro graf
+    (`graf_mesicni`), aby dispatch existoval na jednom místě.
+    """
+    strop_e = None
+    if rezervovany_vykon_dodavky_kw and rezervovany_vykon_dodavky_kw > 0:
+        strop_e = rezervovany_vykon_dodavky_kw * interval_h
+
+    ma_baterii = (
+        baterie is not None and baterie.vyuzitelna_kapacita_kwh > 0 and baterie.vykon_kw > 0
+    )
+    if ma_baterii:
+        kapacita = baterie.vyuzitelna_kapacita_kwh
+        # Round-trip účinnost se rozdělí symetricky na nabíjení a vybíjení.
+        eta = math.sqrt(max(0.0, min(1.0, baterie.ucinnost_round_trip)))
+        limit_e = baterie.vykon_kw * interval_h
+    soc = 0.0
+
+    for v, s in zip(vyroba_kwh, spotreba_kwh):
+        samo = v if v < s else s
+        prebytek = v - samo
+        deficit = s - samo
+
+        if ma_baterii:
+            if prebytek > 0 and soc < kapacita:
+                # Kolik lze do baterie dostat: výkon, volná kapacita (po ztrátě) i přebytek.
+                nabij = min(prebytek, limit_e, (kapacita - soc) / eta if eta > 0 else 0.0)
+                if nabij > 0:
+                    soc += nabij * eta
+                    prebytek -= nabij
+            elif deficit > 0 and soc > 0:
+                # Vybíjení krytí deficitu – `vybij` je energie dodaná zákazníkovi.
+                vybij = min(deficit, limit_e, soc * eta)
+                if vybij > 0:
+                    soc -= vybij / eta if eta > 0 else 0.0
+                    deficit -= vybij
+                    samo += vybij
+
+        exp = orez = 0.0
+        if prebytek > 0:
+            if strop_e is not None and prebytek > strop_e:
+                exp = strop_e
+                orez = prebytek - strop_e
+            else:
+                exp = prebytek
+        yield v, s, samo, exp, orez, deficit
+
+
+def sparuj_s_baterii(
+    vyroba_kwh: list[float],
+    spotreba_kwh: list[float],
+    baterie: Baterie | None,
+    rezervovany_vykon_dodavky_kw: float | None,
+    interval_h: float,
+) -> Bilance:
+    """Roční energetická bilance (volitelně s baterií) – součet `toky_energie`.
+
     Bez baterie se chová shodně s `ppa_fve.sparuj`.
     """
     if baterie is None or baterie.vyuzitelna_kapacita_kwh <= 0 or baterie.vykon_kw <= 0:
         return sparuj(vyroba_kwh, spotreba_kwh, rezervovany_vykon_dodavky_kw, interval_h)
 
-    strop_e = None
-    if rezervovany_vykon_dodavky_kw and rezervovany_vykon_dodavky_kw > 0:
-        strop_e = rezervovany_vykon_dodavky_kw * interval_h
-
-    kapacita = baterie.vyuzitelna_kapacita_kwh
-    # Round-trip účinnost se rozdělí symetricky na nabíjení a vybíjení.
-    eta = math.sqrt(max(0.0, min(1.0, baterie.ucinnost_round_trip)))
-    limit_e = baterie.vykon_kw * interval_h
-
-    soc = 0.0
     sp = vy = ss = exp = orez = dokup = 0.0
-    for v, s in zip(vyroba_kwh, spotreba_kwh):
+    for v, s, samo, e, o, d in toky_energie(
+        vyroba_kwh, spotreba_kwh, baterie, rezervovany_vykon_dodavky_kw, interval_h
+    ):
         vy += v
         sp += s
-        samo = v if v < s else s
         ss += samo
-        prebytek = v - samo
-        deficit = s - samo
-
-        if prebytek > 0 and soc < kapacita:
-            # Kolik lze do baterie dostat: výkon, volná kapacita (po ztrátě) i přebytek.
-            nabij = min(prebytek, limit_e, (kapacita - soc) / eta if eta > 0 else 0.0)
-            if nabij > 0:
-                soc += nabij * eta
-                prebytek -= nabij
-        elif deficit > 0 and soc > 0:
-            # Vybíjení krytí deficitu – `vybij` je energie dodaná zákazníkovi.
-            vybij = min(deficit, limit_e, soc * eta)
-            if vybij > 0:
-                soc -= vybij / eta if eta > 0 else 0.0
-                deficit -= vybij
-                ss += vybij
-
-        if prebytek > 0:
-            if strop_e is not None and prebytek > strop_e:
-                exp += strop_e
-                orez += prebytek - strop_e
-            else:
-                exp += prebytek
-        dokup += deficit
+        exp += e
+        orez += o
+        dokup += d
     return Bilance(sp, vy, ss, exp, orez, dokup)
+
+
+def graf_mesicni(
+    casy: list[datetime],
+    vyroba_kwh: list[float],
+    spotreba_kwh: list[float],
+    baterie: Baterie | None,
+    rezervovany_vykon_dodavky_kw: float | None,
+    interval_h: float,
+) -> dict:
+    """Měsíční agregáty pro graf výroba vs. spotřeba (metodika kap. 6.1).
+
+    Tvar odpovídá tomu, co čeká komponenta `GrafVyrobaSpotreba.jsx`: pro každý
+    měsíc spotřeba rozdělená na samospotřebu a dokup, a výroba rozdělená na
+    samospotřebu, přetok do sítě a ořez.
+    """
+    mesice = list(range(1, 13))
+    nula = {m: 0.0 for m in mesice}
+    sp, vy, ss, ex, orz, dk = (dict(nula) for _ in range(6))
+    for c, (v, s, samo, e, o, d) in zip(
+        casy,
+        toky_energie(
+            vyroba_kwh, spotreba_kwh, baterie, rezervovany_vykon_dodavky_kw, interval_h
+        ),
+    ):
+        m = c.month
+        vy[m] += v
+        sp[m] += s
+        ss[m] += samo
+        ex[m] += e
+        orz[m] += o
+        dk[m] += d
+    r2 = lambda d: [round(d[m], 2) for m in mesice]  # noqa: E731
+    return {
+        "mesice": mesice,
+        "spotreba_kwh": r2(sp),
+        "vyroba_kwh": r2(vy),
+        "samospotreba_kwh": r2(ss),
+        "export_kwh": r2(ex),
+        "orez_kwh": r2(orz),
+        "dokup_kwh": r2(dk),
+    }
 
 
 def navrhni_baterii(
@@ -959,6 +1030,14 @@ def spocti_variantu(
         ],
         "roky_klient": roky_klient,
         "uspora_kumulativni_kc": round(uspora_kum, 2),
+        "graf": graf_mesicni(
+            vstup.casy,
+            vyroba,
+            vstup.spotreba_kwh,
+            baterie,
+            vstup.rezervovany_vykon_dodavky_kw,
+            interval_h,
+        ),
         "odkupni_tabulka": [
             {
                 "rok": o.rok,

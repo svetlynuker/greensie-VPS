@@ -230,40 +230,49 @@ RezimCapex = Literal["cena_kwp", "komponenty"]
 
 
 class PpaVstup(BaseModel):
-    """Vstupy PPA výpočtu, které OZ zadá ve výpočtovém pohledu (METODIKA kap. 2).
+    """Vstupy PPA výpočtu (METODIKA-ppa-v2.md kap. 2).
+
+    Proti v1 se zadání **obrátilo**: OZ nezadává cenu PPA ani délku kontraktu –
+    appka je dopočítá z ekonomiky (nejnižší cena, která projde bankou i
+    investorem) pro každou nabízenou délku. OZ zadává, co zákazník platí dnes,
+    cíl samospotřeby a případná omezení.
 
     Volitelná pole (None) se v routes.py doplní z manažerského nastavení
     (`vypoctova_nastaveni`) nebo z kódových defaultů. Profil spotřeby se čte
-    z `spotreba_profil` dané nabídky (činný výkon kW → energie kWh × interval).
+    z `spotreba_profil` dané nabídky.
     """
+
+    # Napěťová hladina. NN je připravená volba, ale výpočet ji zatím odmítne.
+    hladina: Literal["VN", "NN"] = "VN"
+
+    # Silová složka ceny, kterou zákazník platí dnes – to, co PPA nahrazuje.
+    cena_silova_kc_mwh: float
+    # Vyhnutelné regulované složky (za použití sítí ap.); default z nastavení (~260).
+    vyhnutelne_regulovane_kc_mwh: Optional[float] = None
+
+    # Cíl míry samospotřeby – podíl **z výroby** (jako v Excelu), default 0,80.
+    cil_mira_samospotreby: Optional[float] = None
+
+    # Cena za přetok do sítě. Default z nastavení, kde je 0 = za přetoky se
+    # neinkasuje nic (dokud není sjednaný výkup/sdílení).
+    cena_exportu_kc_mwh: Optional[float] = None
+
+    # Strop velikosti FVE (střecha / rezervovaný výkon připojení).
+    max_kwp: Optional[float] = None
 
     sklon_st: float = 35.0
     azimut_st: float = 0.0  # 0 = jih, ±90 = V/Z, 180 = sever
-    cena_ppa_kc_mwh: float
-    # Silová složka ceny dodavatele (audit PPA-5) – vyhnutelné regulované
-    # složky se přičítají zvlášť (default z manažerského nastavení).
-    cena_silova_kc_mwh: float
-    delka_kontraktu_roky: int
-
-    # Velikost FVE navrhuje appka sama (kap. 4.7). `instalovany_vykon_kwp` je
-    # volitelný ruční override; `max_kwp` = limit střechy/připojení pro auto-návrh.
-    instalovany_vykon_kwp: Optional[float] = None
-    max_kwp: Optional[float] = None
-
-    # Volitelné – default z nastavení / kódu.
-    index_ppa_rocni: Optional[float] = None
-    index_dodavatel_rocni: Optional[float] = None
-    degradace_rocni: Optional[float] = None
-    # LID – degradace 1. roku (audit PPA-4); default z nastavení (−2 % PERC).
-    degradace_rok1: Optional[float] = None
-    # Vyhnutelné regulované složky Kč/MWh (audit PPA-5); default z nastavení (~260).
-    vyhnutelne_regulovane_kc_mwh: Optional[float] = None
-
-    # Náklady na FVE (kap. 3.4) – přepínač + volitelný přetok.
-    rezim_capex: RezimCapex = "cena_kwp"
-    prebytek_uctovat: bool = False
-    prebytek_cena_kc_mwh: Optional[float] = None
     rezervovany_vykon_dodavky_kw: Optional[float] = None
+
+    # Baterie je vždy volitelná varianta. Když se kapacita nezadá, navrhne se
+    # heuristicky z denního přebytku.
+    s_baterii: bool = False
+    baterie_kapacita_kwh: Optional[float] = None
+    baterie_vykon_kw: Optional[float] = None
+    baterie_nakladova_cena_kc: Optional[float] = None
+
+    # Délky kontraktu, které se zákazníkovi nabídnou (default 10/15/20).
+    nabizene_delky_roky: Optional[list[int]] = None
 
 
 # ---- Nabídková šablona / výstup (viz sablona_katalog.py) ----

@@ -466,7 +466,8 @@ pokryje menší část spotřeby, než by šlo.
    IRR i NPV vlastního kapitálu, skoková indexace, odkupní tabulka, greedy dispatch baterie,
    návrh velikosti FVE binárním hledáním, analytické řešení ceny PPA z DSCR i z IRR, sweep
    délek kontraktu a výběr ideální délky.
-2. **`backend/tests/test_ppa_v2.py`** – 79 testů, z toho reprodukce Excelu jako regresní
+2. **`backend/tests/test_ppa_v2.py`** – 84 testů (+ `test_ppa_nastaveni.py`: kontrakt
+   nastavení v adminu ↔ backend a kontrakt výsledku ↔ panel), z toho reprodukce Excelu jako regresní
    pojistka: `cashflow FVE (15)` (anuita 40 547,52 Kč; DSCR 1,32058; IRR 12,4252 %),
    `odkupní tabulka (15)` a `pronájem BESS (10)`. Zbytek testuje vlastnosti, na kterých
    algoritmus stojí (monotonie míry samospotřeby v kWp, monotonie ceny v délce kontraktu,
@@ -476,17 +477,30 @@ Ověřeno i na realistickém ročním 15min profilu (35 040 intervalů, 1 073 MW
 3 500 Kč/MWh): výpočet proběhne za **0,5 s** a vrátí FVE 526 kWp plus tabulku tří délek
 kontraktu (viz kap. 3.3).
 
+3. **Napojeno na nabídkovač** – `PpaVstup` ve `schemas.py` a endpoint
+   `POST /nabidkovac/nabidky/{id}/ppa/vypocet` v `routes.py` počítají v2. Výsledek jde do
+   `navrhovana_reseni` (`typ_reseni = ppa`) s `popis_json.verze = 2`. Ekonomické parametry
+   se berou z `vypoctova_nastaveni.parametry` (kap. 4).
+4. **UI** – `frontend/src/components/PpaPanel.jsx` přepsaný na nové zadání: vstupy (profil,
+   cena dnes, cíl samospotřeby, strop kWp, cena za přetok, baterie), výstup 4 headline čísla,
+   tabulka délek kontraktu se sloupcem „drží cenu", rozpis po letech, úspora zákazníka,
+   odkupní tabulka a měsíční graf. Nastavení PPA v `NabidkovacKatalog.jsx` má klíče v2.
+5. **Měsíční data pro graf** – `graf_mesicni()` vrací tvar, který čeká
+   `GrafVyrobaSpotreba.jsx`. Dispatch baterie je vytažený do generátoru `toky_energie()`,
+   takže roční bilance i graf počítají z jednoho zdroje.
+6. **Starší uložené výpočty** – v1 výsledky mají jiná pole; panel je podle
+   `popis_json.verze` pozná a nabídne přepočet místo rozbité tabulky.
+
 ### ⏳ Zbývá
 
-3. **Napojení** – `routes.py` endpoint + `schemas.py` vstup, výsledek do `navrhovana_reseni`
-   (`typ_reseni = ppa`), stejným způsobem jako v1. Parametry z `vypoctova_nastaveni` (kap. 4).
-4. **UI** – panel se vstupy (diagram, cena dnes, hladina, cíl samospotřeby, baterie ano/ne),
-   výstup: 3 headline čísla (kWp / Kč/kWh / roky), tabulka po letech, tabulka délek kontraktu,
-   odkupní tabulka, graf výroba vs. spotřeba (recyklace `GrafVyrobaSpotreba.jsx`).
-5. **Migrace v1 → v2** – v1 `spocti_ppa` nechat běžet, dokud v2 neprojde ověřením na reálné
-   nabídce; pak v1 ekonomiku odstranit a fyzikální část ponechat jako sdílenou.
-6. **Sloučení s peak shavingem** – aby baterie v nabídce vydělávala i na rezervované kapacitě
+7. **Odstranit v1 ekonomiku** – `ppa_fve.spocti_ppa`, `vyber_velikost`,
+   `kandidatni_velikosti` a `capex_komponenty` už nikdo nevolá. Fyzikální část
+   (`simuluj_vyrobu`, `sparuj`, `korekce_orientace`) i finanční vzorce (`_irr`, `_npv`,
+   které si bere peak shaving) zůstávají. Smazat až po ověření v2 na reálné nabídce.
+8. **Sloučení s peak shavingem** – aby baterie v nabídce vydělávala i na rezervované kapacitě
    a bateriových službách (viz zjištění v kap. 3.4).
+9. **Znalostní báze** – `docs/znalostni-baze/moduly/nabidkovac.md` popisuje PPA ještě podle
+   v1 (OZ zadává cenu a délku). Potřebuje přepsat.
 
 Otevřené body z kap. 5 jsou v kódu **parametry s defaultem podle Excelu**, ne zadrátované
 předpoklady – odpověď na ně tedy znamená jen změnu čísla v nastavení, ne přepis výpočtu.
