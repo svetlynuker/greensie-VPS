@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field, replace
+from typing import NamedTuple
 from datetime import datetime
 
 from .ppa_fve import (
@@ -210,6 +211,22 @@ class Baterie:
         return max(0.0, self.kapacita_kwh * self.dod)
 
 
+class Tok(NamedTuple):
+    """Toky energie v jednom intervalu (kWh), `soc_kwh` = stav baterie na konci.
+
+    Pojmenovaná položka místo prostého n-tice, aby šlo přidat další veličinu bez
+    přepisování všech volajících.
+    """
+
+    vyroba: float
+    spotreba: float
+    samospotreba: float
+    export: float
+    orez: float
+    dokup: float
+    soc_kwh: float
+
+
 def toky_energie(
     vyroba_kwh: list[float],
     spotreba_kwh: list[float],
@@ -217,8 +234,8 @@ def toky_energie(
     rezervovany_vykon_dodavky_kw: float | None,
     interval_h: float,
 ):
-    """Generátor toků energie po intervalech: `(výroba, spotřeba, samospotřeba,
-    export, ořez, dokup)` v kWh (metodika kap. 3.1, bod 4).
+    """Generátor toků energie po intervalech – `Tok` za každý interval
+    (metodika kap. 3.1, bod 4).
 
     Greedy dispatch, deterministický: v každém intervalu se nejdřív spotřebuje
     výroba přímo, přebytek se **nabíjí** do baterie (do volné kapacity a výkonu),
@@ -273,7 +290,7 @@ def toky_energie(
                 orez = prebytek - strop_e
             else:
                 exp = prebytek
-        yield v, s, samo, exp, orez, deficit
+        yield Tok(v, s, samo, exp, orez, deficit, soc)
 
 
 def sparuj_s_baterii(
@@ -291,15 +308,15 @@ def sparuj_s_baterii(
         return sparuj(vyroba_kwh, spotreba_kwh, rezervovany_vykon_dodavky_kw, interval_h)
 
     sp = vy = ss = exp = orez = dokup = 0.0
-    for v, s, samo, e, o, d in toky_energie(
+    for t in toky_energie(
         vyroba_kwh, spotreba_kwh, baterie, rezervovany_vykon_dodavky_kw, interval_h
     ):
-        vy += v
-        sp += s
-        ss += samo
-        exp += e
-        orez += o
-        dokup += d
+        vy += t.vyroba
+        sp += t.spotreba
+        ss += t.samospotreba
+        exp += t.export
+        orez += t.orez
+        dokup += t.dokup
     return Bilance(sp, vy, ss, exp, orez, dokup)
 
 
@@ -320,19 +337,19 @@ def graf_mesicni(
     mesice = list(range(1, 13))
     nula = {m: 0.0 for m in mesice}
     sp, vy, ss, ex, orz, dk = (dict(nula) for _ in range(6))
-    for c, (v, s, samo, e, o, d) in zip(
+    for c, t in zip(
         casy,
         toky_energie(
             vyroba_kwh, spotreba_kwh, baterie, rezervovany_vykon_dodavky_kw, interval_h
         ),
     ):
         m = c.month
-        vy[m] += v
-        sp[m] += s
-        ss[m] += samo
-        ex[m] += e
-        orz[m] += o
-        dk[m] += d
+        vy[m] += t.vyroba
+        sp[m] += t.spotreba
+        ss[m] += t.samospotreba
+        ex[m] += t.export
+        orz[m] += t.orez
+        dk[m] += t.dokup
     r2 = lambda d: [round(d[m], 2) for m in mesice]  # noqa: E731
     return {
         "mesice": mesice,
@@ -342,6 +359,59 @@ def graf_mesicni(
         "export_kwh": r2(ex),
         "orez_kwh": r2(orz),
         "dokup_kwh": r2(dk),
+    }
+
+
+def prubeh_15min(
+    vyroba_kwh: list[float],
+    spotreba_kwh: list[float],
+    baterie: Baterie | None,
+    rezervovany_vykon_dodavky_kw: float | None,
+    interval_h: float,
+) -> dict:
+    """15min řady pro nitkový graf průběhu – ve **kW** (jako u peak shavingu).
+
+    Vrací spotřebu, výrobu a jejich rozpad: co se spotřebuje na místě, co teče
+    do sítě, co se ořízne a co se dokupuje. U varianty s baterií i stav nabití
+    v procentech využitelné kapacity.
+
+    Počítá se ze stejného generátoru `toky_energie` jako roční bilance i měsíční
+    graf, takže se čísla v grafu a v tabulkách nemohou rozejít.
+    """
+    delitel = interval_h if interval_h > 0 else VYCHOZI_INTERVAL_H
+    kap = baterie.vyuzitelna_kapacita_kwh if baterie else 0.0
+
+    sp: list[float] = []
+    vy: list[float] = []
+    ss: list[float] = []
+    ex: list[float] = []
+    orz: list[float] = []
+    dk: list[float] = []
+    soc: list[float] = []
+    for t in toky_energie(
+        vyroba_kwh, spotreba_kwh, baterie, rezervovany_vykon_dodavky_kw, interval_h
+    ):
+        sp.append(round(t.spotreba / delitel, 2))
+        vy.append(round(t.vyroba / delitel, 2))
+        ss.append(round(t.samospotreba / delitel, 2))
+        ex.append(round(t.export / delitel, 2))
+        orz.append(round(t.orez / delitel, 2))
+        dk.append(round(t.dokup / delitel, 2))
+        if kap > 0:
+            soc.append(round(100.0 * t.soc_kwh / kap, 1))
+    return {
+        "spotreba_kw": sp,
+        "vyroba_kw": vy,
+        "samospotreba_kw": ss,
+        "pretok_kw": ex,
+        "orez_kw": orz,
+        "dokup_kw": dk,
+        "soc_pct": soc or None,
+        "souhrn": {
+            "max_spotreba_kw": max(sp) if sp else None,
+            "max_vyroba_kw": max(vy) if vy else None,
+            "max_pretok_kw": max(ex) if ex else None,
+        },
     }
 
 

@@ -1857,6 +1857,96 @@ def ppa_profil_souhrn(
     }
 
 
+@router.get("/nabidky/{nabidka_id}/ppa/prubeh")
+def ppa_prubeh(
+    nabidka_id: int,
+    varianta: str = Query("bez_baterie", pattern="^(bez_baterie|s_baterii)$"),
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """15min průběh výroby a spotřeby pro nitkový graf (obdoba peak shavingu).
+
+    Do uloženého řešení se průběh neukládá – je to ~35 tisíc hodnot na variantu,
+    což by JSONB nabídky nafouklo. Počítá se na vyžádání ze **stejné fyziky jako
+    ekonomika** (`ppa_v2.toky_energie`), aby se graf a tabulky nemohly rozejít.
+    """
+    reseni = (
+        db.query(NavrhovaneReseni)
+        .filter(
+            NavrhovaneReseni.nabidka_id == nabidka_id,
+            NavrhovaneReseni.typ_reseni == "ppa",
+        )
+        .order_by(NavrhovaneReseni.id.desc())
+        .first()
+    )
+    if reseni is None:
+        raise HTTPException(status_code=404, detail="Nabídka nemá spočítané PPA.")
+    popis = dict(reseni.popis_json or {})
+    if popis.get("verze") != 2:
+        raise HTTPException(
+            status_code=422,
+            detail="Uložený výpočet je ze starší verze – spusť „Spočítat PPA“ znovu.",
+        )
+    blok = popis.get(varianta)
+    if not blok:
+        raise HTTPException(status_code=422, detail="Tuhle variantu výsledek neobsahuje.")
+
+    casy, spotreba_kwh, interval_h = _profil_spotreby_kwh(db, nabidka_id)
+    if not casy:
+        raise HTTPException(status_code=422, detail="Nabídka nemá nahraný profil spotřeby.")
+    casy, spotreba_kwh, _ = _zvaliduj_a_orizni_profil(casy, spotreba_kwh, interval_h)
+
+    vst = popis.get("vstup") or {}
+    kwp = float(blok.get("kwp") or 0.0)
+    if kwp <= 0:
+        raise HTTPException(status_code=422, detail="Výsledek neobsahuje velikost FVE.")
+
+    vyroba = ppa_v2.simuluj_vyrobu(
+        casy,
+        kwp,
+        float(vst.get("lat_deg") or ppa_v2.VYCHOZI_LAT),
+        float(vst.get("sklon_st") or 35.0),
+        float(vst.get("azimut_st") or 0.0),
+        float(vst.get("merny_vynos_kwh_kwp") or ppa_v2.VYCHOZI_MERNY_VYNOS_KWH_KWP),
+    )
+
+    # Baterie: parametry z uložené varianty (kapacita/výkon), ať průběh odpovídá
+    # tomu, na čem stojí uložená ekonomika.
+    baterie = None
+    prvni = (blok.get("po_delkach") or [{}])[0]
+    bat = prvni.get("baterie")
+    if varianta == "s_baterii" and bat and bat.get("kapacita_kwh"):
+        baterie = ppa_v2.Baterie(
+            kapacita_kwh=float(bat["kapacita_kwh"]),
+            vykon_kw=float(bat.get("vykon_kw") or 0.0),
+        )
+
+    rez = vst.get("rezervovany_vykon_dodavky_kw")
+    p = ppa_v2.prubeh_15min(
+        vyroba, spotreba_kwh, baterie, float(rez) if rez else None, interval_h
+    )
+
+    zaklad = min(casy)
+    return {
+        "varianta": varianta,
+        "kwp": kwp,
+        "od": _iso(zaklad),
+        "do": _iso(max(casy)),
+        "interval_min": round(interval_h * 60),
+        "pocet": len(casy),
+        "casy_min": [int(round((c - zaklad).total_seconds() / 60)) for c in casy],
+        **p,
+        "baterie": (
+            {"kapacita_kwh": baterie.kapacita_kwh, "vykon_kw": baterie.vykon_kw}
+            if baterie
+            else None
+        ),
+        "referencni": {
+            "rezervovany_vykon_dodavky_kw": float(rez) if rez else None,
+        },
+    }
+
+
 @router.post("/nabidky/{nabidka_id}/ppa/vypocet")
 def spocti_ppa(
     nabidka_id: int,
