@@ -69,26 +69,42 @@ const POLE_PARAMETRU = {
 };
 
 // PPA pro FVE – manažerské parametry ukládané do vypoctova_nastaveni.parametry
-// (klíče musí sedět s backendem app/nabidkovac/routes.py `_ppa_param`).
+// (klíče musí sedět s backendem app/nabidkovac/routes.py `_ppa_param`; hlídá to
+// test tests/test_ppa_nastaveni.py, aby tady nezůstal klíč, který nikdo nečte).
+// Defaulty jsou z `docs/PPA výpočet.xlsx`, viz docs/METODIKA-ppa-v2.md kap. 4.
 const PPA_POLE = [
-  { klic: "ppa_cena_fve_kc_kwp", label: "Cena za kWp (Kč/kWp)" },
-  { klic: "ppa_ostatni_naklady_kc_kwp", label: "Ostatní náklady / BOS (Kč/kWp)" },
-  { klic: "ppa_merny_vynos_kwh_kwp", label: "Měrný výnos FVE (kWh/kWp/rok)" },
-  { klic: "ppa_index_ceny_rocni", label: "Index PPA ceny (%/rok, např. 0.03)" },
-  { klic: "ppa_index_dodavatel_rocni", label: "Index silové ceny dodavatele (%/rok)" },
-  // Rozklad ceny dodavatele (PPA-5): OZ zadává silovou složku, vyhnutelné
-  // regulované platby (použití sítí + systémové služby + POZE) jdou odsud.
-  { klic: "ppa_vyhnutelne_regulovane_kc_mwh", label: "Vyhnutelné regulované složky (Kč/MWh, default 260)" },
-  { klic: "ppa_index_regulovane_rocni", label: "Index regulovaných složek (%/rok, default 0)" },
-  { klic: "ppa_poze_kc_mwh", label: "POZE (Kč/MWh, 2026 = 0)" },
-  { klic: "ppa_index_prebytek_rocni", label: "Index ceny přebytku (%/rok)" },
+  // --- technologie a marže (prodejní cena do SPV = to, co se financuje)
+  { klic: "ppa_nakladova_cena_kc_kwp", label: "Nákladová cena FVE (Kč/kWp, default 13500)" },
+  { klic: "ppa_marze_fve", label: "Marže do SPV – FVE (násobek, default 1.35)" },
+  { klic: "ppa_marze_bess", label: "Marže do SPV – baterie (násobek, default 1.47)" },
+  { klic: "ppa_provize_fve", label: "Provize obchodníka – FVE (0.05 = 5 %)" },
+  { klic: "ppa_provize_bess", label: "Provize obchodníka – baterie (0.04 = 4 %)" },
+  // --- financování projektu
+  { klic: "ppa_podil_vlastniho_kapitalu", label: "Vlastní kapitál (0.2 = 20 %, zbytek úvěr)" },
+  { klic: "ppa_urokova_sazba", label: "Úroková sazba úvěru (0.075 = 7,5 %/rok)" },
+  // --- podmínky, které určují cenu PPA
+  { klic: "ppa_dscr_min", label: "DSCR minimum – požadavek banky (default 1.30)" },
+  { klic: "ppa_irr_cil", label: "Cílové IRR vlastního kapitálu (0.125 = 12,5 %)" },
+  { klic: "ppa_min_sleva", label: "Minimální sleva zákazníkovi (0.1 = 10 %, jen hláška)" },
+  // --- provoz a výroba
+  { klic: "ppa_servis_kc_rok", label: "Servis FVE (Kč/rok, default 25000)" },
+  { klic: "ppa_merny_vynos_kwh_kwp", label: "Měrný výnos FVE (kWh/kWp/rok, default 1055)" },
   { klic: "ppa_degradace_rocni", label: "Degradace panelů (%/rok, např. 0.005)" },
-  { klic: "ppa_degradace_rok1", label: "Degradace 1. roku – LID (0.02 = PERC, 0.01 = TOPCon)" },
-  { klic: "ppa_oam_kc_kwp_rok", label: "O&M (Kč/kWp/rok, default 350)" },
-  { klic: "ppa_diskontni_sazba", label: "Diskontní sazba NPV/IRR (default 0.075)" },
-  // Volitelná jednorázová výměna střídače (PPA-6): rok 0 = vypnuto.
-  { klic: "ppa_vymena_stridace_rok", label: "Výměna střídače – rok kontraktu (0 = vypnuto)" },
-  { klic: "ppa_vymena_stridace_kc_kwp", label: "Výměna střídače – cena (Kč/kWp)" },
+  { klic: "ppa_cil_mira_samospotreby", label: "Cíl samospotřeby z výroby (0.8 = 80 %)" },
+  // --- ceny a indexace
+  { klic: "ppa_indexace_krok", label: "Indexace ceny – krok (0.03 = +3 %)" },
+  { klic: "ppa_indexace_perioda_roky", label: "Indexace ceny – perioda (roky, default 3)" },
+  { klic: "ppa_vyhnutelne_regulovane_kc_mwh", label: "Vyhnutelné regulované složky (Kč/MWh, default 260)" },
+  // Za přetoky se defaultně neinkasuje nic – cenu za export zadává OZ u nabídky.
+  { klic: "ppa_cena_exportu_kc_mwh", label: "Cena za přetok – výchozí (Kč/MWh, default 0)" },
+  { klic: "ppa_podil_zpenezitelneho_prebytku", label: "Podíl zpeněžitelného přebytku (1 = celý)" },
+  // --- baterie jako pronájem (paušál, ne cena za kWh)
+  { klic: "ppa_bess_marze_kc_mesic", label: "Baterie – marže (Kč/měsíc, default 4500)" },
+  { klic: "ppa_bess_ems_kc_mesic", label: "Baterie – EMS (Kč/měsíc, default 1300)" },
+  { klic: "ppa_bess_servis_kc_rok", label: "Baterie – servis (Kč/rok, default 12000)" },
+  // --- odkup technologie zákazníkem
+  { klic: "ppa_odkup_poplatek_rocni", label: "Odkup – poplatek (0.005 = 0,5 %/rok)" },
+  { klic: "ppa_odkup_poplatek_predcasne", label: "Odkup – předčasné splacení úvěru (0.05 = 5 %)" },
 ];
 
 // Peak shaving – manažerské parametry (vypoctova_nastaveni.parametry).

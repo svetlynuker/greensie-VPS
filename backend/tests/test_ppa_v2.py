@@ -316,6 +316,67 @@ class TestBaterie:
         assert b.vykon_kw == pytest.approx(b.kapacita_kwh * ppa.VYCHOZI_C_RATE, rel=0.02)
 
 
+# ============================================================ měsíční graf
+class TestGrafMesicni:
+    """Data pro `GrafVyrobaSpotreba.jsx` (metodika kap. 6.1)."""
+
+    @pytest.fixture
+    def graf(self):
+        casy, spotreba = _profil_vecerni_spotreba(40)
+        vyroba = ppa.simuluj_vyrobu(casy, 50.0, 49.8, 35.0, 0.0)
+        return ppa.graf_mesicni(casy, vyroba, spotreba, None, None, 0.25), casy, vyroba, spotreba
+
+    def test_ma_vsechny_serie_a_12_mesicu(self, graf):
+        g = graf[0]
+        assert g["mesice"] == list(range(1, 13))
+        for klic in ("spotreba_kwh", "vyroba_kwh", "samospotreba_kwh", "export_kwh", "orez_kwh", "dokup_kwh"):
+            assert len(g[klic]) == 12, klic
+
+    def test_soucty_odpovidaji_rocni_bilanci(self, graf):
+        """Graf a roční bilance musí říkat totéž – jinak by nabídka lhala v grafu."""
+        g, casy, vyroba, spotreba = graf
+        b = ppa.sparuj_s_baterii(vyroba, spotreba, None, None, 0.25)
+        assert sum(g["vyroba_kwh"]) == pytest.approx(b.vyroba_kwh, rel=1e-6)
+        assert sum(g["spotreba_kwh"]) == pytest.approx(b.spotreba_kwh, rel=1e-6)
+        assert sum(g["samospotreba_kwh"]) == pytest.approx(b.samospotreba_kwh, rel=1e-6)
+        assert sum(g["export_kwh"]) == pytest.approx(b.export_kwh, rel=1e-6)
+        assert sum(g["dokup_kwh"]) == pytest.approx(b.dokup_kwh, rel=1e-6)
+
+    def test_skladba_sloupcu_vychazi(self, graf):
+        """Spotřeba = samospotřeba + dokup; výroba = samospotřeba + přetok + ořez."""
+        g = graf[0]
+        for i in range(12):
+            assert g["spotreba_kwh"][i] == pytest.approx(
+                g["samospotreba_kwh"][i] + g["dokup_kwh"][i], abs=0.05
+            )
+            assert g["vyroba_kwh"][i] == pytest.approx(
+                g["samospotreba_kwh"][i] + g["export_kwh"][i] + g["orez_kwh"][i], abs=0.05
+            )
+
+    def test_s_baterii_je_samospotreba_vyssi(self):
+        casy, spotreba = _profil_vecerni_spotreba(40)
+        vyroba = ppa.simuluj_vyrobu(casy, 50.0, 49.8, 35.0, 0.0)
+        bez = ppa.graf_mesicni(casy, vyroba, spotreba, None, None, 0.25)
+        s = ppa.graf_mesicni(
+            casy, vyroba, spotreba, ppa.Baterie(100.0, 50.0), None, 0.25
+        )
+        assert sum(s["samospotreba_kwh"]) > sum(bez["samospotreba_kwh"])
+
+    def test_toky_energie_sedi_s_bilanci_i_s_baterii(self):
+        """Generátor toků je jediný zdroj dispatchu – musí dát stejný součet."""
+        casy, spotreba = _profil_vecerni_spotreba(15)
+        vyroba = ppa.simuluj_vyrobu(casy, 60.0, 49.8, 35.0, 0.0)
+        bat = ppa.Baterie(120.0, 60.0)
+        b = ppa.sparuj_s_baterii(vyroba, spotreba, bat, 40.0, 0.25)
+        ss = ex = orz = dk = 0.0
+        for _v, _s, samo, e, o, d in ppa.toky_energie(vyroba, spotreba, bat, 40.0, 0.25):
+            ss += samo; ex += e; orz += o; dk += d
+        assert ss == pytest.approx(b.samospotreba_kwh, rel=1e-9)
+        assert ex == pytest.approx(b.export_kwh, rel=1e-9)
+        assert orz == pytest.approx(b.orez_kwh, rel=1e-9)
+        assert dk == pytest.approx(b.dokup_kwh, rel=1e-9)
+
+
 # ============================================================ velikost FVE
 class TestNavrhKwp:
     def test_mira_samospotreby_klesa_s_velikosti(self):
