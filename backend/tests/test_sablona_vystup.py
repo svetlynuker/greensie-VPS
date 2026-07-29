@@ -70,6 +70,47 @@ PS = {
     },
 }
 
+# Peak shaving se spočítaným rokem 2027 (nová tarifní struktura) a s obchodem
+# na spotu – přesně ta sada, kterou nabídkovač zobrazuje jako výchozí.
+PS_2027 = {
+    "typ_reseni": "peak_shaving",
+    "vstup": {"rezervovana_kapacita_kw": 250.0, "rezim": "kombinace"},
+    "doporucena": {
+        **PS["doporucena"],
+        "rezim": "kombinace",
+        "navratnost_2027": 6.4,
+        "zisk_spot_kc": 180000.0,
+        "ekonomika_2027": {
+            "status": "spocitano",
+            "soucasny_rocni_naklad": 1100000.0,
+            "novy_rocni_naklad": 640000.0,
+            "rocni_uspora": 460000.0,
+            "rp_soucasny_kw": 300.0,
+            "rp_novy_kw": 210.0,
+            # interní rozpad – do nabídky nesmí:
+            "prinos_baterie": 380000.0,
+            "naklad_ztrat_baterie": 25000.0,
+        },
+        "ekonomika_spot": {"zisk_kc": 180000.0, "naklad_opotrebeni_kc": 40000.0},
+        "graf": {
+            "mesice": [1, 2],
+            "bez_baterie_kw": [240, 250],
+            "s_baterii_2026_kw": [180, 180],
+            "s_baterii_2027_kw": [150, 160],
+            "rp_soucasna_kw": 250.0,
+            "rp_nova_kw": 190.0,
+            "rp_soucasna_2027_kw": 300.0,
+            "rp_nova_2027_kw": 210.0,
+        },
+    },
+}
+
+
+def txt(hodnoty: dict, klic: str) -> str:
+    """Text hodnoty s běžnými mezerami – formátování sází pevné mezery (NBSP),
+    v asertech je ale nečitelné."""
+    return hodnoty[klic]["hodnota_text"].replace(sk.NBSP, " ")
+
 
 class TestKatalogNeobsahujeInterni:
     """POJISTKA: katalog nabízí jen zákaznická pole, interní klíče v něm nejsou."""
@@ -118,6 +159,35 @@ class TestResolverHodnot:
         assert h["nova_rezervovana_kapacita_kw"]["hodnota_text"] == "190 kW"
         assert h["rocni_uspora_2026_kc"]["hodnota_text"] == "620 000 Kč"
 
+    def test_ps_vysledky_2027_jsou_v_nabidce(self):
+        # Nabídkovač zobrazuje jako výchozí model 2027 – nabídka ho musí umět taky.
+        h = sk.resolvni_hodnoty("peak_shaving", PS_2027)
+        assert txt(h, "soucasny_naklad_2027_kc") == "1 100 000 Kč"
+        assert txt(h, "novy_naklad_2027_kc") == "640 000 Kč"
+        assert txt(h, "rocni_uspora_2027_kc") == "460 000 Kč"
+        assert txt(h, "rezervovany_prikon_kw") == "300 kW"
+        assert txt(h, "novy_rezervovany_prikon_kw") == "210 kW"
+        assert txt(h, "navratnost_2027_roky") == "6,4 let"
+
+    def test_ps_bez_sazeb_2027_zustane_pomlcka(self):
+        # Bez oficiálních sazeb ERÚ pole 2027 zůstanou prázdná (v tisku se skryjí).
+        h = sk.resolvni_hodnoty("peak_shaving", PS)
+        assert h["rocni_uspora_2027_kc"]["hodnota"] is None
+        assert txt(h, "rocni_uspora_2027_kc") == "—"
+        # …a čísla roku 2026 se tím nerozbijí
+        assert txt(h, "rocni_uspora_2026_kc") == "620 000 Kč"
+
+    def test_ps_obchod_na_spotu(self):
+        h = sk.resolvni_hodnoty("peak_shaving", PS_2027)
+        assert txt(h, "zisk_spot_kc") == "180 000 Kč"
+        assert h["rezim"]["hodnota_text"] == "Srážení špiček + obchod s elektřinou"
+
+    def test_ps_cisty_peak_shaving_obchod_neukazuje(self):
+        # Bez obchodního režimu není co ukázat – ne nula, ale prázdno.
+        h = sk.resolvni_hodnoty("peak_shaving", PS)
+        assert h["zisk_spot_kc"]["hodnota"] is None
+        assert h["rezim"]["hodnota"] is None
+
     def test_chybejici_hodnota_je_pomlcka(self):
         h = sk.resolvni_hodnoty("ppa", {})  # prázdný popis
         assert h["kwp"]["hodnota"] is None
@@ -157,6 +227,30 @@ class TestGraf:
 
     def test_graf_chybi(self):
         assert sk.graf_pro_typ("ppa", {}) is None
+        assert sk.graf_pro_typ("peak_shaving", {}) is None
+
+    def test_ps_graf_bez_2027_kresli_model_2026(self):
+        g = sk.graf_pro_typ("peak_shaving", PS)
+        assert g["rok_modelu"] == 2026
+        assert g["s_baterii_kw"] == [180, 180]
+        assert g["popis_soucasna"] == "rezervovaná kapacita nyní"
+
+    def test_ps_graf_s_2027_kresli_totez_co_nabidkovac(self):
+        # Panel při spočítané ekonomice 2027 kreslí řadu 2027 a čáry
+        # rezervovaného příkonu – nabídka musí kreslit totéž.
+        g = sk.graf_pro_typ("peak_shaving", PS_2027)
+        assert g["rok_modelu"] == 2027
+        assert g["s_baterii_kw"] == [150, 160]
+        assert g["rp_soucasna_zobrazena_kw"] == 300.0
+        assert g["rp_nova_zobrazena_kw"] == 210.0
+        assert g["popis_soucasna"] == "rezervovaný příkon nyní"
+        assert g["popis_nova"] == "rezervovaný příkon po instalaci"
+
+    def test_ps_graf_nemeni_ulozeny_popis(self):
+        # Normalizace nesmí přepsat `popis_json` řešení.
+        puvodni = dict(PS_2027["doporucena"]["graf"])
+        sk.graf_pro_typ("peak_shaving", PS_2027)
+        assert PS_2027["doporucena"]["graf"] == puvodni
 
 
 class TestVychoziSablona:
@@ -178,8 +272,69 @@ class TestVychoziSablona:
                 elif b["druh"] == "tabulka":
                     assert set(b["pole"]) <= sloupce_klice, (typ, b["id"])
 
+    def test_ps_predloha_ma_bloky_2027_i_obchod(self):
+        ids = [b["id"] for b in sk.vychozi_sablona("peak_shaving")["bloky"]]
+        assert "uspora_2027" in ids and "obchod" in ids
+
     def test_kopie_je_nezavisla(self):
         a = sk.vychozi_sablona("ppa")
         a["bloky"].clear()
         b = sk.vychozi_sablona("ppa")
         assert b["bloky"]  # mutace kopie neovlivní další volání
+
+
+class TestDoplneneBloky:
+    """Nové bloky předlohy se musí objevit i ve starších uložených nabídkách,
+    aniž by se přepsaly texty, které si k nim OZ napsal."""
+
+    ULOZENA = {
+        "bloky": [
+            {"id": "hlavicka", "druh": "hlavicka", "viditelny": True, "nadpis": "Moje nabídka"},
+            {"id": "uvod", "druh": "text", "viditelny": True, "nadpis": "Úvod",
+             "text": "Vlastní text obchodníka."},
+            {"id": "uspora", "druh": "udaje", "viditelny": True, "nadpis": "Úspora",
+             "pole": ["rocni_uspora_2026_kc"]},
+            {"id": "zaver", "druh": "text", "viditelny": False, "nadpis": "Závěr", "text": "…"},
+        ]
+    }
+
+    def test_doplni_chybejici_bloky(self):
+        k = sk.doplnene_bloky("peak_shaving", self.ULOZENA)
+        ids = [b["id"] for b in k["bloky"]]
+        assert "uspora_2027" in ids and "obchod" in ids and "graf" in ids
+
+    def test_neprepise_vlastni_texty_ani_viditelnost(self):
+        k = sk.doplnene_bloky("peak_shaving", self.ULOZENA)
+        podle_id = {b["id"]: b for b in k["bloky"]}
+        assert podle_id["uvod"]["text"] == "Vlastní text obchodníka."
+        assert podle_id["hlavicka"]["nadpis"] == "Moje nabídka"
+        assert podle_id["zaver"]["viditelny"] is False
+        assert podle_id["uspora"]["pole"] == ["rocni_uspora_2026_kc"]
+
+    def test_vlozi_na_misto_z_predlohy(self):
+        # V předloze jde `uspora_2027` hned za `uspora` – tam má přijít i tady.
+        ids = [b["id"] for b in sk.doplnene_bloky("peak_shaving", self.ULOZENA)["bloky"]]
+        assert ids.index("uspora_2027") == ids.index("uspora") + 1
+        assert ids.index("obchod") == ids.index("uspora_2027") + 1
+        # a `zaver`, který si OZ vypnul, zůstává na svém místě (poslední)
+        assert ids[-1] == "zaver"
+
+    def test_nic_nechybi_nic_se_nemeni(self):
+        vychozi = sk.vychozi_sablona("peak_shaving")
+        assert sk.doplnene_bloky("peak_shaving", vychozi)["bloky"] == vychozi["bloky"]
+
+    def test_prazdna_konfigurace_da_predlohu(self):
+        assert sk.doplnene_bloky("peak_shaving", None)["bloky"] == \
+            sk.vychozi_sablona("peak_shaving")["bloky"]
+        assert sk.doplnene_bloky("peak_shaving", {"bloky": []})["bloky"]
+
+    def test_doplnene_pole_jsou_ve_whitelistu(self):
+        # Pojistka: doplněné bloky nesmí odkazovat na pole, které PUT odmítne.
+        for typ in sk.PODPOROVANE_TYPY:
+            k = sk.doplnene_bloky(typ, {"bloky": [{"id": "hlavicka", "druh": "hlavicka",
+                                                   "viditelny": True}]})
+            for b in k["bloky"]:
+                if b["druh"] == "udaje":
+                    assert set(b.get("pole") or []) <= sk.platne_klice(typ), (typ, b["id"])
+                elif b["druh"] == "tabulka":
+                    assert set(b.get("pole") or []) <= sk.platne_sloupce(typ), (typ, b["id"])
