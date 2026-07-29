@@ -70,12 +70,18 @@ function BlokGraf({ blok, typReseni, graf, tisk }) {
         {typReseni === "ppa" ? (
           <GrafVyrobaSpotreba graf={graf} />
         ) : (
+          /* Který model (2026/2027) se kreslí, rozhoduje server v
+             `sablona_katalog.graf_pro_typ` – stejně jako panel v nabídkovači,
+             ať v nabídce neskončí jiný graf, než OZ viděl na obrazovce.
+             Fallbacky drží funkční i starší uložené výsledky. */
           <GrafOdberu
             mesice={graf.mesice}
             bezBaterie={graf.bez_baterie_kw}
-            sBaterii={graf.s_baterii_2026_kw}
-            rpSoucasna={graf.rp_soucasna_kw}
-            rpNova={graf.rp_nova_kw}
+            sBaterii={graf.s_baterii_kw ?? graf.s_baterii_2026_kw}
+            rpSoucasna={graf.rp_soucasna_zobrazena_kw ?? graf.rp_soucasna_kw}
+            rpNova={graf.rp_nova_zobrazena_kw ?? graf.rp_nova_kw}
+            {...(graf.popis_soucasna ? { popisSoucasna: graf.popis_soucasna } : {})}
+            {...(graf.popis_nova ? { popisNova: graf.popis_nova } : {})}
           />
         )}
       </div>
@@ -116,10 +122,6 @@ function BlokTabulka({ blok, tabulka, tisk }) {
 function BlokHlavicka({ blok, zakaznik }) {
   return (
     <div className="vy-hlavicka">
-      {/* Logo je vektorové, takže se v PDF vytiskne ostře v každé velikosti. */}
-      <div className="vy-logo">
-        <Logo vyska={40} title="Greensie" />
-      </div>
       <h1>{blok.nadpis || "Nabídka"}</h1>
       {blok.text && <div className="podnadpis">{blok.text}</div>}
       <div className="vy-prijemce">
@@ -144,6 +146,22 @@ const FIRMA = {
   telefon: "+420 222 703 031",
   email: "info@greensie.cz",
 };
+
+// Pás se značkou = záhlaví, které se opakuje na každé stránce (viz <thead> níž).
+// Logo je vektorové, takže se v PDF vytiskne ostře v každé velikosti.
+function Pas({ zakaznik }) {
+  return (
+    <div className="vy-pas">
+      <span className="vy-logo">
+        <Logo vyska={34} title="Greensie" />
+      </span>
+      <span className="vy-pas-info">
+        {zakaznik?.nazev ? <span>{zakaznik.nazev}</span> : null}
+        {zakaznik?.datum ? <span>{fmtDatum(zakaznik.datum)}</span> : null}
+      </span>
+    </div>
+  );
+}
 
 function Zapati() {
   return (
@@ -170,34 +188,62 @@ export default function NabidkaVystup({ data, konfigurace, tisk = false }) {
   const bloky = (konfigurace?.bloky || []).filter((b) => b.viditelny);
   return (
     <div className={"vystup-sheet" + (tisk ? " vystup-tisk" : "")}>
-      {/* Vodoznak leží pod obsahem a nic nepřekrývá (pointer-events: none). */}
+      {/* Vodoznak leží pod obsahem a nic nepřekrývá (pointer-events: none).
+          V tisku je position: fixed, takže ho Chrome vykreslí vycentrovaný
+          na každé stránce. */}
       <div className="vy-vodoznak" aria-hidden="true">
         <Logo jen="znacka" vyska={420} />
       </div>
-      {bloky.map((blok) => {
-        switch (blok.druh) {
-          case "hlavicka":
-            return <BlokHlavicka key={blok.id} blok={blok} zakaznik={data.zakaznik} />;
-          case "text":
-            return (
-              <div className="vy-blok" key={blok.id}>
-                {blok.nadpis && <h2>{blok.nadpis}</h2>}
-                {blok.text && <p className="vy-text">{blok.text}</p>}
-              </div>
-            );
-          case "udaje":
-            return <BlokUdaje key={blok.id} blok={blok} hodnoty={data.hodnoty || {}} tisk={tisk} />;
-          case "graf":
-            return (
-              <BlokGraf key={blok.id} blok={blok} typReseni={data.typ_reseni}
-                graf={data.graf} tisk={tisk} />
-            );
-          case "tabulka":
-            return <BlokTabulka key={blok.id} blok={blok} tabulka={data.tabulka} tisk={tisk} />;
-          default:
-            return null;
-        }
-      })}
+      {/* Tabulka je tu jen kvůli stránkování tisku – jinak by záhlaví i zápatí
+          zůstalo jen na první stránce. Prohlížeč totiž <thead> opakuje na
+          každé stránce (odtud pás se značkou) a pro <tfoot> na každé stránce
+          drží místo (odtud mezera pod obsahem, do které padne zápatí). */}
+      <table className="vy-list" role="presentation">
+        <thead>
+          <tr>
+            <td>
+              <Pas zakaznik={data.zakaznik} />
+            </td>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              {bloky.map((blok) => {
+                switch (blok.druh) {
+                  case "hlavicka":
+                    return <BlokHlavicka key={blok.id} blok={blok} zakaznik={data.zakaznik} />;
+                  case "text":
+                    return (
+                      <div className="vy-blok" key={blok.id}>
+                        {blok.nadpis && <h2>{blok.nadpis}</h2>}
+                        {blok.text && <p className="vy-text">{blok.text}</p>}
+                      </div>
+                    );
+                  case "udaje":
+                    return <BlokUdaje key={blok.id} blok={blok} hodnoty={data.hodnoty || {}} tisk={tisk} />;
+                  case "graf":
+                    return (
+                      <BlokGraf key={blok.id} blok={blok} typReseni={data.typ_reseni}
+                        graf={data.graf} tisk={tisk} />
+                    );
+                  case "tabulka":
+                    return <BlokTabulka key={blok.id} blok={blok} tabulka={data.tabulka} tisk={tisk} />;
+                  default:
+                    return null;
+                }
+              })}
+            </td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>
+              <div className="vy-zapati-mezera" aria-hidden="true" />
+            </td>
+          </tr>
+        </tfoot>
+      </table>
       <Zapati />
     </div>
   );

@@ -50,21 +50,61 @@
 }
 .vystup-nahled-wrap { display: flex; justify-content: center; }
 
-/* ---- Tisková A4 stránka ---- */
+/* ---- Tisková A4 stránka ----
+ * Okraje listu drží jedno místo: --vy-okraj (do stran) a --vy-okraj-sv
+ * (svisle). V tisku je stejné hodnoty dostane @page, aby zápatí ukotvené
+ * k okraji stránky sedělo na sloupec textu. */
 .vystup-sheet {
+  --vy-okraj: 16mm;
+  --vy-okraj-sv: 14mm;
+  /* Kolik místa se pod obsahem drží pro zápatí (viz .vy-zapati-mezera). */
+  --vy-zapati-misto: 24mm;
   width: 210mm;
   max-width: 100%;
   min-height: 297mm;
   box-sizing: border-box;
-  padding: 16mm 16mm 18mm;
+  padding: var(--vy-okraj-sv) var(--vy-okraj);
   background: #fff;
   color: #1c2321;
   box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
   font-size: 12.5px;
   line-height: 1.5;
-  /* kotva pro vodoznak */
+  /* kotva pro vodoznak a zápatí */
   position: relative;
   overflow: hidden;
+}
+
+/* Nosná tabulka listu. Není to vizuální tabulka, jen nástroj na stránkování
+ * tisku (opakované <thead> a místo držené <tfoot>) – proto všechno resetujeme.
+ * Selektory jsou přímé potomky, aby nezasáhly .vy-tabulka uvnitř obsahu. */
+.vy-list { width: 100%; border-collapse: collapse; }
+.vy-list > thead > tr > td,
+.vy-list > tbody > tr > td,
+.vy-list > tfoot > tr > td {
+  padding: 0;
+  border: 0;
+  text-align: left;
+  vertical-align: top;
+}
+.vy-zapati-mezera { height: var(--vy-zapati-misto); }
+
+/* ---- Pás se značkou = záhlaví na každé stránce ---- */
+.vy-pas {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  padding-bottom: 8px;
+  margin-bottom: 16px;
+  border-bottom: 3px solid var(--brand, #2f9e44);
+}
+.vy-pas-info {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  text-align: right;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: #6a7570;
 }
 
 /* ---- Vodoznak: značka na střed listu, hodně světlá ---- */
@@ -79,16 +119,20 @@
 }
 
 /* Obsah musí ležet nad vodoznakem, jinak by ho vodoznak překryl. */
-.vy-hlavicka,
-.vy-blok,
+.vy-list,
 .vy-zapati {
   position: relative;
   z-index: 1;
 }
 
-/* ---- Zápatí s kontaktem (jako na hlavičkovém papíře) ---- */
+/* ---- Zápatí s kontaktem (jako na hlavičkovém papíře) ----
+ * Není v toku textu, ale ukotvené ke spodnímu okraji listu – jinak by skončilo
+ * tam, kde náhodou dojde text. Místo pro ně drží .vy-zapati-mezera. */
 .vy-zapati {
-  margin-top: 24px;
+  position: absolute;
+  left: var(--vy-okraj);
+  right: var(--vy-okraj);
+  bottom: var(--vy-okraj-sv);
   padding-top: 11px;
   border-top: 1px solid #dfe6e1;
   display: flex;
@@ -97,7 +141,7 @@
   font-size: 10.5px;
   line-height: 1.45;
   color: #6a7570;
-  break-inside: avoid;
+  background: #fff;
 }
 
 .vy-zapati-znacka {
@@ -123,13 +167,14 @@
   text-align: right;
 }
 
-/* Hlavička nabídky */
-.vy-hlavicka { border-bottom: 3px solid var(--brand, #2f9e44); padding-bottom: 14px; margin-bottom: 22px; }
-/* Logo v hlavičce nabídky. Text logotypu bere barvu odsud (currentColor) —
-   na papíře tedy tmavý, ne šedý jako okolní popisky. */
+/* Hlavička nabídky (název + příjemce). Zelenou linku kreslí pás nad ní,
+   proto tu žádná není. */
+.vy-hlavicka { margin-bottom: 22px; }
+/* Logo v pásu. Text logotypu bere barvu odsud (currentColor) — na papíře
+   tedy tmavý, ne šedý jako okolní popisky. */
 .vy-logo {
   display: flex;
-  margin-bottom: 14px;
+  flex: none;
   color: #17321f;
 }
 .vy-hlavicka h1 { font-size: 22px; margin: 0 0 4px; color: #17321f; }
@@ -190,14 +235,48 @@
 .ed-sekce-nadpis { font-size: 11px; color: var(--fm-muted, #7a857f); margin: 8px 0 2px; }
 
 @media print {
-  @page { size: A4; margin: 0; }
+  /* Okraje listu přebírá @page, aby platily na každé stránce – padding na
+     .vystup-sheet by se uplatnil jen na první a poslední. Svisle symetricky,
+     jinak by vodoznak nebyl na středu papíru. */
+  @page { size: A4; margin: 14mm 16mm; }
   .np { display: none !important; }
   .vystup-page { background: #fff; }
   .vystup-layout { display: block; padding: 0; margin: 0; max-width: none; }
   .vystup-nahled-wrap { display: block; }
   .vystup-sheet {
-    width: auto; min-height: auto; box-shadow: none; padding: 14mm 16mm;
+    width: auto; min-height: 0; box-shadow: none; padding: 0;
+    /* overflow: hidden by při stránkování odřízlo všechno za první stránkou */
+    overflow: visible;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
-  .vy-blok { break-inside: avoid; }
+
+  /* Vodoznak a zápatí přepínáme na position: fixed – takový prvek Chrome
+     vykreslí na každé stránce znovu. Souřadnice se počítají od plochy stránky
+     (tj. už uvnitř @page margin), takže stačí 0 a 50 %. Negativní offsety
+     (kreslení do okrajů) Chrome umísťuje nespolehlivě – nepoužívat. */
+  .vy-vodoznak {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .vy-zapati {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+
+  /* Lámání stránek: dlouhý blok se klidně rozdělí (jinak by celý přeskočil na
+     další stránku a nechal v listu velkou mezeru), ale nadpis zůstane u svého
+     obsahu a karty, graf ani řádek tabulky se nerozříznou. Dlouhá tabulka si
+     na další stránce zopakuje hlavičku sloupců. */
+  .vy-hlavicka { break-inside: avoid; }
+  .vy-blok h2 { break-after: avoid; }
+  .vy-karty, .vy-karta, .vy-graf { break-inside: avoid; }
+  .vy-tabulka thead { display: table-header-group; }
+  .vy-tabulka tr { break-inside: avoid; }
+  /* Pás se značkou se opakuje jako záhlaví tabulky, ať se nikdy nerozlomí. */
+  .vy-list > thead { display: table-header-group; break-inside: avoid; }
+  .vy-list > tfoot { display: table-footer-group; }
 }

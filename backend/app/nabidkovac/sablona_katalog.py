@@ -77,6 +77,14 @@ def _g(d: Any, *cesta: str) -> Any:
     return cur
 
 
+def _prvni(*hodnoty: Any) -> Any:
+    """První hodnota, která není None (nula je platná hodnota, na rozdíl od `or`)."""
+    for h in hodnoty:
+        if h is not None:
+            return h
+    return None
+
+
 def _prvni_rok(popis: dict, klic: str) -> Any:
     """Hodnota z prvního roku ekonomiky PPA (`vysledek.roky[0][klic]`)."""
     roky = _g(popis, "vysledek", "roky")
@@ -146,6 +154,38 @@ def _dop(p: dict, *cesta: str) -> Any:
     return _g(p, "doporucena", *cesta)
 
 
+def _uspora_2027(p: dict) -> Any:
+    """Roční úspora modelu 2027 – stejné pořadí zdrojů jako panel v nabídkovači
+    (starší uložené výsledky mají jen `rocni_uspora`)."""
+    return _prvni(
+        _dop(p, "ekonomika_2027", "rocni_uspora_bez_aku"),
+        _dop(p, "ekonomika_2027", "rocni_uspora"),
+    )
+
+
+# Názvy režimů baterie pro zákazníka. Drží se `REZIMY` v panelu i na backendu
+# (`spot_arbitraz.REZIMY`), jen popsané řečí nabídky.
+_REZIM_NAZVY = {
+    "peak_shaving": "Srážení špiček odběru",
+    "kombinace": "Srážení špiček + obchod s elektřinou",
+    "spot": "Obchod s elektřinou",
+}
+
+
+def _rezim_nazev(p: dict) -> Any:
+    rezim = _dop(p, "rezim") or _g(p, "vstup", "rezim")
+    return _REZIM_NAZVY.get(rezim) if rezim else None
+
+
+def _zisk_obchodu(p: dict) -> Any:
+    """Roční výnos z obchodování. U čistého peak shavingu se neobchoduje –
+    vrací None (pole se pak v tisku vůbec neukáže, místo nuly)."""
+    rezim = _dop(p, "rezim") or _g(p, "vstup", "rezim") or "peak_shaving"
+    if rezim == "peak_shaving":
+        return None
+    return _prvni(_dop(p, "zisk_spot_kc"), _dop(p, "ekonomika_spot", "zisk_kc"))
+
+
 _POLE_PS: list[Pole] = [
     Pole("nazev", "Navržená baterie", "text", lambda p: _dop(p, "nazev")),
     Pole("pocet_kusu", "Počet kusů", "pocet", lambda p: _dop(p, "pocet_kusu")),
@@ -158,12 +198,33 @@ _POLE_PS: list[Pole] = [
     Pole("nova_rezervovana_kapacita_kw", "Nová rezervovaná kapacita", "vykon_kw",
          lambda p: _dop(p, "nova_rezervovana_kapacita_kw")),
     Pole("strop_kw", "Špičku snížíme na", "vykon_kw", lambda p: _dop(p, "strop_kw")),
-    Pole("soucasny_naklad_celkem", "Dnešní roční náklad za rezervaci", "penize",
+    # Model 2026 = platba za rezervovanou kapacitu. Rok je v názvu schválně:
+    # od 2027 platí jiná tarifní struktura a čísla se liší (viz pole níž).
+    Pole("soucasny_naklad_celkem", "Dnešní roční náklad za rezervaci (2026)", "penize",
          lambda p: _dop(p, "ekonomika_2026", "soucasny_naklad_celkem")),
-    Pole("rocni_uspora_2026_kc", "Roční úspora", "penize",
+    Pole("rocni_uspora_2026_kc", "Roční úspora (2026)", "penize",
          lambda p: _dop(p, "rocni_uspora_2026_kc")),
-    Pole("navratnost_roky", "Návratnost investice", "roky",
+    Pole("navratnost_roky", "Návratnost investice (2026)", "roky",
          lambda p: _dop(p, "navratnost_roky")),
+    # Model od 2027 (nová tarifní struktura ERÚ) – přesně ta čísla, která
+    # nabídkovač ukazuje jako výchozí. Bez oficiálních sazeb ERÚ zůstanou
+    # prázdná (`ekonomika_2027.status != "spocitano"`) a v tisku se skryjí.
+    Pole("rezervovany_prikon_kw", "Současný rezervovaný příkon", "vykon_kw",
+         lambda p: _dop(p, "ekonomika_2027", "rp_soucasny_kw")),
+    Pole("novy_rezervovany_prikon_kw", "Rezervovaný příkon po instalaci", "vykon_kw",
+         lambda p: _prvni(_dop(p, "ekonomika_2027", "rp_novy_kw"),
+                          _dop(p, "ekonomika_2027", "rezervovana_kapacita_kw"))),
+    Pole("soucasny_naklad_2027_kc", "Dnešní roční náklad (tarify od 2027)", "penize",
+         lambda p: _dop(p, "ekonomika_2027", "soucasny_rocni_naklad")),
+    Pole("novy_naklad_2027_kc", "Roční náklad s baterií (od 2027)", "penize",
+         lambda p: _dop(p, "ekonomika_2027", "novy_rocni_naklad")),
+    Pole("rocni_uspora_2027_kc", "Roční úspora (od 2027)", "penize", _uspora_2027),
+    Pole("navratnost_2027_roky", "Návratnost investice (od 2027)", "roky",
+         lambda p: _prvni(_dop(p, "navratnost_2027"), _dop(p, "navratnost_2027_konzerv"))),
+    # Obchodování na spotu (režim Kombinace/Spot). U čistého peak shavingu
+    # zůstane prázdné, takže se blok v tisku sám neukáže.
+    Pole("rezim", "Provozní režim baterie", "text", _rezim_nazev),
+    Pole("zisk_spot_kc", "Roční výnos z obchodu s elektřinou", "penize", _zisk_obchodu),
 ]
 
 # Sloupce roční tabulky peak shavingu (jen zákaznické).
@@ -242,6 +303,43 @@ def resolvni_tabulku(typ: str, popis_json: dict | None) -> dict:
     return {"sloupce": sloupce, "radky": radky}
 
 
+def _graf_ps_k_zobrazeni(graf: dict, popis: dict) -> dict:
+    """Doplní grafu peak shavingu řadu a referenční čáry toho modelu, který
+    ukazuje nabídkovač – aby graf v nabídce nebyl jiný než ten na obrazovce.
+
+    Nabídkovač zobrazuje model **2027**, jakmile je ekonomika 2027 spočítaná
+    (jinak spadne na 2026). Rok rozhoduje o obojím:
+    - sloupce „s baterií": 2027 sráží špičku po měsících, 2026 drží roční strop,
+    - referenční čáry: 2026 = rezervovaná kapacita, 2027 = rezervovaný příkon.
+    Starší uložené výsledky nesou jen sadu 2026, pak zůstane 2026.
+    """
+    ek27 = _dop(popis, "ekonomika_2027") or {}
+    je2027 = ek27.get("status") == "spocitano" and graf.get("s_baterii_2027_kw") is not None
+    out = dict(graf)  # kopie: `popis_json` se nesmí měnit
+    if je2027:
+        out["rok_modelu"] = 2027
+        out["s_baterii_kw"] = graf.get("s_baterii_2027_kw")
+        out["rp_soucasna_zobrazena_kw"] = _prvni(
+            graf.get("rp_soucasna_2027_kw"), ek27.get("rp_soucasny_kw"), graf.get("rp_soucasna_kw")
+        )
+        out["rp_nova_zobrazena_kw"] = _prvni(
+            graf.get("rp_nova_2027_kw"),
+            ek27.get("rp_novy_kw"),
+            ek27.get("rezervovana_kapacita_kw"),
+            graf.get("rp_nova_kw"),
+        )
+        out["popis_soucasna"] = "rezervovaný příkon nyní"
+        out["popis_nova"] = "rezervovaný příkon po instalaci"
+    else:
+        out["rok_modelu"] = 2026
+        out["s_baterii_kw"] = graf.get("s_baterii_2026_kw")
+        out["rp_soucasna_zobrazena_kw"] = graf.get("rp_soucasna_kw")
+        out["rp_nova_zobrazena_kw"] = graf.get("rp_nova_kw")
+        out["popis_soucasna"] = "rezervovaná kapacita nyní"
+        out["popis_nova"] = "nová rezervovaná kapacita"
+    return out
+
+
 def graf_pro_typ(typ: str, popis_json: dict | None) -> dict | None:
     """Surová data grafu pro daný typ (PPA výroba/spotřeba, PS měsíční maxima).
     Frontend podle `typ_reseni` vybere správnou grafovou komponentu."""
@@ -249,7 +347,10 @@ def graf_pro_typ(typ: str, popis_json: dict | None) -> dict | None:
     if typ == "ppa":
         return _g(popis, "vysledek", "graf")
     # peak shaving: graf doporučené varianty, fallback na graf na nejvyšší úrovni
-    return _dop(popis, "graf") or _g(popis, "graf")
+    graf = _dop(popis, "graf") or _g(popis, "graf")
+    if not isinstance(graf, dict):
+        return None
+    return _graf_ps_k_zobrazeni(graf, popis)
 
 
 # ---- Výchozí předlohy --------------------------------------------------------
@@ -322,9 +423,23 @@ VYCHOZI_SABLONA: dict[str, dict] = {
              "pole": ["rezervovana_kapacita_kw", "nova_rezervovana_kapacita_kw",
                       "strop_kw"]},
             {"id": "uspora", "druh": "udaje", "viditelny": True,
-             "nadpis": "Vaše úspora",
+             "nadpis": "Vaše úspora v roce 2026",
              "pole": ["soucasny_naklad_celkem", "rocni_uspora_2026_kc",
                       "navratnost_roky"]},
+            # Bloky níž se v tisku samy skryjí, když pro ně data nejsou:
+            # 2027 bez oficiálních sazeb ERÚ, obchod u čistého peak shavingu.
+            {"id": "uspora_2027", "druh": "udaje", "viditelny": True,
+             "nadpis": "Vaše úspora podle nových tarifů (od roku 2027)",
+             "text": "Od roku 2027 se platí i za naměřenou špičku odběru, takže baterie "
+                     "ušetří jinou částku než letos – uvádíme ji zvlášť.",
+             "pole": ["rezervovany_prikon_kw", "novy_rezervovany_prikon_kw",
+                      "soucasny_naklad_2027_kc", "novy_naklad_2027_kc",
+                      "rocni_uspora_2027_kc", "navratnost_2027_roky"]},
+            {"id": "obchod", "druh": "udaje", "viditelny": True,
+             "nadpis": "Obchod s elektřinou",
+             "text": "Když baterie nemusí srážet špičku, může nakupovat elektřinu levně "
+                     "a dodávat ji zpět dráž. Tohle je odhad ročního výnosu.",
+             "pole": ["rezim", "zisk_spot_kc"]},
             {"id": "graf", "druh": "graf", "viditelny": True,
              "nadpis": "Měsíční špičky odběru – dnes vs. s baterií"},
             {"id": "tabulka", "druh": "tabulka", "viditelny": False,
@@ -344,3 +459,39 @@ def vychozi_sablona(typ: str) -> dict:
     import copy
 
     return copy.deepcopy(VYCHOZI_SABLONA.get(typ, {"bloky": []}))
+
+
+def doplnene_bloky(typ: str, konfigurace: dict | None) -> dict:
+    """Doplní do uložené konfigurace bloky, které předloha zná a ona ještě ne.
+
+    Když do předlohy přibude blok (třeba úspora podle tarifů od 2027), starší
+    uložené nabídky by ho bez tohohle nikdy neukázaly – OZ by musel *Obnovit
+    výchozí* a přišel by o vlastní texty. Bloky se vkládají na místo, kam patří
+    v předloze (za nejbližší předchozí známý blok), a nic existujícího se
+    nepřepisuje. Ukládá se to až na explicitní *Uložit*.
+    """
+    import copy
+
+    vychozi = VYCHOZI_SABLONA.get(typ, {}).get("bloky", [])
+    bloky = list((konfigurace or {}).get("bloky") or [])
+    if not bloky:
+        return vychozi_sablona(typ)
+    znama = {b.get("id") for b in bloky}
+    kotva: str | None = None  # poslední blok předlohy, který konfigurace zná
+    for vb in vychozi:
+        if vb["id"] in znama:
+            kotva = vb["id"]
+            continue
+        kam = len(bloky)
+        if kotva is not None:
+            kam = next(
+                (i + 1 for i, b in enumerate(bloky) if b.get("id") == kotva), len(bloky)
+            )
+        else:
+            kam = 0
+        bloky.insert(kam, copy.deepcopy(vb))
+        znama.add(vb["id"])
+        kotva = vb["id"]
+    out = dict(konfigurace or {})
+    out["bloky"] = bloky
+    return out

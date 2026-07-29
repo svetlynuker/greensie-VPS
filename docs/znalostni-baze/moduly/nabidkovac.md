@@ -60,6 +60,9 @@ načíst profil a technologii vybrat z katalogu.
 5. **Spočítej řešení** – u PPA a Peak shavingu v panelu v detailu nabídky (viz samostatné návody).
 6. **Sestav nabídku pro zákazníka** – tlačítko „Nabídka pro zákazníka" v hlavičce detailu (jen u PPA a
    Peak shavingu): v editoru zapneš/vypneš bloky, upravíš texty a vybereš zobrazená pole.
+   U peak shavingu jsou v nabídce čísla roku 2026 i **modelu od roku 2027** (nové tarify) a
+   u obchodních režimů i **výnos z obchodu s elektřinou** – tedy totéž, co ukazuje panel výsledku.
+   Bloky, pro které data nejsou, se do PDF netisknou.
 7. **Ulož do PDF** – tlačítko „Uložit do PDF" otevře tiskový dialog prohlížeče (tisk / uložit jako PDF).
 
 ### Stavy nabídky
@@ -296,6 +299,18 @@ interní čísla se nenabízejí.
   vykreslí nabídku z konfigurace bloků + resolvnutých hodnot **dvakrát** – jako živý náhled a
   jako tisková A4 stránka. Tlačítko „Uložit do PDF" spustí `window.print()`; layout řeší
   `frontend/src/styles/vystup.css`. V tisku se skrývají prázdné bloky a pole bez hodnoty.
+- **Záhlaví, zápatí a vodoznak na každé stránce (proč to tak je):** u víc než jedné stránky
+  prohlížeč sám nic neopakuje, takže:
+  - **pás se značkou** (logo + zákazník a datum vpravo) je v `<thead>` nosné tabulky
+    `.vy-list` – `<thead>` prohlížeč opakuje na každé stránce;
+  - **zápatí s kontaktem** je `position: fixed` u spodního okraje (tím se vykreslí na každé
+    stránce) a místo pod textem mu na každé stránce drží prázdný `<tfoot>`
+    (`.vy-zapati-mezera`), aby text nikdy nenaběhl do zápatí;
+  - **vodoznak** je taky `position: fixed`, na střed – souřadnice se počítají od plochy
+    stránky, proto jsou svislé okraje `@page` symetrické (jinak by nebyl na středu papíru).
+  - Pozor na dvě věci: `position: fixed` s **negativními** offsety (kreslení do okrajů stránky)
+    Chrome umísťuje nespolehlivě, a `overflow: hidden` na listu musí být v tisku vypnutý,
+    jinak odřízne všechno za první stránkou.
 - **Whitelist dat v PDF (pojistka „jen zákaznická data"):** jediné místo, kudy se hodnoty do
   výstupu dostanou, je `backend/app/nabidkovac/sablona_katalog.py`. Vyjmenovává **pouze
   zákaznická pole** (`_POLE_PPA`, `_POLE_PS`) a jejich extraktory z `navrhovana_reseni.popis_json`.
@@ -303,6 +318,26 @@ interní čísla se nenabízejí.
   je resolver nikdy nevrátí a editor je ani nenabídne. Navíc `PUT .../vystup/...` odmítne (422)
   jakékoli pole/sloupec, které není ve whitelistu (`platne_klice` / `platne_sloupce`). Formátování
   čísel do češtiny (mezera po tisících, desetinná čárka) dělá server.
+  - Vědomě zákazníkovi **neukazujeme rozpad úspory** (`prinos_baterie`,
+    `uspora_bez_investice`) – to je obchodní informace („tolik ušetříte i bez investice").
+- **Co z peak shavingu je v nabídce:** kromě roku 2026 (platba za rezervovanou kapacitu) i
+  **model od roku 2027** (nová tarifní struktura ERÚ – náklad dnes / s baterií, roční úspora,
+  rezervovaný příkon před a po, návratnost) a **obchod s elektřinou** (provozní režim a roční
+  výnos, jen v režimu *Kombinace*/*Spot*). Jsou to stejná čísla, jaká ukazuje panel v detailu
+  nabídky. Bloky „Vaše úspora podle nových tarifů" a „Obchod s elektřinou" se v tisku samy
+  skryjí, když pro ně data nejsou (chybí sazby ERÚ, resp. čistý peak shaving) – prázdná pole
+  se netisknou.
+- **Nové bloky se objeví i ve starých nabídkách:** uložená šablona se při otevření doplní bloky,
+  které předloha zná a ona ne (`sablona_katalog.doplnene_bloky`, vkládá je na místo z předlohy).
+  Vlastní texty, pořadí ani vypnuté bloky se nepřepisují a uloží se to až na *Uložit* – OZ tedy
+  nemusí kvůli novému bloku mačkat *Obnovit výchozí* a přijít o svoje texty.
+- **Graf v nabídce = graf z nabídkovače:** který model se kreslí, rozhoduje server
+  (`graf_pro_typ` → `s_baterii_kw`, `rp_*_zobrazena_kw`, `popis_*`) podle stejného pravidla jako
+  panel: **2027**, jakmile je ekonomika 2027 spočítaná, jinak 2026. Rok mění jak sloupce
+  „s baterií" (2027 sráží po měsících, 2026 drží roční strop), tak referenční čáry (2026
+  rezervovaná kapacita, 2027 rezervovaný příkon). Dřív měla nabídka natvrdo 2026, takže
+  ukazovala jiný graf než obrazovka. **Pozor:** nabídka vždy bere **doporučenou** variantu –
+  když si OZ v srovnání rozklikne jinou, do nabídky se to nepřenáší (volba se nikam neukládá).
 - **Klíčové soubory:**
   - Backend: `routes.py` (API), `models.py` (tabulky), `schemas.py` (vstupy/výstupy),
     `sablona_katalog.py` (whitelist polí + výchozí předlohy + resolver + formátování),

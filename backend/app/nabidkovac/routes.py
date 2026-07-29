@@ -2159,7 +2159,9 @@ def _vystup_out(db: Session, n: Nabidka, typ_reseni: str, vychozi: bool = False)
         .first()
     )
     if not vychozi and ulozeny is not None and ulozeny.konfigurace_json:
-        konfigurace = ulozeny.konfigurace_json
+        # Bloky, které předloha zná a uložená konfigurace ještě ne, se doplní –
+        # jinak by starší nabídky nikdy neukázaly nově přidané výsledky.
+        konfigurace = sablona_katalog.doplnene_bloky(typ_reseni, ulozeny.konfigurace_json)
         je_vychozi = False
     else:
         konfigurace = sablona_katalog.vychozi_sablona(typ_reseni)
