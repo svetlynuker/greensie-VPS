@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import GrafVyrobaSpotreba from "./GrafVyrobaSpotreba";
-import { ppaProfilSouhrn, ppaVypocet, profilZpracuj } from "../api";
+import GrafPrubehuPpa from "./GrafPrubehuPpa";
+import { ppaPrubeh, ppaProfilSouhrn, ppaVypocet, profilZpracuj } from "../api";
 
 // Panel PPA (výpočet v2 – docs/METODIKA-ppa-v2.md).
 //
@@ -70,12 +71,39 @@ export default function PpaPanel({ nabidka }) {
   const [chyba, setChyba] = useState(null);
   const [zprava, setZprava] = useState(null);
   const [pocita, setPocita] = useState(false);
+  // Průběh se tahá zvlášť (na vyžádání), ať se ~35 tis. hodnot nenosí v každé
+  // odpovědi výpočtu. Klíč = varianta, aby se přepnutím nezobrazila cizí data.
+  const [prubeh, setPrubeh] = useState(null);
+  const [prubehChyba, setPrubehChyba] = useState(null);
+  const [prubehNacita, setPrubehNacita] = useState(false);
 
   useEffect(() => {
     ppaProfilSouhrn(nabidka.id)
       .then(setSouhrn)
       .catch(() => setSouhrn({ pocet: 0 }));
   }, [nabidka.id]);
+
+  // Průběh se načte teprve při otevření záložky (a znovu po přepnutí varianty),
+  // ať se celoroční řady netahají zbytečně.
+  useEffect(() => {
+    if (zalozka !== "prubeh" || !vysledek || prubeh || prubehNacita) return;
+    let zruseno = false;
+    setPrubehNacita(true);
+    setPrubehChyba(null);
+    ppaPrubeh(nabidka.id, varianta)
+      .then((d) => {
+        if (!zruseno) setPrubeh(d);
+      })
+      .catch((e) => {
+        if (!zruseno) setPrubehChyba(e.message);
+      })
+      .finally(() => {
+        if (!zruseno) setPrubehNacita(false);
+      });
+    return () => {
+      zruseno = true;
+    };
+  }, [zalozka, varianta, vysledek, prubeh, prubehNacita, nabidka.id]);
 
   const profilDoklady = (nabidka.dokumenty || []).filter(
     (d) => d.typ === "spotreba_csv" || d.typ === "jiny"
@@ -125,6 +153,8 @@ export default function PpaPanel({ nabidka }) {
       setVysledek(odpoved.popis_json);
       setVarianta(odpoved.popis_json.bez_baterie ? "bez_baterie" : "s_baterii");
       setDelka(null);
+      setPrubeh(null);
+      setPrubehChyba(null);
       setZprava("Spočítáno a uloženo.");
     } catch (e) {
       setChyba(e.message);
@@ -504,6 +534,7 @@ export default function PpaPanel({ nabidka }) {
       { klic: "roky", label: "Po letech" },
       { klic: "odkup", label: "Odkup" },
       { klic: "graf", label: "Graf" },
+      { klic: "prubeh", label: "Průběh" },
     ];
 
     obsahVysledku = (
@@ -520,6 +551,8 @@ export default function PpaPanel({ nabidka }) {
                 onClick={() => {
                   setVarianta(k);
                   setDelka(null);
+                  setPrubeh(null);
+                  setPrubehChyba(null);
                 }}
               >
                 {k === "bez_baterie" ? "FVE" : "FVE + baterie"}
@@ -803,6 +836,29 @@ export default function PpaPanel({ nabidka }) {
               (samospotřeba + přetok + ořez). V zimě výroba nepokryje ani základ, v létě přetéká.
             </div>
           </>
+        )}
+
+        {/* --- Nitkový průběh po 15 minutách --- */}
+        {zalozka === "prubeh" && (
+          <div className="fm-card" style={{ padding: 14 }}>
+            {prubehNacita && <div className="gs-pozn">Načítám celoroční průběh…</div>}
+            {prubehChyba && (
+              <div className="nb-warn">
+                <span>⚠️</span>
+                <span>{prubehChyba}</span>
+              </div>
+            )}
+            {prubeh && !prubehChyba && (
+              <GrafPrubehuPpa
+                data={prubeh}
+                popis={
+                  prubeh.baterie
+                    ? "Zelená plocha je samospotřeba — energie, kterou zákazník z FVE odebere a zaplatí. Čárkovaně stav nabití baterie. Kolečkem přibliž, tažením posuň."
+                    : "Zelená plocha je samospotřeba — energie, kterou zákazník z FVE odebere a zaplatí. Kde výroba přeleze spotřebu, teče přebytek do sítě. Kolečkem přibliž, tažením posuň."
+                }
+              />
+            )}
+          </div>
         )}
       </>
     );

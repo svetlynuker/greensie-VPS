@@ -336,6 +336,14 @@ export function ppaProfilSouhrn(nabidkaId) {
   return zavolej(`/nabidkovac/nabidky/${nabidkaId}/ppa/profil-souhrn`);
 }
 
+// 15min průběh výroby/spotřeby pro nitkový graf. Neukládá se do řešení (~35 tis.
+// hodnot), počítá se na vyžádání ze stejné fyziky jako ekonomika.
+export function ppaPrubeh(nabidkaId, varianta = "bez_baterie") {
+  return zavolej(
+    `/nabidkovac/nabidky/${nabidkaId}/ppa/prubeh?varianta=${encodeURIComponent(varianta)}`
+  );
+}
+
 // ---- Nabídkový výstup (šablona pro zákazníka / PDF) ----
 export function nabidkaVystup(nabidkaId, typReseni, vychozi = false) {
   const q = vychozi ? "?vychozi=1" : "";

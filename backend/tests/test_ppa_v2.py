@@ -369,12 +369,75 @@ class TestGrafMesicni:
         bat = ppa.Baterie(120.0, 60.0)
         b = ppa.sparuj_s_baterii(vyroba, spotreba, bat, 40.0, 0.25)
         ss = ex = orz = dk = 0.0
-        for _v, _s, samo, e, o, d in ppa.toky_energie(vyroba, spotreba, bat, 40.0, 0.25):
-            ss += samo; ex += e; orz += o; dk += d
+        for t in ppa.toky_energie(vyroba, spotreba, bat, 40.0, 0.25):
+            ss += t.samospotreba; ex += t.export; orz += t.orez; dk += t.dokup
         assert ss == pytest.approx(b.samospotreba_kwh, rel=1e-9)
         assert ex == pytest.approx(b.export_kwh, rel=1e-9)
         assert orz == pytest.approx(b.orez_kwh, rel=1e-9)
         assert dk == pytest.approx(b.dokup_kwh, rel=1e-9)
+
+
+# ============================================================ 15min průběh (nitkový graf)
+class TestPrubeh15min:
+    """Řady pro `GrafPrubehuPpa.jsx` – v kW, ze stejné fyziky jako ekonomika."""
+
+    @pytest.fixture
+    def zaklad(self):
+        casy, spotreba = _profil_vecerni_spotreba(20)
+        vyroba = ppa.simuluj_vyrobu(casy, 60.0, 49.8, 35.0, 0.0)
+        return casy, vyroba, spotreba
+
+    def test_delky_rad_odpovidaji_profilu(self, zaklad):
+        casy, vyroba, spotreba = zaklad
+        p = ppa.prubeh_15min(vyroba, spotreba, None, None, 0.25)
+        for klic in ("spotreba_kw", "vyroba_kw", "samospotreba_kw", "pretok_kw", "orez_kw", "dokup_kw"):
+            assert len(p[klic]) == len(casy), klic
+
+    def test_soucty_odpovidaji_rocni_bilanci(self, zaklad):
+        """Graf a tabulky musí říkat totéž – kW × interval zpátky na kWh."""
+        casy, vyroba, spotreba = zaklad
+        p = ppa.prubeh_15min(vyroba, spotreba, None, None, 0.25)
+        b = ppa.sparuj_s_baterii(vyroba, spotreba, None, None, 0.25)
+        assert sum(p["spotreba_kw"]) * 0.25 == pytest.approx(b.spotreba_kwh, rel=1e-4)
+        assert sum(p["vyroba_kw"]) * 0.25 == pytest.approx(b.vyroba_kwh, rel=1e-4)
+        assert sum(p["samospotreba_kw"]) * 0.25 == pytest.approx(b.samospotreba_kwh, rel=1e-4)
+        assert sum(p["pretok_kw"]) * 0.25 == pytest.approx(b.export_kwh, rel=1e-4)
+        assert sum(p["dokup_kw"]) * 0.25 == pytest.approx(b.dokup_kwh, rel=1e-4)
+
+    def test_bez_baterie_neni_soc(self, zaklad):
+        casy, vyroba, spotreba = zaklad
+        assert ppa.prubeh_15min(vyroba, spotreba, None, None, 0.25)["soc_pct"] is None
+
+    def test_s_baterii_je_soc_v_procentech(self, zaklad):
+        casy, vyroba, spotreba = zaklad
+        p = ppa.prubeh_15min(vyroba, spotreba, ppa.Baterie(120.0, 60.0), None, 0.25)
+        assert p["soc_pct"] is not None
+        assert len(p["soc_pct"]) == len(casy)
+        assert all(0.0 <= x <= 100.5 for x in p["soc_pct"])
+        assert max(p["soc_pct"]) > 0  # baterie se opravdu nabíjí
+
+    def test_rezervovany_vykon_strope_pretok(self, zaklad):
+        """Přetok nesmí přelézt rezervovaný výkon dodávky – zbytek je ořez."""
+        casy, vyroba, spotreba = zaklad
+        strop = 10.0
+        p = ppa.prubeh_15min(vyroba, spotreba, None, strop, 0.25)
+        assert max(p["pretok_kw"]) <= strop + 1e-6
+        assert sum(p["orez_kw"]) > 0
+
+    def test_samospotreba_nikdy_nad_vyrobu_ani_spotrebu(self, zaklad):
+        casy, vyroba, spotreba = zaklad
+        p = ppa.prubeh_15min(vyroba, spotreba, ppa.Baterie(120.0, 60.0), None, 0.25)
+        for ss, v, s in zip(p["samospotreba_kw"], p["vyroba_kw"], p["spotreba_kw"]):
+            assert ss <= s + 0.02
+            # s baterií může samospotřeba v daném intervalu přesáhnout okamžitou
+            # výrobu (vybíjí se dřív uložená energie) – proto jen proti spotřebě.
+        assert sum(p["samospotreba_kw"]) <= sum(p["vyroba_kw"]) + 1e-6
+
+    def test_souhrn_ma_maxima(self, zaklad):
+        casy, vyroba, spotreba = zaklad
+        s = ppa.prubeh_15min(vyroba, spotreba, None, None, 0.25)["souhrn"]
+        assert s["max_spotreba_kw"] > 0
+        assert s["max_vyroba_kw"] > 0
 
 
 # ============================================================ velikost FVE

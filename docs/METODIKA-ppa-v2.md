@@ -488,6 +488,22 @@ kontraktu (viz kap. 3.3).
 5. **Měsíční data pro graf** – `graf_mesicni()` vrací tvar, který čeká
    `GrafVyrobaSpotreba.jsx`. Dispatch baterie je vytažený do generátoru `toky_energie()`,
    takže roční bilance i graf počítají z jednoho zdroje.
+   Generátor vrací `Tok` (pojmenovaná n-tice), takže jde přidat další veličinu bez
+   přepisování volajících – tak se doplnil stav nabití baterie.
+
+5b. **Nitkový graf průběhu** (obdoba peak shavingu) – `prubeh_15min()` vrací 15min řady
+   ve kW: spotřeba, výroba, samospotřeba, přetok, ořez, dokup a u varianty s baterií
+   i stav nabití. Podává je endpoint `GET /nabidkovac/nabidky/{id}/ppa/prubeh`
+   (`?varianta=bez_baterie|s_baterii`), který se **do řešení neukládá** – celoroční řady
+   jsou ~1,2 MB, což by JSONB nabídky nafouklo. Počítá se na vyžádání (~0,05 s) ze
+   stejného generátoru jako ekonomika, takže se graf a tabulky nemohou rozejít
+   (hlídá `TestPrubeh15min`).
+
+   Frontend: `GrafPrubehuPpa.jsx` – canvas + SVG, zoom kolečkem, posun tažením, kříž
+   kurzoru s hodnotami, přepínatelné řady. Sdílené pomocníky z `grafPrubehuData.js`
+   se přebírají jen ty obecné (osa času, ticky); `agreguj`/`kresliData` mají zadrátované
+   peak-shavingové řady, takže PPA kreslí vlastní slévání do košů (min–max pásmo +
+   průměrová nitka, jeden koš na pixel).
 6. **Starší uložené výpočty** – v1 výsledky mají jiná pole; panel je podle
    `popis_json.verze` pozná a nabídne přepočet místo rozbité tabulky.
 
