@@ -45,6 +45,7 @@ from app.nabidkovac.models import (
     SpotrebaProfil,
     Technologie,
     VypoctovaNastaveni,
+    VystupSablona,
 )
 from app.nabidkovac.permissions import vyzaduj_katalog, vyzaduj_nabidkovac
 from app.nabidkovac.schemas import (
@@ -68,6 +69,10 @@ from app.nabidkovac.schemas import (
     VypoctovaNastaveniVstup,
     VystupKonfigurace,
     VystupOut,
+    VystupSablonaOut,
+    VystupSablonaVstup,
+    VystupSablonaZNabidky,
+    VystupSablonySeznam,
 )
 
 router = APIRouter(prefix="/nabidkovac", tags=["nabidkovac"])
@@ -2187,6 +2192,45 @@ def _vystup_out(db: Session, n: Nabidka, typ_reseni: str, vychozi: bool = False)
     )
 
 
+def _over_konfiguraci(typ_reseni: str, konfigurace: VystupKonfigurace) -> None:
+    """POJISTKA „jen zákaznická data": každé pole/sloupec/dlaždice musí být
+    v katalogu daného typu, jinak 422. Platí pro uloženou šablonu nabídky i pro
+    pojmenovanou šablonu – obojí končí ve stejném vykreslení."""
+    povolena_pole = sablona_katalog.platne_klice(typ_reseni)
+    povolene_sloupce = sablona_katalog.platne_sloupce(typ_reseni)
+    for blok in konfigurace.bloky:
+        if blok.druh == "udaje":
+            for klic in blok.pole:
+                if klic not in povolena_pole:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"Pole '{klic}' není mezi povolenými zákaznickými údaji "
+                            f"pro {typ_reseni} – do nabídky ho vložit nelze."
+                        ),
+                    )
+        elif blok.druh == "udaj":
+            # Jedna dlaždice = jedno pole; whitelist platí stejně jako u bloku.
+            if blok.klic not in povolena_pole:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"Údaj '{blok.klic}' není mezi povolenými zákaznickými údaji "
+                        f"pro {typ_reseni} – do nabídky ho vložit nelze."
+                    ),
+                )
+        elif blok.druh == "tabulka":
+            for klic in blok.pole:
+                if klic not in povolene_sloupce:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"Sloupec '{klic}' není mezi povolenými sloupci tabulky "
+                            f"pro {typ_reseni}."
+                        ),
+                    )
+
+
 def _over_typ_reseni(typ_reseni: str) -> None:
     if typ_reseni not in sablona_katalog.PODPOROVANE_TYPY:
         raise HTTPException(
@@ -2228,29 +2272,7 @@ def uloz_vystup(
     if n is None:
         raise HTTPException(status_code=404, detail="Nabídka neexistuje")
 
-    povolena_pole = sablona_katalog.platne_klice(typ_reseni)
-    povolene_sloupce = sablona_katalog.platne_sloupce(typ_reseni)
-    for blok in vstup.bloky:
-        if blok.druh == "udaje":
-            for klic in blok.pole:
-                if klic not in povolena_pole:
-                    raise HTTPException(
-                        status_code=422,
-                        detail=(
-                            f"Pole '{klic}' není mezi povolenými zákaznickými údaji "
-                            f"pro {typ_reseni} – do nabídky ho vložit nelze."
-                        ),
-                    )
-        elif blok.druh == "tabulka":
-            for klic in blok.pole:
-                if klic not in povolene_sloupce:
-                    raise HTTPException(
-                        status_code=422,
-                        detail=(
-                            f"Sloupec '{klic}' není mezi povolenými sloupci tabulky "
-                            f"pro {typ_reseni}."
-                        ),
-                    )
+    _over_konfiguraci(typ_reseni, vstup)
 
     konfigurace = vstup.model_dump()
     zaznam = (
@@ -2270,3 +2292,125 @@ def uloz_vystup(
         zaznam.konfigurace_json = konfigurace
     db.commit()
     return _vystup_out(db, n, typ_reseni)
+
+
+# ---------------- pojmenované šablony rozvržení nabídky ----------------
+# `NabidkaVystup` je rozvržení jedné nabídky. Tady jsou šablony napříč
+# nabídkami: obchodník si vyladí vizuál, uloží ho pod názvem a příště jen
+# vybere. Ukládá se POUZE rozvržení – čísla se vždy berou z řešení té nabídky,
+# do které se šablona použije, takže se nemohou přenést data jiného zákazníka.
+POCET_SABLON_Z_NABIDEK = 20
+
+
+def _sablona_out(s: VystupSablona, typ_reseni: str) -> VystupSablonaOut:
+    return VystupSablonaOut(
+        id=s.id,
+        nazev=s.nazev,
+        # Doplníme bloky, které předloha zná a šablona ne – jinak by starší
+        # šablona neukázala později přidané výsledky.
+        konfigurace=sablona_katalog.doplnene_bloky(typ_reseni, s.konfigurace_json or {}),
+        aktualizovano_at=_iso(s.aktualizovano_at),
+    )
+
+
+@router.get("/vystup-sablony/{typ_reseni}", response_model=VystupSablonySeznam)
+def seznam_vystup_sablon(
+    typ_reseni: str,
+    krome_nabidky: int | None = Query(None, description="ID nabídky, kterou zrovna edituju"),
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Co si jde vybrat jako šablonu: pojmenované šablony + rozvržení už
+    hotových nabídek stejného typu řešení (nejnovější první)."""
+    _over_typ_reseni(typ_reseni)
+    sablony = (
+        db.query(VystupSablona)
+        .filter(VystupSablona.typ_reseni == typ_reseni)
+        .order_by(VystupSablona.nazev)
+        .all()
+    )
+    dotaz = (
+        db.query(NabidkaVystup, Nabidka)
+        .join(Nabidka, Nabidka.id == NabidkaVystup.nabidka_id)
+        .filter(NabidkaVystup.typ_reseni == typ_reseni)
+        .order_by(NabidkaVystup.aktualizovano_at.desc())
+    )
+    if krome_nabidky is not None:
+        dotaz = dotaz.filter(NabidkaVystup.nabidka_id != krome_nabidky)
+    z_nabidek = []
+    for vystup, nabidka in dotaz.limit(POCET_SABLON_Z_NABIDEK).all():
+        datum = _iso(vystup.aktualizovano_at) or ""
+        popis = nabidka.zakaznik_nazev or f"Nabídka #{nabidka.id}"
+        z_nabidek.append(
+            VystupSablonaZNabidky(
+                nabidka_id=nabidka.id,
+                nazev=f"{popis} ({datum[:10]})" if datum else popis,
+                konfigurace=sablona_katalog.doplnene_bloky(
+                    typ_reseni, vystup.konfigurace_json or {}
+                ),
+            )
+        )
+    return VystupSablonySeznam(
+        sablony=[_sablona_out(s, typ_reseni) for s in sablony],
+        nabidky=z_nabidek,
+    )
+
+
+@router.post("/vystup-sablony/{typ_reseni}", response_model=VystupSablonaOut)
+def uloz_vystup_sablonu(
+    typ_reseni: str,
+    vstup: VystupSablonaVstup,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Uloží rozvržení pod názvem. Stejný název v rámci typu řešení se přepíše
+    (obchodník tím šablonu aktualizuje). Whitelist polí platí stejně jako
+    u šablony nabídky."""
+    _over_typ_reseni(typ_reseni)
+    nazev = (vstup.nazev or "").strip()
+    if not nazev:
+        raise HTTPException(status_code=422, detail="Šablona musí mít název.")
+    if len(nazev) > 120:
+        raise HTTPException(status_code=422, detail="Název šablony je moc dlouhý (max 120 znaků).")
+    _over_konfiguraci(typ_reseni, vstup.konfigurace)
+
+    zaznam = (
+        db.query(VystupSablona)
+        .filter(VystupSablona.typ_reseni == typ_reseni, VystupSablona.nazev == nazev)
+        .first()
+    )
+    if zaznam is None:
+        zaznam = VystupSablona(
+            nazev=nazev,
+            typ_reseni=typ_reseni,
+            konfigurace_json=vstup.konfigurace.model_dump(),
+            vytvoril_user_id=user.id,
+        )
+        db.add(zaznam)
+    else:
+        zaznam.konfigurace_json = vstup.konfigurace.model_dump()
+    db.commit()
+    db.refresh(zaznam)
+    return _sablona_out(zaznam, typ_reseni)
+
+
+@router.delete("/vystup-sablony/{typ_reseni}/{sablona_id}")
+def smaz_vystup_sablonu(
+    typ_reseni: str,
+    sablona_id: int,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Smaže pojmenovanou šablonu. Nabídky, které z ní vznikly, to neovlivní –
+    mají vlastní kopii rozvržení."""
+    _over_typ_reseni(typ_reseni)
+    zaznam = (
+        db.query(VystupSablona)
+        .filter(VystupSablona.id == sablona_id, VystupSablona.typ_reseni == typ_reseni)
+        .first()
+    )
+    if zaznam is None:
+        raise HTTPException(status_code=404, detail="Šablona neexistuje")
+    db.delete(zaznam)
+    db.commit()
+    return {"smazano": True}

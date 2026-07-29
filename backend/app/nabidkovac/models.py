@@ -470,6 +470,38 @@ class NabidkaVystup(Base):
     )
 
 
+class VystupSablona(Base):
+    """Pojmenované rozvržení nabídky k opakovanému použití.
+
+    `NabidkaVystup` je šablona *jedné* nabídky. Tady jsou naopak rozvržení
+    uložená napříč nabídkami: obchodník si vyladí vizuál, dá „Uložit jako
+    šablonu" a příště ho jen vybere. Ukládá se pouze rozvržení (bloky, texty,
+    šířky) – žádná zákaznická čísla, ta se do nabídky vždy dopočítají z jejího
+    vlastního řešení.
+
+    Jedna šablona na (název × typ řešení): PPA a peak shaving mají jiná pole,
+    takže se šablony mezi typy nepřenášejí. Tabulka vzniká přes `create_all`.
+    """
+
+    __tablename__ = "vystup_sablony"
+    __table_args__ = (
+        UniqueConstraint("nazev", "typ_reseni", name="uq_vystup_sablony_nazev_typ"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    nazev = Column(String, nullable=False)
+    typ_reseni = Column(String, nullable=False, index=True)  # "ppa" / "peak_shaving"
+    konfigurace_json = Column(JSONB, nullable=False, default=dict, server_default="{}")
+
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    aktualizovano_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    vytvoril_user_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True
+    )
+
+
 class GenerovanaNabidkaPdf(Base):
     """Vygenerované PDF nabídky (kap. 4.8 SPEC).
 

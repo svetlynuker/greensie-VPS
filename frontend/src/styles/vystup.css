@@ -202,6 +202,7 @@
 }
 .vy-karta .k-nazev { font-size: 11px; color: #6a7570; margin-bottom: 4px; }
 .vy-karta .k-hodnota { font-size: 19px; font-weight: 700; color: #17321f; }
+.vy-karta .k-hodnota.slovni { font-size: 14px; line-height: 1.3; }
 .vy-karta.zvyraznit { background: #eaf6ec; border-color: #bfe3c6; }
 .vy-karta.zvyraznit .k-hodnota { color: var(--brand-strong, #248139); }
 
@@ -213,6 +214,41 @@
 
 .vy-graf { border: 1px solid #e9eeeb; border-radius: 10px; padding: 12px; }
 .vy-prazdno { color: #99a3a0; font-style: italic; font-size: 12px; }
+
+/* ---- Mřížka papíru ----
+ * Prvky se skládají do řádků po 12 sloupcích. Buňka roste podle --s
+ * (flex-grow = počet sloupců), nevyužitý zbytek řádku drží .vy-mezera – bez ní
+ * by jedna třetinová dlaždice roztáhla řádek na celou šířku. */
+.vy-radek {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+.vy-bunka,
+.vy-mezera {
+  flex: var(--s, 12) 1 0;
+  min-width: 0; /* jinak dlouhé slovo rozhodí poměry sloupců */
+}
+/* Prvek uvnitř buňky nese odsazení sám (.vy-blok), u dlaždice ho dáme sem. */
+.vy-bunka > .vy-karta { margin-bottom: 20px; }
+
+/* Ruční zlom stránky – v tisku jen zlomí, na obrazovce je vidět čárka. */
+.vy-zlom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 20px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #99a3a0;
+}
+.vy-zlom::before,
+.vy-zlom::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed #c9d3ce;
+}
 
 /* ---- Editor (ovládání) ---- */
 .ed-blok {
@@ -233,6 +269,104 @@
 .ed-checkbox { display: flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 3px 0; }
 .ed-checkbox .sp { flex: 1; }
 .ed-sekce-nadpis { font-size: 11px; color: var(--fm-muted, #7a857f); margin: 8px 0 2px; }
+
+/* Sekce levého panelu (šablona, paleta, vypnuté prvky, vlastnosti) */
+.ed-sekce { margin-bottom: 14px; }
+.ed-sekce-t {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fm-muted, #7a857f);
+  margin-bottom: 6px;
+}
+.ed-napoveda {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--fm-muted, #7a857f);
+  margin-bottom: 6px;
+}
+.ed-btn.aktivni {
+  background: var(--fm-brand-dk, #248139);
+  border-color: var(--fm-brand-dk, #248139);
+  color: #fff;
+}
+.ed-sirky { display: flex; gap: 4px; margin-bottom: 6px; }
+.ed-sirky .ed-btn { flex: 1; }
+
+/* Skládací sekce palety */
+.ed-skupina {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: 0;
+  background: none;
+  padding: 4px 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fm-muted, #7a857f);
+}
+.ed-skupina .pocet {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Položka palety – tahá se na papír */
+.ed-paleta-polozka {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  margin-bottom: 3px;
+  border: 1px solid var(--fm-line, #dfe4e2);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  font-size: 12.5px;
+  cursor: grab;
+}
+.ed-paleta-polozka:hover { border-color: var(--fm-brand-dk, #248139); }
+.ed-paleta-polozka.ztlumene { opacity: 0.5; }
+.ed-uchop { color: var(--fm-muted, #7a857f); cursor: grab; }
+
+/* ---- Ovládání na papíře ---- */
+.vystup-editace .ed-polozka { position: relative; cursor: pointer; }
+.vystup-editace .ed-polozka:hover { outline: 1px dashed var(--fm-brand-dk, #248139); }
+.vystup-editace .ed-polozka.vybrana {
+  outline: 2px solid var(--fm-brand-dk, #248139);
+  outline-offset: 2px;
+}
+/* Úchop se ukáže až při přejezdu, ať náhled zůstane čistý. */
+.vystup-editace .ed-polozka > .ed-uchop {
+  position: absolute;
+  top: 2px;
+  left: -14px;
+  opacity: 0;
+  font-size: 13px;
+}
+.vystup-editace .ed-polozka:hover > .ed-uchop,
+.vystup-editace .ed-polozka.vybrana > .ed-uchop { opacity: 1; }
+
+/* Místo, kam se prvek pustí. Nezabírá šířku, dokud se netáhne. */
+.ed-misto {
+  flex: 0 0 4px;
+  align-self: stretch;
+  border-radius: 3px;
+  margin: 0 -2px;
+}
+.ed-misto.konec { height: 26px; flex: none; }
+/* Při tahání se cíle rozšíří a zesvětlí, ať je vidět, kam se dá pustit. */
+.vystup-tahame .ed-misto { flex-basis: 16px; background: rgba(36, 129, 57, 0.08); }
+.vystup-tahame .ed-misto.konec { height: 44px; }
+.ed-misto.aktivni {
+  background: var(--fm-brand-dk, #248139);
+  box-shadow: 0 0 0 2px rgba(36, 129, 57, 0.25);
+}
 
 @media print {
   /* Okraje listu přebírá @page, aby platily na každé stránce – padding na
@@ -274,6 +408,16 @@
   .vy-hlavicka { break-inside: avoid; }
   .vy-blok h2 { break-after: avoid; }
   .vy-karty, .vy-karta, .vy-graf { break-inside: avoid; }
+  /* Řádek s víc prvky vedle sebe se nesmí rozříznout (flex se přes stránky
+     láme nespolehlivě); řádek s jediným prvkem se lámat smí, jinak by dlouhý
+     text přeskočil na další stránku a nechal mezeru. */
+  .vy-radek-nelamat { break-inside: avoid; }
+  /* Ruční zlom stránky: čárka s popiskem je jen pro obrazovku. */
+  .vy-zlom { break-after: page; margin: 0; border: 0; height: 0; overflow: hidden; }
+  .vy-zlom > span, .vy-zlom::before, .vy-zlom::after { display: none; }
+  /* Ovládání editoru do PDF nepatří. */
+  .ed-uchop, .ed-misto { display: none !important; }
+  .ed-polozka { outline: none !important; }
   .vy-tabulka thead { display: table-header-group; }
   .vy-tabulka tr { break-inside: avoid; }
   /* Pás se značkou se opakuje jako záhlaví tabulky, ať se nikdy nerozlomí. */

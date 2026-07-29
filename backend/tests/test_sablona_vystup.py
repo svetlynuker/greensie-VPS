@@ -338,3 +338,117 @@ class TestDoplneneBloky:
                     assert set(b.get("pole") or []) <= sk.platne_klice(typ), (typ, b["id"])
                 elif b["druh"] == "tabulka":
                     assert set(b.get("pole") or []) <= sk.platne_sloupce(typ), (typ, b["id"])
+
+
+class TestMrizkaAPolozky:
+    """Nové vlastnosti prvku: šířka v mřížce a dlaždice s jednou hodnotou."""
+
+    def test_blok_ma_vychozi_sirku_celou(self):
+        from app.nabidkovac.schemas import SIRKA_PLNA, VystupBlok
+
+        b = VystupBlok(id="a", druh="text")
+        assert b.sirka == SIRKA_PLNA and b.klic == ""
+
+    def test_starsi_ulozena_konfigurace_projde(self):
+        # Bloky bez `sirka`/`klic` (uložené před mřížkou) musí zůstat platné.
+        from app.nabidkovac.schemas import VystupKonfigurace
+
+        k = VystupKonfigurace(
+            bloky=[{"id": "uvod", "druh": "text", "viditelny": True, "nadpis": "Úvod"}]
+        )
+        assert k.bloky[0].sirka == 12
+
+    def test_sirka_mimo_rozsah_neprojde(self):
+        from pydantic import ValidationError
+
+        from app.nabidkovac.schemas import VystupBlok
+
+        for spatna in (0, -3, 13, 100):
+            with pytest.raises(ValidationError):
+                VystupBlok(id="a", druh="udaj", klic="nazev", sirka=spatna)
+
+    def test_druhy_bloku_znaji_dlazdici_i_zlom(self):
+        from app.nabidkovac.schemas import VystupBlok
+
+        assert VystupBlok(id="a", druh="udaj", klic="nazev").druh == "udaj"
+        assert VystupBlok(id="z", druh="zlom").druh == "zlom"
+
+
+class TestPojistkaKonfigurace:
+    """POJISTKA „jen zákaznická data" musí platit i pro dlaždice (druh `udaj`)
+    a pro pojmenované šablony – obojí končí ve stejném vykreslení."""
+
+    def _konfigurace(self, **kw):
+        from app.nabidkovac.schemas import VystupKonfigurace
+
+        return VystupKonfigurace(bloky=[{"id": "x", "viditelny": True, **kw}])
+
+    def test_dlazdice_se_zakaznickym_polem_projde(self):
+        from app.nabidkovac.routes import _over_konfiguraci
+
+        _over_konfiguraci("peak_shaving", self._konfigurace(druh="udaj", klic="rocni_uspora_2027_kc"))
+
+    def test_dlazdice_s_internim_cislem_neprojde(self):
+        from fastapi import HTTPException
+
+        from app.nabidkovac.routes import _over_konfiguraci
+
+        for interni in ("npv_kc", "irr", "prinos_baterie", "capex_kc"):
+            with pytest.raises(HTTPException) as e:
+                _over_konfiguraci("peak_shaving", self._konfigurace(druh="udaj", klic=interni))
+            assert e.value.status_code == 422
+
+    def test_dlazdice_bez_klice_neprojde(self):
+        from fastapi import HTTPException
+
+        from app.nabidkovac.routes import _over_konfiguraci
+
+        with pytest.raises(HTTPException) as e:
+            _over_konfiguraci("peak_shaving", self._konfigurace(druh="udaj"))
+        assert e.value.status_code == 422
+
+    def test_pole_z_jineho_typu_reseni_neprojde(self):
+        # PPA pole v peak shavingu (a naopak) – šablony se mezi typy nepřenášejí.
+        from fastapi import HTTPException
+
+        from app.nabidkovac.routes import _over_konfiguraci
+
+        with pytest.raises(HTTPException):
+            _over_konfiguraci("peak_shaving", self._konfigurace(druh="udaj", klic="kwp"))
+        with pytest.raises(HTTPException):
+            _over_konfiguraci("ppa", self._konfigurace(druh="udaj", klic="zisk_spot_kc"))
+
+    def test_zlom_a_text_pojistku_nepotrebuji(self):
+        from app.nabidkovac.routes import _over_konfiguraci
+
+        _over_konfiguraci("peak_shaving", self._konfigurace(druh="zlom"))
+        _over_konfiguraci("peak_shaving", self._konfigurace(druh="text", text="cokoli"))
+
+
+class TestSkupinyVPalete:
+    def test_kazde_pole_ma_skupinu(self):
+        for typ in sk.PODPOROVANE_TYPY:
+            for p in sk.katalog_pro_frontend(typ)["pole"]:
+                assert p.get("skupina"), (typ, p["klic"])
+
+    def test_pole_stejne_skupiny_jdou_po_sobe(self):
+        # Paleta seskupuje podle pořadí z katalogu – rozházené skupiny by se
+        # v editoru zobrazily dvakrát.
+        for typ in sk.PODPOROVANE_TYPY:
+            videne = []
+            for p in sk.katalog_pro_frontend(typ)["pole"]:
+                if not videne or videne[-1] != p["skupina"]:
+                    videne.append(p["skupina"])
+            assert len(videne) == len(set(videne)), (typ, videne)
+
+    def test_doplnene_bloky_zachovaji_sirku_a_klic(self):
+        ulozena = {
+            "bloky": [
+                {"id": "hlavicka", "druh": "hlavicka", "viditelny": True},
+                {"id": "d1", "druh": "udaj", "klic": "rocni_uspora_2026_kc", "sirka": 4,
+                 "viditelny": True},
+            ]
+        }
+        k = sk.doplnene_bloky("peak_shaving", ulozena)
+        dlazdice = next(b for b in k["bloky"] if b["id"] == "d1")
+        assert dlazdice["sirka"] == 4 and dlazdice["klic"] == "rocni_uspora_2026_kc"

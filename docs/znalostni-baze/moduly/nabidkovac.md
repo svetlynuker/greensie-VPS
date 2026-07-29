@@ -60,6 +60,8 @@ načíst profil a technologii vybrat z katalogu.
 5. **Spočítej řešení** – u PPA a Peak shavingu v panelu v detailu nabídky (viz samostatné návody).
 6. **Sestav nabídku pro zákazníka** – tlačítko „Nabídka pro zákazníka" v hlavičce detailu (jen u PPA a
    Peak shavingu): v editoru zapneš/vypneš bloky, upravíš texty a vybereš zobrazená pole.
+   Prvky se **přetahují z palety na papír** a skládají do mřížky (¼ / ⅓ / ½ / ⅔ / celá šířka).
+   Hotové rozvržení si můžeš uložit jako **šablonu** a příště ji jen vybrat.
    U peak shavingu jsou v nabídce čísla roku 2026 i **modelu od roku 2027** (nové tarify) a
    u obchodních režimů i **výnos z obchodu s elektřinou** – tedy totéž, co ukazuje panel výsledku.
    Bloky, pro které data nejsou, se do PDF netisknou.
@@ -147,14 +149,24 @@ Legenda „kdo vidí": **(vše)** = každý, kdo Nabídkovač otevře (právo `n
 | **Obnovit výchozí** | lišta | Načte kódovou výchozí předlohu (přepíše se až po Uložit; ptá se na potvrzení) | vše |
 | **Uložit** | lišta | Uloží šablonu výstupu této nabídky (per typ řešení) | vše |
 | **Uložit do PDF** | lišta | Otevře tiskový dialog prohlížeče (tisk / uložit jako PDF) | vše |
-| **Zaškrtávátko u bloku** | editor | Zapne/vypne blok ve výstupu (skrytý blok je ztlumený) | vše |
-| **↑ / ↓ (u bloku)** | editor | Změní pořadí bloků | vše |
-| **Nadpis bloku** | editor | Upraví nadpis (u hlavičky = titulek nabídky, u grafu = nadpis grafu) | vše |
-| **Text bloku** | editor | Upraví text (hlavička = podnadpis, text = odstavec, údaje = úvodní věta) | vše |
-| **Přidat/odebrat údaj + ↑↓** | editor (blok „Údaje") | Vybere zobrazená zákaznická pole a jejich pořadí | vše |
-| **Sloupce tabulky** | editor (blok „Tabulka") | Zaškrtne sloupce roční tabulky | vše |
+| **Šablona** | panel, nahoře | Vybere hotové rozvržení: výchozí předlohu, uloženou šablonu, nebo rozvržení jiné nabídky téhož typu | vše |
+| **Uložit jako šablonu…** | panel | Uloží současné rozvržení pod názvem pro další nabídky (stejný název přepíše) | vše |
+| **✕ u uložené šablony** | panel | Smaže šablonu (nabídky, které z ní vznikly, to neovlivní) | vše |
+| **Paleta – Text / Skupina údajů / Graf / Tabulka / Zlom stránky** | panel | Přetáhne prvek na papír | vše |
+| **Paleta – sekce s údaji** | panel | Skupiny zákaznických hodnot (Navržené řešení, Rezervovaná kapacita, Úspora 2026, Úspora od 2027, Obchod); přetažením vznikne dlaždice s hodnotou. Ztlumené = na papíře už je | vše |
+| **⠿ na papíře** | papír | Uchopení prvku a přesun na jiné místo | vše |
+| **Klik na prvek** | papír | Vybere prvek (zelený rámeček) a otevře jeho vlastnosti | vše |
+| **Šířka ¼ ⅓ ½ ⅔ celá** | vlastnosti | Kolik z 12 sloupců prvek zabere; co se vejde, stojí na jednom řádku | vše |
+| **Nadpis / Text** | vlastnosti | Nadpis a text prvku (u hlavičky titulek + podnadpis, u dlaždice popisek – prázdný = z katalogu) | vše |
+| **Zobrazit v nabídce** | vlastnosti | Vypne prvek; přesune se do sekce **Vypnuté prvky** a netiskne se | vše |
+| **Odebrat** | vlastnosti | Odebere prvek z nabídky | vše |
+| **Přidat/odebrat údaj + ↑↓** | vlastnosti (Skupina údajů) | Vybere zobrazená zákaznická pole a jejich pořadí | vše |
+| **Sloupce tabulky** | vlastnosti (Tabulka) | Zaškrtne sloupce roční tabulky | vše |
 
-> 📸 SCREENSHOT: editor bloků – zaškrtávátka, šipky pořadí, výběr zobrazených údajů
+Papír je WYSIWYG: je na něm právě to, co se vytiskne. Vypnuté prvky proto na papíře nejsou,
+najdeš je v sekci *Vypnuté prvky* a zaškrtnutím se vrátí.
+
+> 📸 SCREENSHOT: editor nabídky – vlevo šablona a paleta ve skupinách, vpravo papír s dlaždicemi
 
 ### Práce s katalogem a vlastními sloupci
 Katalog technologií je **společný** (jeden pro celý Nabídkovač) a najdeš ho přes **⚙ Katalog
@@ -272,7 +284,10 @@ interní čísla se nenabízejí.
   - `katalog_sloupce` — definice vlastního sloupce katalogu (`klic` unikátní/neměnný, `nazev`,
     `typ` text/cislo, `poradi`). Hodnoty se ukládají do `technologie.extra` pod `klic`.
   - `nabidka_vystup` — uložená nabídková šablona per (`nabidka_id`, `typ_reseni`), unikát na
-    dvojici; `konfigurace_json` = seznam bloků.
+    dvojici; `konfigurace_json` = seznam prvků (`druh`, `viditelny`, `nadpis`, `text`, `pole`,
+    `klic`, `sirka`).
+  - `vystup_sablony` — pojmenované rozvržení k opakovanému použití, unikát na (`nazev`,
+    `typ_reseni`); `konfigurace_json` má stejnou strukturu. Bez zákaznických čísel.
   - `navrhovana_reseni` — výstup výpočtu (`typ_reseni`, `popis_json`, `vybrano_zakaznikem`).
     Zdroj hodnot pro nabídkový výstup.
   - `vypoctova_nastaveni` — verzovaná globální nastavení (nikdy se nepřepisují), `spotreba_profil`,
@@ -293,6 +308,10 @@ interní čísla se nenabízejí.
   - `GET /nabidky/{id}/vystup/{typ_reseni}?vychozi=` — podklad pro editor i náhled (konfigurace,
     katalog polí, resolvnuté zákaznické hodnoty, tabulka, graf). `vychozi=1` vrátí kódovou předlohu.
   - `PUT /nabidky/{id}/vystup/{typ_reseni}` — uloží šablonu výstupu (s validací whitelistu).
+  - `GET /vystup-sablony/{typ_reseni}?krome_nabidky=` — pojmenované šablony + rozvržení jiných
+    nabídek stejného typu (k výběru v editoru).
+  - `POST /vystup-sablony/{typ_reseni}` — uloží rozvržení pod názvem (stejný název přepíše),
+    `DELETE /vystup-sablony/{typ_reseni}/{id}` — smaže šablonu.
   - Výpočtové endpointy (`.../peak-shaving/*`, `.../ppa/*`), `vypoctova-nastaveni`, `sazby` —
     patří kalkulátorům (viz jejich návody).
 - **PDF / tisk (jak vzniká):** žádné serverové generování. Komponenta `NabidkaVystup.jsx`
@@ -327,6 +346,30 @@ interní čísla se nenabízejí.
   nabídky. Bloky „Vaše úspora podle nových tarifů" a „Obchod s elektřinou" se v tisku samy
   skryjí, když pro ně data nejsou (chybí sazby ERÚ, resp. čistý peak shaving) – prázdná pole
   se netisknou.
+- **Mřížka papíru (drag & drop editor):** prvek nese `sirka` = kolik z **12 sloupců** zabere
+  (`schemas.SIRKA_PLNA`). Prvky se skládají za sebou do řádků – co se do dvanáctky nevejde,
+  jde na další řádek (`nabidkovac.js: doRadku`). Řádek je `display: flex`, buňka má
+  `flex-grow: sirka`, nevyužitý zbytek řádku drží `.vy-mezera` (bez ní by jedna třetinová
+  dlaždice roztáhla řádek na celou šířku). **Proč flex a ne CSS grid:** grid se přes stránky
+  láme nespolehlivě, což by rozbilo opakované záhlaví. Starší uložené nabídky `sirka` nemají
+  a dostanou celou šířku, takže vypadají jako dřív.
+  - Nové druhy prvků: **`udaj`** = jedna dlaždice s hodnotou (nese `klic` do katalogu; whitelist
+    ji hlídá stejně jako pole ve skupině – viz `_over_konfiguraci`) a **`zlom`** = ruční zlom
+    stránky (`break-after: page`; čárka s popiskem je jen pro obrazovku).
+  - V tisku se nesmí rozříznout řádek s víc prvky vedle sebe (`.vy-radek-nelamat`); řádek
+    s jediným prvkem se lámat smí, jinak by dlouhý text přeskočil a nechal mezeru.
+  - Papír je WYSIWYG – `NabidkaVystup` kreslí jen `viditelny` prvky, i v editoru. Ovládání
+    (úchopy, cíle pro puštění) je v tisku skryté třídami v `@media print`.
+  - Tahání je čisté HTML5 drag & drop, žádná knihovna. Matematika vkládání a přesunu je
+    v `nabidkovac.js` (`vlozPolozku`, `presunPolozku`), aby šla ověřit bez prohlížeče.
+    Pozn.: HTML5 DnD nefunguje na dotyku – editor je myšový.
+- **Pojmenované šablony rozvržení:** tabulka `vystup_sablony` (model `VystupSablona`, vzniká přes
+  `create_all`) drží rozvržení napříč nabídkami: `GET/POST /nabidkovac/vystup-sablony/{typ}` a
+  `DELETE .../{typ}/{id}`. Seznam vrací i **rozvržení jiných nabídek** stejného typu řešení
+  (nejnovějších 20), takže jde převzít vizuál i bez uložené šablony. Ukládá se **jen rozvržení**,
+  nikdy čísla – ta se vždy dopočítají z řešení té nabídky, do které se šablona použije, takže se
+  nemohou přenést data jiného zákazníka. Šablony se nepřenášejí mezi typy řešení (PPA a peak
+  shaving mají jiná pole) a stejný název v rámci typu se přepíše.
 - **Nové bloky se objeví i ve starých nabídkách:** uložená šablona se při otevření doplní bloky,
   které předloha zná a ona ne (`sablona_katalog.doplnene_bloky`, vkládá je na místo z předlohy).
   Vlastní texty, pořadí ani vypnuté bloky se nepřepisují a uloží se to až na *Uložit* – OZ tedy
