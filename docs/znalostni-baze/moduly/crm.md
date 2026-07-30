@@ -1,6 +1,6 @@
 # Zákazníci a Obchodní případy (CRM)
 
-> **Sekce v nabídce:** `zakaznici`, `obchodni_pripady`, `nabidky` · **Adresy (routy):** `/zakaznici/lead`, `/zakaznici/klient`, `/zakaznici/detail/:id`, `/pripady`, `/pripady/detail/:id`, `/nabidky` · **Kdo smí otevřít:** právo `zakaznici` resp. `obchodni_pripady`; sekce Nabídky jede pod právem `nabidkovac` (bez práva se sekce v nabídce vůbec nezobrazí; admin vždy)
+> **Sekce v nabídce:** `zakaznici`, `obchodni_pripady`, `nabidky`, `objednavky`, `projekty` · **Adresy (routy):** `/zakaznici/lead`, `/zakaznici/klient`, `/zakaznici/detail/:id`, `/pripady`, `/pripady/detail/:id`, `/nabidky` · **Kdo smí otevřít:** právo `zakaznici` resp. `obchodni_pripady`; sekce Nabídky jede pod právem `nabidkovac` (bez práva se sekce v nabídce vůbec nezobrazí; admin vždy)
 > **Kód:** frontend `frontend/src/pages/Zakaznici.jsx`, `ZakaznikDetail.jsx`, `ObchodniPripady.jsx`, `ObchodniPripadDetail.jsx`, `Nabidky.jsx`, backend `backend/app/crm/`
 
 Evidence obchodu: **zákazník → obchodní případ → nabídka** (a dál objednávka a projekt, které
@@ -121,6 +121,48 @@ zjistit, jak dlouho nabídka u zákazníka visela. Stavy si vedení upraví tla�
 
 > **Přijatá nabídka NEPOSOUVÁ obchodní případ na výhru.** Přijatá nabídka ještě není podepsaná
 > objednávka; předbíhat rozhodnutí obchodníka by bylo horší než nechat ho případ posunout sám.
+
+### Objednávky: potvrzená zakázka
+Sekce **Objednávky** (a záložka *Objednávky a projekty* na kartě případu). Objednávka se
+zakládá **z nabídky**, kterou zákazník přijal — převezme z ní cenu, pokud ji umíme určit
+(u peak shavingu investici do baterie; u PPA ne, protože tam zákazník neplatí zařízení, ale
+dodanou elektřinu).
+
+Cena na objednávce je **snapshot**, ne odkaz do výpočtu: je to to, na čem jste se dohodli.
+Kdyby se nabídka pak přepočítala, objednávka se tím nezmění.
+
+Zrušení objednávky si vyžádá **důvod** — stejně jako prohra případu. Objednávku, ze které už
+vznikl projekt, **nelze smazat** (projekt by osiřel).
+
+### Projekty: realizace s kroky a návaznostmi
+Sekce **Projekty**. Projekt **nelze založit samostatně** — vzniká z objednávky (tlačítko v jejím
+detailu) nebo z obchodního případu u zakázek, které objednávkou neprochází. Číslo kopíruje
+případ: `PRO-26-0301` k `OP-26-0301`; druhý projekt téhož případu má `-2`.
+
+**Kroky realizace** jsou jádro. Každý krok má trvání ve dnech a může **navazovat** na jiný krok:
+
+- krok bez předchůdce se počítá **od zahájení projektu**,
+- krok s předchůdcem **od jeho skutečného dokončení** (dokud předchůdce hotový není, od jeho
+  plánovaného termínu),
+- když se něco zdrží, **posunou se termíny kroků za tím**. To je celý smysl: termíny nelžou.
+
+Krok, který čeká na nedokončeného předchůdce, je v seznamu utlumený — nemá se do něj pouštět.
+Odkliknutí hotového kroku je zaškrtávátko vlevo, protože to je nejčastější akce.
+
+> **Ruční termín má vždy přednost.** Když u kroku nastavíš datum sám („tehdy přijede jeřáb"),
+> přepočet ho už nikdy nepřepíše. Vrátit ho do automatického dopočtu jde odkazem *vrátit
+> do automatu*.
+
+### Šablony projektových kroků
+Tlačítko **📋 Šablony kroků** v sekci Projekty. Šablona je posloupnost kroků s trváním
+a návaznostmi — „takhle u nás vypadá FVE realizace". Na projektu se jedním kliknutím rozbalí
+do konkrétních úkolů s termíny.
+
+Appka přináší dvě hotové: **FVE – standardní realizace** a **Peak shaving – instalace baterie**
+(8 kroků každá). Vedení je může upravit, přidat vlastní, nebo je smazat — projekty, které z nich
+už vznikly, zůstanou nedotčené (kroky se do nich zkopírovaly).
+
+Šablonu lze přidat i k rozjetému projektu; kroky se přidají za existující.
 
 ### Aktivity a úkoly
 Na kartě zákazníka i případu je log práce: **poznámka, telefonát, e-mail, schůzka, úkol**.
@@ -254,6 +296,30 @@ nabídky dotáhne její detail (`GET /nabidkovac/nabidky/{id}`) a po každém na
 načte znovu. Seznam nabídek případu chodí v jeho detailu (`nabidky`), obsah nabídek si CRM
 nekopíruje — zdroj pravdy o výpočtech zůstává nabídkovač.
 
+### Projekt vs. Přehled projektů (dvojí význam slova)
+V appce jsou **dva různé „projekty"** a je potřeba je nemíchat:
+
+| Co | Tabulka | Adresa | Odkud data |
+|---|---|---|---|
+| **Projekty** (CRM realizace) | `crm_projekty` | `/projekty` | zakládá se z objednávky/případu |
+| **Přehled projektů** (matice úkolů) | `projekty` | `/prehled-projektu` | synchronizace z **Freela** |
+
+CRM projekt má na Freelo projekt volitelný odkaz (`freelo_projekt_id`) — appka má Freelo časem
+nahradit, do té doby běží obojí a páruje se přes číslo OP mostem v `matice/disk_parovani.py`.
+
+> ⚠️ Přehled projektů se přesunul z `/projekty` na `/prehled-projektu`, protože adresu
+> `/projekty` převzala CRM realizace. Staré záložky v prohlížeči je potřeba přepsat.
+
+### Kroky a termíny: jak to funguje uvnitř
+`app/crm/projekty_kroky.py`. Termín kroku = start + `delka_dni`, kde start je zahájení projektu
+(krok bez předchůdce) nebo dokončení/termín předchůdce. Přepočet běží po každé změně kroku,
+po dokončení kroku i po posunu zahájení projektu, a **respektuje `termin_rucne`**.
+
+Návaznost v **šabloně** se drží jako `zavisi_na_poradi` (pořadí předchůdce), v **projektu** jako
+`zavisi_na_id` (skutečný cizí klíč). Důvod: šablona se do projektu kopíruje a tam vznikají nové
+řádky s novými id — odkaz přes id by po kopii nesouhlasil. Krok nesmí navazovat sám na sebe
+(odmítne se), takže termín se nemůže zacyklit.
+
 ### Pipeline nabídek: jak to funguje uvnitř
 `app/crm/nabidky_pipeline.py`. Obchodní stav je sloupec `nabidky.stav_obchodni` (klíč do
 `crm_stavy`, entita `nab`), **nullable** — starším nabídkám se při čtení dopočítá první stav
@@ -309,6 +375,10 @@ Práva: **čtení definic** smí každý, kdo vidí CRM (z definic se kreslí fo
 | `crm_aktivity` | poznámky, telefonáty, schůzky a úkoly (generická pro všechny entity) |
 | *(nabídky)* | zůstávají v tabulce `nabidky` nabídkovače – CRM jim přidává jen `stav_obchodni` a pohled |
 | `crm_vlastni_pole` | definice admin přidaných polí; hodnoty jsou v `extra` daného záznamu |
+| `crm_objednavky` | potvrzené zakázky; `cena_kc` je snapshot, `nabidka_id` informativní |
+| `crm_projekty` | realizace; `freelo_projekt_id` je most na Freelo projekt (koexistence) |
+| `crm_projekt_kroky` | kroky projektu; `zavisi_na_id` je skutečná návaznost mezi kroky |
+| `crm_projekt_sablony`, `crm_projekt_sablona_kroky` | šablony kroků; návaznost drží **pořadí** předchůdce, ne id |
 
 Na `nabidky` (nabídkovač) přibyly dva sloupce: **`cislo`** (`NAB-26-NNNN`) a
 **`obchodni_pripad_id`**. Obojí je nullable schválně — nabídkovač jde pořád otevřít samostatně
@@ -330,6 +400,10 @@ současně (a právě z toho vznikne kombinovaná nabídka, až se to postaví).
 | V kanbanu chybí sloupec, ale případy někde jsou | Stav byl smazán z nastavení; případy v neexistujícím stavu padají do prvního sloupce, aby se neztratily. |
 | Nabídka je v kanbanu Nabídek, ale nemá případ | Vznikla přímo v nabídkovači. Vidí ji jen autor; navázat ji na případ jde tím, že se nová založí z případu. |
 | Nabídka je „přijata", ale případ pořád není vyhraný | Správné chování — případ posouvá obchodník sám, přijatá nabídka ještě není podepsaná objednávka. |
+| Projekt nejde založit („nelze samostatně") | Musí vzniknout z objednávky nebo z případu. Otevři případ → záložka Objednávky a projekty. |
+| Termín kroku se nepřepočítal | Je zadaný ručně (`ruční` u termínu). Vrať ho do automatu odkazem u pole. |
+| Objednávku nelze smazat | Vznikl z ní projekt. Smaž nejdřív projekt. |
+| Přehled projektů zmizel z `/projekty` | Je na `/prehled-projektu` — adresu převzala CRM realizace. |
 
 ### Poznámky a úskalí
 - **Dvě pravdy o zákazníkovi.** Dokud běží Raynet i appka, vedou se klienti na dvou místech

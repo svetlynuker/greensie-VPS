@@ -24,6 +24,18 @@ const CESTY = {
       <path d="M16 5.2a3.2 3.2 0 0 1 0 5.9M18.5 20c0-2.3-.9-4-2.5-5" />
     </>
   ),
+  objednavky: (
+    <>
+      <path d="M6 3h9l4 4v14H6z" />
+      <path d="M15 3v4h4M9 12h7M9 16h5" />
+    </>
+  ),
+  realizace: (
+    <>
+      <path d="M3 21h18M6 21V10l6-5 6 5v11" />
+      <path d="M10 21v-6h4v6" />
+    </>
+  ),
   pripady: (
     <>
       <rect x="3" y="7" width="18" height="13" rx="2" />

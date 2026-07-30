@@ -5,6 +5,7 @@ import Aktivity from "../components/Aktivity";
 import DuvodProhry from "../components/DuvodProhry";
 import PripadFormular from "../components/PripadFormular";
 import PripadNabidky from "../components/PripadNabidky";
+import PripadRealizace from "../components/PripadRealizace";
 import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
 import VlastniPoleVypis from "../components/VlastniPoleVypis";
 import {
@@ -22,6 +23,7 @@ import "../styles/crm.css";
 const ZALOZKY = [
   { klic: "prehled", nazev: "Přehled" },
   { klic: "nabidky", nazev: "Nabídky" },
+  { klic: "realizace", nazev: "Objednávky a projekty" },
   { klic: "aktivity", nazev: "Aktivity a úkoly" },
   { klic: "historie", nazev: "Historie stavů" },
 ];
@@ -275,12 +277,12 @@ export default function ObchodniPripadDetail() {
                   navázaný na tento případ.
                 </li>
                 <li>
-                  <b>Objednávka</b> – vznikne z přijaté nabídky.{" "}
-                  <span className="crm-tise">(připravuje se)</span>
+                  <b>Objednávka</b> – zakládá se z přijaté nabídky na záložce
+                  „Objednávky a projekty".
                 </li>
                 <li>
-                  <b>Projekt</b> – vznikne z objednávky, číslo převezme po případu.{" "}
-                  <span className="crm-tise">(připravuje se)</span>
+                  <b>Projekt</b> – vzniká z objednávky, číslo převezme po případu a kroky
+                  se rozbalí ze šablony.
                 </li>
               </ul>
               {p.kategorie?.length === 0 && (
@@ -296,6 +298,10 @@ export default function ObchodniPripadDetail() {
 
         {zalozka === "nabidky" && (
           <PripadNabidky pripad={p} onZmena={nactiZnovu} />
+        )}
+
+        {zalozka === "realizace" && (
+          <PripadRealizace pripad={p} me={me} onZmena={nactiZnovu} />
         )}
 
         {zalozka === "aktivity" && <Aktivity entita="op" zaznamId={p.id} />}

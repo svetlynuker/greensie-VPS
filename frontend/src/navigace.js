@@ -30,12 +30,28 @@ export const NABIDKA = [
       // Přehled nabídek napříč případy. Jede pod právem Nabídkovače – kdo smí
       // nabídky vytvářet, smí je i vidět v seznamu.
       { klic: "nabidky", nazev: "Nabídky", ikona: "nabidkovac", cesta: "/nabidky", pravo: "nabidkovac" },
+      {
+        klic: "objednavky",
+        nazev: "Objednávky",
+        ikona: "objednavky",
+        cesta: "/objednavky",
+        pravo: "obchodni_pripady",
+      },
+      // CRM projekty (realizace). Přehled projektů z Freela je zvlášť pod
+      // Přehledy – appka ho má časem nahradit, do té doby běží obojí.
+      {
+        klic: "crm_projekty",
+        nazev: "Projekty",
+        ikona: "realizace",
+        cesta: "/projekty",
+        pravo: "obchodni_pripady",
+      },
     ],
   },
   {
     skupina: "Přehledy",
     polozky: [
-      { klic: "projekty", nazev: "Přehled projektů", ikona: "projekty", cesta: "/projekty", pravo: "projekty" },
+      { klic: "projekty", nazev: "Přehled projektů", ikona: "projekty", cesta: "/prehled-projektu", pravo: "projekty" },
       { klic: "finance", nazev: "Přehled financí", ikona: "finance", cesta: "/finance", pravo: "finance" },
       { klic: "zmeny", nazev: "Přehled změn", ikona: "zmeny", cesta: "/zmeny", pravo: "zmeny" },
     ],
@@ -102,7 +118,9 @@ const POPISY = {
   "/zakaznici": ["Zákazníci", "Leady a klienti"],
   "/pripady": ["Obchodní případy", "Pipeline zakázek"],
   "/nabidky": ["Nabídky", "Co je odesláno a co zákazník přijal"],
-  "/projekty": ["Přehled projektů", "Matice úkolů a fází"],
+  "/prehled-projektu": ["Přehled projektů", "Matice úkolů a fází"],
+  "/objednavky": ["Objednávky", "Potvrzené zakázky"],
+  "/projekty": ["Projekty", "Realizace zakázek"],
   "/finance": ["Přehled financí", "Faktury a párování POHODA"],
   "/zmeny": ["Přehled změn", "Co se pohnulo za období"],
   "/nabidkovac": ["Nabídkovač", "Nabídky FVE, PPA a peak shaving"],
@@ -131,8 +149,9 @@ export function popisStranky(pathname) {
 /** Která stránka manuálu patří ke které adrese (kontextová nápověda „?"). */
 export function strankaManualu(pathname) {
   if (pathname.startsWith("/zakaznici") || pathname.startsWith("/pripady")) return "crm";
-  if (pathname === "/nabidky" || pathname.startsWith("/nabidky/")) return "crm";
-  if (pathname.startsWith("/projekty")) return "prehled-projektu";
+  if (pathname.startsWith("/nabidky") || pathname.startsWith("/objednavky")) return "crm";
+  if (pathname.startsWith("/projekty")) return "crm";
+  if (pathname.startsWith("/prehled-projektu")) return "prehled-projektu";
   if (pathname.startsWith("/finance")) return "prehled-financi";
   if (pathname.startsWith("/zmeny")) return "prehled-zmen";
   // Kalkulátory mají vlastní stránku manuálu – ta obecná o Nabídkovači

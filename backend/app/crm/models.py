@@ -71,7 +71,7 @@ DRUHY_AKTIVITY = ("poznamka", "telefon", "email", "schuzka", "ukol")
 # Obrazovky, na které smí admin přidávat vlastní pole. Rozšíření o další
 # entitu = přidat klíč sem a její model do `vlastni_pole.MODELY` (entita musí
 # mít sloupec `extra`).
-ENTITY_VLASTNICH_POLI = ("zakaznik", "op")
+ENTITY_VLASTNICH_POLI = ("zakaznik", "op", "obj", "pro")
 
 # Datový typ vlastního pole. Dan chtěl „textová pole"; typy navíc stojí skoro
 # nic a ušetří pozdější práci (datum se dá řadit, ano/ne filtrovat, výběr
@@ -369,3 +369,212 @@ class CrmAktivita(Base):
 
     vlastnik = relationship("User", foreign_keys=[vlastnik_user_id])
     vytvoril = relationship("User", foreign_keys=[vytvoril_user_id])
+
+
+# ---- Objednávky a projekty --------------------------------------------------
+# Stavy kroku projektu. Držíme je zvlášť od stavů entit (`crm_stavy`), protože
+# krok je drobnost uvnitř projektu – konfigurovat pro něj pipeline by byla
+# zbytečná složitost.
+STAVY_KROKU = ("ceka", "probiha", "hotovo", "preskoceno")
+
+
+class Objednavka(Base):
+    """Objednávka – potvrzená zakázka, ze které se rozjíždí realizace.
+
+    Vzniká z PŘIJATÉ nabídky (proto `nabidka_id`), takže si od ní může vzít
+    cenu a nemusí se nic opisovat. Nabídku ale nedrží jako cizí klíč natvrdo
+    s CASCADE: kdyby se nabídka smazala, objednávka musí zůstat – je to
+    obchodní dokument, ne pohled na výpočet.
+
+    `cena_kc` je snapshot, ne odkaz do výpočtu. Cena na objednávce je to, na čem
+    se strany dohodly; kdyby se pak přepočítala nabídka, objednávka se tím
+    měnit nesmí.
+    """
+
+    __tablename__ = "crm_objednavky"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cislo = Column(String, nullable=False, unique=True, index=True)
+    obchodni_pripad_id = Column(
+        Integer, ForeignKey("crm_obchodni_pripady.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    # Ze které nabídky objednávka vznikla (informativní, SET NULL při smazání).
+    nabidka_id = Column(
+        Integer, ForeignKey("nabidky.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    nazev = Column(String, nullable=False, default="", server_default="")
+    popis = Column(Text, nullable=False, default="", server_default="")
+    cena_kc = Column(Numeric(14, 2), nullable=True)
+    datum_podpisu = Column(Date, nullable=True)
+    datum_dodani = Column(Date, nullable=True)
+
+    stav = Column(String, nullable=False, index=True)  # klíč do crm_stavy, entita "obj"
+    duvod_zruseni = Column(String, nullable=False, default="", server_default="")
+    uzavreno_at = Column(DateTime(timezone=True), nullable=True)
+
+    vlastnik_user_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    spoluvlastnici = Column(ARRAY(Integer), nullable=False, default=list, server_default="{}")
+    extra = Column(JSONB, nullable=False, default=dict, server_default="{}")
+
+    vytvoril_user_id = Column(Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True)
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    aktualizovano_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    pripad = relationship("ObchodniPripad")
+    vlastnik = relationship("User", foreign_keys=[vlastnik_user_id])
+
+
+class CrmProjekt(Base):
+    """Realizační projekt. Vzniká JEN z objednávky nebo z obchodního případu.
+
+    Samostatně vzniknout nesmí (zadání Dana) – proto je `obchodni_pripad_id`
+    povinný. Číslo kopíruje případ (`PRO-26-0301` k `OP-26-0301`), aby je lidé
+    párovali očima; druhý projekt téhož případu má suffix `-2`.
+
+    POZOR na dvojí význam slova „projekt": tabulka `projekty` (modul matice) je
+    projekt z **Freela** s maticí úkolů. Tenhle je CRM záznam realizace.
+    `freelo_projekt_id` je most mezi nimi – appka má Freelo postupně nahradit,
+    do té doby žijí vedle sebe a párují se přes číslo OP.
+    """
+
+    __tablename__ = "crm_projekty"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cislo = Column(String, nullable=False, unique=True, index=True)
+    obchodni_pripad_id = Column(
+        Integer, ForeignKey("crm_obchodni_pripady.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    objednavka_id = Column(
+        Integer, ForeignKey("crm_objednavky.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # Vazba na projekt z Freela (tabulka `projekty`) – koexistence, viz docstring.
+    freelo_projekt_id = Column(
+        Integer, ForeignKey("projekty.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    nazev = Column(String, nullable=False, default="", server_default="")
+    popis = Column(Text, nullable=False, default="", server_default="")
+    stav = Column(String, nullable=False, index=True)  # klíč do crm_stavy, entita "pro"
+
+    zahajeni = Column(Date, nullable=True)
+    predani = Column(Date, nullable=True)  # plánované předání
+    uzavreno_at = Column(DateTime(timezone=True), nullable=True)
+
+    vlastnik_user_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    spoluvlastnici = Column(ARRAY(Integer), nullable=False, default=list, server_default="{}")
+    extra = Column(JSONB, nullable=False, default=dict, server_default="{}")
+
+    vytvoril_user_id = Column(Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True)
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    aktualizovano_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    pripad = relationship("ObchodniPripad")
+    objednavka = relationship("Objednavka")
+    vlastnik = relationship("User", foreign_keys=[vlastnik_user_id])
+    kroky = relationship(
+        "ProjektKrok", back_populates="projekt", cascade="all, delete-orphan"
+    )
+
+
+class ProjektSablona(Base):
+    """Šablona projektových kroků – „takhle u nás vypadá FVE realizace".
+
+    Vedení si nachystá posloupnost kroků s odstupy a návaznostmi; na projektu
+    se pak jedním kliknutím rozbalí do konkrétních úkolů s termíny. Bez šablon
+    by každý projekt někdo psal ručně a pokaždé jinak.
+    """
+
+    __tablename__ = "crm_projekt_sablony"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nazev = Column(String, nullable=False, unique=True)
+    popis = Column(Text, nullable=False, default="", server_default="")
+    # Pro kterou kategorii zakázky se šablona nabízí (prázdné = pro všechny).
+    kategorie = Column(ARRAY(String), nullable=False, default=list, server_default="{}")
+
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    vytvoril_user_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True
+    )
+
+    kroky = relationship(
+        "ProjektSablonaKrok", back_populates="sablona", cascade="all, delete-orphan"
+    )
+
+
+class ProjektSablonaKrok(Base):
+    """Krok v šabloně. Návaznost se drží jako POŘADÍ předchůdce, ne cizí klíč.
+
+    Důvod: šablona se kopíruje do projektu, kde vzniknou nové řádky s novými id.
+    Kdyby se závislost držela přes id řádku šablony, po kopii by nesouhlasila.
+    Pořadí přežije kopii i přeskládání šablony.
+    """
+
+    __tablename__ = "crm_projekt_sablona_kroky"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sablona_id = Column(
+        Integer, ForeignKey("crm_projekt_sablony.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    nazev = Column(String, nullable=False)
+    popis = Column(Text, nullable=False, default="", server_default="")
+    poradi = Column(Integer, nullable=False, default=0, server_default="0")
+
+    # Kolik dní krok trvá (na dopočet termínů) a na kterém kroku závisí
+    # (pořadí předchůdce; NULL = jde se od zahájení projektu).
+    delka_dni = Column(Integer, nullable=False, default=1, server_default="1")
+    zavisi_na_poradi = Column(Integer, nullable=True)
+
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    sablona = relationship("ProjektSablona", back_populates="kroky")
+
+
+class ProjektKrok(Base):
+    """Konkrétní krok (úkol) projektu.
+
+    `zavisi_na_id` je skutečný cizí klíč mezi kroky jednoho projektu – tady už
+    id existují, takže návaznost může být přesná. Dokud předchůdce není hotový,
+    krok se drží ve stavu „čeká" a jeho termín se dopočítává od data, kdy
+    předchůdce doopravdy skončí (viz `projekty_kroky.prepocitej_terminy`).
+    """
+
+    __tablename__ = "crm_projekt_kroky"
+
+    id = Column(Integer, primary_key=True, index=True)
+    projekt_id = Column(
+        Integer, ForeignKey("crm_projekty.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    nazev = Column(String, nullable=False)
+    popis = Column(Text, nullable=False, default="", server_default="")
+    poradi = Column(Integer, nullable=False, default=0, server_default="0")
+
+    stav = Column(String, nullable=False, default="ceka", server_default="ceka")  # STAVY_KROKU
+    delka_dni = Column(Integer, nullable=False, default=1, server_default="1")
+    zavisi_na_id = Column(
+        Integer, ForeignKey("crm_projekt_kroky.id", ondelete="SET NULL"), nullable=True
+    )
+
+    termin = Column(Date, nullable=True)  # dopočítaný, nebo ručně přepsaný
+    termin_rucne = Column(Boolean, nullable=False, default=False, server_default="false")
+    hotovo_at = Column(DateTime(timezone=True), nullable=True)
+    odpovedny_user_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    projekt = relationship("CrmProjekt", back_populates="kroky")
+    odpovedny = relationship("User", foreign_keys=[odpovedny_user_id])

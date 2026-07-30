@@ -755,3 +755,114 @@ export function crmNabidkaStav(id, stav) {
     body: JSON.stringify({ stav }),
   });
 }
+
+// ---- CRM: objednávky ----
+export function crmObjednavky({ hledat, pripadId } = {}) {
+  const p = new URLSearchParams();
+  if (hledat) p.set("hledat", hledat);
+  if (pripadId) p.set("pripad_id", String(pripadId));
+  const q = p.toString();
+  return zavolej(`/crm/objednavky${q ? `?${q}` : ""}`);
+}
+
+export function crmObjednavkyKanban() {
+  return zavolej("/crm/objednavky/kanban");
+}
+
+export function crmObjednavkaDetail(id) {
+  return zavolej(`/crm/objednavky/${id}`);
+}
+
+export function crmObjednavkaZaloz(data) {
+  return zavolej("/crm/objednavky", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function crmObjednavkaUprav(id, data) {
+  return zavolej(`/crm/objednavky/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function crmObjednavkaStav(id, stav, duvodZruseni = "") {
+  return zavolej(`/crm/objednavky/${id}/stav`, {
+    method: "POST",
+    body: JSON.stringify({ stav, duvod_zruseni: duvodZruseni }),
+  });
+}
+
+export function crmObjednavkaSmaz(id) {
+  return zavolej(`/crm/objednavky/${id}`, { method: "DELETE" });
+}
+
+// ---- CRM: projekty, kroky a šablony ----
+export function crmProjekty({ hledat, pripadId } = {}) {
+  const p = new URLSearchParams();
+  if (hledat) p.set("hledat", hledat);
+  if (pripadId) p.set("pripad_id", String(pripadId));
+  const q = p.toString();
+  return zavolej(`/crm/projekty${q ? `?${q}` : ""}`);
+}
+
+export function crmProjektyKanban() {
+  return zavolej("/crm/projekty/kanban");
+}
+
+export function crmProjektDetail(id) {
+  return zavolej(`/crm/projekty/${id}`);
+}
+
+export function crmProjektZaloz(data) {
+  return zavolej("/crm/projekty", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function crmProjektUprav(id, data) {
+  return zavolej(`/crm/projekty/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function crmProjektStav(id, stav) {
+  return zavolej(`/crm/projekty/${id}/stav`, { method: "POST", body: JSON.stringify({ stav }) });
+}
+
+export function crmProjektSmaz(id) {
+  return zavolej(`/crm/projekty/${id}`, { method: "DELETE" });
+}
+
+export function crmProjektPouzijSablonu(projektId, sablonaId) {
+  return zavolej(`/crm/projekty/${projektId}/sablona/${sablonaId}`, { method: "POST" });
+}
+
+export function crmKrokPridej(projektId, data) {
+  return zavolej(`/crm/projekty/${projektId}/kroky`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function crmKrokUprav(id, data) {
+  return zavolej(`/crm/kroky/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export function crmKrokSmaz(id) {
+  return zavolej(`/crm/kroky/${id}`, { method: "DELETE" });
+}
+
+export function crmSablony() {
+  return zavolej("/crm/sablony");
+}
+
+export function crmSablonaPridej(data) {
+  return zavolej("/crm/sablony", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function crmSablonaKrokPridej(sablonaId, data) {
+  return zavolej(`/crm/sablony/${sablonaId}/kroky`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function crmSablonaKrokSmaz(krokId) {
+  return zavolej(`/crm/sablony/kroky/${krokId}`, { method: "DELETE" });
+}
+
+export function crmSablonaSmaz(id) {
+  return zavolej(`/crm/sablony/${id}`, { method: "DELETE" });
+}
