@@ -231,9 +231,10 @@ jinak přidělení nic neudělá.
   | K4b | modál nové/editace aktivity podle předlohy (typ, priorita, termín, místo s „U nás", kategorie, účastníci, „Čeho se to týká", náhled dne) | ✅ hotovo |
   | K4c | popover detailu ukotvený u dlaždice, akce Mám hotovo / Zrušit / Přesunout / … (upravit, vrátit do plánu, smazat) | ✅ hotovo |
   | K5 | opakované události: denně / pracovní dny / týdně / měsíčně / vlastní po N dnech, povinný konec (datum nebo počet, max 2 roky), úprava a mazání se ptá „tuhle / tuhle a další / celou sérii" | ✅ hotovo |
-  | K6 | rychlé a uložené filtry + kalendáře dalších osob | — |
+  | K6 | pohledy **Den / Týden / Měsíc** (přepínač, volba se pamatuje v profilu); správa barevných kategorií aktivit a firemní adresa pro „U nás" v nastavení CRM. *(Filtry a kalendáře kolegů hotové už v K4a.)* | ✅ hotovo |
 
-  *Vědomě mimo rozsah:* napojení na Google Kalendář.
+  **Kalendář je hotový (30. 7. 2026).** Vědomě mimo rozsah: napojení na Google
+  Kalendář a připomenutí (to patří k notifikacím, CRM-10/36).
 
 - [ ] **CRM-18 · Timeline zákazníka** — Velikost **M** · Dopad **★★**
   Všechno chronologicky na jedné ose (aktivity, nabídky, objednávky, projekty, změny stavů).

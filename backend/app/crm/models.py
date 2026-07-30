@@ -150,6 +150,26 @@ class CiselnaRada(Base):
     )
 
 
+class CrmNastaveni(Base):
+    """Firemní nastavení CRM — jeden řádek (id=1).
+
+    Zatím drží jen naši adresu pro tlačítko „U nás" u místa konání schůzky.
+    Vlastní tabulka, a ne konstanta v kódu: adresa se mění (přestěhování) a je
+    to údaj firmy, ne uživatele, takže nepatří do `uzivatelska_nastaveni`.
+
+    Jeden řádek je schválně — je to konfigurace, ne seznam. `nacti()`
+    v `nastaveni_crm.py` ho vyrobí, když ještě není.
+    """
+
+    __tablename__ = "crm_nastaveni"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nase_adresa = Column(String, nullable=False, default="", server_default="")
+    aktualizovano_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class CrmSerieAktivit(Base):
     """Pravidlo opakování pro sérii aktivit („porada každý čtvrtek").
 

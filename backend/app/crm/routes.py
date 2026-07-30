@@ -23,6 +23,7 @@ from app.auth.permissions import get_current_user, muze_otevrit
 from app.crm import ares as ares_modul
 from app.crm import (
     ciselne_rady,
+    nastaveni_crm,
     kalendar,
     opakovani as opakovani_modul,
     kategorie as kategorie_modul,
@@ -1781,6 +1782,30 @@ def _over_barvu(barva: str) -> str:
             status_code=422, detail=f"Barva musí být ve formátu #rrggbb, přišlo: {b}"
         )
     return b.lower()
+
+
+@router.get("/nastaveni")
+def nacti_nastaveni_crm(
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Firemní nastavení CRM. Čtení stačí běžné právo — adresu potřebuje
+    tlačítko „U nás" u každé schůzky."""
+    n = nastaveni_crm.nacti(db)
+    return {"nase_adresa": n.nase_adresa or ""}
+
+
+@router.put("/nastaveni")
+def uloz_nastaveni_crm(
+    vstup: dict,
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    n = nastaveni_crm.nacti(db)
+    if "nase_adresa" in vstup:
+        n.nase_adresa = str(vstup["nase_adresa"] or "").strip()
+    db.commit()
+    return {"nase_adresa": n.nase_adresa or ""}
 
 
 @router.get("/kategorie-aktivit", response_model=list[KategorieAktivityOut])
