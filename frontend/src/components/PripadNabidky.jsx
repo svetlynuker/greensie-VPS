@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DokumentUpload from "./DokumentUpload";
+import KombinaceOkno from "./KombinaceOkno";
 import PeakShavingPanel from "./PeakShavingPanel";
 import PpaPanel from "./PpaPanel";
 import ProdejPanel from "./ProdejPanel";
@@ -9,7 +10,7 @@ import { KATEGORIE_OP } from "../crm";
 import { STAV_NABIDKY } from "../nabidkovac";
 import "../styles/nabidkovac.css";
 
-const TYPY = { ppa: "PPA", prodej: "Prodej", peak_shaving: "Peak shaving" };
+const TYPY = { ppa: "PPA", prodej: "Prodej", peak_shaving: "Peak shaving", kombinace: "Kombinace" };
 
 /**
  * Nabídky obchodního případu — celý výpočet přímo na kartě případu.
@@ -30,6 +31,7 @@ export default function PripadNabidky({ pripad, onZmena }) {
   const [aktivni, setAktivni] = useState(null);
   const [nacitam, setNacitam] = useState(false);
   const [zaklada, setZaklada] = useState(null); // typ, který se právě zakládá
+  const [kombinace, setKombinace] = useState(false);
   const [chyba, setChyba] = useState(null);
 
   const nabidky = pripad.nabidky || [];
@@ -83,6 +85,10 @@ export default function PripadNabidky({ pripad, onZmena }) {
     return detail;
   }
 
+  // Kombinaci má smysl nabízet jen tam, kde existuje PPA i peak shaving nabídka.
+  const maPpaIPs =
+    nabidky.some((n) => n.typ === "ppa") && nabidky.some((n) => n.typ === "peak_shaving");
+
   // Nabídku lze založit v kterémkoli typu; kategorie případu jdou první,
   // protože to je ta obvyklá volba.
   const zKategorii = KATEGORIE_OP.filter((k) => (pripad.kategorie || []).includes(k.klic));
@@ -107,6 +113,14 @@ export default function PripadNabidky({ pripad, onZmena }) {
         )}
 
         <span className="crm-mezera" />
+
+        {/* Spojení dvou hotových nabídek do jedné pro zákazníka, který chce obojí.
+            Nabízí se jen tam, kde je co spojovat. */}
+        {maPpaIPs && (
+          <button className="fm-btn" onClick={() => setKombinace(true)} title="Spojit PPA a peak shaving do jedné nabídky">
+            ⇄ Kombinace
+          </button>
+        )}
 
         {/* Založení nabídky = jedno kliknutí, žádný dialog a žádné přesměrování. */}
         {[...zKategorii, ...ostatni].map((k) => (
@@ -133,6 +147,17 @@ export default function PripadNabidky({ pripad, onZmena }) {
 
       {nacitam && !aktivni && <div className="crm-prazdno">Načítám nabídku…</div>}
 
+      {kombinace && (
+        <KombinaceOkno
+          pripad={pripad}
+          onZavri={() => setKombinace(false)}
+          onHotovo={async (r) => {
+            await onZmena?.();
+            await vyber(r.id);
+          }}
+        />
+      )}
+
       {aktivni && (
         <>
           <div className="crm-nabidka-hlava">
@@ -144,7 +169,7 @@ export default function PripadNabidky({ pripad, onZmena }) {
             <span className="crm-mezera" />
             {/* Sestavení dokumentu pro zákazníka je samostatná obrazovka
                 (papír, náhled, tisk do PDF) – tam přesměrování dává smysl. */}
-            {(aktivni.typ === "ppa" || aktivni.typ === "peak_shaving") && (
+            {(aktivni.typ === "ppa" || aktivni.typ === "peak_shaving" || aktivni.typ === "kombinace") && (
               <button
                 className="fm-btn"
                 onClick={() =>
@@ -190,7 +215,23 @@ export default function PripadNabidky({ pripad, onZmena }) {
 
           {/* Pracovní stůl: vstupy vlevo, spočítané hodnoty vpravo. Tytéž
               komponenty jako v nabídkovači, jen tady na kartě případu. */}
-          {aktivni.typ === "peak_shaving" ? (
+          {aktivni.typ === "kombinace" ? (
+            /* Kombinace nemá vlastní výpočet – čísla přebírá ze spojených
+               nabídek. Pracuje se s ní přes „Nabídka pro zákazníka (PDF)"
+               a přes „⇄ Kombinace", kde se dá aktualizovat ze zdrojů. */
+            <div className="fm-card crm-blok">
+              <h3>Kombinovaná nabídka</h3>
+              <p className="crm-tise">
+                Tahle nabídka spojuje PPA a peak shaving — vlastní výpočet nemá, čísla
+                přebírá z obou zdrojových nabídek. Když se zdroje přepočítají, spoj je
+                znovu tlačítkem <b>⇄ Kombinace</b> (nabídne „aktualizovat"). Dokument pro
+                zákazníka sestavíš přes <b>Nabídka pro zákazníka (PDF)</b>.
+              </p>
+              {(aktivni.reseni || []).length === 0 && (
+                <p className="crm-tise">Zatím bez spojených dat — spusť spojení.</p>
+              )}
+            </div>
+          ) : aktivni.typ === "peak_shaving" ? (
             <PeakShavingPanel nabidka={aktivni} />
           ) : aktivni.typ === "ppa" ? (
             <PpaPanel nabidka={aktivni} />

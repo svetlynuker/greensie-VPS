@@ -270,9 +270,88 @@ _TABULKA_PS = [
 ]
 
 
+# ---- Kombinace opatření: PPA + peak shaving v jedné nabídce ------------------
+# Kombinace NIC NEPOČÍTÁ – čte hotové výsledky obou nabídek, které jsou
+# v `popis_json` pod klíči `ppa` a `peak_shaving`. Extraktory proto míří o jednu
+# úroveň hlouběji než u samostatných nabídek, ale jinak jsou to tytéž cesty.
+_S_K_ELEKTRARNA = "Elektrárna (PPA)"
+_S_K_BATERIE = "Baterie (peak shaving)"
+_S_K_SPOLU = "Dohromady"
+
+
+def _kppa(p: dict, *cesta: str):
+    return _g(p, "ppa", *cesta)
+
+
+def _kps(p: dict, *cesta: str):
+    return _g(p, "peak_shaving", *cesta)
+
+
+def _ksouhrn(p: dict, klic: str):
+    return _g(p, "souhrn", klic)
+
+
+_POLE_KOMBINACE: list[Pole] = [
+    # --- elektrárna z PPA nabídky ---
+    Pole("ppa_kwp", "Velikost elektrárny", "vykon_kwp",
+         lambda p: _kppa(p, "vysledek", "kwp"), _S_K_ELEKTRARNA),
+    Pole("ppa_vyroba_rok1_kwh", "Roční výroba elektrárny", "energie_mwh",
+         lambda p: _kppa(p, "vysledek", "vyroba_rok1_kwh"), _S_K_ELEKTRARNA),
+    Pole("ppa_pokryti", "Pokrytí spotřeby z elektrárny", "procento",
+         lambda p: _kppa(p, "vysledek", "pokryti_spotreby_fve"), _S_K_ELEKTRARNA),
+    Pole("ppa_cena_rok1", "Cena elektřiny z elektrárny (1. rok)", "penize_mwh",
+         lambda p: (_kppa(p, "vysledek", "roky") or [{}])[0].get("cena_ppa_kc_mwh")
+         if isinstance(_kppa(p, "vysledek", "roky"), list) and _kppa(p, "vysledek", "roky")
+         else None, _S_K_ELEKTRARNA),
+    Pole("ppa_dnesni_cena", "Vaše dnešní cena elektřiny", "penize_mwh",
+         lambda p: _kppa(p, "vysledek", "vyhnutelna_cena_rok1_kc_mwh"), _S_K_ELEKTRARNA),
+    Pole("delka_kontraktu_roky", "Doba kontraktu", "roky_cele",
+         lambda p: _ksouhrn(p, "delka_kontraktu_roky"), _S_K_ELEKTRARNA),
+
+    # --- baterie z peak shaving nabídky ---
+    Pole("ps_nazev", "Navržená baterie", "text",
+         lambda p: _kps(p, "doporucena", "nazev"), _S_K_BATERIE),
+    Pole("ps_vykon_kw", "Výkon baterie", "vykon_kw",
+         lambda p: _kps(p, "doporucena", "celkovy_vykon_kw"), _S_K_BATERIE),
+    Pole("ps_kapacita_kwh", "Kapacita baterie", "kapacita_kwh",
+         lambda p: _kps(p, "doporucena", "celkova_kapacita_kwh"), _S_K_BATERIE),
+    Pole("ps_rezervovana_kapacita", "Současná rezervovaná kapacita", "vykon_kw",
+         lambda p: _kps(p, "vstup", "rezervovana_kapacita_kw"), _S_K_BATERIE),
+    Pole("ps_nova_rezervovana", "Nová rezervovaná kapacita", "vykon_kw",
+         lambda p: _kps(p, "doporucena", "nova_rezervovana_kapacita_kw"), _S_K_BATERIE),
+
+    # --- dohromady (počítá `nabidkovac/kombinace.py`) ---
+    Pole("investice_zakaznika", "Vaše investice", "penize",
+         lambda p: _ksouhrn(p, "investice_zakaznika_kc"), _S_K_SPOLU),
+    Pole("uspora_ppa_rok1", "Úspora z elektrárny (1. rok)", "penize",
+         lambda p: _ksouhrn(p, "uspora_ppa_rok1_kc"), _S_K_SPOLU),
+    Pole("uspora_ps_rok1", "Úspora z baterie (1. rok)", "penize",
+         lambda p: _ksouhrn(p, "uspora_ps_rok1_kc"), _S_K_SPOLU),
+    Pole("uspora_rok1_celkem", "Celková úspora v 1. roce", "penize",
+         lambda p: _ksouhrn(p, "uspora_rok1_celkem_kc"), _S_K_SPOLU),
+    Pole("uspora_kum_celkem", "Celková úspora za dobu kontraktu", "penize",
+         lambda p: _ksouhrn(p, "uspora_kum_celkem_kc"), _S_K_SPOLU),
+    Pole("navratnost_baterie", "Návratnost investice do baterie", "roky",
+         lambda p: _ksouhrn(p, "navratnost_baterie_roky"), _S_K_SPOLU),
+]
+
+# Společná roční tabulka – obě opatření vedle sebe a součet.
+_TABULKA_KOMBINACE = [
+    {"klic": "rok", "nazev": "Rok", "format": "roky_cele"},
+    {"klic": "uspora_ppa_kc", "nazev": "Úspora z elektrárny", "format": "penize"},
+    {"klic": "uspora_ps_kc", "nazev": "Úspora z baterie", "format": "penize"},
+    {"klic": "uspora_celkem_kc", "nazev": "Celkem v roce", "format": "penize"},
+    {"klic": "uspora_kum_kc", "nazev": "Celkem kumulativně", "format": "penize"},
+]
+
+
 # ---- Rejstřík podle typu řešení ---------------------------------------------
-_POLE = {"ppa": _POLE_PPA, "peak_shaving": _POLE_PS}
-_TABULKA = {"ppa": _TABULKA_PPA, "peak_shaving": _TABULKA_PS}
+_POLE = {"ppa": _POLE_PPA, "peak_shaving": _POLE_PS, "kombinace": _POLE_KOMBINACE}
+_TABULKA = {
+    "ppa": _TABULKA_PPA,
+    "peak_shaving": _TABULKA_PS,
+    "kombinace": _TABULKA_KOMBINACE,
+}
 
 PODPOROVANE_TYPY = tuple(_POLE.keys())
 
@@ -327,6 +406,10 @@ def resolvni_tabulku(typ: str, popis_json: dict | None) -> dict:
     sloupce = _TABULKA.get(typ, [])
     if typ == "ppa":
         radky_zdroj = _g(popis, "vysledek", "roky") or []
+    elif typ == "kombinace":
+        # Kombinace má společnou tabulku složenou z obou zdrojů (viz
+        # `nabidkovac/kombinace.spolecna_tabulka`).
+        radky_zdroj = _g(popis, "roky") or []
     else:
         radky_zdroj = _dop(popis, "roky") or []
     radky = []
@@ -377,8 +460,22 @@ def _graf_ps_k_zobrazeni(graf: dict, popis: dict) -> dict:
 
 def graf_pro_typ(typ: str, popis_json: dict | None) -> dict | None:
     """Surová data grafu pro daný typ (PPA výroba/spotřeba, PS měsíční maxima).
-    Frontend podle `typ_reseni` vybere správnou grafovou komponentu."""
+    Frontend podle `typ_reseni` vybere správnou grafovou komponentu.
+
+    U kombinace vrací OBA grafy pod klíči `ppa` a `peak_shaving` – nabídka na
+    obojí má ukázat elektrárnu i špičky, ne si jedno vybrat."""
     popis = popis_json or {}
+    if typ == "kombinace":
+        ppa_graf = _g(popis, "ppa", "vysledek", "graf")
+        ps_zdroj = _g(popis, "peak_shaving") or {}
+        ps_graf = _dop(ps_zdroj, "graf") or _g(ps_zdroj, "graf")
+        return {
+            "kombinace": True,
+            "ppa": ppa_graf,
+            "peak_shaving": (
+                _graf_ps_k_zobrazeni(ps_graf, ps_zdroj) if isinstance(ps_graf, dict) else None
+            ),
+        }
     if typ == "ppa":
         return _g(popis, "vysledek", "graf")
     # peak shaving: graf doporučené varianty, fallback na graf na nejvyšší úrovni
@@ -484,6 +581,50 @@ VYCHOZI_SABLONA: dict[str, dict] = {
              "nadpis": "Závěrem", "text": _ZAVER_PS},
         ]
     },
+}
+
+_UVOD_KOMB = (
+    "Děkujeme za váš zájem o kombinaci dvou opatření: fotovoltaické elektrárny "
+    "na vaší střeše a bateriového úložiště pro srážení špiček odběru. Elektrárnu "
+    "postavíme a plně zainvestujeme my a vy z ní odebíráte elektřinu levněji, "
+    "než platíte dnes. Baterie navíc sníží vaše platby distributorovi za "
+    "rezervovanou kapacitu. Obě opatření se doplňují a fungují vedle sebe."
+)
+_ZAVER_KOMB = (
+    "Tato nabídka je nezávazná a slouží jako orientační přehled obou opatření. "
+    "Rádi vám kdykoli vysvětlíme jednotlivé údaje a připravíme konečné řešení "
+    "na míru. Kontaktujte nás – těšíme se na spolupráci."
+)
+
+VYCHOZI_SABLONA["kombinace"] = {
+    "bloky": [
+        {"id": "hlavicka", "druh": "hlavicka", "viditelny": True,
+         "nadpis": "Nabídka kombinace opatření: elektrárna + baterie",
+         "text": "Fotovoltaika bez investice a baterie pro srážení špiček"},
+        {"id": "uvod", "druh": "text", "viditelny": True,
+         "nadpis": "Co vám nabízíme", "text": _UVOD_KOMB},
+        {"id": "spolu", "druh": "udaje", "viditelny": True,
+         "nadpis": "Dohromady",
+         "text": "Co vám obě opatření přinesou společně.",
+         "pole": ["investice_zakaznika", "uspora_rok1_celkem", "uspora_kum_celkem",
+                  "navratnost_baterie"]},
+        {"id": "elektrarna", "druh": "udaje", "viditelny": True,
+         "nadpis": "Fotovoltaická elektrárna",
+         "pole": ["ppa_kwp", "ppa_vyroba_rok1_kwh", "ppa_pokryti", "delka_kontraktu_roky",
+                  "ppa_cena_rok1", "ppa_dnesni_cena", "uspora_ppa_rok1"]},
+        {"id": "baterie", "druh": "udaje", "viditelny": True,
+         "nadpis": "Bateriové úložiště",
+         "pole": ["ps_nazev", "ps_vykon_kw", "ps_kapacita_kwh",
+                  "ps_rezervovana_kapacita", "ps_nova_rezervovana", "uspora_ps_rok1"]},
+        {"id": "graf", "druh": "graf", "viditelny": True,
+         "nadpis": "Výroba elektrárny a špičky odběru"},
+        {"id": "tabulka", "druh": "tabulka", "viditelny": True,
+         "nadpis": "Vývoj úspory po letech",
+         "pole": ["rok", "uspora_ppa_kc", "uspora_ps_kc", "uspora_celkem_kc",
+                  "uspora_kum_kc"]},
+        {"id": "zaver", "druh": "text", "viditelny": True,
+         "nadpis": "Závěrem", "text": _ZAVER_KOMB},
+    ]
 }
 
 DRUHY_BLOKU = ("hlavicka", "text", "udaje", "graf", "tabulka")

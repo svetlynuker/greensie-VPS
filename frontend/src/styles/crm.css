@@ -848,3 +848,15 @@
   height: 100%;
   background: var(--st-ok, #4a4);
 }
+
+/* Varování v okně – věci, které musí obchodník vědět, než něco pošle zákazníkovi. */
+.crm-varovani {
+  margin: 12px 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  background: color-mix(in srgb, var(--st-warn) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--st-warn) 35%, transparent);
+  border-radius: 8px;
+}

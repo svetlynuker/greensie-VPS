@@ -866,3 +866,26 @@ export function crmSablonaKrokSmaz(krokId) {
 export function crmSablonaSmaz(id) {
   return zavolej(`/crm/sablony/${id}`, { method: "DELETE" });
 }
+
+// ---- CRM: kombinace opatření (spojení PPA + peak shaving nabídky) ----
+export function crmKombinaceZdroje(pripadId) {
+  return zavolej(`/crm/pripady/${pripadId}/kombinace-zdroje`);
+}
+
+export function crmSpojNabidky(pripadId, { ppaNabidkaId, psNabidkaId, nabidkaId = null }) {
+  return zavolej(`/crm/pripady/${pripadId}/kombinace`, {
+    method: "POST",
+    body: JSON.stringify({
+      ppa_nabidka_id: ppaNabidkaId,
+      ps_nabidka_id: psNabidkaId,
+      nabidka_id: nabidkaId,
+    }),
+  });
+}
+
+// Dohledání starých nabídek (bez případu). `nasucho=true` jen vrátí náhled.
+export function crmMigraceStareNabidky(nasucho = true) {
+  return zavolej(`/crm/migrace/stare-nabidky?nasucho=${nasucho ? "true" : "false"}`, {
+    method: "POST",
+  });
+}

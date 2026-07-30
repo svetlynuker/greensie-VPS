@@ -37,7 +37,10 @@ TYPY_TECHNOLOGIE = ("fve_panel", "invertor", "baterie", "jina")
 
 # "Za jakým účelem" OZ nabídku založil = z které podsekce vznikla. Skutečná
 # navržená řešení (klidně kombinovaná) žijí v NavrhovaneReseni.typ_reseni.
-TYPY_NABIDKY = ("ppa", "prodej", "peak_shaving")
+# `kombinace` není další produktová linie – je to nabídka, která SPOJUJE hotovou
+# PPA a peak shaving nabídku téhož případu do jednoho dokumentu pro zákazníka,
+# který chce obojí. Nic nepočítá (viz `nabidkovac/kombinace.py`).
+TYPY_NABIDKY = ("ppa", "prodej", "peak_shaving", "kombinace")
 
 # Životní cyklus nabídky. Výpočet nikdy neběží nad nezkontrolovanými daty
 # (viz kap. 1 SPEC) → mezistav "zkontrolovano_oz" je povinná brána před "spocitano".

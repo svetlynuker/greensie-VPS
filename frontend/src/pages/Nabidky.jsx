@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import Kanban from "../components/Kanban";
+import MigraceNabidek from "../components/MigraceNabidek";
 import StavyNastaveni from "../components/StavyNastaveni";
 import {
   crmNabidkaStav,
@@ -33,6 +34,7 @@ export default function Nabidky() {
   const [stavy, setStavy] = useState([]);
   const [hledat, setHledat] = useState("");
   const [nastaveniStavu, setNastaveniStavu] = useState(false);
+  const [migrace, setMigrace] = useState(false);
   const [chyba, setChyba] = useState(null);
 
   const nacti = useCallback(async (dotaz = "") => {
@@ -109,6 +111,9 @@ export default function Nabidky() {
   if (!me || !kanban) return null;
 
   const celkem = kanban.sloupce.reduce((s, x) => s + x.pocet, 0);
+  // Nabídky bez případu visí v přehledu jako #id bez zákazníka – dokud jsou,
+  // má smysl nabízet jejich dohledání.
+  const bezPripadu = radky.filter((n) => !n.pripad_id).length;
 
   return (
     <Layout uzivatel={me.uzivatel}>
@@ -124,9 +129,21 @@ export default function Nabidky() {
           </div>
           <span className="crm-mezera" />
           {me.prava?.includes("crm_nastaveni") && (
-            <button className="fm-btn" onClick={() => setNastaveniStavu(true)}>
-              ⚙ Stavy nabídek
-            </button>
+            <>
+              {/* Staré nabídky bez případu – nabídne se jen když nějaké jsou. */}
+              {bezPripadu > 0 && (
+                <button
+                  className="fm-btn"
+                  onClick={() => setMigrace(true)}
+                  title="Zavěsit nabídky bez obchodního případu na zákazníka a případ"
+                >
+                  🔗 Dohledat staré ({bezPripadu})
+                </button>
+              )}
+              <button className="fm-btn" onClick={() => setNastaveniStavu(true)}>
+                ⚙ Stavy nabídek
+              </button>
+            </>
           )}
         </div>
 
@@ -232,6 +249,10 @@ export default function Nabidky() {
           </div>
         )}
       </div>
+
+      {migrace && (
+        <MigraceNabidek onZavri={() => setMigrace(false)} onHotovo={() => nacti(hledat)} />
+      )}
 
       {nastaveniStavu && (
         <StavyNastaveni

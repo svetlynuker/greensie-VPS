@@ -72,7 +72,63 @@ function BlokUdaje({ blok, hodnoty, tisk }) {
   );
 }
 
+/** Jeden graf podle typu řešení – vytažené zvlášť, ať to kombinace může použít dvakrát. */
+function JedenGraf({ typ, graf }) {
+  if (typ === "ppa") return <GrafVyrobaSpotreba graf={graf} />;
+  return (
+    /* Který model (2026/2027) se kreslí, rozhoduje server v
+       `sablona_katalog.graf_pro_typ` – stejně jako panel v nabídkovači,
+       ať v nabídce neskončí jiný graf, než OZ viděl na obrazovce.
+       Fallbacky drží funkční i starší uložené výsledky. */
+    <GrafOdberu
+      mesice={graf.mesice}
+      bezBaterie={graf.bez_baterie_kw}
+      sBaterii={graf.s_baterii_kw ?? graf.s_baterii_2026_kw}
+      rpSoucasna={graf.rp_soucasna_zobrazena_kw ?? graf.rp_soucasna_kw}
+      rpNova={graf.rp_nova_zobrazena_kw ?? graf.rp_nova_kw}
+      {...(graf.popis_soucasna ? { popisSoucasna: graf.popis_soucasna } : {})}
+      {...(graf.popis_nova ? { popisNova: graf.popis_nova } : {})}
+    />
+  );
+}
+
 function BlokGraf({ blok, typReseni, graf, tisk }) {
+  // Kombinace opatření nese OBA grafy (elektrárna i špičky) – nabídka na obojí
+  // má ukázat obojí, ne si jedno vybrat.
+  if (typReseni === "kombinace" && graf?.kombinace) {
+    const ppaOk = (graf.ppa?.mesice?.length || 0) > 0;
+    const psOk = (graf.peak_shaving?.mesice?.length || 0) > 0;
+    if (!ppaOk && !psOk) {
+      return tisk ? null : (
+        <div className="vy-blok">
+          {blok.nadpis && <h2>{blok.nadpis}</h2>}
+          <div className="vy-prazdno">Grafy se zobrazí po spojení nabídek.</div>
+        </div>
+      );
+    }
+    return (
+      <div className="vy-blok">
+        {blok.nadpis && <h2>{blok.nadpis}</h2>}
+        {ppaOk && (
+          <>
+            <h3 className="vy-podnadpis">Výroba elektrárny vs. vaše spotřeba</h3>
+            <div className="vy-graf">
+              <JedenGraf typ="ppa" graf={graf.ppa} />
+            </div>
+          </>
+        )}
+        {psOk && (
+          <>
+            <h3 className="vy-podnadpis">Měsíční špičky odběru – dnes vs. s baterií</h3>
+            <div className="vy-graf">
+              <JedenGraf typ="peak_shaving" graf={graf.peak_shaving} />
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
   const maData = graf && (graf.mesice?.length || 0) > 0;
   if (!maData) {
     return tisk ? null : (
@@ -86,23 +142,7 @@ function BlokGraf({ blok, typReseni, graf, tisk }) {
     <div className="vy-blok">
       {blok.nadpis && <h2>{blok.nadpis}</h2>}
       <div className="vy-graf">
-        {typReseni === "ppa" ? (
-          <GrafVyrobaSpotreba graf={graf} />
-        ) : (
-          /* Který model (2026/2027) se kreslí, rozhoduje server v
-             `sablona_katalog.graf_pro_typ` – stejně jako panel v nabídkovači,
-             ať v nabídce neskončí jiný graf, než OZ viděl na obrazovce.
-             Fallbacky drží funkční i starší uložené výsledky. */
-          <GrafOdberu
-            mesice={graf.mesice}
-            bezBaterie={graf.bez_baterie_kw}
-            sBaterii={graf.s_baterii_kw ?? graf.s_baterii_2026_kw}
-            rpSoucasna={graf.rp_soucasna_zobrazena_kw ?? graf.rp_soucasna_kw}
-            rpNova={graf.rp_nova_zobrazena_kw ?? graf.rp_nova_kw}
-            {...(graf.popis_soucasna ? { popisSoucasna: graf.popis_soucasna } : {})}
-            {...(graf.popis_nova ? { popisNova: graf.popis_nova } : {})}
-          />
-        )}
+        <JedenGraf typ={typReseni} graf={graf} />
       </div>
     </div>
   );
