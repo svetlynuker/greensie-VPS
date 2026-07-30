@@ -167,6 +167,47 @@ class RaynetClient:
                 break
         return ids
 
+    def list_records(
+        self, resource: str, page_size: int = 100, timeout: int = 30, max_zaznamu: int | None = None
+    ) -> list[dict]:
+        """Vrátí CELÉ záznamy daného typu, ne jen jejich ID.
+
+        Výpis z Raynetu už obsahuje podstatná pole (name, regNumber, code…),
+        takže hromadný import nemusí pro každý záznam volat detail zvlášť –
+        u 450 firem je to rozdíl mezi ~5 a ~450 API cally, a denní limit není
+        nekonečný. Kdo potřebuje úplný detail, dovolá si `get_record`.
+
+        `max_zaznamu` zastaví stránkování dřív (náhled importu, testy).
+        """
+        endpoint = _RESOURCE_ENDPOINT.get(resource, resource)
+        out: list[dict] = []
+        offset = 0
+        while True:
+            url = f"{self.base_url}{endpoint}/?offset={offset}&limit={page_size}"
+            r = requests.get(
+                url, auth=(self.api_user, self.api_key), headers=self._headers(), timeout=timeout
+            )
+            if r.status_code >= 400:
+                raise RuntimeError(f"Výpis {resource}: HTTP {r.status_code} – {r.text[:200]}")
+            try:
+                telo = r.json()
+            except ValueError:
+                raise RuntimeError(f"Výpis {resource}: odpověď není JSON.")
+            radky = [x for x in (telo.get("data") or []) if isinstance(x, dict)]
+            out.extend(radky)
+            if not radky:
+                break
+            if max_zaznamu is not None and len(out) >= max_zaznamu:
+                return out[:max_zaznamu]
+            offset += len(radky)
+            total = telo.get("totalCount")
+            if total is not None:
+                if offset >= int(total):
+                    break
+            elif len(radky) < page_size:
+                break
+        return out
+
     def set_custom_fields(self, resource: str, record_id: int, fields: dict, timeout: int = 20) -> dict:
         """Zapíše vlastní pole záznamu (POST /{resource}/{id}/ s customFields).
 

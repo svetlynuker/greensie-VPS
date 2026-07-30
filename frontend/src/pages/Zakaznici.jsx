@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
+import ImportRaynet from "../components/ImportRaynet";
 import ZakaznikFormular from "../components/ZakaznikFormular";
 import { nactiMe, logout, crmVlastniPole, crmZakaznici } from "../api";
 import { POHLEDY_ZAKAZNIKU, fmtDatum } from "../crm";
@@ -22,6 +23,7 @@ export default function Zakaznici() {
   const [zaklada, setZaklada] = useState(false);
   // Vlastní pole označená „v seznamu" se ukazují jako další sloupce tabulky.
   const [sloupce, setSloupce] = useState([]);
+  const [importRaynet, setImportRaynet] = useState(false);
 
   const sekce = POHLEDY_ZAKAZNIKU.find((p) => p.klic === pohled);
 
@@ -95,6 +97,12 @@ export default function Zakaznici() {
             <p className="crm-popis">{sekce.popis}</p>
           </div>
           <span className="crm-mezera" />
+          {/* Import z Raynetu – bez něj je CRM prázdná kostra. */}
+          {me.prava?.includes("crm_nastaveni") && (
+            <button className="fm-btn" onClick={() => setImportRaynet(true)}>
+              ⬇ Import z Raynetu
+            </button>
+          )}
           <button className="fm-btn fm-primary" onClick={() => setZaklada(true)}>
             + Nový {pohled === "lead" ? "lead" : "klient"}
           </button>
@@ -181,6 +189,13 @@ export default function Zakaznici() {
           </table>
         </div>
       </div>
+
+      {importRaynet && (
+        <ImportRaynet
+          onZavri={() => setImportRaynet(false)}
+          onHotovo={() => nacti(hledat)}
+        />
+      )}
 
       {zaklada && (
         <ZakaznikFormular

@@ -193,6 +193,31 @@ Co je v souhrnu:
 znovu (tlačítko nabídne „aktualizovat"). Je to schválně: takhle je dohledatelné, s jakými čísly
 nabídka odešla zákazníkovi — každé spojení zůstává v historii.
 
+### Import z Raynetu
+V sekci **Zákazníci** je pro `crm_nastaveni` tlačítko **⬇ Import z Raynetu**. Natáhne klienty
+a obchodní případy — jednosměrně (Raynet → appka) a **idempotentně**: opakované spuštění
+existující záznamy aktualizuje, nezdvojí, protože se páruje na Raynetí `id`.
+
+Nejdřív **náhled** (nic se nemění), pak potvrzení. Náhled se nespouští sám: čtení ~450 firem
+a ~200 případů stojí API cally a Raynet má denní limit, který se před importem kontroluje.
+
+Co se přenese: název, IČO, adresa, **GPS** (tu potřebuje PPA výpočet!), e-mail, telefon,
+poznámka; u případů název, popis, hodnota, pravděpodobnost, důvod prohry a **Raynetí číslo**
+(uloží se zvlášť do `raynet_code`, protože na něm stojí párování složek na Disku).
+
+**Co se nepřenese a proč:**
+
+- **kategorie případu** (PPA / prodej / peak shaving) — Raynetí fáze ji neobsahuje a hádat ji
+  z názvu by vyrobilo tichý nepořádek. Zůstane prázdná a appka se zeptá u nabídky.
+- **Raynetí fáze → náš stav**: zkusí se najít stav se stejným názvem; co se nenajde, padne do
+  prvního stavu a **původní fáze se zapíše do popisu**, aby se informace neztratila.
+
+**Vlastníci:** Raynet posílá u vlastníka jen jméno, ne e-mail. Páruje se proto podle jména bez
+diakritiky, a když to nevyjde, podle **příjmení** — ale jen když je v appce jednoznačné (dvakrát
+stejné příjmení = radši nikdo než špatně přiřazená zakázka). Koho appka nezná, jeho záznamy
+zůstanou **bez vlastníka**, tedy viditelné jen s `crm_vse`. Náhled ta jména vypíše; když jim
+založíš účet a import spustíš znovu, vlastníci se doplní.
+
 ### Staré nabídky bez případu
 Nabídky vytvořené v nabídkovači před CRM nemají zákazníka ani případ a v přehledu visí jako
 `#21`. V sekci Nabídky je pro ně tlačítko **🔗 Dohledat staré** (právo `crm_nastaveni`): podle
