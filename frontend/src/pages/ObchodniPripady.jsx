@@ -8,6 +8,7 @@ import PripadFormular from "../components/PripadFormular";
 import StavyNastaveni from "../components/StavyNastaveni";
 import DuvodProhry from "../components/DuvodProhry";
 import {
+  crmKategorie,
   crmPripadStav,
   crmPripady,
   crmPripadyKanban,
@@ -33,6 +34,7 @@ export default function ObchodniPripady() {
   const [kanban, setKanban] = useState(null);
   const [radky, setRadky] = useState([]);
   const [stavy, setStavy] = useState([]);
+  const [kategorie, setKategorie] = useState([]);
   const [hledat, setHledat] = useState("");
   const [novy, setNovy] = useState(false);
   const [nastaveniStavu, setNastaveniStavu] = useState(false);
@@ -44,16 +46,20 @@ export default function ObchodniPripady() {
   const f = pouzitFiltr("op", radky, sloupce);
 
   const nacti = useCallback(async (dotaz = "") => {
-    const [k, r, s, pole] = await Promise.all([
+    const [k, r, s, pole, kat] = await Promise.all([
       crmPripadyKanban(),
       crmPripady({ hledat: dotaz || undefined }),
       crmStavy("op"),
       crmVlastniPole("op").catch(() => []),
+      // Kategorie jsou konfigurovatelné (CRM-03) – tabulka i kanban z nich
+      // překládají klíč na název.
+      crmKategorie().catch(() => []),
     ]);
     setKanban(k);
     setRadky(r);
     setStavy(s);
     setSloupce(pole.filter((x) => x.v_seznamu));
+    setKategorie(kat);
   }, []);
 
   useEffect(() => {
@@ -205,6 +211,7 @@ export default function ObchodniPripady() {
             sloupce={f.filtrujKanban(kanban.sloupce)}
             onPresun={presun}
             onOtevri={(z) => navigate(`/pripady/detail/${z.id}`)}
+            kategorie={kategorie}
           />
         ) : (
           <CrmTabulka
@@ -215,10 +222,11 @@ export default function ObchodniPripady() {
             onRazeni={f.setRazeni}
             podminky={f.podminky}
             onPodminky={f.setPodminky}
+            exportNazev="obchodni-pripady"
             onOtevri={(p) => navigate(`/pripady/detail/${p.id}`)}
             vykresli={(p, sl) => {
               if (sl.klic === "cislo") return <span className="crm-silne">{p.cislo}</span>;
-              if (sl.klic === "kategorie") return nazvyKategorii(p.kategorie) || "—";
+              if (sl.klic === "kategorie") return nazvyKategorii(p.kategorie, kategorie) || "—";
               if (sl.klic === "stav_nazev")
                 return <span className="crm-znacka">{p.stav_nazev}</span>;
               if (sl.klic === "hodnota_kc") return fmtKc(p.hodnota_kc);

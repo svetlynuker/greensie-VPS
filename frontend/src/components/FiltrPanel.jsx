@@ -5,7 +5,15 @@ import {
   crmFiltrUprav,
   crmFiltry,
 } from "../api";
-import { OPERATORY, moznostiSloupce, popisPodminky, vychoziRazeni } from "../crmFiltry";
+import {
+  OBDOBI,
+  OPERATORY,
+  VYCHOZI_OBDOBI,
+  moznostiSloupce,
+  popisPodminky,
+  rozsahObdobi,
+  vychoziRazeni,
+} from "../crmFiltry";
 
 /**
  * Lišta uložených filtrů + editor víceúrovňového filtru.
@@ -132,6 +140,19 @@ export default function FiltrPanel({
   );
 }
 
+/** „(1. – 31. 7. 2026)" k vybranému období, ať je vidět, co dnes znamená. */
+function popisRozsahu(klicObdobi) {
+  const { od, do: doD } = rozsahObdobi(klicObdobi);
+  const den = (iso) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+    return m ? `${Number(m[3])}. ${Number(m[2])}. ${m[1]}` : "";
+  };
+  if (!od && !doD) return "";
+  if (!od) return `(do ${den(doD)})`;
+  if (!doD) return `(od ${den(od)})`;
+  return od === doD ? `(${den(od)})` : `(${den(od)} – ${den(doD)})`;
+}
+
 /** Okno pro sestavení filtru: podmínky + víceúrovňové řazení + uložení. */
 function FiltrEditor({
   entita,
@@ -158,9 +179,21 @@ function FiltrEditor({
 
   const prvniSloupec = sloupce[0]?.klic || "";
 
+  // Operátor „je v období" potřebuje jako hodnotu klíč období, ne prázdno –
+  // jinak by se uložil filtr bez období a po načtení by nefiltroval.
+  function vychoziHodnota(operatory, klicOperatoru) {
+    const op = operatory.find((o) => o.klic === klicOperatoru);
+    return op?.obdobi ? VYCHOZI_OBDOBI : "";
+  }
+
   function pridejPodminku() {
     const typ = sloupce[0]?.typ || "text";
-    setP([...p, { pole: prvniSloupec, operator: (OPERATORY[typ] || OPERATORY.text)[0].klic, hodnota: "" }]);
+    const operatory = OPERATORY[typ] || OPERATORY.text;
+    const prvni = operatory[0].klic;
+    setP([
+      ...p,
+      { pole: prvniSloupec, operator: prvni, hodnota: vychoziHodnota(operatory, prvni) },
+    ]);
   }
 
   function zmenPodminku(i, zmena) {
@@ -250,7 +283,7 @@ function FiltrEditor({
                     zmenPodminku(i, {
                       pole: e.target.value,
                       operator: noveOp[0].klic,
-                      hodnota: "",
+                      hodnota: vychoziHodnota(noveOp, noveOp[0].klic),
                     });
                   }}
                 >
@@ -264,7 +297,12 @@ function FiltrEditor({
                 <select
                   className="crm-pole crm-pole-uzke"
                   value={x.operator}
-                  onChange={(e) => zmenPodminku(i, { operator: e.target.value, hodnota: "" })}
+                  onChange={(e) =>
+                    zmenPodminku(i, {
+                      operator: e.target.value,
+                      hodnota: vychoziHodnota(operatory, e.target.value),
+                    })
+                  }
                 >
                   {operatory.map((o) => (
                     <option key={o.klic} value={o.klic}>
@@ -274,7 +312,25 @@ function FiltrEditor({
                 </select>
 
                 {!op.bezHodnoty &&
-                  (op.dvojice ? (
+                  (op.obdobi ? (
+                    // Relativní období: v podmínce se drží klíč, rozsah se
+                    // dopočítá k dnešku. Vedle se ukazuje, co to dnes znamená,
+                    // ať je vidět, že „tento měsíc" opravdu sedí.
+                    <span className="crm-filtr-rozsah">
+                      <select
+                        className="crm-pole crm-pole-uzke"
+                        value={x.hodnota || VYCHOZI_OBDOBI}
+                        onChange={(e) => zmenPodminku(i, { hodnota: e.target.value })}
+                      >
+                        {OBDOBI.map((o) => (
+                          <option key={o.klic} value={o.klic}>
+                            {o.nazev}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="crm-tise">{popisRozsahu(x.hodnota || VYCHOZI_OBDOBI)}</span>
+                    </span>
+                  ) : op.dvojice ? (
                     <div className="crm-filtr-rozsah">
                       <input
                         className="crm-pole crm-pole-cislo"

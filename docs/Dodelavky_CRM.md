@@ -6,6 +6,28 @@
 Srovnání hotového CRM v Greensie app s tím, co běžně umí Pipedrive, HubSpot, Raynet a Zoho.
 Záměrně **ne** s enterprise Salesforce — cílem je firma s osmi lidmi, ne korporát.
 
+## Zásadní rozhodnutí: import z Raynetu se dělat nebude (30. 7. 2026)
+
+Stávající zakázky **dojedou v Raynetu**, do appky se zakládají jen **nové**. CRM tedy
+nezačíná se 445 klienty a 210 případy, ale s nulou a poroste po jedné zakázce.
+
+Co to mění:
+
+| Položka | Bylo | Je |
+|---|---|---|
+| CRM-02 stránkování | ★★★, nutné **před** importem | ★, odloženo — počká, až bude v seznamu ~300 řádků |
+| CRM-29 filtr na serveru | až budou desetitisíce | totéž, ale ten den přijde o roky později |
+| CRM-07 merge duplicit | ★★, duplicity z importu | ★, duplicity vzniknou jen ručně a ARES na ně upozorní |
+| CRM-14 import z CSV | ★ | **škrtnuto** — viz sekce 9 |
+| CRM-03 kategorie | před importem | pořád brzo: každý den odkladu = víc případů k migraci |
+| CRM-41 konverze, CRM-42 výkon OZ | data už sbíráte | **naplní se až za měsíce** — historie stavů začíná od nuly |
+| CRM-06 kontakty jako entita | odložit, import to naplní | technicky je změna nejlevnější **teď** (0 kontaktů), přesto odloženo — viz odůvodnění u položky |
+
+**Nové riziko, které tím vzniká** (dřív neexistovalo): firma má dvě pravdy vedle sebe —
+staré v Raynetu, nové v appce. Není to technický problém, ale organizační: musí být jasné
+pravidlo *„nová věc = vždycky appka"*, jinak se část zakázek založí na obou místech nebo
+ani na jednom. Viz **CRM-45**.
+
 ## Jak s tímhle souborem pracovat
 
 Každá položka má **ID** (`CRM-01`), takže se na ni dá odkázat: *„udělej CRM-03 a CRM-07"*.
@@ -42,41 +64,73 @@ Hotové položky se odškrtnou (`- [x]`) a doplní se k nim číslo PR.
 
 Tohle nejsou chybějící featury, ale díry, které vznikly během stavby. Mají přednost.
 
-- [ ] **CRM-01 · UI pro „moje úkoly"** — Velikost **S** · Dopad **★★★**
-  Endpoint `GET /crm/ukoly` existuje a funguje, ale **nikde se nezobrazuje**. Aktivity
-  s termínem se ukládají a nikdo je nevidí, dokud neotevře konkrétní záznam.
-  *Kde:* `backend/app/crm/routes.py` (hotovo) → chybí obrazovka/panel na rozcestníku.
-  *Poznámka:* nejrychlejší výhra v celém seznamu.
+- [x] **CRM-01 · UI pro „moje úkoly"** — **hotovo 30. 7. 2026** (dávka A)
+  Karta „Moje úkoly v CRM" na Rozcestníku + KPI dlaždice s počtem po termínu.
+  Skládání soupisu je v novém `backend/app/crm/ukoly.py`, aby endpoint
+  `/crm/ukoly` i souhrn na Rozcestníku počítali stejně. Úkol ukazuje, **u čeho
+  visí** (zákazník / případ / nabídka…) a kliknutím se tam dá jít.
+  *Pozor při dalších úpravách:* `crm_vse` se tu neuplatňuje — „moje úkoly" jsou
+  vždy jen moje, i pro vedení. A `dni` je kladné, když je úkol po termínu.
 
-- [ ] **CRM-02 · Stránkování seznamů** — Velikost **M** · Dopad **★★★**
-  CRM API nemá `limit`/`offset` — vrací všechno. Po importu (445 klientů, 210 případů) se
-  bude do prohlížeče posílat a renderovat celý seznam.
+- [ ] **CRM-02 · Stránkování seznamů** — Velikost **M** · Dopad **★** · **odloženo, spouštěč: ~300 řádků**
+  CRM API nemá `limit`/`offset` — vrací všechno. Bez importu roste seznam po jedné zakázce,
+  takže dnes není proti čemu to dělat; pár set řádků prohlížeč unese.
   *Kde:* `crm/routes.py`, `crm/routes_realizace.py`, `CrmTabulka.jsx`.
   *Pozor:* filtrování běží na klientu, takže stránkování musí počítat s tím, že se filtruje
   nad načtenou dávkou — buď se filtr přesune na server, nebo se stránkuje až po filtru.
 
-- [ ] **CRM-03 · Konfigurovatelné kategorie případů** — Velikost **S** · Dopad **★★**
-  Kategorie (`prodej` / `ppa` / `peak_shaving`) jsou **zadrátované v kódu na dvou místech**
-  (`backend/app/crm/models.py:66`, `frontend/src/crm.js:20`). Stavy i vlastní pole si přitom
-  vedení mění samo — tohle je nekonzistence. Až budete chtít „servis" nebo „dotace“, musí
-  k tomu programátor.
-  *Pozor:* kategorie řídí, do kterého výpočtu míří nabídka, takže nová kategorie musí umět
-  říct „tady výpočet není".
+- [x] **CRM-03 · Konfigurovatelné kategorie případů** — **hotovo 30. 7. 2026** (dávka A)
+  Nová tabulka `crm_kategorie` + `backend/app/crm/kategorie.py`; spravuje se v okně
+  **Nastavení pipeline, kategorií a číslování** (právo `crm_nastaveni`). Konstanta
+  v kódu zůstala jen jako seed výchozí trojice.
+  *Jak je vyřešené „tady výpočet není":* kategorie má pole `typ_nabidky`. Prázdné =
+  žádný výpočet, a na kartě případu se u ní tlačítko „+ nabídka" nenabídne —
+  takže „Servis" jde přidat bez toho, aby appka slibovala výpočet, který neumí.
+  *Ochrany:* klíč je neměnný (nesou ho případy i typ nabídky), kategorii, kterou
+  případy používají, nelze smazat (jen vypnout), a vypnutá se dál zobrazuje
+  u případů, které ji mají.
 
-- [ ] **CRM-04 · Vlastní pole i na nabídkách** — Velikost **S** · Dopad **★**
+- [ ] **CRM-04 · Vlastní pole i na nabídkách — a hlavně dodělat objednávku a projekt** — Velikost **S** · Dopad **★★**
   `ENTITY_VLASTNICH_POLI` zná zákazníka, případ, objednávku a projekt — nabídka chybí.
+  **Nález z 30. 7. 2026 (dopad zvýšen z ★ na ★★):** u objednávky a projektu jsou vlastní
+  pole jen *napůl*. Admin je smí definovat (klíč je v `ENTITY_VLASTNICH_POLI`), oba modely
+  mají i sloupec `extra` — ale `vlastni_pole.MODELY` zná pouze zákazníka a případ a routes
+  hodnoty nikde nezpracovávají. Takže **pole se založí, ale nikde se nezobrazí ani neuloží**,
+  a to tiše. Buď to dodělat, nebo ty dva klíče z `ENTITY_VLASTNICH_POLI` dočasně vyndat —
+  funkce, která mlčky nic nedělá, je horší než funkce, která tam není.
 
 ---
 
 ## 2. Doporučené pořadí dávek
 
-| Dávka | Obsah | Proč právě teď |
+**Odsouhlaseno 30. 7. 2026.** Rytmus: jedna dávka = jedna branch = jeden PR = jeden deploy.
+Bez importu je řídící myšlenka jiná než dřív: **CRM je hotové, ale nikdo ho nepoužívá** (1 zákazník,
+1 případ, 0 objednávek, žádná skupina nemá CRM právo). Dokud tam nechodí lidi a nezakládají
+zakázky, je zbytek seznamu odhad — ne zkušenost. Proto se nejdřív zapíná, pak staví.
+
+| Dávka | Obsah | Odhad | Proč právě tady |
+|---|---|---|---|
+| **A · Základ** ✅ | ~~CRM-01, CRM-03, CRM-25, CRM-13~~ — **hotovo 30. 7. 2026** | — | Hotové a otestované. Práva se **záměrně nepřidělují** (rozhodl Dan 30. 7. 2026: appku zatím staví a testuje jen s Claudem, CRM vidí pouze admini). |
+| **B · Ať vedení vidí čísla** | CRM-22, CRM-16, CRM-39, CRM-40, CRM-43 | ~3 dny | Grafové komponenty už v appce jsou, data se v nich sečtou sama. Jediná věc, po které vedení pozná, že přechod z Raynetu má smysl. **CRM-41 a CRM-42 sem nepatří** — bez uzavřených obchodů v appce nemají co ukázat. |
+| **C · Denní práce se zakázkou** | CRM-05, CRM-24, CRM-27, CRM-30, CRM-18, CRM-19 + co nahlásí lidi | ~1 týden | Náplň se doladí podle prvních týdnů provozu. Rezervovaná kapacita, ne pevný seznam. |
+| **D · Peníze** | CRM-08, CRM-09 | ~5 dní | Největší přínos pro vedení a teď má na čem běžet: nové zakázky projdou celým řetězcem až k faktuře v appce. |
+| **E · Komunikace** | CRM-36 → CRM-10 → CRM-32 | ~4 dny | V tomhle pořadí. Notifikace bez volby, co chci dostávat, je obtěžování. |
+| **F · Druhý životní cyklus** | CRM-11, CRM-31 | ~1 týden+ | Až budou v appce první předané projekty, ke kterým se dá servis navěsit. |
+| **Odloženo s podmínkou** | CRM-02 + CRM-38 (~300 řádků v seznamu), CRM-29 (desetitisíce), CRM-06 (jen když se objeví osoba u dvou firem), CRM-41 + CRM-42 (až bude ~20 uzavřených obchodů) | — | Spouštěč je napsaný, ať se to nedělá dřív, než to začne bolet. |
+
+**Práva: zatím NEPŘIDĚLOVAT** (rozhodnutí Dana 30. 7. 2026). CRM i nové funkce vidí jen
+admini (Dan, Mirek, Dezzi test) — appka se staví a testuje interně. Návrh přidělení níž
+zůstává **jako podklad na později**, ne jako úkol:
+
+| Skupina | Přidat | Poznámka |
 |---|---|---|
-| **A** | CRM-01, CRM-02, CRM-25, CRM-05, CRM-03, CRM-22 | Rychlé, hodnotné, a CRM-02 je potřeba **před** importem 445 klientů |
-| **B** | CRM-08, CRM-09 | Položky a fakturace = největší dík pro vedení; největší kus práce |
-| **C** | CRM-39 – CRM-43 | Dashboard s grafy — data už máte, jen je nikdo nevidí |
-| **D** | CRM-10, CRM-11 | E-mail a notifikace, pak servis a revize |
-| **E** | CRM-19, CRM-13, pak zbytek podle toho, co začne v provozu chybět | U osmi lidí se část nemusí vyplatit vůbec |
+| **OZ** (dnes jen `projekty`) | `zakaznici`, `obchodni_pripady`, `nabidkovac` | Bez `crm_vse` vidí každý jen svoje zakázky. |
+| **Vedení** | `zakaznici`, `obchodni_pripady`, `nabidkovac`, `crm_vse`, `crm_nastaveni`, `nabidkovac_katalog` | `crm_vse` = vidí přes všechny OZ. |
+| **Projektové** | `zakaznici`, `obchodni_pripady`, `crm_vse` | `crm_vse` **záměrně**: právo `obchodni_pripady` odemyká i Objednávky a CRM Projekty, ale bez `crm_vse` uvidí realizátor jen záznamy, kde je zapsaný jako vlastník/spoluvlastník — takže by po přihlášení viděl prázdný seznam. U osmi lidí nemá skrývání smysl. |
+
+*Pozor na později:* pět z osmi lidí je dnes ve skupině **Projektové** a ve skupinách **OZ**
+i **Vedení** není nikdo. Až se práva budou přidělovat, musí se lidi nejdřív přeřadit —
+jinak přidělení nic neudělá.
 
 ---
 
@@ -88,14 +142,19 @@ Tohle nejsou chybějící featury, ale díry, které vznikly během stavby. Maj�
   (`konektor_entity_folder`), takže nejlevnější varianta je **proklik na složku**, jako to má
   Přehled projektů (`matice/disk_parovani.py`), a teprve pak vlastní upload.
 
-- [ ] **CRM-06 · Kontakty jako samostatná entita** — Velikost **L** · Dopad **★★**
+- [ ] **CRM-06 · Kontakty jako samostatná entita** — Velikost **L** · Dopad **★★** · **odloženo, spouštěč: první osoba u dvou firem**
   Kontaktní osoba je dnes podřízená jedné firmě (`crm_zakaznik_kontakty`). Nejde ji najít
   napříč zákazníky ani mít jednu osobu u dvou firem (běžné u skupin a u OSVČ, které mají
   víc subjektů).
+  *Vědomé rozhodnutí:* tabulka je dnes prázdná, takže technicky je **teď** změna nejlevnější.
+  Přesto se odkládá — dokud tenhle případ v provozu nenastane, byla by to práce naslepo.
+  Cena za odklad je migrační skript nad tím, co do té doby naroste; roste pomalu.
 
-- [ ] **CRM-07 · Merge duplicitních zákazníků** — Velikost **M** · Dopad **★★**
-  ARES varuje při zakládání, ale když duplicita vznikne (import + ruční založení), není jak
-  ji slít. Musí umět převést případy, nabídky, aktivity i kontakty a nechat stopu.
+- [ ] **CRM-07 · Merge duplicitních zákazníků** — Velikost **M** · Dopad **★**
+  ARES varuje při zakládání, ale když duplicita přesto vznikne, není jak ji slít. Musí umět
+  převést případy, nabídky, aktivity i kontakty a nechat stopu.
+  *Bez importu klesla priorita:* duplicity teď mohou vzniknout jen ručně a ARES na ně
+  upozorní dřív, než se založí.
 
 - [ ] **CRM-08 · Položky nabídek a objednávek** — Velikost **XL** · Dopad **★★★**
   Objednávka má jen `cena_kc`. Bez rozpisu (panely, měnič, baterie, montáž, doprava) nejde
@@ -123,20 +182,26 @@ Tohle nejsou chybějící featury, ale díry, které vznikly během stavby. Maj�
   Máte historii **stavů** (`crm_stav_historie`), ale ne „kdo změnil cenu z 2,5 na 1,9 mil.".
   Appka má modul `logy` — dá se využít.
 
-- [ ] **CRM-13 · Export do CSV / Excelu** — Velikost **S** · Dopad **★★**
-  Ani filtrovaného seznamu. Vedení chce data do tabulky, tohle je nejjednodušší cesta.
+- [x] **CRM-13 · Export do CSV / Excelu** — **hotovo 30. 7. 2026** (dávka A)
+  Tlačítko „↓ Export CSV (n)" v liště tabulky všech pěti sekcí. Exportuje **přesně
+  to, co je vidět**: sloupce v zobrazeném pořadí, řádky už profiltrované a seřazené.
+  Modul `frontend/src/crmExport.js`.
+  *Vyladěné pro český Excel:* BOM (jinak rozsypaná diakritika), oddělovač `;`,
+  desetinná čárka, datum `DD.MM.RRRR`.
+  *Bezpečnost:* hodnoty začínající `=`, `+`, `-`, `@` se odzbrojují apostrofem —
+  jinak by se telefon „+420…" a text `=HYPERLINK(…)` staly v Excelu formulí.
 
-- [ ] **CRM-14 · Import z CSV** — Velikost **M** · Dopad **★**
-  Mimo Raynet (seznam z výstavy, koupená databáze). Po CRM-07 (merge), aby to nedělalo duplicity.
+- [x] **CRM-14 · Import z CSV** — **škrtnuto 30. 7. 2026**, viz sekce 9
 
 - [ ] **CRM-15 · Cíle a provize OZ** — Velikost **L** · Dopad **★★**
-  Bez cílů nejde měřit výkon a bez provizí se stejně počítají v Excelu. Navazuje na CRM-42.
+  Bez cílů nejde měřit výkon a bez provizí se stejně počítají v Excelu. Navazuje na CRM-42,
+  takže stejný spouštěč: má smysl až budou v appce uzavřené obchody.
 
 ---
 
 ## 4. Pohledy
 
-- [ ] **CRM-16 · Můj den** — Velikost **M** · Dopad **★★★**
+- [ ] **CRM-16 · Můj den** — Velikost **M** · Dopad **★★★** · *dávka B*
   Jedna obrazovka: úkoly po termínu, dnešní úkoly, případy bez aktivity X dní, nabídky
   odeslané bez reakce. Staví na CRM-01.
 
@@ -157,7 +222,7 @@ Tohle nejsou chybějící featury, ale díry, které vznikly během stavby. Maj�
 - [ ] **CRM-21 · Ganttův diagram projektu** — Velikost **L** · Dopad **★★**
   Kroky mají trvání i návaznosti, takže Gantt je nad nimi přirozený a ukáže kritickou cestu.
 
-- [ ] **CRM-22 · KPI dlaždice nad seznamy** — Velikost **S** · Dopad **★★**
+- [ ] **CRM-22 · KPI dlaždice nad seznamy** — Velikost **S** · Dopad **★★** · *dávka B*
   Nad tabulkou počet, celková hodnota, průměr, kolik je po termínu. Appka má na to hotový
   vizuální prvek (`gs-kpi` na rozcestníku).
 
@@ -175,9 +240,14 @@ Tohle nejsou chybějící featury, ale díry, které vznikly během stavby. Maj�
 Základ je hotový (filtry sloupců, víceúrovňové řazení, uložené a sdílené pohledy).
 Co běžná CRM mají navíc:
 
-- [ ] **CRM-25 · Relativní datumové filtry** — Velikost **S** · Dopad **★★★**
-  „Posledních 30 dní", „tento měsíc", „příští týden". Dnes jen absolutní od–do, takže
-  **uložený filtr za měsíc lže** — to je horší než chybějící funkce.
+- [x] **CRM-25 · Relativní datumové filtry** — **hotovo 30. 7. 2026** (dávka A)
+  Nový operátor **„je v období"** se 17 volbami (dnes, tento týden, posledních
+  7/30/90 dní, tento/minulý/příští měsíc, tento/minulý rok, v minulosti,
+  v budoucnosti…). V podmínce se drží **klíč období**, ne datum, takže se rozsah
+  dopočítává k dnešku — uložený filtr proto nezastará. V editoru je vedle výběru
+  vidět, co období dnes znamená (`1. 7. – 31. 7. 2026`).
+  *Pozor:* dny se počítají v lokálním čase, ne přes `toISOString()` — ten by
+  v našem pásmu každý večer hlásil „dnes" jako předchozí den.
 
 - [ ] **CRM-26 · OR a skupiny podmínek** — Velikost **M** · Dopad **★★**
   Dnes se všechny podmínky sčítají (AND). Chybí „stav je Nabídka **nebo** Vyjednávání".
@@ -189,7 +259,7 @@ Co běžná CRM mají navíc:
 - [ ] **CRM-28 · Skrývání a přeskládání sloupců** — Velikost **M** · Dopad **★★**
   Včetně uložení rozvržení k filtru — kdo sleduje jiná čísla, chce jinou tabulku.
 
-- [ ] **CRM-29 · Filtr na serveru** — Velikost **L** · Dopad **★**
+- [ ] **CRM-29 · Filtr na serveru** — Velikost **L** · Dopad **★** · **odloženo, spouštěč: desetitisíce záznamů**
   Dnes se filtruje na klientu (vědomé rozhodnutí, viz `crmFiltry.js`). Až budou desetitisíce
   záznamů, musí se to přesunout; formát podmínek je na to připravený. Souvisí s CRM-02.
 
@@ -242,26 +312,40 @@ Co běžná CRM mají navíc:
 CRM nemá **ani jeden graf**, přitom grafové komponenty v appce existují (pro nabídkovač:
 `GrafOdberu`, `GrafVyrobaSpotreba`, `GrafPrubehu`).
 
-- [ ] **CRM-39 · Pipeline funnel** — Velikost **M** · Dopad **★★★**
+- [ ] **CRM-39 · Pipeline funnel** — Velikost **M** · Dopad **★★★** · *dávka B*
   Kolik případů v které fázi, kolik hodnoty a kde to propadá.
 
-- [ ] **CRM-40 · Forecast** — Velikost **M** · Dopad **★★★**
+- [ ] **CRM-40 · Forecast** — Velikost **M** · Dopad **★★★** · *dávka B*
   Hodnota × pravděpodobnost podle měsíce předpokládaného uzavření. Data jsou uložená
   (`hodnota_kc`, `pravdepodobnost`, `predpokladane_uzavreni`), jen se nikde nesčítají.
 
-- [ ] **CRM-41 · Konverze a doba ve fázi** — Velikost **M** · Dopad **★★**
-  Z `crm_stav_historie`, kterou už sbíráte — kolik % projde z fáze do fáze a jak dlouho tam
-  případ visí. Tohle je hlavní důvod, proč historie stavů vůbec existuje.
+- [ ] **CRM-41 · Konverze a doba ve fázi** — Velikost **M** · Dopad **★★** · **odloženo, spouštěč: ~20 uzavřených obchodů**
+  Z `crm_stav_historie` — kolik % projde z fáze do fáze a jak dlouho tam případ visí. Tohle je
+  hlavní důvod, proč historie stavů vůbec existuje. **Ale** historie má dnes 2 řádky a bez
+  importu začíná od nuly, takže graf by první měsíce ukazoval prázdno nebo nesmysl z pár vzorků.
 
-- [ ] **CRM-42 · Výkon OZ** — Velikost **M** · Dopad **★★**
+- [ ] **CRM-42 · Výkon OZ** — Velikost **M** · Dopad **★★** · **odloženo, stejný spouštěč jako CRM-41**
   Vyhráno/prohráno, průměrná délka obchodu, průměrná hodnota. Navazuje na CRM-15.
 
-- [ ] **CRM-43 · Důvody proher** — Velikost **S** · Dopad **★★**
+- [ ] **CRM-43 · Důvody proher** — Velikost **S** · Dopad **★★** · *dávka B*
   Rozpad podle `duvod_prohry`. Kvůli tomu se ten důvod vynucuje.
 
 - [ ] **CRM-44 · Drobnosti v UI** — Velikost **S** · Dopad **★**
   Avatary/iniciály vlastníka na dlaždicích, barevné zvýraznění případů po termínu v kanbanu,
   ikonky typů nabídek, počítadlo dní ve fázi na dlaždici.
+
+- [ ] **CRM-45 · Přiznat, že Raynet ještě jede** — Velikost **S** · Dopad **★★★** · *dávka B*
+  Vznikla rozhodnutím neimportovat. Appka se dnes tváří, jako by v ní byl celý byznys —
+  a přitom v ní budou jen nové zakázky, zatímco staré dojíždějí v Raynetu. Bez toho bude
+  **forecast a funnel v dávce B vypadat jako propad obchodu**, i když se nic nestalo.
+  *Co udělat:*
+  - u grafů a KPI napsat, od kterého data appka data má („zakázky založené od …")
+  - v Zákaznících a Případech viditelný odkaz „starší zakázky najdeš v Raynetu"
+  - jedno pravidlo v nápovědě: **nová věc = vždycky appka, do Raynetu se už nezakládá**
+
+  *Volitelné později:* až Raynet dojede, jednorázově dotáhnout jen **historii uzavřených
+  obchodů** (vyhráno/prohráno + důvod), aby CRM-41 a CRM-43 měly z čeho počítat. Není to
+  obousměrný sync (ten zůstává zakázaný, viz sekce 9), ale jednorázové čtení na konci.
 
 > **Poznámka k provedení:** grafy mají držet jeden vizuální jazyk (barvy z tokenů appky, ne
 > vlastní paleta) a fungovat ve světlém i tmavém režimu — stejně jako grafy v nabídkovači.
@@ -280,6 +364,8 @@ Zváženo a odmítnuto — ať se to nemusí řešit znovu:
 | Skórování leadů, AI predikce | Bez historie stovek uzavřených obchodů to jen vymýšlí čísla |
 | Dvousměrná synchronizace s Raynetem | Appka Raynet **nahrazuje**; dvousměrný sync by natrvalo zabetonoval dvě pravdy |
 | Vlastní workflow engine s podmínkami a větvením | Zbytečná složitost; CRM-31 stačí jako pár pevných pravidel |
+| **Import z Raynetu** (CRM-14 i hotový `import_raynet.py`) | Rozhodnuto 30. 7. 2026: stávající zakázky dojedou v Raynetu, do appky jdou jen nové. Kód importu zůstává v repu nespuštěný — pro případ, že se rozhodnutí změní. |
+| **Import z CSV** (bývalé CRM-14) | Padá se stejným rozhodnutím. Nových zakázek je pár měsíčně, ty se zakládají ručně. |
 
 ---
 
@@ -303,10 +389,23 @@ Pro srovnání a aby bylo jasné, na čem se staví. **14 tabulek, 49 API cest, 
 | Filtry | filtry sloupců, víceúrovňové řazení (výchozí podle čísla), uložené a sdílené pohledy |
 | Migrace | dohledání starých nabídek, import z Raynetu (obojí s náhledem nasucho) |
 
+**Skutečný stav v produkční DB k 30. 7. 2026** — proto je dávka A o zapnutí, ne o featurách:
+
+| Tabulka | Řádků |
+|---|---|
+| `crm_zakaznici` | 1 |
+| `crm_obchodni_pripady` | 1 |
+| `crm_objednavky`, `crm_projekty`, `crm_aktivity`, `crm_ulozene_filtry`, `crm_vlastni_pole`, `crm_zakaznik_kontakty` | 0 |
+| `crm_stavy` (konfigurace pipeline) | 21 |
+| `crm_projekt_sablony` / `_kroky` | 2 / 16 |
+| skupiny s CRM právem | **0 ze 3** |
+
 **Čeká na rozhodnutí Dana (ne na práci):**
 
-- [ ] spustit import z Raynetu (445 klientů, 210 případů) — nevratné
-- [ ] přidělit práva skupinám v Admin nastavení (bez toho CRM nikdo kromě admina nevidí)
-- [ ] rozhodnout, komu z 11 Raynetích vlastníků založit účet v appce
+- [x] ~~spustit import z Raynetu~~ — **rozhodnuto 30. 7. 2026: nebude, viz úvod**
+- [x] ~~přidělit práva skupinám~~ — **odloženo 30. 7. 2026:** zatím nikomu kromě adminů,
+      appka se staví a testuje interně. Až na to přijde, nejdřív přeřadit lidi do skupin
+      OZ a Vedení (dnes je 5 z 8 v *Projektové*, v OZ i Vedení nikdo).
 - [ ] zavěsit 5 starých nabídek na zákazníka a případ
+- [ ] říct lidem pravidlo *„nová zakázka = vždycky appka"* (souvisí s CRM-45)
 - [ ] nafotit screenshoty do nápovědy (v `crm.md` jsou zatím placeholdery)

@@ -7,7 +7,8 @@ from pydantic import BaseModel
 TypZakaznika = Literal["lead", "klient"]
 EntitaCrm = Literal["op", "nab", "obj", "pro"]
 DruhStavu = Literal["otevreny", "vyhra", "prohra"]
-KategorieOp = Literal["prodej", "ppa", "peak_shaving"]
+# Kategorie případu ZÁMĚRNĚ není Literal – je to konfigurovatelný seznam
+# v tabulce `crm_kategorie` (CRM-03). Validuje se proti DB, ne typem.
 DruhAktivity = Literal["poznamka", "telefon", "email", "schuzka", "ukol"]
 
 
@@ -238,7 +239,11 @@ class PripadVstup(BaseModel):
     zakaznik_id: int
     nazev: str = ""
     popis: str = ""
-    kategorie: list[KategorieOp] = []
+    # Volný seznam klíčů, ne Literal: kategorie jsou od 30. 7. 2026 data
+    # v `crm_kategorie` (vedení si přidá „Servis"), takže enum ve schématu by
+    # novou kategorii odmítl už na vstupu. Validace proti tabulce je v routes
+    # (`_over_kategorie`) a vrací čitelnou chybu s neznámým klíčem.
+    kategorie: list[str] = []
     hodnota_kc: Optional[float] = None
     pravdepodobnost: Optional[int] = None
     predpokladane_uzavreni: Optional[str] = None  # ISO datum
@@ -307,6 +312,40 @@ class AktivitaOut(BaseModel):
     vlastnik_jmeno: Optional[str] = None
     vytvoril_jmeno: Optional[str] = None
     vytvoreno_at: Optional[str] = None
+
+
+class KategorieOut(BaseModel):
+    """Kategorie případu. `typ_nabidky` prázdný = ke kategorii výpočet není,
+    takže se u ní nenabízí tlačítko „+ nabídka" (viz `crm/kategorie.py`)."""
+
+    id: int
+    klic: str
+    nazev: str
+    popis: str = ""
+    poradi: int = 0
+    typ_nabidky: str = ""
+    aktivni: bool = True
+
+
+class KategorieVstup(BaseModel):
+    nazev: str
+    popis: str = ""
+    typ_nabidky: str = ""
+    poradi: Optional[int] = None
+    aktivni: Optional[bool] = None
+
+
+class UkolOut(AktivitaOut):
+    """Úkol ve výpisu „moje úkoly" — aktivita plus to, u čeho vlastně visí.
+
+    Bez `zaznam_nazev` a `cesta` by výpis napříč CRM byl seznam textů bez
+    kontextu: člověk vidí „zavolat kvůli ceně" a nepozná komu ani kam kliknout.
+    `dni` je kladné, když je úkol po termínu (viz `crm/ukoly.py`).
+    """
+
+    zaznam_nazev: str = ""
+    cesta: str = ""
+    dni: int = 0
 
 
 class AktivitaVstup(BaseModel):

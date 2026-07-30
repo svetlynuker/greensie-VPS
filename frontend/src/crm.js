@@ -16,12 +16,12 @@ export const POHLEDY_ZAKAZNIKU = [
 ];
 
 // Kategorie obchodního případu = do kterého výpočtu nabídkovače případ míří.
-// Klíče se drží enumu KATEGORIE_OP na backendu.
-export const KATEGORIE_OP = [
-  { klic: "ppa", nazev: "PPA", popis: "Greensie zainvestuje FVE a dodává elektřinu." },
-  { klic: "prodej", nazev: "Prodej", popis: "Zákazník je vlastníkem zařízení." },
-  { klic: "peak_shaving", nazev: "Peak shaving", popis: "Baterie sráží špičky odběru." },
-];
+//
+// POZOR: kategorie tady ZÁMĚRNĚ nejsou. Od 30. 7. 2026 (CRM-03) je to
+// konfigurovatelný seznam v tabulce `crm_kategorie` a vedení si ho spravuje
+// v nastavení pipeline. Načítá se přes `crmKategorie()` z api.js, stejně jako
+// stavy kanbanu. Kdyby se sem konstanta vrátila, appka by měla dvě pravdy
+// a nová kategorie by se v UI neobjevila.
 
 export const DRUHY_AKTIVITY = [
   { klic: "poznamka", nazev: "Poznámka", ikona: "📝" },
@@ -69,10 +69,15 @@ export function fmtKcKratce(x) {
   return fmtKc(n);
 }
 
-/** Názvy kategorií pro výpis v řádku/dlaždici. */
-export function nazvyKategorii(klice) {
+/** Názvy kategorií pro výpis v řádku/dlaždici.
+ *
+ * `kategorie` je seznam z `crmKategorie()`. Když ho volající nemá (ještě se
+ * načítá), vypíše se strojový klíč – lepší než prázdno, protože „peak_shaving"
+ * je pořád čitelnější než nic.
+ */
+export function nazvyKategorii(klice, kategorie) {
   return (klice || [])
-    .map((k) => KATEGORIE_OP.find((x) => x.klic === k)?.nazev || k)
+    .map((k) => (kategorie || []).find((x) => x.klic === k)?.nazev || k)
     .join(" + ");
 }
 

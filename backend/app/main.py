@@ -294,6 +294,7 @@ def _seed_crm():
     přepisovaly zpátky.
     """
     from app.crm.ciselne_rady import seed_rady
+    from app.crm.kategorie import seed_kategorie
     from app.crm.projekty_kroky import seed_sablony
     from app.crm.stavy import seed_stavy
     from app.database import SessionLocal
@@ -302,6 +303,9 @@ def _seed_crm():
     try:
         seed_stavy(db)
         seed_rady(db)
+        # Kategorie případu (dřív konstanta v kódu) – bez nich by u případu
+        # nebylo z čeho vybírat a nešlo by založit nabídku.
+        seed_kategorie(db)
         # Šablony projektových kroků – bez nich by si každý projekt psal kroky
         # ručně a pokaždé jinak.
         seed_sablony(db)

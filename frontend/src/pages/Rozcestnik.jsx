@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import Ikona from "../components/Ikona";
 import { logout, nactiDashboard, nactiMe } from "../api";
+import { DRUHY_AKTIVITY, fmtDatum } from "../crm";
 
 // Souhrn ke dnešnímu dni. Navigaci obstarává panel vlevo, tady jsou jen čísla
 // a to, co potřebuje pozornost. Sekce bez práva backend vůbec nepošle (None),
@@ -105,6 +106,83 @@ function VypisUkolu({ nazev, popis, radky, stav, prazdne, onProjekty }) {
   );
 }
 
+// Moje úkoly z CRM. Jiná tabulka než výpis z matice výš: úkol tu nevisí na
+// projektu, ale na libovolném záznamu CRM (zákazník, případ, nabídka…), takže
+// se musí ukázat U ČEHO je — a kliknutím se tam jít dá.
+function VypisCrmUkolu({ radky, celkem, onZaznam, onPripady }) {
+  return (
+    <section className="fm-card" style={{ overflow: "hidden" }}>
+      <div className="gs-karta-hlava">
+        <span className="gs-karta-titulek">Moje úkoly v CRM</span>
+        <span className="gs-tb-spacer" />
+        <button className="fm-btn" onClick={onPripady}>
+          Otevřít Obchodní případy
+        </button>
+      </div>
+
+      {radky.length === 0 ? (
+        <div className="gs-prazdno">
+          <div className="gs-prazdno-znak">
+            <Ikona jmeno="pripady" velikost={22} />
+          </div>
+          <h3>Žádný úkol s termínem tě nečeká</h3>
+          <p>
+            Úkol vznikne tak, že u zákazníka nebo případu přidáš aktivitu a dáš jí termín.
+          </p>
+        </div>
+      ) : (
+        <>
+          <p className="gs-karta-popis">
+            Nehotové úkoly s termínem, které patří tobě. Nejbližší termín první.
+            {celkem > radky.length && ` Zobrazeno ${radky.length} z ${celkem}.`}
+          </p>
+          <div className="gs-tabulka-obal">
+            <table className="gs-tabulka">
+              <thead>
+                <tr>
+                  <th>U čeho</th>
+                  <th>Úkol</th>
+                  <th className="ta-r">Termín</th>
+                </tr>
+              </thead>
+              <tbody>
+                {radky.map((r) => {
+                  const poTerminu = r.dni > 0;
+                  const dnes = r.dni === 0;
+                  const ikona = DRUHY_AKTIVITY.find((d) => d.klic === r.druh)?.ikona || "";
+                  return (
+                    <tr
+                      key={r.id}
+                      onClick={r.cesta ? () => onZaznam(r.cesta) : undefined}
+                      style={r.cesta ? { cursor: "pointer" } : undefined}
+                      title={r.cesta ? "Otevřít záznam" : "Tenhle záznam nemá vlastní stránku"}
+                    >
+                      <td className="gs-cell-name">{r.zaznam_nazev}</td>
+                      <td>
+                        {ikona && <span style={{ marginRight: 6 }}>{ikona}</span>}
+                        {r.text || <span style={{ color: "var(--muted)" }}>bez popisu</span>}
+                      </td>
+                      <td className="ta-r">
+                        <span className={`gs-pill ${poTerminu ? "crit" : dnes ? "warn" : "good"}`}>
+                          <span className="gs-dot" />
+                          {popisDnu(r.dni)}
+                        </span>
+                        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                          {fmtDatum(r.termin)}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 export default function Rozcestnik() {
   const [me, setMe] = useState(null);
   const [souhrn, setSouhrn] = useState(null);
@@ -138,6 +216,7 @@ export default function Rozcestnik() {
   const p = souhrn?.projekty;
   const f = souhrn?.finance;
   const n = souhrn?.nabidky;
+  const c = souhrn?.crm;
   const muzeNabidkovac = (me.prava || []).includes("nabidkovac");
 
   return (
@@ -171,8 +250,25 @@ export default function Rozcestnik() {
         </div>
       )}
 
-      {(p || f || n) && (
+      {(p || f || n || c) && (
         <div className="gs-kpis" style={{ marginBottom: 16 }}>
+          {/* Moje úkoly první — je to jediné číslo na stránce, které je osobní. */}
+          {c && (
+            <Kpi
+              label="Moje úkoly v CRM"
+              hodnota={c.celkem}
+              popis={
+                c.po_terminu > 0
+                  ? `${c.po_terminu} po termínu`
+                  : c.dnes > 0
+                    ? `${c.dnes} na dnes`
+                    : c.celkem === 0
+                      ? "Nic nevisí"
+                      : "Nic po termínu"
+              }
+              stav={c.po_terminu > 0 ? "crit" : c.dnes > 0 ? "warn" : "good"}
+            />
+          )}
           {p && (
             <>
               <Kpi label="Aktivní projekty" hodnota={p.aktivni} popis="V matici (nezakryté)" akcent />
@@ -212,6 +308,17 @@ export default function Rozcestnik() {
         </div>
       )}
 
+      {c && (
+        <div style={{ display: "grid", gap: 16, marginBottom: p ? 16 : 0 }}>
+          <VypisCrmUkolu
+            radky={souhrn.crm_ukoly || []}
+            celkem={c.celkem}
+            onZaznam={(cesta) => navigate(cesta)}
+            onPripady={() => navigate("/pripady")}
+          />
+        </div>
+      )}
+
       {p && (
         <div style={{ display: "grid", gap: 16 }}>
           <VypisUkolu
@@ -233,7 +340,7 @@ export default function Rozcestnik() {
         </div>
       )}
 
-      {!p && !f && !n && !chyba && (
+      {!p && !f && !n && !c && !chyba && (
         <section className="fm-card">
           <div className="gs-prazdno">
             <div className="gs-prazdno-znak">

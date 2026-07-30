@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import {
+  crmKategorie,
   crmPripadUprav,
   crmPripadZaloz,
   crmUzivatele,
   crmVlastniPole,
   crmZakaznici,
 } from "../api";
-import { KATEGORIE_OP } from "../crm";
 import VlastniPoleVstupy from "./VlastniPoleVstupy";
 
 /**
@@ -40,6 +40,7 @@ export default function PripadFormular({
     extra: pripad?.extra || {},
   }));
   const [zakaznici, setZakaznici] = useState(zakaznik ? [zakaznik] : []);
+  const [kategorie, setKategorie] = useState([]);
   const [vlastniPole, setVlastniPole] = useState(pripad?.vlastni_pole || []);
   const [lidi, setLidi] = useState([]);
   const [uklada, setUklada] = useState(false);
@@ -59,6 +60,15 @@ export default function PripadFormular({
       .then(setVlastniPole)
       .catch(() => setVlastniPole([]));
   }, [pripad]);
+
+  // Kategorie jsou konfigurovatelné (CRM-03), takže se načítají z appky.
+  // Vypnuté se nenabízejí – kromě těch, které tenhle případ už má, jinak by
+  // se při uložení tiše ztratily.
+  useEffect(() => {
+    crmKategorie()
+      .then(setKategorie)
+      .catch(() => setKategorie([]));
+  }, []);
 
   useEffect(() => {
     if (!muzeMenitVlastnika) return;
@@ -160,17 +170,19 @@ export default function PripadFormular({
             <div className="crm-sirka3">
               <label className="crm-label">Kategorie (můžeš vybrat víc)</label>
               <div className="crm-volby">
-                {KATEGORIE_OP.map((k) => (
-                  <button
-                    key={k.klic}
-                    type="button"
-                    className={`crm-pilulka ${form.kategorie.includes(k.klic) ? "aktivni" : ""}`}
-                    onClick={() => prepniKategorii(k.klic)}
-                    title={k.popis}
-                  >
-                    {k.nazev}
-                  </button>
-                ))}
+                {kategorie
+                  .filter((k) => k.aktivni || form.kategorie.includes(k.klic))
+                  .map((k) => (
+                    <button
+                      key={k.klic}
+                      type="button"
+                      className={`crm-pilulka ${form.kategorie.includes(k.klic) ? "aktivni" : ""}`}
+                      onClick={() => prepniKategorii(k.klic)}
+                      title={k.typ_nabidky ? k.popis : `${k.popis} (bez výpočtu nabídky)`}
+                    >
+                      {k.nazev}
+                    </button>
+                  ))}
               </div>
               <p className="crm-tise" style={{ marginTop: 6 }}>
                 Podle kategorie pozná appka, kam poslat výpočet nabídky. Když necháš prázdné,

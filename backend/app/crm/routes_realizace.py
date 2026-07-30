@@ -21,12 +21,12 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import User
 from app.crm import ciselne_rady
+from app.crm import kategorie as kategorie_modul
 from app.crm import projekty_kroky as kroky_modul
 from app.crm import stavy as stavy_modul
 from app.crm import vlastni_pole as pole_modul
 from app.crm.models import (
     ENTITY_FILTRU,
-    KATEGORIE_OP,
     STAVY_KROKU,
     CrmUlozenyFiltr,
     CrmProjekt,
@@ -914,7 +914,10 @@ def pridej_sablonu(
     nazev = (vstup.nazev or "").strip()
     if not nazev:
         raise HTTPException(status_code=422, detail="Název šablony je povinný.")
-    neznama = [k for k in (vstup.kategorie or []) if k not in KATEGORIE_OP]
+    # Kategorie se validují proti tabulce, ne proti konstantě (CRM-03) – jinak
+    # by se šablona nedala navěsit na kategorii, kterou si vedení přidalo samo.
+    platne = kategorie_modul.platne_klice(db)
+    neznama = [k for k in (vstup.kategorie or []) if k not in platne]
     if neznama:
         raise HTTPException(status_code=422, detail=f"Neznámá kategorie: {', '.join(neznama)}")
     if db.query(ProjektSablona.id).filter(ProjektSablona.nazev == nazev).first():
@@ -1235,7 +1238,10 @@ def migruj_stare_nabidky(
                 db.flush()
                 novi_zakaznici[klic] = zakaznik
 
-            kategorie = [n.typ] if n.typ in KATEGORIE_OP else []
+            # Typ nabídky → kategorie případu, která na ten výpočet míří
+            # (kategorie jsou konfigurovatelné, viz CRM-03).
+            klic_kategorie = kategorie_modul.klic_podle_typu_nabidky(db, n.typ)
+            kategorie = [klic_kategorie] if klic_kategorie else []
             pripad = ObchodniPripad(
                 cislo=ciselne_rady.dalsi_cislo(db, "op"),
                 zakaznik_id=zakaznik.id,

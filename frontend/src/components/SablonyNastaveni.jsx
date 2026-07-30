@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import {
+  crmKategorie,
   crmSablonaKrokPridej,
   crmSablonaKrokSmaz,
   crmSablonaPridej,
   crmSablonaSmaz,
   crmSablony,
 } from "../api";
-import { KATEGORIE_OP } from "../crm";
+import { nazvyKategorii } from "../crm";
 
 /**
  * Šablony projektových kroků – „takhle u nás vypadá FVE realizace".
@@ -24,6 +25,7 @@ export default function SablonyNastaveni({ muzeEditovat = false, onZavri }) {
   const [vybrana, setVybrana] = useState(null);
   const [novaSablona, setNovaSablona] = useState({ nazev: "", popis: "", kategorie: [] });
   const [novyKrok, setNovyKrok] = useState({ nazev: "", delka_dni: "5", zavisi_na_poradi: "" });
+  const [kategorie, setKategorie] = useState([]);
   const [chyba, setChyba] = useState(null);
 
   async function nacti(zvolit = null) {
@@ -40,6 +42,11 @@ export default function SablonyNastaveni({ muzeEditovat = false, onZavri }) {
         setVybrana(s[0] || null);
       })
       .catch((e) => setChyba(e.message));
+    // Kategorie jsou data (CRM-03) – šablona se na ně navěšuje, takže se
+    // musí načíst, ne vypsat z konstanty.
+    crmKategorie()
+      .then(setKategorie)
+      .catch(() => setKategorie([]));
   }, []);
 
   async function pridejSablonu() {
@@ -164,9 +171,7 @@ export default function SablonyNastaveni({ muzeEditovat = false, onZavri }) {
               {vybrana.kategorie?.length > 0 && (
                 <p className="crm-tise">
                   Pro kategorie:{" "}
-                  {vybrana.kategorie
-                    .map((k) => KATEGORIE_OP.find((x) => x.klic === k)?.nazev || k)
-                    .join(", ")}
+                  {nazvyKategorii(vybrana.kategorie, kategorie).replaceAll(" + ", ", ")}
                 </p>
               )}
 
@@ -276,16 +281,18 @@ export default function SablonyNastaveni({ muzeEditovat = false, onZavri }) {
                 <div>
                   <label className="crm-label">Nabízet u kategorií</label>
                   <div className="crm-volby">
-                    {KATEGORIE_OP.map((k) => (
-                      <button
-                        key={k.klic}
-                        type="button"
-                        className={`crm-pilulka ${novaSablona.kategorie.includes(k.klic) ? "aktivni" : ""}`}
-                        onClick={() => prepniKategorii(k.klic)}
-                      >
-                        {k.nazev}
-                      </button>
-                    ))}
+                    {kategorie
+                      .filter((k) => k.aktivni)
+                      .map((k) => (
+                        <button
+                          key={k.klic}
+                          type="button"
+                          className={`crm-pilulka ${novaSablona.kategorie.includes(k.klic) ? "aktivni" : ""}`}
+                          onClick={() => prepniKategorii(k.klic)}
+                        >
+                          {k.nazev}
+                        </button>
+                      ))}
                   </div>
                 </div>
                 <div className="crm-sirka3">

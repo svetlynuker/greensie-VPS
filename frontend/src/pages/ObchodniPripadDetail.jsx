@@ -9,6 +9,7 @@ import PripadRealizace from "../components/PripadRealizace";
 import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
 import VlastniPoleVypis from "../components/VlastniPoleVypis";
 import {
+  crmKategorie,
   crmPripadDetail,
   crmPripadHistorie,
   crmPripadSmaz,
@@ -17,7 +18,7 @@ import {
   logout,
   nactiMe,
 } from "../api";
-import { KATEGORIE_OP, fmtDatum, fmtKc, nazvyKategorii } from "../crm";
+import { fmtDatum, fmtKc, nazvyKategorii } from "../crm";
 import "../styles/crm.css";
 
 const ZALOZKY = [
@@ -40,6 +41,9 @@ export default function ObchodniPripadDetail() {
   const [me, setMe] = useState(null);
   const [p, setP] = useState(null);
   const [stavy, setStavy] = useState([]);
+  // Kategorie případu jsou konfigurovatelné (CRM-03) – tady se z nich jen
+  // překládá klíč na název a nabízí se v tipu u prázdné kategorie.
+  const [kategorie, setKategorie] = useState([]);
   const [historie, setHistorie] = useState([]);
   const [zalozka, setZalozka] = useState("prehled");
   const [upravuje, setUpravuje] = useState(false);
@@ -52,6 +56,12 @@ export default function ObchodniPripadDetail() {
     setP(detail);
     setHistorie(h);
   }, [id]);
+
+  useEffect(() => {
+    crmKategorie()
+      .then(setKategorie)
+      .catch(() => setKategorie([]));
+  }, []);
 
   useEffect(() => {
     Promise.all([nactiMe(), crmPripadDetail(id), crmStavy("op"), crmPripadHistorie(id)])
@@ -155,7 +165,7 @@ export default function ObchodniPripadDetail() {
               <Link to={`/zakaznici/detail/${p.zakaznik_id}`} className="crm-odkaz">
                 {p.zakaznik_nazev}
               </Link>
-              {p.kategorie?.length ? ` · ${nazvyKategorii(p.kategorie)}` : " · bez kategorie"}
+              {p.kategorie?.length ? ` · ${nazvyKategorii(p.kategorie, kategorie)}` : " · bez kategorie"}
               {p.vlastnik_jmeno ? ` · ${p.vlastnik_jmeno}` : ""}
               {p.raynet_code ? ` · Raynet ${p.raynet_code}` : ""}
             </div>
@@ -209,7 +219,7 @@ export default function ObchodniPripadDetail() {
                 <dt>Kategorie</dt>
                 <dd>
                   {p.kategorie?.length ? (
-                    nazvyKategorii(p.kategorie)
+                    nazvyKategorii(p.kategorie, kategorie)
                   ) : (
                     <span className="crm-tise">
                       nevyplněno – appka se zeptá při vytváření nabídky
@@ -287,8 +297,12 @@ export default function ObchodniPripadDetail() {
               </ul>
               {p.kategorie?.length === 0 && (
                 <p className="crm-tise">
-                  Tip: doplň kategorii ({KATEGORIE_OP.map((k) => k.nazev).join(" / ")}) – na
-                  záložce Nabídky se pak nabídne jako první volba.
+                  Tip: doplň kategorii (
+                  {kategorie
+                    .filter((k) => k.aktivni)
+                    .map((k) => k.nazev)
+                    .join(" / ")}
+                  ) – na záložce Nabídky se pak nabídne jako první volba.
                 </p>
               )}
               </div>

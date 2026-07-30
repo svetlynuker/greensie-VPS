@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
 import {
+  crmKategorie,
+  crmKategoriePoradi,
+  crmKategoriePridej,
+  crmKategorieSmaz,
+  crmKategorieUprav,
   crmNavrhStartu,
   crmRaduUprav,
   crmRady,
@@ -9,6 +14,17 @@ import {
   crmStavy,
   crmStavyPoradi,
 } from "../api";
+
+// Do kterého výpočtu nabídkovače kategorie míří. Prázdno je platná volba:
+// „Servis" je pořád obchodní případ, ale nabídkovač pro něj nic neumí.
+// Klíče se drží TYPY_NABIDKY na backendu (bez „kombinace" – ta nevzniká
+// volbou u případu, ale spojením dvou hotových nabídek).
+const VYPOCTY = [
+  { klic: "", nazev: "bez výpočtu" },
+  { klic: "ppa", nazev: "PPA" },
+  { klic: "prodej", nazev: "Prodej" },
+  { klic: "peak_shaving", nazev: "Peak shaving" },
+];
 
 const DRUHY = [
   { klic: "otevreny", nazev: "Otevřený (počítá se do pipeline)" },
@@ -37,20 +53,33 @@ export default function StavyNastaveni({ entita, onZavri, onZmena }) {
   const [rady, setRady] = useState([]);
   const [novy, setNovy] = useState({ nazev: "", druh: "otevreny", barva: "info" });
   const [navrh, setNavrh] = useState(null);
+  const [kategorie, setKategorie] = useState(null);
+  const [novaKat, setNovaKat] = useState({ nazev: "", typ_nabidky: "" });
   const [chyba, setChyba] = useState(null);
+
+  // Kategorie se spravují jen u obchodního případu – u nabídky, objednávky
+  // ani projektu nemají význam (kategorie je vlastnost zakázky, ne dokumentu).
+  const jeOp = entita === "op";
 
   async function nacti() {
     const [s, r] = await Promise.all([crmStavy(entita), crmRady()]);
     setStavy(s);
     setRady(r);
+    if (jeOp) setKategorie(await crmKategorie().catch(() => []));
   }
 
   useEffect(() => {
-    Promise.all([crmStavy(entita), crmRady(), crmNavrhStartu(entita).catch(() => null)])
-      .then(([s, r, n]) => {
+    Promise.all([
+      crmStavy(entita),
+      crmRady(),
+      crmNavrhStartu(entita).catch(() => null),
+      entita === "op" ? crmKategorie().catch(() => []) : Promise.resolve(null),
+    ])
+      .then(([s, r, n, k]) => {
         setStavy(s);
         setRady(r);
         setNavrh(n);
+        setKategorie(k);
       })
       .catch((e) => setChyba(e.message));
   }, [entita]);
@@ -122,11 +151,64 @@ export default function StavyNastaveni({ entita, onZavri, onZmena }) {
     }
   }
 
+  // ---- kategorie případu ----
+  async function pridejKategorii() {
+    if (!novaKat.nazev.trim()) return;
+    try {
+      await crmKategoriePridej({ nazev: novaKat.nazev.trim(), typ_nabidky: novaKat.typ_nabidky });
+      setNovaKat({ nazev: "", typ_nabidky: "" });
+      await nacti();
+      onZmena?.();
+    } catch (e) {
+      hlas(e);
+    }
+  }
+
+  async function upravKategorii(k, zmeny) {
+    try {
+      await crmKategorieUprav(k.id, {
+        nazev: zmeny.nazev ?? k.nazev,
+        popis: zmeny.popis ?? k.popis,
+        typ_nabidky: zmeny.typ_nabidky ?? k.typ_nabidky,
+        aktivni: zmeny.aktivni ?? k.aktivni,
+      });
+      await nacti();
+      onZmena?.();
+    } catch (e) {
+      hlas(e);
+    }
+  }
+
+  async function posunKategorii(index, o) {
+    const nove = [...kategorie];
+    const cil = index + o;
+    if (cil < 0 || cil >= nove.length) return;
+    [nove[index], nove[cil]] = [nove[cil], nove[index]];
+    try {
+      await crmKategoriePoradi(nove.map((k) => k.id));
+      await nacti();
+      onZmena?.();
+    } catch (e) {
+      hlas(e);
+    }
+  }
+
+  async function smazKategorii(k) {
+    if (!window.confirm(`Smazat kategorii „${k.nazev}"?`)) return;
+    try {
+      await crmKategorieSmaz(k.id);
+      await nacti();
+      onZmena?.();
+    } catch (e) {
+      hlas(e); // backend odmítne kategorii, kterou případy používají
+    }
+  }
+
   return (
     <div className="crm-okno-plast" onClick={onZavri}>
       <div className="crm-okno" onClick={(e) => e.stopPropagation()}>
         <div className="crm-okno-hlava">
-          <h2>Nastavení pipeline a číslování</h2>
+          <h2>{jeOp ? "Nastavení pipeline, kategorií a číslování" : "Nastavení pipeline a číslování"}</h2>
           <span className="crm-mezera" />
           <button className="crm-zavrit" onClick={onZavri} aria-label="Zavřít">
             ✕
@@ -225,6 +307,129 @@ export default function StavyNastaveni({ entita, onZavri, onZmena }) {
               Přidat stav
             </button>
           </div>
+
+          {jeOp && (
+            <>
+              <h3 style={{ marginTop: 22 }}>Kategorie obchodního případu</h3>
+              <p className="crm-tise">
+                Čím zakázka je – a do kterého <b>výpočtu</b> míří nabídka. Kategorie
+                {" "}<i>bez výpočtu</i> je platná (např. servis): na kartě případu se u ní
+                tlačítko „+ nabídka" nenabídne. Kategorii, kterou už případy mají, nelze
+                smazat – <b>vypni</b> ji, ať se nenabízí u nových.
+              </p>
+
+              {kategorie === null ? null : (
+                <table className="crm-tabulka crm-tabulka-hustá">
+                  <thead>
+                    <tr>
+                      <th>Název</th>
+                      <th>Výpočet nabídky</th>
+                      <th>Nabízet</th>
+                      <th className="crm-vpravo">Pořadí</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {kategorie.map((k, i) => (
+                      <tr key={k.id}>
+                        <td>
+                          <input
+                            className="crm-pole"
+                            defaultValue={k.nazev}
+                            onBlur={(e) => {
+                              if (e.target.value.trim() && e.target.value !== k.nazev) {
+                                upravKategorii(k, { nazev: e.target.value.trim() });
+                              }
+                            }}
+                          />
+                          <div className="crm-tise" style={{ marginTop: 2 }}>
+                            <code>{k.klic}</code>
+                          </div>
+                        </td>
+                        <td>
+                          <select
+                            className="crm-pole crm-pole-uzke"
+                            value={k.typ_nabidky || ""}
+                            onChange={(e) => upravKategorii(k, { typ_nabidky: e.target.value })}
+                          >
+                            {VYPOCTY.map((v) => (
+                              <option key={v.klic} value={v.klic}>
+                                {v.nazev}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td>
+                          <label className="crm-tise" style={{ display: "flex", gap: 6 }}>
+                            <input
+                              type="checkbox"
+                              checked={k.aktivni}
+                              onChange={(e) => upravKategorii(k, { aktivni: e.target.checked })}
+                            />
+                            {k.aktivni ? "ano" : "ne"}
+                          </label>
+                        </td>
+                        <td className="crm-vpravo">
+                          <button
+                            className="fm-btn crm-btn-maly"
+                            onClick={() => posunKategorii(i, -1)}
+                            disabled={i === 0}
+                            title="Nahoru"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            className="fm-btn crm-btn-maly"
+                            onClick={() => posunKategorii(i, 1)}
+                            disabled={i === kategorie.length - 1}
+                            title="Dolů"
+                          >
+                            ↓
+                          </button>
+                        </td>
+                        <td>
+                          <button
+                            className="fm-btn crm-btn-maly crm-btn-smazat"
+                            onClick={() => smazKategorii(k)}
+                            title="Smazat kategorii"
+                          >
+                            ✕
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              <div className="crm-stav-novy">
+                <input
+                  className="crm-pole"
+                  value={novaKat.nazev}
+                  onChange={(e) => setNovaKat((n) => ({ ...n, nazev: e.target.value }))}
+                  placeholder="Název nové kategorie (např. Servis)"
+                />
+                <select
+                  className="crm-pole crm-pole-uzke"
+                  value={novaKat.typ_nabidky}
+                  onChange={(e) => setNovaKat((n) => ({ ...n, typ_nabidky: e.target.value }))}
+                >
+                  {VYPOCTY.map((v) => (
+                    <option key={v.klic} value={v.klic}>
+                      {v.nazev}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="fm-btn fm-primary"
+                  onClick={pridejKategorii}
+                  disabled={!novaKat.nazev.trim()}
+                >
+                  Přidat kategorii
+                </button>
+              </div>
+            </>
+          )}
 
           <h3 style={{ marginTop: 22 }}>Číselné řady</h3>
           <p className="crm-tise">

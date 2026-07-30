@@ -63,6 +63,11 @@ DRUHY_STAVU = ("otevreny", "vyhra", "prohra")
 # Kategorie obchodního případu = do kterého nabídkového okna případ směřuje.
 # Schválně SEZNAM, ne jedna hodnota: případ může mít PPA i peak shaving
 # současně (a právě z toho vznikne kombinovaná nabídka).
+#
+# POZOR: tohle už NENÍ zdroj pravdy. Kategorie jsou od 30. 7. 2026 data
+# v tabulce `crm_kategorie` (vedení si je spravuje samo, stejně jako stavy
+# pipeline) – tady zůstávají jen jako výchozí sada pro seed a jako fallback,
+# kdyby byla tabulka prázdná. Validace i výpisy čtou DB, viz `crm/kategorie.py`.
 KATEGORIE_OP = ("prodej", "ppa", "peak_shaving")
 
 # Druhy aktivit (Raynet-like log práce s zákazníkem).
@@ -110,6 +115,42 @@ class CiselnaRada(Base):
     aktualizovano_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class CrmKategorie(Base):
+    """Kategorie obchodního případu – konfigurovatelná, ne zadrátovaná v kódu.
+
+    Do 30. 7. 2026 to byla trojice v konstantě (`prodej`/`ppa`/`peak_shaving`)
+    na dvou místech (backend + frontend), zatímco stavy pipeline i vlastní pole
+    si vedení spravovalo samo. Tahle tabulka tu nekonzistenci ruší: „Servis"
+    nebo „Dotace" přidá vedení v nastavení, bez programátora.
+
+    `typ_nabidky` je to podstatné pole. Kategorie totiž řídí, do kterého
+    VÝPOČTU nabídkovače případ míří (tlačítko „+ PPA" na kartě případu zakládá
+    nabídku typu `ppa`). Kategorie, ke které žádný výpočet neexistuje, má tohle
+    pole prázdné a tlačítko se u ní nenabídne – jinak by appka slibovala
+    výpočet, který neumí. Hodnota musí být jedna z `TYPY_NABIDKY`.
+
+    `aktivni=False` kategorii schová z nabídky u NOVÝCH případů, ale nechá ji
+    zobrazovat u těch, které ji už mají. Mazání kategorie, kterou někdo používá,
+    by z historických případů udělalo záznamy s nečitelným klíčem.
+    """
+
+    __tablename__ = "crm_kategorie"
+    __table_args__ = (UniqueConstraint("klic", name="uq_crm_kategorie_klic"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Strojový klíč – drží se v `ObchodniPripad.kategorie` a v `Nabidka.typ`,
+    # takže se NIKDY nepřepisuje (přejmenovat lze jen `nazev`).
+    klic = Column(String, nullable=False)
+    nazev = Column(String, nullable=False)
+    popis = Column(String, nullable=False, default="", server_default="")
+    poradi = Column(Integer, nullable=False, default=0, server_default="0")
+    # Prázdné = kategorie bez výpočtu (např. servis). Jinak klíč z TYPY_NABIDKY.
+    typ_nabidky = Column(String, nullable=False, default="", server_default="")
+    aktivni = Column(Boolean, nullable=False, default=True, server_default="true")
+
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class CrmStav(Base):
