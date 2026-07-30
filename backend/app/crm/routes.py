@@ -11,6 +11,7 @@ Dvě věci, které se prolínají všemi endpointy:
    nepřepisuje – stojí na něm párování složek na Disku a Freelo projektů.
 """
 
+import re
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -41,6 +42,7 @@ from app.crm.models import (
     CiselnaRada,
     CrmAktivita,
     CrmKategorie,
+    CrmKategorieAktivity,
     CrmStav,
     CrmStavHistorie,
     CrmVlastniPole,
@@ -78,6 +80,8 @@ from app.crm.schemas import (
     PripadVstup,
     KalendarOut,
     KalendarUdalostOut,
+    KategorieAktivityOut,
+    KategorieAktivityVstup,
     KategorieOut,
     KategorieVstup,
     RadaOut,
@@ -1108,6 +1112,12 @@ def _aktivita_out(a: CrmAktivita) -> AktivitaOut:
         termin=_iso(a.termin),
         zacatek=_iso(a.zacatek),
         delka_min=a.delka_min,
+        konec=_iso(a.konec),
+        priorita=a.priorita or "stredni",
+        misto=a.misto or "",
+        kategorie_id=a.kategorie_id,
+        kategorie_nazev=(a.kategorie.nazev if a.kategorie else ""),
+        kategorie_barva=(a.kategorie.barva if a.kategorie else ""),
         stav=a.stav,
         vysledek=a.vysledek or "",
         soukroma=bool(a.soukroma),
@@ -1117,6 +1127,14 @@ def _aktivita_out(a: CrmAktivita) -> AktivitaOut:
         vytvoril_jmeno=_jmeno(a.vytvoril),
         vytvoreno_at=_iso(a.vytvoreno_at),
     )
+
+
+def _over_kategorii_aktivity(db: Session, kategorie_id: int | None) -> int | None:
+    """Barevný štítek aktivity. Chybu z modulu přeloží na čitelnou 422."""
+    try:
+        return kategorie_modul.over_kategorii_aktivity(db, kategorie_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 def _over_ucastniky(db: Session, ids: list[int]) -> list[int]:
@@ -1183,6 +1201,10 @@ def pridej_aktivitu(
         termin=den,
         zacatek=kalendar.datum_a_cas(den, vstup.cas) if den else None,
         delka_min=vstup.delka_min,
+        konec=_parse_datum(vstup.konec, "konec"),
+        priorita=vstup.priorita,
+        misto=(vstup.misto or "").strip(),
+        kategorie_id=_over_kategorii_aktivity(db, vstup.kategorie_id),
         vlastnik_user_id=vlastnik,
         ucastnici=_over_ucastniky(db, vstup.ucastnici),
         vytvoril_user_id=user.id,
@@ -1221,6 +1243,18 @@ def uprav_aktivitu(
         a.zacatek = kalendar.datum_a_cas(a.termin, vstup.cas) if a.termin else None
     if vstup.delka_min is not None:
         a.delka_min = vstup.delka_min
+    if vstup.konec is not None:
+        # Prázdný string = „zruš vícedenní rozsah".
+        a.konec = _parse_datum(vstup.konec, "konec")
+    if vstup.priorita is not None:
+        a.priorita = vstup.priorita
+    if vstup.misto is not None:
+        a.misto = vstup.misto.strip()
+    if vstup.kategorie_id is not None:
+        # -1 je domluvené „odeber kategorii" (None už znamená „neměnit").
+        a.kategorie_id = (
+            None if vstup.kategorie_id < 0 else _over_kategorii_aktivity(db, vstup.kategorie_id)
+        )
     if vstup.ucastnici is not None:
         a.ucastnici = _over_ucastniky(db, vstup.ucastnici)
     if vstup.stav is not None:
@@ -1520,6 +1554,12 @@ def pridej_udalost(
         termin=den,
         zacatek=kalendar.datum_a_cas(den, vstup.cas),
         delka_min=vstup.delka_min,
+        konec=_parse_datum(vstup.konec, "konec"),
+        priorita=vstup.priorita,
+        misto=(vstup.misto or "").strip(),
+        kategorie_id=_over_kategorii_aktivity(db, vstup.kategorie_id),
+        stav=vstup.stav,
+        vysledek=(vstup.vysledek or "").strip(),
         soukroma=bool(vstup.soukroma),
         vlastnik_user_id=vlastnik,
         ucastnici=_over_ucastniky(db, vstup.ucastnici),
@@ -1530,6 +1570,108 @@ def pridej_udalost(
     db.commit()
     db.refresh(a)
     return _aktivita_out(a)
+
+
+# ---- nastavení: barevné kategorie aktivit (štítky v kalendáři) --------------
+def _kategorie_aktivity_out(k: CrmKategorieAktivity) -> KategorieAktivityOut:
+    return KategorieAktivityOut(
+        id=k.id,
+        nazev=k.nazev,
+        barva=k.barva or "#7b8794",
+        poradi=k.poradi,
+        aktivni=bool(k.aktivni),
+    )
+
+
+def _over_barvu(barva: str) -> str:
+    """Barva jde do CSS, takže sem nesmí propadnout nic jiného než #rrggbb."""
+    b = (barva or "").strip() or "#7b8794"
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", b):
+        raise HTTPException(
+            status_code=422, detail=f"Barva musí být ve formátu #rrggbb, přišlo: {b}"
+        )
+    return b.lower()
+
+
+@router.get("/kategorie-aktivit", response_model=list[KategorieAktivityOut])
+def seznam_kategorii_aktivit(
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Štítky pro kalendář. Čtení stačí běžné právo — filtruje se jimi."""
+    return [_kategorie_aktivity_out(k) for k in kategorie_modul.seznam_aktivit(db)]
+
+
+@router.post("/kategorie-aktivit", response_model=KategorieAktivityOut)
+def pridej_kategorii_aktivity(
+    vstup: KategorieAktivityVstup,
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    nazev = (vstup.nazev or "").strip()
+    if not nazev:
+        raise HTTPException(status_code=422, detail="Název kategorie je povinný.")
+    if db.query(CrmKategorieAktivity.id).filter(CrmKategorieAktivity.nazev == nazev).first():
+        raise HTTPException(status_code=409, detail="Kategorie s tímto názvem už existuje.")
+    poradi = vstup.poradi
+    if poradi is None:
+        poradi = int(db.query(func.max(CrmKategorieAktivity.poradi)).scalar() or 0) + 1
+    k = CrmKategorieAktivity(
+        nazev=nazev,
+        barva=_over_barvu(vstup.barva),
+        poradi=poradi,
+        aktivni=True if vstup.aktivni is None else bool(vstup.aktivni),
+    )
+    db.add(k)
+    db.commit()
+    db.refresh(k)
+    return _kategorie_aktivity_out(k)
+
+
+@router.put("/kategorie-aktivit/{kategorie_id}", response_model=KategorieAktivityOut)
+def uprav_kategorii_aktivity(
+    kategorie_id: int,
+    vstup: KategorieAktivityVstup,
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    k = db.get(CrmKategorieAktivity, kategorie_id)
+    if k is None:
+        raise HTTPException(status_code=404, detail="Kategorie neexistuje")
+    nazev = (vstup.nazev or "").strip()
+    if not nazev:
+        raise HTTPException(status_code=422, detail="Název kategorie je povinný.")
+    k.nazev = nazev
+    k.barva = _over_barvu(vstup.barva)
+    if vstup.aktivni is not None:
+        k.aktivni = bool(vstup.aktivni)
+    if vstup.poradi is not None:
+        k.poradi = vstup.poradi
+    db.commit()
+    db.refresh(k)
+    return _kategorie_aktivity_out(k)
+
+
+@router.delete("/kategorie-aktivit/{kategorie_id}")
+def smaz_kategorii_aktivity(
+    kategorie_id: int,
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    """Smaže štítek. Aktivity, které ho měly, zůstanou — jen bez štítku
+    (cizí klíč je SET NULL). Mazání se proto nezakazuje: štítek není nositelem
+    významu záznamu, na rozdíl od kategorie obchodního případu."""
+    k = db.get(CrmKategorieAktivity, kategorie_id)
+    if k is None:
+        raise HTTPException(status_code=404, detail="Kategorie neexistuje")
+    pocet = (
+        db.query(func.count(CrmAktivita.id))
+        .filter(CrmAktivita.kategorie_id == kategorie_id)
+        .scalar()
+    )
+    db.delete(k)
+    db.commit()
+    return {"ok": True, "aktivit_bez_kategorie": int(pocet or 0)}
 
 
 # ---- nastavení: kategorie obchodního případu --------------------------------

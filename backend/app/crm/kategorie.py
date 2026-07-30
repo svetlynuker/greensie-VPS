@@ -14,7 +14,7 @@ umí říct nahlas, místo aby se na ni přišlo až po kliknutí.
 
 from sqlalchemy.orm import Session
 
-from app.crm.models import CrmKategorie
+from app.crm.models import CrmKategorie, CrmKategorieAktivity
 from app.nabidkovac.models import TYPY_NABIDKY
 
 # Výchozí sada, kterou se naseeduje prázdná tabulka. Klíče se MUSÍ shodovat
@@ -131,3 +131,56 @@ def klic_ze_nazvu(db: Session, nazev: str, ignoruj_id: int | None = None) -> str
     while f"{zaklad}_{i}" in obsazene:
         i += 1
     return f"{zaklad}_{i}"
+
+
+# ============================================================================
+# Kategorie AKTIVIT — barevné štítky v kalendáři
+# ============================================================================
+# Pozor na záměnu s kategoriemi výše: ty říkají, do kterého VÝPOČTU míří
+# obchodní případ. Tyhle jsou barevné škatulky aktivit v kalendáři („Porada",
+# „Servis"), kterými se filtruje. Žijí ve stejném souboru, protože je to týž
+# druh věci — konfigurovatelný číselník, který spravuje vedení.
+
+# Výchozí sada. Barvy jsou pastelové schválně: dlaždice v kalendáři má být
+# čitelná s tmavým textem a nemá překřičet zbytek obrazovky.
+VYCHOZI_KATEGORIE_AKTIVIT: list[dict] = [
+    {"nazev": "Akvizice", "barva": "#b9e6c9"},
+    {"nazev": "Porada", "barva": "#fbd8b4"},
+    {"nazev": "Servis", "barva": "#bcd9f5"},
+    {"nazev": "Reklamace", "barva": "#f7bcc3"},
+    {"nazev": "Administrativa", "barva": "#ded8f0"},
+    {"nazev": "Osobní", "barva": "#dfe3e8"},
+]
+
+
+def seed_kategorie_aktivit(db: Session) -> None:
+    """Naplní barevné kategorie aktivit, když tabulka nemá ani řádek.
+
+    Jen do prázdné tabulky – dorovnávání chybějících klíčů by vracelo
+    kategorie, které vedení schválně smazalo.
+    """
+    if db.query(CrmKategorieAktivity.id).first() is not None:
+        return
+    for poradi, k in enumerate(VYCHOZI_KATEGORIE_AKTIVIT):
+        db.add(
+            CrmKategorieAktivity(
+                nazev=k["nazev"], barva=k["barva"], poradi=poradi, aktivni=True
+            )
+        )
+    db.commit()
+
+
+def seznam_aktivit(db: Session, jen_aktivni: bool = False) -> list[CrmKategorieAktivity]:
+    q = db.query(CrmKategorieAktivity)
+    if jen_aktivni:
+        q = q.filter(CrmKategorieAktivity.aktivni.is_(True))
+    return q.order_by(CrmKategorieAktivity.poradi, CrmKategorieAktivity.id).all()
+
+
+def over_kategorii_aktivity(db: Session, kategorie_id: int | None) -> int | None:
+    """Ověří, že kategorie existuje. `None` je platná hodnota (bez kategorie)."""
+    if kategorie_id is None:
+        return None
+    if db.get(CrmKategorieAktivity, kategorie_id) is None:
+        raise ValueError(f"Kategorie aktivity s id {kategorie_id} neexistuje.")
+    return kategorie_id

@@ -226,7 +226,9 @@ jinak přidělení nic neudělá.
   | K1 | aktivita se učí **čas** (`zacatek` + `delka_min`), **stavy** naplánováno / realizováno / nekonalo se, **výsledek**, **soukromá**, **účastníci**; pravidla viditelnosti; endpointy `/crm/kalendar` | ✅ hotovo |
   | K2 | stránka **Nastavení** (osobní volby + barvy druhů aktivit) | ✅ hotovo |
   | K3 | kalendář: týdenní mřížka + čtvercový měsíc | ✅ hotovo |
-  | K4 | práce v kalendáři: zakládání klikem, uzavření s výsledkem, navázání další aktivity | — |
+  | K4a | **vzhled podle předlohy** `docs/moduly/Kalendář/`: horní lišta (ISO týden, ‹ Dnes ›), panel filtrů (uživatelé / typy / zobrazení / kategorie, záložka Nenaplánováno), komprimovaná noc a večer, pruh vícedenních; aktivita se učí prioritu, místo a barevnou kategorii | ✅ hotovo |
+  | K4b | modal nové/editace aktivity podle předlohy | — |
+  | K4c | popover detailu s akcemi Mám hotovo / Zrušit / Přesunout | — |
   | K5 | opakované události (Dan chce rovnou, ne později) | — |
   | K6 | rychlé a uložené filtry + kalendáře dalších osob | — |
 

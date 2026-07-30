@@ -34,7 +34,7 @@ uložení aktivity.
 
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Query, Session
 
 from app.auth.models import User
@@ -46,7 +46,9 @@ from app.crm.pristup import muze_vse
 VYCHOZI_DELKA_MIN = {
     "telefon": 15,
     "email": 15,
+    "dopis": 15,
     "schuzka": 60,
+    "udalost": 60,  # porada, školení — plánuje se na hodiny, ne na minuty
     "ukol": 30,
     "poznamka": 30,
 }
@@ -87,13 +89,22 @@ def rozsah_tydne(den: date) -> tuple[date, date]:
 
 
 def v_rozsahu(q: Query, od: date, do: date) -> Query:
-    """Omezí dotaz na aktivity, které padají do rozsahu dnů (včetně krajních).
+    """Omezí dotaz na aktivity, které do rozsahu dnů zasahují.
 
     Filtruje se podle `termin`, ne podle `zacatek` — právě proto se `termin`
     dopočítává. Díky tomu se do kalendáře dostanou i celodenní úkoly, které
     hodinu nemají, a nemusí se skládat dva dotazy.
+
+    Pozor na VÍCEDENNÍ aktivity: školení od pátku do středy začíná před
+    zobrazeným týdnem, ale do něj zasahuje. Proto se nehledá „termín v okně",
+    ale „interval se s oknem překrývá" — jinak by týdenní pohled takovou
+    aktivitu neukázal a člověk by si naplánoval schůzku doprostřed školení.
     """
-    return q.filter(CrmAktivita.termin.isnot(None), CrmAktivita.termin >= od, CrmAktivita.termin <= do)
+    return q.filter(
+        CrmAktivita.termin.isnot(None),
+        CrmAktivita.termin <= do,
+        func.coalesce(CrmAktivita.konec, CrmAktivita.termin) >= od,
+    )
 
 
 def _cely_detail(a: CrmAktivita, user: User) -> bool:
@@ -122,6 +133,11 @@ def pro_uzivatele(a: CrmAktivita, user: User) -> dict:
         "termin": a.termin.isoformat() if a.termin else None,
         "delka_min": a.delka_min or vychozi_delka(a.druh),
         "cely_den": a.zacatek is None,
+        "konec": a.konec.isoformat() if a.konec else None,
+        # Vícedenní = má konec, který je po termínu. Kalendář z toho kreslí pruh
+        # v řádku „vícedenní" místo dlaždice v mřížce hodin.
+        "vicedenni": bool(a.konec and a.termin and a.konec > a.termin),
+        "priorita": a.priorita or "stredni",
         "vlastnik_user_id": a.vlastnik_user_id,
         "vlastnik_jmeno": (a.vlastnik.jmeno if a.vlastnik else None),
     }
@@ -134,6 +150,11 @@ def pro_uzivatele(a: CrmAktivita, user: User) -> dict:
             "text": "",
             "vysledek": "",
             "stav": a.stav,
+            # Ani místo a štítek se u bloku neposílají – adresa schůzky
+            # prozrazuje, kde a s kým člověk je.
+            "misto": "",
+            "kategorie_nazev": "",
+            "kategorie_barva": "",
             "soukroma": a.soukroma,
             "entita": None,
             "zaznam_id": None,
@@ -152,6 +173,9 @@ def pro_uzivatele(a: CrmAktivita, user: User) -> dict:
         "text": a.text or "",
         "vysledek": a.vysledek or "",
         "stav": a.stav,
+        "misto": a.misto or "",
+        "kategorie_nazev": (a.kategorie.nazev if a.kategorie else ""),
+        "kategorie_barva": (a.kategorie.barva if a.kategorie else ""),
         "soukroma": a.soukroma,
         "entita": a.entita,
         "zaznam_id": a.zaznam_id,
