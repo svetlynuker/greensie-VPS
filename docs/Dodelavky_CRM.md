@@ -230,7 +230,7 @@ jinak přidělení nic neudělá.
   | K4d | **drag & drop**: přesun tažením (i mezi dny), změna délky tažením za horní/dolní hranu, krok 15 min | ✅ hotovo (mimo pořadí, na přání Dana) |
   | K4b | modál nové/editace aktivity podle předlohy (typ, priorita, termín, místo s „U nás", kategorie, účastníci, „Čeho se to týká", náhled dne) | ✅ hotovo |
   | K4c | popover detailu ukotvený u dlaždice, akce Mám hotovo / Zrušit / Přesunout / … (upravit, vrátit do plánu, smazat) | ✅ hotovo |
-  | K5 | opakované události (Dan chce rovnou, ne později) | — |
+  | K5 | opakované události: denně / pracovní dny / týdně / měsíčně / vlastní po N dnech, povinný konec (datum nebo počet, max 2 roky), úprava a mazání se ptá „tuhle / tuhle a další / celou sérii" | ✅ hotovo |
   | K6 | rychlé a uložené filtry + kalendáře dalších osob | — |
 
   *Vědomě mimo rozsah:* napojení na Google Kalendář.

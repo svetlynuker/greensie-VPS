@@ -24,6 +24,7 @@ from app.crm import ares as ares_modul
 from app.crm import (
     ciselne_rady,
     kalendar,
+    opakovani as opakovani_modul,
     kategorie as kategorie_modul,
     nabidky_pipeline,
     stavy as stavy_modul,
@@ -33,6 +34,7 @@ from app.crm import (
 from app.crm.models import (
     DRUHY_AKTIVITY,
     DRUHY_STAVU,
+    ROZSAHY_SERIE,
     STAVY_AKTIVITY,
     STAVY_UZAVRENE,
     ENTITY_AKTIVIT,
@@ -44,6 +46,7 @@ from app.crm.models import (
     CrmKategorie,
     CrmKategorieAktivity,
     CrmProjekt,
+    CrmSerieAktivit,
     CrmStav,
     CrmStavHistorie,
     CrmVlastniPole,
@@ -1127,6 +1130,20 @@ def _over_pristup_k_zaznamu(db: Session, entita: str, zaznam_id: int, user: User
     )
 
 
+def _popis_serie(a: CrmAktivita) -> str:
+    """Lidský popis opakování („každý týden do 31.12.2026"), nebo prázdno."""
+    return opakovani_modul.popis_pravidla(a.serie) if a.serie is not None else ""
+
+
+def _over_rozsah(rozsah: str) -> str:
+    if rozsah not in ROZSAHY_SERIE:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Neznámý rozsah změny: {rozsah}. Povolené: {', '.join(ROZSAHY_SERIE)}.",
+        )
+    return rozsah
+
+
 def _vyzaduj_aktivitu(db: Session, aktivita_id: int, user: User) -> CrmAktivita:
     """Najde aktivitu a ověří, že s ní uživatel smí něco dělat.
 
@@ -1170,6 +1187,8 @@ def _aktivita_out(a: CrmAktivita) -> AktivitaOut:
         vysledek=a.vysledek or "",
         soukroma=bool(a.soukroma),
         ucastnici=list(a.ucastnici or []),
+        serie_id=a.serie_id,
+        serie_popis=_popis_serie(a),
         vlastnik_user_id=a.vlastnik_user_id,
         vlastnik_jmeno=_jmeno(a.vlastnik),
         vytvoril_jmeno=_jmeno(a.vytvoril),
@@ -1268,10 +1287,25 @@ def pridej_aktivitu(
 def uprav_aktivitu(
     aktivita_id: int,
     vstup: AktivitaUprava,
+    rozsah: str = Query(
+        default="jen_tuhle",
+        description="U aktivity ze série: jen_tuhle / tuto_a_dalsi / celou_serii",
+    ),
     user: User = Depends(vyzaduj_zakazniky),
     db: Session = Depends(get_db),
 ):
+    """Úprava aktivity. U série `rozsah` říká, koho se změna dotkne.
+
+    DATUM se hromadně nemění nikdy — u „tuto a další" i „celou sérii" by přesun
+    na jeden konkrétní den slil všechny instance do jednoho dne a série by
+    přestala být série. Hromadně se mění ČAS, délka, obsah a lidé; datum jen
+    u „jen tuhle" (jednorázový přesun porady na pátek).
+    """
     a = _vyzaduj_aktivitu(db, aktivita_id, user)
+    _over_rozsah(rozsah)
+    # Ostatní instance série (bez té právě upravované). Zjišťuje se PŘED
+    # změnou termínu — po ní by „tuto a další" bralo jiný výřez.
+    dalsi = [x for x in opakovani_modul.dotcene(db, a, rozsah) if x.id != a.id]
 
     if vstup.nazev is not None:
         a.nazev = vstup.nazev.strip()
@@ -1312,6 +1346,35 @@ def uprav_aktivitu(
     if vstup.vysledek is not None:
         a.vysledek = vstup.vysledek.strip()
     kalendar.srovnej_termin(a)
+
+    # Přenesení změn na zbytek série. Výsledek a stav se přenášejí schválně
+    # taky: „zrušit celou sérii porad, protože se šéf vrací až v září" je
+    # legitimní a jinak by to znamenalo odklikat každou zvlášť.
+    for x in dalsi:
+        if vstup.nazev is not None:
+            x.nazev = a.nazev
+        if vstup.text is not None:
+            x.text = a.text
+        if vstup.cas is not None:
+            # Datum si každá instance drží svoje, mění se jen hodina.
+            x.zacatek = kalendar.datum_a_cas(x.termin, vstup.cas) if x.termin else None
+        if vstup.delka_min is not None:
+            x.delka_min = a.delka_min
+        if vstup.priorita is not None:
+            x.priorita = a.priorita
+        if vstup.misto is not None:
+            x.misto = a.misto
+        if vstup.kategorie_id is not None:
+            x.kategorie_id = a.kategorie_id
+        if vstup.ucastnici is not None:
+            x.ucastnici = list(a.ucastnici or [])
+        if vstup.stav is not None:
+            x.stav = a.stav
+            x.hotovo_at = a.hotovo_at
+        if vstup.vysledek is not None:
+            x.vysledek = a.vysledek
+        kalendar.srovnej_termin(x)
+
     db.commit()
     db.refresh(a)
     return _aktivita_out(a)
@@ -1320,10 +1383,33 @@ def uprav_aktivitu(
 @router.delete("/aktivity/{aktivita_id}")
 def smaz_aktivitu(
     aktivita_id: int,
+    rozsah: str = Query(
+        default="jen_tuhle",
+        description="U aktivity ze série: jen_tuhle / tuto_a_dalsi / celou_serii",
+    ),
     user: User = Depends(vyzaduj_zakazniky),
     db: Session = Depends(get_db),
 ):
+    """Smaže aktivitu; u série podle `rozsah`.
+
+    Pravidlo série se maže až s poslední instancí — dokud aspoň jedna zbývá,
+    musí zůstat, aby se u ní dal vypsat popis opakování.
+    """
     a = _vyzaduj_aktivitu(db, aktivita_id, user)
+    _over_rozsah(rozsah)
+    serie_id = a.serie_id
+    smazat = opakovani_modul.dotcene(db, a, rozsah)
+    if len(smazat) > 1:
+        for x in smazat:
+            db.delete(x)
+        db.commit()
+        # Zbylo něco ze série? Když ne, uklidí se i pravidlo.
+        if serie_id and not opakovani_modul.instance_serie(db, serie_id):
+            serie = db.get(CrmSerieAktivit, serie_id)
+            if serie is not None:
+                db.delete(serie)
+                db.commit()
+        return {"ok": True, "smazano": len(smazat)}
     db.delete(a)
     db.commit()
     return {"ok": True}
@@ -1609,6 +1695,68 @@ def pridej_udalost(
     )
     kalendar.srovnej_termin(a)
     db.add(a)
+
+    # Opakování: založí se pravidlo a série se rozepíše do skutečných řádků.
+    # Materializace (ne dopočítávání za běhu) je vysvětlená v `CrmSerieAktivit` —
+    # jedna porada z série se běžně přesouvá a musí se chovat jako každá jiná
+    # aktivita.
+    if vstup.opakovani is not None:
+        try:
+            do_data = _parse_datum(vstup.opakovani.do_data, "do data")
+            opakovani_modul.over_pravidlo(
+                vstup.opakovani.frekvence,
+                vstup.opakovani.interval_dni,
+                do_data,
+                vstup.opakovani.pocet,
+            )
+            dny = opakovani_modul.termíny(
+                den,
+                vstup.opakovani.frekvence,
+                interval_dni=vstup.opakovani.interval_dni,
+                do_data=do_data,
+                pocet=vstup.opakovani.pocet,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+        serie = CrmSerieAktivit(
+            frekvence=vstup.opakovani.frekvence,
+            interval_dni=vstup.opakovani.interval_dni,
+            do_data=do_data,
+            pocet=vstup.opakovani.pocet,
+            vytvoril_user_id=user.id,
+        )
+        db.add(serie)
+        db.flush()
+        a.serie_id = serie.id
+        # U pracovních dnů se první termín mohl posunout z víkendu na pondělí —
+        # zadaná aktivita proto musí převzít termín z generátoru, ne ten původní.
+        if dny:
+            a.termin = dny[0]
+            a.zacatek = kalendar.datum_a_cas(dny[0], vstup.cas)
+            kalendar.srovnej_termin(a)
+        for dalsi in dny[1:]:
+            kopie = CrmAktivita(
+                entita=a.entita,
+                zaznam_id=a.zaznam_id,
+                druh=a.druh,
+                nazev=a.nazev,
+                text=a.text,
+                termin=dalsi,
+                zacatek=kalendar.datum_a_cas(dalsi, vstup.cas),
+                delka_min=a.delka_min,
+                priorita=a.priorita,
+                misto=a.misto,
+                kategorie_id=a.kategorie_id,
+                soukroma=a.soukroma,
+                vlastnik_user_id=a.vlastnik_user_id,
+                ucastnici=list(a.ucastnici or []),
+                vytvoril_user_id=user.id,
+                serie_id=serie.id,
+            )
+            kalendar.srovnej_termin(kopie)
+            db.add(kopie)
+
     db.commit()
     db.refresh(a)
     return _aktivita_out(a)

@@ -84,6 +84,18 @@ DRUHY_AKTIVITY = ("ukol", "schuzka", "udalost", "telefon", "dopis", "email", "po
 # Priorita aktivity — tři stupně jako v předloze (šipka dolů / – / !).
 PRIORITY_AKTIVITY = ("nizka", "stredni", "vysoka")
 
+# Frekvence opakování aktivity (zadání Dana 30. 7. 2026).
+#   denne         → každý den
+#   pracovni_dny  → po–pá, víkend se přeskočí
+#   tydne         → stejný den v týdnu
+#   mesicne       → stejné číslo v měsíci (viz `opakovani.py`, kde je řešeno,
+#                   co s 31. dnem v měsíci, který ho nemá)
+#   vlastni       → každých N dní (`interval_dni`), třeba 14
+FREKVENCE_OPAKOVANI = ("denne", "pracovni_dny", "tydne", "mesicne", "vlastni")
+
+# Na co se vztahuje úprava nebo smazání události, která patří do série.
+ROZSAHY_SERIE = ("jen_tuhle", "tuto_a_dalsi", "celou_serii")
+
 # Stav aktivity. Nahradil boolean `hotovo`, protože ten neumí rozlišit schůzku,
 # která proběhla, od schůzky, kterou zákazník zrušil — a obojí pod jedním
 # „hotovo" by znehodnotilo každou statistiku aktivity OZ.
@@ -136,6 +148,42 @@ class CiselnaRada(Base):
     aktualizovano_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class CrmSerieAktivit(Base):
+    """Pravidlo opakování pro sérii aktivit („porada každý čtvrtek").
+
+    ---- Proč se instance MATERIALIZUJÍ -------------------------------------
+    Série se při založení rozepíše do skutečných řádků `crm_aktivity`, místo aby
+    se dopočítávala při každém dotazu. Důvody:
+
+      * jedna porada z série se běžně přesune nebo zruší — nad vypočítanými
+        instancemi by to znamenalo vést seznam výjimek a slepovat ho při každém
+        čtení kalendáře,
+      * aktivita ze série se má chovat jako každá jiná: dá se u ní zapsat
+        výsledek, navěsit na klienta, přetáhnout myší. Virtuální instance by
+        musela nejdřív „zhmotnět", což je krok, který nikdo nechce vysvětlovat.
+
+    Cena je počet řádků, a proto má opakování POVINNÝ konec (`do_data` nebo
+    `pocet`) a strop `MAX_INSTANCI` v `opakovani.py`.
+
+    `frekvence` je jedna z `FREKVENCE_OPAKOVANI`; `interval_dni` má význam jen
+    u „vlastni" (každých N dní).
+    """
+
+    __tablename__ = "crm_serie_aktivit"
+
+    id = Column(Integer, primary_key=True, index=True)
+    frekvence = Column(String, nullable=False)
+    interval_dni = Column(Integer, nullable=True)  # jen pro frekvenci "vlastni"
+    # Konec série. Vyplněné je vždy jedno z dvou — validace je v `opakovani.py`.
+    do_data = Column(Date, nullable=True)
+    pocet = Column(Integer, nullable=True)
+
+    vytvoril_user_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True
+    )
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class CrmKategorieAktivity(Base):
@@ -509,6 +557,12 @@ class CrmAktivita(Base):
         nullable=True,
         index=True,
     )
+    # Série opakování, ze které aktivita vznikla. SET NULL schválně: když se
+    # smaže pravidlo, jednotlivé aktivity zůstanou — jsou to platné záznamy
+    # v historii a nemají zmizet kvůli úklidu pravidla.
+    serie_id = Column(
+        Integer, ForeignKey("crm_serie_aktivit.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     stav = Column(
         String, nullable=False, default="naplanovano", server_default="naplanovano", index=True
@@ -531,6 +585,7 @@ class CrmAktivita(Base):
     vlastnik = relationship("User", foreign_keys=[vlastnik_user_id])
     vytvoril = relationship("User", foreign_keys=[vytvoril_user_id])
     kategorie = relationship("CrmKategorieAktivity")
+    serie = relationship("CrmSerieAktivit")
 
 
 # ---- Objednávky a projekty --------------------------------------------------

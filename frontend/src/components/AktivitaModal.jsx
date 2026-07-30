@@ -9,7 +9,7 @@ import {
   crmUzivatele,
   crmZakaznici,
 } from "../api";
-import { DRUHY_AKTIVITY, PRIORITY_AKTIVITY } from "../crm";
+import { DRUHY_AKTIVITY, FREKVENCE_OPAKOVANI, PRIORITY_AKTIVITY } from "../crm";
 import { isoDen, posunDnu } from "../datum";
 import { MIN_DELKA, hm, minutyZCasu, naCas } from "../kalendarCas";
 import "../styles/aktivitaModal.css";
@@ -60,6 +60,7 @@ export default function AktivitaModal({
   jaJmeno,
   onZavri,
   onHotovo, // (ulozenaAktivita, otevritDetail) → nadřazená stránka se obnoví
+  onSerie, // (aktivita, zmena) → úprava aktivity ze série se musí zeptat na rozsah
   udalostiDne = [], // pro náhled dne vlevo
   onZmenDen, // (isoDen) → přepnout náhled i datum
 }) {
@@ -90,6 +91,15 @@ export default function AktivitaModal({
   const [ucastnici, setUcastnici] = useState(aktivita?.ucastnici || []);
   const [entita, setEntita] = useState(aktivita?.entita || "");
   const [zaznamId, setZaznamId] = useState(aktivita?.zaznam_id || "");
+  // Opakování se zadává jen u NOVÉ aktivity. Změnit pravidlo u existující série
+  // by znamenalo přepočítat a přeskládat všechny instance včetně těch, které
+  // někdo ručně přesunul — to je vlastní funkce, ne políčko ve formuláři.
+  const [opakovat, setOpakovat] = useState(false);
+  const [frekvence, setFrekvence] = useState("tydne");
+  const [intervalDni, setIntervalDni] = useState(14);
+  const [konecTyp, setKonecTyp] = useState("pocet"); // "pocet" | "datum"
+  const [pocetOpakovani, setPocetOpakovani] = useState(10);
+  const [doData, setDoData] = useState("");
 
   const [kategorie, setKategorie] = useState([]);
   const [lide, setLide] = useState([]);
@@ -185,7 +195,36 @@ export default function AktivitaModal({
         entita: soukroma ? null : entita || null,
         zaznam_id: soukroma || !entita ? null : Number(zaznamId) || null,
         ucastnici,
+        opakovani:
+          !jeUprava && opakovat
+            ? {
+                frekvence,
+                interval_dni: frekvence === "vlastni" ? Number(intervalDni) || 1 : null,
+                // Konec je povinný — posílá se právě jedna z variant.
+                pocet: konecTyp === "pocet" ? Number(pocetOpakovani) || 1 : null,
+                do_data: konecTyp === "datum" ? doData || null : null,
+              }
+            : null,
       };
+      // Aktivita ze série: rozsah řeší nadřazená stránka dialogem, sem se
+      // změna jen předá. Jinak by se uložila jen tahle instance bez dotazu.
+      if (jeUprava && aktivita.serie_id && onSerie) {
+        onSerie(aktivita, {
+          nazev: telo.nazev,
+          text: telo.text,
+          termin: telo.termin,
+          cas: telo.cas,
+          delka_min: telo.delka_min,
+          priorita: telo.priorita,
+          misto: telo.misto,
+          kategorie_id: telo.kategorie_id ?? -1,
+          stav: telo.stav,
+          ucastnici: telo.ucastnici,
+        });
+        onZavri?.();
+        return;
+      }
+
       const vysledek = jeUprava
         ? await crmAktivitaUprav(aktivita.id, {
             // Úprava posílá jen to, co modál umí měnit; -1 u kategorie znamená
@@ -464,6 +503,87 @@ export default function AktivitaModal({
                   onChange={(e) => setText(e.target.value)}
                 />
               </div>
+
+              {/* opakování — jen u nové aktivity */}
+              {!jeUprava && (
+                <div className="am-blok">
+                  <label className="crm-zaskrtavaci" style={{ margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={opakovat}
+                      onChange={(e) => setOpakovat(e.target.checked)}
+                    />
+                    Opakovat
+                  </label>
+                  {opakovat && (
+                    <div className="am-opakovani">
+                      <select
+                        className="crm-pole"
+                        value={frekvence}
+                        onChange={(e) => setFrekvence(e.target.value)}
+                      >
+                        {FREKVENCE_OPAKOVANI.map((f) => (
+                          <option key={f.klic} value={f.klic}>
+                            {f.nazev}
+                          </option>
+                        ))}
+                      </select>
+                      {frekvence === "vlastni" && (
+                        <label className="am-opak-radek">
+                          každých
+                          <input
+                            className="crm-pole crm-pole-cislo"
+                            type="number"
+                            min={1}
+                            max={365}
+                            value={intervalDni}
+                            onChange={(e) => setIntervalDni(e.target.value)}
+                          />
+                          dní
+                        </label>
+                      )}
+                      <div className="am-opak-radek">
+                        <select
+                          className="crm-pole crm-pole-uzke"
+                          value={konecTyp}
+                          onChange={(e) => setKonecTyp(e.target.value)}
+                        >
+                          <option value="pocet">celkem opakování</option>
+                          <option value="datum">do data</option>
+                        </select>
+                        {konecTyp === "pocet" ? (
+                          <input
+                            className="crm-pole crm-pole-cislo"
+                            type="number"
+                            min={1}
+                            max={520}
+                            value={pocetOpakovani}
+                            onChange={(e) => setPocetOpakovani(e.target.value)}
+                          />
+                        ) : (
+                          <input
+                            className="crm-pole"
+                            type="date"
+                            value={doData}
+                            min={den}
+                            onChange={(e) => setDoData(e.target.value)}
+                          />
+                        )}
+                      </div>
+                      <p className="crm-tise" style={{ margin: 0 }}>
+                        Opakování musí mít konec — appka vytvoří jednotlivé události dopředu,
+                        takže je pak jde po jedné přesouvat i rušit. Nejvýš dva roky.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {jeUprava && aktivita?.serie_popis && (
+                <p className="crm-tise">
+                  Aktivita patří do opakované série ({aktivita.serie_popis}). Změna se při
+                  uložení zeptá, jestli platí pro tuhle, pro tuhle a další, nebo pro celou sérii.
+                </p>
+              )}
 
               {/* zaškrtávátka */}
               <label className="crm-zaskrtavaci">

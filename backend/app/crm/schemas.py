@@ -19,6 +19,9 @@ PrioritaAktivity = Literal["nizka", "stredni", "vysoka"]
 # kategorií případu): stavy aktivity nejsou konfigurovatelné, protože na nich
 # stojí výpis „moje úkoly" a statistika činnosti.
 StavAktivity = Literal["naplanovano", "realizovano", "nekonalo_se"]
+FrekvenceOpakovani = Literal["denne", "pracovni_dny", "tydne", "mesicne", "vlastni"]
+# Na co se vztahuje úprava/smazání události ze série.
+RozsahSerie = Literal["jen_tuhle", "tuto_a_dalsi", "celou_serii"]
 
 
 # ---- stavy pipeline ----------------------------------------------------------
@@ -337,6 +340,8 @@ class AktivitaOut(BaseModel):
     vysledek: str = ""
     soukroma: bool = False
     ucastnici: list[int] = []
+    serie_id: Optional[int] = None
+    serie_popis: str = ""  # „každý týden do 31.12.2026"
     vlastnik_user_id: Optional[int] = None
     vlastnik_jmeno: Optional[str] = None
     vytvoril_jmeno: Optional[str] = None
@@ -436,6 +441,25 @@ class KategorieAktivityVstup(BaseModel):
 
 
 # ---- kalendář ---------------------------------------------------------------
+class OpakovaniVstup(BaseModel):
+    """Pravidlo opakování. Konec je povinný — buď `do_data`, nebo `pocet`."""
+
+    frekvence: FrekvenceOpakovani
+    interval_dni: Optional[int] = None  # jen u „vlastni" (každých N dní)
+    do_data: Optional[str] = None  # ISO den
+    pocet: Optional[int] = None
+
+
+class OpakovaniOut(BaseModel):
+    id: int
+    frekvence: str
+    interval_dni: Optional[int] = None
+    do_data: Optional[str] = None
+    pocet: Optional[int] = None
+    popis: str = ""  # „každý týden do 31.12.2026"
+    instanci: int = 0
+
+
 class UdalostVstup(BaseModel):
     """Nová událost zakládaná z kalendáře.
 
@@ -461,6 +485,8 @@ class UdalostVstup(BaseModel):
     soukroma: bool = False
     vlastnik_user_id: Optional[int] = None
     ucastnici: list[int] = []
+    # Vyplněné = zakládá se celá série, ne jedna událost.
+    opakovani: Optional[OpakovaniVstup] = None
 
 
 class KalendarUdalostOut(BaseModel):
@@ -489,6 +515,8 @@ class KalendarUdalostOut(BaseModel):
     kategorie_nazev: str = ""
     kategorie_barva: str = ""
     soukroma: bool = False
+    serie_id: Optional[int] = None
+    serie_popis: str = ""
     entita: Optional[str] = None
     zaznam_id: Optional[int] = None
     zaznam_nazev: str = ""

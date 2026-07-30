@@ -6,6 +6,7 @@ import KalendarTyden from "../components/KalendarTyden";
 import KalendarFiltry from "../components/KalendarFiltry";
 import AktivitaModal from "../components/AktivitaModal";
 import KalendarDetail from "../components/KalendarDetail";
+import SerieDialog from "../components/SerieDialog";
 import {
   crmAktivitaSmaz,
   crmAktivitaUprav,
@@ -58,6 +59,9 @@ export default function Kalendar() {
   const [detail, setDetail] = useState(null);
   // Modál: {vychozi: {termin, cas}} pro novou, {aktivita} pro úpravu.
   const [modal, setModal] = useState(null);
+  // Čekající změna na aktivitě ze série — čeká na volbu rozsahu.
+  // {u, zmena, akce: "zmenit"|"smazat"}
+  const [serie, setSerie] = useState(null);
   const [chyba, setChyba] = useState(null);
 
   // ---- stav filtrů ----
@@ -163,10 +167,24 @@ export default function Kalendar() {
    * dlaždice po puštění skočila zpátky a doskočila až s odpovědí, což vypadá
    * jako porucha. Když uložení selže, vrátí se původní stav a řekne se proč.
    */
-  /** Změna z popoveru (uzavření s výsledkem, přesun, vrácení do plánu). */
-  async function zmenAktivitu(id, zmena) {
+  /** Změna z popoveru (uzavření s výsledkem, přesun, vrácení do plánu).
+   *
+   *  U aktivity ze série se nejdřív zeptáme na rozsah — proto ta mezizastávka
+   *  v `setSerie`. Bez ní by se každá změna tiše dotkla jen jedné instance
+   *  a změna času celé porady by se musela odklikat osmkrát.
+   */
+  async function zmenAktivitu(id, zmena, u = null) {
+    const aktivita = u || detail?.u;
+    if (aktivita?.serie_id) {
+      setSerie({ u: aktivita, zmena, akce: "zmenit" });
+      return;
+    }
+    await provedZmenu(id, zmena, null);
+  }
+
+  async function provedZmenu(id, zmena, rozsah) {
     try {
-      await crmAktivitaUprav(id, zmena);
+      await crmAktivitaUprav(id, zmena, rozsah);
       await nacti();
       setChyba(null);
     } catch (e) {
@@ -175,8 +193,16 @@ export default function Kalendar() {
   }
 
   async function smazAktivitu(u) {
+    if (u.serie_id) {
+      setSerie({ u, akce: "smazat" });
+      return;
+    }
+    await provedSmazani(u, null);
+  }
+
+  async function provedSmazani(u, rozsah) {
     try {
-      await crmAktivitaSmaz(u.id);
+      await crmAktivitaSmaz(u.id, rozsah);
       setDetail(null);
       await nacti();
     } catch (e) {
@@ -185,6 +211,12 @@ export default function Kalendar() {
   }
 
   async function presunAktivitu(u, zmena) {
+    // Přetažení instance ze série je typicky „tuhle jednu jinam" — ale ptáme se
+    // stejně, protože „porada se od teď posouvá" je taky běžné.
+    if (u.serie_id) {
+      setSerie({ u, zmena, akce: "zmenit" });
+      return;
+    }
     const puvodni = udalosti;
     setUdalosti((seznam) =>
       seznam.map((x) =>
@@ -442,6 +474,20 @@ export default function Kalendar() {
         />
       )}
 
+      {serie && (
+        <SerieDialog
+          popisSerie={serie.u.serie_popis}
+          akce={serie.akce}
+          onZavri={() => setSerie(null)}
+          onVyber={async (rozsah) => {
+            const { u, zmena, akce } = serie;
+            setSerie(null);
+            if (akce === "smazat") await provedSmazani(u, rozsah);
+            else await provedZmenu(u.id, zmena, rozsah);
+          }}
+        />
+      )}
+
       {modal && (
         <AktivitaModal
           vychozi={modal.vychozi}
@@ -451,6 +497,7 @@ export default function Kalendar() {
           udalostiDne={udalosti}
           onZmenDen={(iso) => setVybranyDen(iso)}
           onZavri={() => setModal(null)}
+          onSerie={(u, zmena) => setSerie({ u, zmena, akce: "zmenit" })}
           onHotovo={async (ulozena, otevrit) => {
             setModal(null);
             await nacti();

@@ -644,12 +644,16 @@ export function crmAktivitaPridej(entita, zaznamId, data) {
   });
 }
 
-export function crmAktivitaUprav(id, data) {
-  return zavolej(`/crm/aktivity/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+// `rozsah` platí jen u aktivity z opakované série: jen_tuhle (výchozí) /
+// tuto_a_dalsi / celou_serii.
+export function crmAktivitaUprav(id, data, rozsah = null) {
+  const q = rozsah ? `?rozsah=${rozsah}` : "";
+  return zavolej(`/crm/aktivity/${id}${q}`, { method: "PATCH", body: JSON.stringify(data) });
 }
 
-export function crmAktivitaSmaz(id) {
-  return zavolej(`/crm/aktivity/${id}`, { method: "DELETE" });
+export function crmAktivitaSmaz(id, rozsah = null) {
+  const q = rozsah ? `?rozsah=${rozsah}` : "";
+  return zavolej(`/crm/aktivity/${id}${q}`, { method: "DELETE" });
 }
 
 export function crmMojeUkoly() {
