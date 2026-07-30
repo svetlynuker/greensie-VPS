@@ -228,7 +228,7 @@ jinak přidělení nic neudělá.
   | K3 | kalendář: týdenní mřížka + čtvercový měsíc | ✅ hotovo |
   | K4a | **vzhled podle předlohy** `docs/moduly/Kalendář/`: horní lišta (ISO týden, ‹ Dnes ›), panel filtrů (uživatelé / typy / zobrazení / kategorie, záložka Nenaplánováno), komprimovaná noc a večer, pruh vícedenních; aktivita se učí prioritu, místo a barevnou kategorii | ✅ hotovo |
   | K4d | **drag & drop**: přesun tažením (i mezi dny), změna délky tažením za horní/dolní hranu, krok 15 min | ✅ hotovo (mimo pořadí, na přání Dana) |
-  | K4b | modal nové/editace aktivity podle předlohy | — |
+  | K4b | modál nové/editace aktivity podle předlohy (typ, priorita, termín, místo s „U nás", kategorie, účastníci, „Čeho se to týká", náhled dne) | ✅ hotovo |
   | K4c | popover detailu s akcemi Mám hotovo / Zrušit / Přesunout | — |
   | K5 | opakované události (Dan chce rovnou, ne později) | — |
   | K6 | rychlé a uložené filtry + kalendáře dalších osob | — |

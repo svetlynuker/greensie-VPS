@@ -5,6 +5,7 @@ import Ikona from "../components/Ikona";
 import KalendarMesic from "../components/KalendarMesic";
 import KalendarTyden from "../components/KalendarTyden";
 import KalendarFiltry from "../components/KalendarFiltry";
+import AktivitaModal from "../components/AktivitaModal";
 import {
   crmAktivitaUprav,
   crmFiltrUloz,
@@ -53,6 +54,8 @@ export default function Kalendar() {
   const [lide, setLide] = useState([]);
   const [ulozeneFiltry, setUlozeneFiltry] = useState([]);
   const [detail, setDetail] = useState(null);
+  // Modál: {vychozi: {termin, cas}} pro novou, {aktivita} pro úpravu.
+  const [modal, setModal] = useState(null);
   const [chyba, setChyba] = useState(null);
 
   // ---- stav filtrů ----
@@ -332,6 +335,14 @@ export default function Kalendar() {
         <span className="kal-zobrazeni" title="Zatím jen týdenní pohled">
           Týden
         </span>
+        <button
+          className="kal-plus"
+          onClick={() => setModal({ vychozi: { termin: vybranyDen, cas: "9:00" } })}
+          title="Nová aktivita"
+          aria-label="Nová aktivita"
+        >
+          +
+        </button>
       </div>
 
       {chyba && <div className="crm-chyba">{chyba}</div>}
@@ -383,7 +394,10 @@ export default function Kalendar() {
             vybranyDen={vybranyDen}
             onDen={setVybranyDen}
             onUdalost={setDetail}
-            onPrazdno={(iso) => setVybranyDen(iso)}
+            onPrazdno={(iso, cas) => {
+              setVybranyDen(iso);
+              setModal({ vychozi: { termin: iso, cas } });
+            }}
             onPresun={presunAktivitu}
           />
         </div>
@@ -472,10 +486,20 @@ export default function Kalendar() {
                       {detail.vysledek}
                     </div>
                   )}
-                  <p className="crm-tise" style={{ marginTop: 10 }}>
-                    Tlačítka Mám hotovo / Zrušit / Přesunout a zakládání kliknutím do mřížky
-                    přidám v další etapě; zatím to jde na kartě zákazníka nebo případu.
-                  </p>
+                  <div className="kal-detail-akce">
+                    <button
+                      className="fm-btn"
+                      onClick={() => {
+                        setModal({ aktivita: detail });
+                        setDetail(null);
+                      }}
+                    >
+                      ✎ Upravit
+                    </button>
+                    <span className="crm-tise">
+                      Mám hotovo / Zrušit / Přesunout přidám v další etapě.
+                    </span>
+                  </div>
                 </>
               ) : (
                 <p className="crm-tise">
@@ -486,6 +510,26 @@ export default function Kalendar() {
             </div>
           </div>
         </div>
+      )}
+      {modal && (
+        <AktivitaModal
+          vychozi={modal.vychozi}
+          aktivita={modal.aktivita}
+          jaId={me.uzivatel.id}
+          jaJmeno={me.uzivatel.jmeno}
+          udalostiDne={udalosti}
+          onZmenDen={(iso) => setVybranyDen(iso)}
+          onZavri={() => setModal(null)}
+          onHotovo={async (ulozena, otevrit) => {
+            setModal(null);
+            await nacti();
+            // „Uložit a otevřít" nechá aktivitu hned na očích – u schůzky, ke
+            // které se dopisují body k projednání, je to ta obvyklá cesta.
+            if (otevrit && ulozena) {
+              setVybranyDen((ulozena.termin || "").slice(0, 10) || vybranyDen);
+            }
+          }}
+        />
       )}
     </Layout>
   );

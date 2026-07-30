@@ -43,10 +43,12 @@ from app.crm.models import (
     CrmAktivita,
     CrmKategorie,
     CrmKategorieAktivity,
+    CrmProjekt,
     CrmStav,
     CrmStavHistorie,
     CrmVlastniPole,
     ObchodniPripad,
+    Objednavka,
     Zakaznik,
     ZakaznikKontakt,
 )
@@ -1087,18 +1089,42 @@ def zmen_stav_nabidky(
 
 # ---- aktivity a poznámky ----------------------------------------------------
 def _over_pristup_k_zaznamu(db: Session, entita: str, zaznam_id: int, user: User) -> None:
-    """Aktivity se řídí právy nadřazeného záznamu, ne vlastními."""
+    """Aktivity se řídí právy nadřazeného záznamu, ne vlastními.
+
+    Nabídka, objednávka ani projekt vlastníka nemají — visí na obchodním
+    případu, takže se práva odvozují od něj. Nabídka bez případu (ta, co vznikla
+    v nabídkovači před CRM) je výjimka: dostane se k ní jen `crm_vse`, protože
+    nikomu nepatří a nechceme, aby se „nikomu nepatřící" data zjevila všem.
+    """
+    # Nabídka se importuje lokálně stejně jako na dalších místech tohoto modulu
+    # (nabídkovač a CRM se navzájem neimportují na úrovni modulu).
+    from app.nabidkovac.models import Nabidka
+
     if entita not in ENTITY_AKTIVIT:
         raise HTTPException(status_code=422, detail=f"Neznámá entita: {entita}")
+
     if entita == "zakaznik":
         vyzaduj_zaznam(db.get(Zakaznik, zaznam_id), user, "Zákazník")
-    elif entita == "op":
+        return
+    if entita == "op":
         vyzaduj_zaznam(db.get(ObchodniPripad, zaznam_id), user, "Obchodní případ")
-    else:
-        # nab/obj/pro přijdou v druhé dávce – do té doby na ně aktivity nepatří
-        raise HTTPException(
-            status_code=422, detail=f"Aktivity pro '{entita}' zatím nejsou k dispozici."
-        )
+        return
+
+    model, popis = {
+        "nab": (Nabidka, "Nabídka"),
+        "obj": (Objednavka, "Objednávka"),
+        "pro": (CrmProjekt, "Projekt"),
+    }[entita]
+    zaznam = db.get(model, zaznam_id)
+    if zaznam is None:
+        raise HTTPException(status_code=404, detail=f"{popis} neexistuje")
+    if zaznam.obchodni_pripad_id is None:
+        if not muze_vse(user):
+            raise HTTPException(status_code=404, detail=f"{popis} neexistuje")
+        return
+    vyzaduj_zaznam(
+        db.get(ObchodniPripad, zaznam.obchodni_pripad_id), user, "Obchodní případ"
+    )
 
 
 def _vyzaduj_aktivitu(db: Session, aktivita_id: int, user: User) -> CrmAktivita:

@@ -814,3 +814,30 @@
 .kal-uchyt.dolni::after {
   bottom: 1px;
 }
+
+/* Zelené kruhové „+" pro novou aktivitu (podle předlohy). */
+.kal-plus {
+  appearance: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--fm-brand, #2f9e44);
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+}
+.kal-plus:hover {
+  filter: brightness(1.06);
+}
+.kal-detail-akce {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
