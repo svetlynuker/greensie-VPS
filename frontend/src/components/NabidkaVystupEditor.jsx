@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 import { SLOUPCU } from "../nabidkovac";
+import { DlazdiceNahled } from "./NabidkaVystup";
 
 const DRUH_POPIS = {
   hlavicka: "Hlavička",
@@ -59,6 +60,7 @@ const PRVKY = [
 export default function NabidkaVystupEditor({
   konfigurace,
   katalog,
+  hodnoty,
   onZmena,
   vybranyId,
   onVyber,
@@ -71,6 +73,7 @@ export default function NabidkaVystupEditor({
   const bloky = konfigurace?.bloky || [];
   const katPole = katalog?.pole || [];
   const katSloupce = katalog?.tabulka_sloupce || [];
+  const katHodnoty = hodnoty || {};
   const vybrany = bloky.find((b) => b.id === vybranyId) || null;
   const vybranyIdx = bloky.findIndex((b) => b.id === vybranyId);
 
@@ -122,25 +125,30 @@ export default function NabidkaVystupEditor({
       <div className="ed-sekce">
         <div className="ed-sekce-t">Paleta — přetáhni na papír</div>
         <div className="ed-napoveda">
-          Prvek uchop za <b>⠿</b> a pusť na papír tam, kde ho chceš. Šířku a texty
-          nastavíš níž ve „Vlastnostech“.
+          Náhledy ukazují, jak prvek vypadá na papíře. Uchop ho za <b>⠿</b> a pusť
+          na papír tam, kde ho chceš; šířku a texty nastavíš níž ve „Vlastnostech“.
         </div>
         {PRVKY.map((p) => (
           <PaletaPolozka
             key={p.druh}
-            nazev={p.nazev}
-            popis={p.popis}
+            popisek={p.nazev}
+            title={p.popis}
+            nahled={<NahledPrvku druh={p.druh} />}
             onTahej={(e) => onTahejNovy(e, { druh: p.druh, sirka: p.sirka })}
           />
         ))}
       </div>
 
-      {skupiny.map((skupina) => (
+      {skupiny.map((skupina, i) => (
         <SkupinaPoli
           key={skupina.nazev}
           skupina={skupina}
           polozene={polozene}
+          hodnoty={katHodnoty}
           onTahej={onTahejNovy}
+          /* S grafickými náhledy je paleta vysoká – otevřená zůstane první
+             sekce, ostatní se rozbalí na kliknutí. */
+          vychoziOtevreno={i === 0}
         />
       ))}
 
@@ -342,8 +350,8 @@ function Sablony({ sablony, onPouzij, onUloz, onSmaz }) {
   );
 }
 
-function SkupinaPoli({ skupina, polozene, onTahej }) {
-  const [otevreno, setOtevreno] = useState(true);
+function SkupinaPoli({ skupina, polozene, hodnoty, onTahej, vychoziOtevreno }) {
+  const [otevreno, setOtevreno] = useState(vychoziOtevreno);
   return (
     <div className="ed-sekce">
       <button className="ed-skupina" onClick={() => setOtevreno((o) => !o)}>
@@ -355,8 +363,9 @@ function SkupinaPoli({ skupina, polozene, onTahej }) {
         skupina.pole.map((p) => (
           <PaletaPolozka
             key={p.klic}
-            nazev={p.nazev}
             ztlumene={polozene.has(p.klic)}
+            title={polozene.has(p.klic) ? "Na papíře už je" : "Přetáhni na papír"}
+            nahled={<DlazdiceNahled klic={p.klic} h={hodnoty[p.klic] || { nazev: p.nazev, hodnota_text: "—", format: p.format }} />}
             onTahej={(e) => onTahej(e, { druh: "udaj", klic: p.klic, sirka: 4 })}
           />
         ))}
@@ -364,16 +373,96 @@ function SkupinaPoli({ skupina, polozene, onTahej }) {
   );
 }
 
-function PaletaPolozka({ nazev, popis, ztlumene = false, onTahej }) {
+// Miniatura strukturního prvku: skutečné třídy papíru zmenšené na šířku panelu,
+// aby bylo vidět, jak prvek vypadá, ne jen jak se jmenuje. Výška výřezu je
+// pevná (obsah se ustřihne), obsah má šířku sloupce textu jako na papíře.
+function NahledPrvku({ druh }) {
+  const obsah = {
+    text: (
+      <div className="vy-blok">
+        <h2>Nadpis odstavce</h2>
+        <p className="vy-text">
+          Text nabídky, který si napíšeš sám. Klidně na několik řádků – na papíře
+          se zalomí podle šířky, kterou prvku dáš.
+        </p>
+      </div>
+    ),
+    udaje: (
+      <div className="vy-blok">
+        <h2>Nadpis skupiny</h2>
+        <div className="vy-karty">
+          {[
+            ["Údaj", "123 kW"],
+            ["Údaj", "456 kWh"],
+            ["Údaj", "789 Kč"],
+          ].map(([n, h], i) => (
+            <div className={"vy-karta" + (i === 2 ? " zvyraznit" : "")} key={i}>
+              <div className="k-nazev">{n}</div>
+              <div className="k-hodnota">{h}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ),
+    graf: (
+      <div className="vy-blok">
+        <h2>Nadpis grafu</h2>
+        <div className="vy-graf">
+          {/* Plochý poměr stran schválně: miniatura se vejde do výřezu palety,
+              jinak by se spodní (zelené) sloupce ustřihly. */}
+          <svg viewBox="0 0 300 56" style={{ display: "block", width: "100%" }} aria-hidden="true">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <g key={i}>
+                <rect x={12 + i * 48} y={56 - (34 + (i % 3) * 6)} width="18" height={34 + (i % 3) * 6} fill="#d5dbd7" />
+                <rect x={32 + i * 48} y={56 - 22} width="18" height="22" fill="#2f9e44" />
+              </g>
+            ))}
+            <line x1="0" y1="22" x2="300" y2="22" stroke="#43514c" strokeDasharray="6 4" />
+          </svg>
+        </div>
+      </div>
+    ),
+    tabulka: (
+      <div className="vy-blok">
+        <h2>Nadpis tabulky</h2>
+        <table className="vy-tabulka">
+          <thead>
+            <tr><th>Rok</th><th>Úspora v roce</th><th>Kumulativně</th></tr>
+          </thead>
+          <tbody>
+            {[1, 2, 3].map((r) => (
+              <tr key={r}><td>{r}. rok</td><td>412 000 Kč</td><td>{r * 412} tis. Kč</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ),
+    zlom: (
+      <div className="vy-zlom">
+        <span>zlom stránky</span>
+      </div>
+    ),
+  }[druh];
+  return (
+    <div className={"ed-nahled ed-nahled-" + druh}>
+      <div className="ed-nahled-obsah">{obsah}</div>
+    </div>
+  );
+}
+
+function PaletaPolozka({ popisek, nahled, ztlumene = false, onTahej, title }) {
   return (
     <div
       className={"ed-paleta-polozka" + (ztlumene ? " ztlumene" : "")}
       draggable
       onDragStart={onTahej}
-      title={popis || (ztlumene ? "Na papíře už je" : "Přetáhni na papír")}
+      title={title}
     >
       <span className="ed-uchop">⠿</span>
-      <span className="sp">{nazev}</span>
+      <div className="ed-paleta-telo">
+        {nahled}
+        {popisek && <div className="ed-paleta-popisek">{popisek}</div>}
+      </div>
     </div>
   );
 }

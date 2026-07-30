@@ -1,7 +1,13 @@
-# Konektor Raynet CRM ↔ Google Disk
+# Konektor Raynet ↔ Google Disk
 
 > **Sekce v nabídce:** `konektor` · **Adresa (routa):** `/konektor` · **Kdo smí otevřít:** kdokoli s právem `konektor` (bez práva se sekce v nabídce vůbec nezobrazí; admin ji má vždy)
 > **Kód:** frontend `frontend/src/pages/Konektor.jsx`, backend `backend/app/konektor/`
+
+> **Název modulu:** plný název je **„Konektor Raynet ↔ Google Disk"** (tak se jmenuje nadpis stránky
+> i právo v adminu). V **nabídce vlevo a v horní liště** je zkrácený na **„Konektor Raynet ↔ Disk"**,
+> aby se vešel do úzkého panelu — jde o tentýž modul. V kódu a v názvech souborů se používá zkratka
+> `gdrive` (`konektor-raynet-gdrive.md`, `backend/app/konektor/google_klient.py`), služba Googlu
+> vystupuje pod svým vlastním jménem **Google Drive API**.
 
 Modul, který **propojuje Raynet CRM s Google Diskem**. Když v Raynetu vznikne zákazník, obchodní případ,
 nabídka nebo objednávka, konektor sám založí na sdíleném Disku odpovídající složku (podle vzoru) a zapíše

@@ -52,7 +52,7 @@ Aplikace čte konfiguraci z proměnných prostředí (na serveru z `.env`). Rozl
 > ² Čtou se přes `os.environ[...]`, takže **jakmile se volá synchronizace s Freelem** a proměnné
 > chybí, operace selže. Pro běh appky bez synchronizace nejsou nutné.
 
-### Konektor Raynet ↔ Google Drive — viz `backend/app/konektor/`
+### Konektor Raynet ↔ Google Disk — viz `backend/app/konektor/`
 
 | Proměnná | K čemu slouží | Povinná? | Výchozí (v kódu) |
 |---|---|---|---|
@@ -100,12 +100,8 @@ považuje se napojení na Pohodu za nastavené.
   vytvořit tabulku, která ještě není. Když tedy do modelu přibude sloupec, u nasazené (existující)
   tabulky se sám neobjeví.
 - Řeší to funkce **`_lehka_migrace()`** v `main.py` (volá se hned po `create_all`). Spouští ručně
-  psané, **idempotentní** příkazy typu:
-
-  ```sql
-  ALTER TABLE <tabulka> ADD COLUMN IF NOT EXISTS <sloupec> <typ> ...
-  ```
-
+  psané, **idempotentní** příkazy typu
+  `ALTER TABLE <tabulka> ADD COLUMN IF NOT EXISTS <sloupec> <typ> …`.
 - Díky `IF NOT EXISTS` je bezpečné to pouštět opakovaně při každém startu. Takto se dodávají např.
   sloupce `uzivatele.skupina_id / je_admin / musi_zmenit_heslo`, `projekty.disk_url / disk_rucni /
   raynet_deal_id`, řada sloupců `konektor_nastaveni.dms_*` a další.
@@ -117,9 +113,9 @@ považuje se napojení na Pohodu za nastavené.
   zakládat objekty ve schématu `public`. Na novějším PostgreSQL (14+) je někdy potřeba to explicitně
   přidělit:
 
-  ```sql
-  GRANT CREATE ON SCHEMA public TO <db_uzivatel>;
-  ```
+```sql
+GRANT CREATE ON SCHEMA public TO <db_uzivatel>;
+```
 
   Bez toho start selže na chybě oprávnění při tvorbě tabulek.
 

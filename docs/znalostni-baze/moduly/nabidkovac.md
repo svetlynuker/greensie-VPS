@@ -152,8 +152,8 @@ Legenda „kdo vidí": **(vše)** = každý, kdo Nabídkovač otevře (právo `n
 | **Šablona** | panel, nahoře | Vybere hotové rozvržení: výchozí předlohu, uloženou šablonu, nebo rozvržení jiné nabídky téhož typu | vše |
 | **Uložit jako šablonu…** | panel | Uloží současné rozvržení pod názvem pro další nabídky (stejný název přepíše) | vše |
 | **✕ u uložené šablony** | panel | Smaže šablonu (nabídky, které z ní vznikly, to neovlivní) | vše |
-| **Paleta – Text / Skupina údajů / Graf / Tabulka / Zlom stránky** | panel | Přetáhne prvek na papír | vše |
-| **Paleta – sekce s údaji** | panel | Skupiny zákaznických hodnot (Navržené řešení, Rezervovaná kapacita, Úspora 2026, Úspora od 2027, Obchod); přetažením vznikne dlaždice s hodnotou. Ztlumené = na papíře už je | vše |
+| **Paleta – Text / Skupina údajů / Graf / Tabulka / Zlom stránky** | panel | Přetáhne prvek na papír. Náhled ukazuje, jak prvek vypadá na papíře (zmenšený výřez) | vše |
+| **Paleta – sekce s údaji** | panel | Skupiny zákaznických hodnot (Navržené řešení, Rezervovaná kapacita, Úspora 2026, Úspora od 2027, Obchod). Každá položka je **hotová dlaždice s reálnou hodnotou** té nabídky – přetažením se přenese na papír. Ztlumená = na papíře už je. Otevřená je první sekce, ostatní se rozbalí kliknutím | vše |
 | **⠿ na papíře** | papír | Uchopení prvku a přesun na jiné místo | vše |
 | **Klik na prvek** | papír | Vybere prvek (zelený rámeček) a otevře jeho vlastnosti | vše |
 | **Šířka ¼ ⅓ ½ ⅔ celá** | vlastnosti | Kolik z 12 sloupců prvek zabere; co se vejde, stojí na jednom řádku | vše |
@@ -360,6 +360,14 @@ interní čísla se nenabízejí.
     s jediným prvkem se lámat smí, jinak by dlouhý text přeskočil a nechal mezeru.
   - Papír je WYSIWYG – `NabidkaVystup` kreslí jen `viditelny` prvky, i v editoru. Ovládání
     (úchopy, cíle pro puštění) je v tisku skryté třídami v `@media print`.
+  - **Paleta je grafická:** dlaždice s hodnotou se v paletě vykreslí tou samou
+    komponentou jako na papíře (`NabidkaVystup.DlazdiceNahled`, včetně zvýraznění),
+    takže se náhled nemůže rozejít s výsledkem. Strukturní prvky (text, skupina,
+    graf, tabulka, zlom) mají miniaturu ze skutečných tříd papíru: obsah má šířku
+    textového sloupce A4 a je zmenšený přes `transform: scale(--k)` v `.ed-nahled`.
+    Výřez má pevnou výšku a obsah se ustřihne, takže **miniatura musí být plochá** –
+    schematický graf má proto jiný poměr stran než ten na papíře (jinak se ustřihly
+    zelené sloupce u dna).
   - Tahání je čisté HTML5 drag & drop, žádná knihovna. Matematika vkládání a přesunu je
     v `nabidkovac.js` (`vlozPolozku`, `presunPolozku`), aby šla ověřit bez prohlížeče.
     Pozn.: HTML5 DnD nefunguje na dotyku – editor je myšový.

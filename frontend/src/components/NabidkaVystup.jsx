@@ -31,6 +31,16 @@ function Karta({ h, zvyraznit }) {
   );
 }
 
+/**
+ * Náhled dlaždice pro paletu editoru. Je to tatáž karta jako na papíře (včetně
+ * zvýraznění), takže obchodník v paletě vidí přesně to, co přetáhne – ne jen
+ * název pole.
+ */
+export function DlazdiceNahled({ klic, h }) {
+  if (!h) return null;
+  return <Karta h={h} zvyraznit={ZVYRAZNIT.has(klic)} />;
+}
+
 function BlokUdaje({ blok, hodnoty, tisk }) {
   // V tisku skryjeme pole bez hodnoty (—), v editoru je necháme (ať je vidět,
   // co se doplní po výpočtu).

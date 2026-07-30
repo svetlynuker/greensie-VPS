@@ -16,6 +16,20 @@ export const NABIDKA = [
     ],
   },
   {
+    // CRM: odtud vede celá cesta zakázky (zákazník → případ → nabídka).
+    skupina: "Obchod",
+    polozky: [
+      { klic: "zakaznici", nazev: "Zákazníci", ikona: "zakaznici", cesta: "/zakaznici", pravo: "zakaznici" },
+      {
+        klic: "obchodni_pripady",
+        nazev: "Obchodní případy",
+        ikona: "pripady",
+        cesta: "/pripady",
+        pravo: "obchodni_pripady",
+      },
+    ],
+  },
+  {
     skupina: "Přehledy",
     polozky: [
       { klic: "projekty", nazev: "Přehled projektů", ikona: "projekty", cesta: "/projekty", pravo: "projekty" },
@@ -82,6 +96,8 @@ export function aktivniKlic(pathname) {
 // nejdelší shoda, takže /nabidkovac/katalog přebije /nabidkovac.
 const POPISY = {
   "/rozcestnik": ["Rozcestník", "Přehled dne"],
+  "/zakaznici": ["Zákazníci", "Leady a klienti"],
+  "/pripady": ["Obchodní případy", "Pipeline zakázek"],
   "/projekty": ["Přehled projektů", "Matice úkolů a fází"],
   "/finance": ["Přehled financí", "Faktury a párování POHODA"],
   "/zmeny": ["Přehled změn", "Co se pohnulo za období"],
@@ -110,6 +126,7 @@ export function popisStranky(pathname) {
 
 /** Která stránka manuálu patří ke které adrese (kontextová nápověda „?"). */
 export function strankaManualu(pathname) {
+  if (pathname.startsWith("/zakaznici") || pathname.startsWith("/pripady")) return "crm";
   if (pathname.startsWith("/projekty")) return "prehled-projektu";
   if (pathname.startsWith("/finance")) return "prehled-financi";
   if (pathname.startsWith("/zmeny")) return "prehled-zmen";

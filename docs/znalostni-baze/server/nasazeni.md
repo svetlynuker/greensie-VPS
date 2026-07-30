@@ -1,7 +1,8 @@
 # Nasazení nové verze
 
 > **Typ:** provozní / serverový dokument · **Prostředí:** produkční VPS (Hetzner)
-> **Kdo to dělá:** Dan (má na serveru `sudo`) · **Kód:** `deploy/update.sh`, `deploy/Caddyfile`, `deploy/greensie-backend.service`
+> **Kdo to dělá:** Dan nebo Claude (od 30. 7. 2026 je na serveru `sudo` bez hesla) · **Kód:** `deploy/update.sh`, `deploy/Caddyfile`, `deploy/greensie-backend.service`,
+> náhled větve: `deploy/nahled.sh`, `deploy/nahled-zrusit.sh`, `deploy/greensie-nahled.service`
 
 Jak dostat novou verzi kódu na produkci — tj. z odladěného a slitého (merged) kódu na GitHubu
 udělat běžící appku na adrese **https://app.greensie.cz**.
@@ -43,7 +44,9 @@ git pull
 sudo bash deploy/update.sh
 ```
 
-- `sudo` si **vyžádá heslo** — spouští ho Dan sám (skript zasahuje do `/var/www` a systemd služeb).
+- `sudo` **už nechce heslo** (pravidlo `NOPASSWD` v `/etc/sudoers.d/greensie-claude`, nastaveno
+  30. 7. 2026) — skript tedy může spustit i Claude. Zasahuje do `/var/www` a systemd služeb, proto to
+  `sudo` potřebuje.
 - Skript je „ukecaný": vypisuje, u kterého kroku je (`==> …`). Poslední řádek je
   `HOTOVO. Nová verze běží na https://app.greensie.cz`.
 - Skript má `set -euo pipefail` — při **jakékoli chybě se okamžitě zastaví** a HOTOVO se nevypíše.
@@ -165,6 +168,82 @@ sudo systemctl reload caddy
 
 ---
 
+## Náhled větve pro spolupracovníky
+
+Někdy je potřeba **ukázat kolegům rozdělanou práci** (větev, která ještě není slitá do `main`), aniž by
+se sáhlo na ostrou appku. Na to je `deploy/nahled.sh`: postaví **druhou, samostatnou instanci** appky
+na vlastní adrese, se **kopií databáze** a **bez klíčů k vnějším systémům**.
+
+```bash
+cd ~/projects/greensie-app
+sudo bash deploy/nahled.sh                  # náhled výchozí větve (ta ve skriptu)
+sudo bash deploy/nahled.sh nazev-vetve      # náhled konkrétní větve
+sudo bash deploy/nahled.sh --jen-adresa     # jen vypíše adresu a heslo (nic nepřestavuje)
+```
+
+Na konci skript vypíše rámeček s **adresou, uživatelským jménem a vstupním heslem** — to je to, co se
+posílá kolegům. Adresa je `https://nahled.<IP-serveru>.sslip.io` (doména se nekupuje, `sslip.io` ji
+odvodí z IP; HTTPS certifikát si Caddy dotáhne sám).
+
+### Jak se ke náhledu dostane kolega
+
+1. Otevře odkaz → prohlížeč se zeptá na **vstupní heslo** (uživatel `nahled`, heslo z výpisu skriptu).
+   Tohle heslo je **společné pro všechny** a chrání jen to, aby náhled nikdo nenašel náhodou.
+2. Pak se přihlásí **svým vlastním účtem do appky** — účty i hesla jsou z kopie databáze, tedy stejné
+   jako v ostré appce.
+
+### Čím je náhled oddělený od ostré appky
+
+| Co | Ostrá appka | Náhled |
+|---|---|---|
+| Adresa | `app.greensie.cz` | `nahled.<IP>.sslip.io` (+ vstupní heslo, `noindex`) |
+| Kód | `/home/dan/projects/greensie-app` (větev `main`) | `/home/dan/projects/greensie-nahled` (zvolená větev) |
+| Databáze | `greensie` | `greensie_nahled` — **kopie**, editace se do ostrých dat nepropíšou |
+| Služba (systemd) | `greensie-backend`, port 8000 | `greensie-nahled`, port 8001 |
+| Statický frontend | `/var/www/greensie` | `/var/www/greensie-nahled` |
+| Klíče k Freelu, Disku, POHODĚ, SMTP, Anthropicu | v `.env` | **záměrně chybí** → náhled nemůže nic zapsat navenek ani rozeslat e-maily |
+| Automatická synchronizace | zapnutá | v kopii **vypnutá** (`auto_zapnuto = false`), fronta úloh konektoru a Drive kanály vyprázdněné |
+| Přihlašovací token | vlastní `SECRET_KEY` | vlastní `SECRET_KEY` → přihlášení z náhledu v ostré appce neplatí |
+
+Náhled **sdílí s ostrou instalací jen Python venv** (`greensie-app/backend/venv`) — závislosti jsou
+stejné a `update.sh` ho udržuje aktuální. Kód se bere z náhledového klonu.
+
+### Opakované spuštění a zrušení
+
+**Znovu spustit je bezpečné:** kód i frontend se aktualizují, databáze se **přelije znovu z ostré**
+(tedy se zahodí, co kdo v náhledu naklikal) a vstupní heslo zůstane stejné (drží se
+v `/etc/greensie-nahled.heslo`).
+
+**Zrušení:**
+
+```bash
+sudo bash deploy/nahled-zrusit.sh
+```
+
+Odstraní adresu, službu, statický frontend, kopii databáze i vstupní heslo. Ostré appky se to nijak
+netýká. **Klon kódu** v `/home/dan/projects/greensie-nahled` zůstane (může tam být rozdělaná práce) —
+smaž ho ručně (`rm -rf /home/dan/projects/greensie-nahled`), když ho nepotřebuješ.
+
+### Kontrola, že náhled běží správně
+
+Skript si to zkontroluje sám a vypíše to ve rámečku, ručně:
+
+```bash
+curl -s http://127.0.0.1:8001/health                      # backend náhledu → {"stav":"ok"}
+curl -s https://nahled.<IP>.sslip.io/api/health           # API MUSÍ projít i bez vstupního hesla
+curl -s -o /dev/null -w '%{http_code}\n' https://nahled.<IP>.sslip.io/   # frontend → 401 (heslo drží)
+systemctl status greensie-nahled
+journalctl -u greensie-nahled -n 100 --no-pager
+```
+
+> ⚠️ **Proč `/api` nesmí být za vstupním heslem:** appka posílá ke každému volání API hlavičku
+> `Authorization: Bearer <token>`, která by údaje vstupního (basic auth) hesla ve stejné hlavičce
+> přepsala. Caddy by je nedostal, vrátil 401 a prohlížeč by uživateli otevřel přihlašovací pop-up,
+> ze kterého se nedá dostat dál. Vhost proto heslem chrání **jen statický frontend**; API si přihlášení
+> hlídá samo tokenem, stejně jako v ostré appce.
+
+---
+
 ## Poznámky a úskalí (k ověření / nezřejmé)
 
 - **`update.sh` nestahuje kód z gitu.** Zopakováno schválně — je to nejčastější zdroj „nasadil jsem,
@@ -181,10 +260,22 @@ sudo systemctl reload caddy
   zvlášť, ne jen restartem. (Detaily viz doc o databázi, až vznikne.)
 - **Cache prohlížeče:** po nasazení nového frontendu občas přetrvá starý; tvrdý refresh
   (`Ctrl+Shift+R`) to spolehlivě obejde.
-- **`sudo` a heslo:** skript spouští Dan interaktivně (zadá heslo). Není zamýšlený jako plně
-  automatické/CI nasazení.
+- **`sudo` už nechce heslo:** od 30. 7. 2026 má `dan` pravidlo `NOPASSWD: ALL`
+  (`/etc/sudoers.d/greensie-claude`), takže nasazení dotáhne do konce i Claude, bez asistence.
+  Skript ale pořád **není** zamýšlený jako CI nasazení — nasadí přesně to, co zrovna leží na disku,
+  včetně necommitnutých změn. Před spuštěním se vždy koukni na `git status`.
 - **První HTTPS po výměně/instalaci** může chvíli trvat, než si Caddy dotáhne certifikát
   (Let's Encrypt) — u běžného `update.sh` (jen `reload`) se to netýká, certifikát už existuje.
+- **Náhled: nové spuštění zahodí, co v něm kdo naklikal.** `nahled.sh` databázi náhledu vždy přelije
+  z ostré. Když kolega v náhledu něco rozdělal, nespouštěj skript znovu — na aktualizaci jen adresy a
+  hesla je `--jen-adresa`.
+- **Náhled si `nahled.sh` sám odkopíruje do `/tmp` a pokračuje z kopie.** Skript totiž aktualizuje
+  klon, ze kterého se často sám spouští; bash čte soubor postupně za běhu, takže by se pod rukama
+  přepsal a mohl skončit uprostřed. Kopie se po sobě uklidí sama.
+- **Výchozí větev je zadrátovaná ve skriptu** (proměnná `VETEV`). Bez argumentu tedy postavíš náhled
+  té větve, ne aktuálně odbaveného `main` — větev radši uveď: `sudo bash deploy/nahled.sh moje-vetev`.
+- **Náhled potřebuje ostrou instalaci.** Bere z ní venv, heslo k databázi z `.env` a data pro kopii.
+  Není to samostatné prostředí, které by přežilo bez `greensie-app`.
 
 ## Odkazy
 
@@ -192,4 +283,5 @@ sudo systemctl reload caddy
   (VPS, FastAPI + React + PostgreSQL, Caddy, tok požadavků)
 - Skripty a konfigurace: `deploy/update.sh`, `deploy/install.sh` (jednorázová instalace),
   `deploy/greensie-backend.service` (systemd), `deploy/Caddyfile` (reverzní proxy + HTTPS)
+- Náhled větve: `deploy/nahled.sh`, `deploy/nahled-zrusit.sh`, `deploy/greensie-nahled.service`
 - Technická specifikace: `docs/server-spec.md` → kap. 2 „Architektura a nasazení"

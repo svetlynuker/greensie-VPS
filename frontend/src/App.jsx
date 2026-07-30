@@ -9,6 +9,10 @@ import NabidkovacSekce from "./pages/NabidkovacSekce";
 import NabidkaDetail from "./pages/NabidkaDetail";
 import NabidkaVystupStranka from "./pages/NabidkaVystupStranka";
 import NabidkovacKatalog from "./pages/NabidkovacKatalog";
+import Zakaznici from "./pages/Zakaznici";
+import ZakaznikDetail from "./pages/ZakaznikDetail";
+import ObchodniPripady from "./pages/ObchodniPripady";
+import ObchodniPripadDetail from "./pages/ObchodniPripadDetail";
 import AdminNastaveni from "./pages/AdminNastaveni";
 import Logy from "./pages/Logy";
 import Konektor from "./pages/Konektor";
@@ -38,6 +42,44 @@ export default function App() {
           element={
             <VyzadujePrihlaseni>
               <Rozcestnik />
+            </VyzadujePrihlaseni>
+          }
+        />
+        {/* CRM: Zákazníci → Obchodní případy. Detaily mají v cestě „detail",
+            aby se nepletly s pohledy (/zakaznici/lead vs. /zakaznici/detail/7). */}
+        <Route
+          path="/zakaznici"
+          element={<Navigate to="/zakaznici/lead" replace />}
+        />
+        <Route
+          path="/zakaznici/detail/:id"
+          element={
+            <VyzadujePrihlaseni>
+              <ZakaznikDetail />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/zakaznici/:pohled"
+          element={
+            <VyzadujePrihlaseni>
+              <Zakaznici />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/pripady"
+          element={
+            <VyzadujePrihlaseni>
+              <ObchodniPripady />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/pripady/detail/:id"
+          element={
+            <VyzadujePrihlaseni>
+              <ObchodniPripadDetail />
             </VyzadujePrihlaseni>
           }
         />

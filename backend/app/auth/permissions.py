@@ -67,6 +67,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 # Dlaždice = položky rozcestníku. Uvidí je VŽDY všichni; jestli je uživatel
 # smí OTEVŘÍT, řídí právo se stejným klíčem (viz muze_otevrit).
 DLAZDICE = [
+    {"klic": "zakaznici", "nazev": "Zákazníci"},
+    {"klic": "obchodni_pripady", "nazev": "Obchodní případy"},
     {"klic": "projekty", "nazev": "Přehled projektů"},
     {"klic": "finance", "nazev": "Přehled financí"},
     {"klic": "zmeny", "nazev": "Přehled změn"},
@@ -90,6 +92,14 @@ DLAZDICE_VZDY_OTEVRENE = {"manual"}
 # samostatným právem "nabidkovac_katalog" (jen vedení/admin). Stejný princip
 # jako u "finance" – nic v existujících pohledech se nemění.
 PRAVA = [
+    # CRM. Viditelnost jednotlivých ZÁZNAMŮ je zvlášť: bez práva "crm_vse"
+    # vidí uživatel jen záznamy, kde je vlastníkem nebo spoluvlastníkem
+    # (viz app/crm/pristup.py). „Vedení vidí vše" = skupina Vedení s právem
+    # "crm_vse"; individuální výjimka funguje přes extra_prava uživatele.
+    {"klic": "zakaznici", "nazev": "Otevřít Zákazníky (leady a klienti)"},
+    {"klic": "obchodni_pripady", "nazev": "Otevřít Obchodní případy"},
+    {"klic": "crm_vse", "nazev": "CRM – vidět všechny záznamy, ne jen svoje (vedení)"},
+    {"klic": "crm_nastaveni", "nazev": "CRM – měnit stavy pipeline a číselné řady (vedení)"},
     {"klic": "projekty", "nazev": "Otevřít Přehled projektů"},
     {"klic": "finance", "nazev": "Otevřít Přehled financí"},
     {"klic": "zmeny", "nazev": "Otevřít Přehled změn"},
@@ -98,7 +108,7 @@ PRAVA = [
     {"klic": "admin", "nazev": "Otevřít Admin nastavení"},
     {"klic": "editace", "nazev": "Editace matice (Přehled projektů)"},
     {"klic": "logy", "nazev": "Otevřít Logy (provoz, chyby, audit)"},
-    {"klic": "konektor", "nazev": "Otevřít Konektor Raynet ↔ Google Drive (nastavení, logy)"},
+    {"klic": "konektor", "nazev": "Otevřít Konektor Raynet ↔ Google Disk (nastavení, logy)"},
 ]
 
 VSECHNA_PRAVA = {p["klic"] for p in PRAVA}

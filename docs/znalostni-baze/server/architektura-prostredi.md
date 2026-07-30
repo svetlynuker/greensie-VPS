@@ -120,7 +120,12 @@ Na serveru běží nezávisle na sobě:
 
 Uvicorn běží **jednoprocesově** (bez explicitního počtu workerů). Na pozadí navíc backend spouští
 dvě vlastní vlákna (viz startup události v `main.py`): **plánovač synchronizace z Freela**
-(modul matice) a **worker fronty úloh konektoru** (Raynet ↔ Google Drive).
+(modul matice) a **worker fronty úloh konektoru** (Raynet ↔ Google Disk).
+
+**Dočasně** může vedle toho běžet ještě **`greensie-nahled`** — druhá instance appky pro ukázku
+rozdělané větve kolegům: vlastní klon kódu, kopie databáze (`greensie_nahled`), port **8001** a
+vlastní adresa s heslem na vstupu. Zakládá i ruší ji `deploy/nahled.sh` / `deploy/nahled-zrusit.sh`,
+klíče k vnějším systémům záměrně nemá. Detaily viz [Nasazení nové verze → Náhled větve](nasazeni.md).
 
 ### Firewall
 
@@ -133,7 +138,8 @@ Instalační skript nastavuje **ufw** a povoluje jen tři porty:
 | `443/tcp` | HTTPS (veřejný web) |
 
 Port backendu `8000` **není** ve firewallu otevřený a backend stejně poslouchá jen na
-`127.0.0.1` — zvenčí je tedy nedostupný, chodí se k němu výhradně přes Caddy.
+`127.0.0.1` — zvenčí je tedy nedostupný, chodí se k němu výhradně přes Caddy. Totéž platí pro
+port `8001` instance náhledu.
 
 ### Proč je frontend v `/var/www` a ne v domovském adresáři
 
@@ -162,7 +168,7 @@ greensie-app/
 │   │   ├── nabidkovac/     # Nabídkovač: katalog, nabídky, výpočty (peak shaving, PPA/FVE)
 │   │   ├── zmeny/          # Přehled změn (denní snímky)
 │   │   ├── logy/           # záznam požadavků (middleware) + prohlížení
-│   │   └── konektor/       # konektor Raynet ↔ Google Drive
+│   │   └── konektor/       # konektor Raynet ↔ Google Disk
 │   ├── requirements.txt    # Python závislosti (verze zamčené)
 │   └── venv/               # Python virtuální prostředí (mimo git)
 ├── frontend/
@@ -195,7 +201,7 @@ cesta v API (Caddy před ni v produkci přidává `/api`).
 | **nastaveni** | `/nastaveni` | Uživatelské preference (vzhled, téma, uložené pohledy). |
 | **logy** | `/logy` | Záznam příchozích požadavků přes middleware a jejich prohlížení. |
 | **admin** | `/admin` | Správa uživatelů, skupin a práv — celý router je za `vyzaduj_admina` (jen supersprávce). |
-| **konektor** | `/konektor` | Konektor Raynet ↔ Google Drive — párování obchodních případů se složkami na Disku (běží na pozadí přes worker). |
+| **konektor** | `/konektor` | Konektor Raynet ↔ Google Disk — párování obchodních případů se složkami na Disku (běží na pozadí přes worker). |
 
 Kromě routerů `main.py` při startu:
 1. importuje modely a přes `Base.metadata.create_all` **vytvoří chybějící tabulky**;

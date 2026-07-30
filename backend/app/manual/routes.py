@@ -28,6 +28,8 @@ ZNALOSTNI_BAZE = Path(__file__).resolve().parents[3] / "docs" / "znalostni-baze"
 # (?stranka=<id>) i pro mapování kontextové nápovědy z jednotlivých modulů.
 STRANKY = [
     ("uvod", "README.md", "Úvod"),
+    # CRM je první mezi moduly schválně: cesta zakázky začíná u zákazníka.
+    ("crm", "moduly/crm.md", "Moduly"),
     ("prehled-projektu", "moduly/prehled-projektu.md", "Moduly"),
     ("prehled-financi", "moduly/prehled-financi.md", "Moduly"),
     ("prehled-zmen", "moduly/prehled-zmen.md", "Moduly"),
@@ -38,6 +40,7 @@ STRANKY = [
     ("logy", "moduly/logy.md", "Moduly"),
     ("admin-nastaveni", "moduly/admin-nastaveni.md", "Moduly"),
     ("prihlaseni-zmena-hesla", "moduly/prihlaseni-zmena-hesla.md", "Moduly"),
+    ("manual", "moduly/manual.md", "Moduly"),
     ("spolecne-prvky", "moduly/spolecne-prvky.md", "Moduly"),
     ("server-architektura", "server/architektura-prostredi.md", "Server a provoz"),
     ("server-nasazeni", "server/nasazeni.md", "Server a provoz"),

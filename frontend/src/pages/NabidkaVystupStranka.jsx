@@ -250,6 +250,7 @@ export default function NabidkaVystupStranka() {
           <NabidkaVystupEditor
             konfigurace={konfigurace}
             katalog={data.katalog}
+            hodnoty={data.hodnoty}
             onZmena={setKonfigurace}
             vybranyId={vybranyId}
             onVyber={setVybranyId}
