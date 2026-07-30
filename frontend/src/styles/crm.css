@@ -996,3 +996,22 @@
   background: var(--bg);
   cursor: pointer;
 }
+
+/* Pás s KPI nad seznamem (CRM-22). Čísla se počítají z vyfiltrovaných řádků,
+   takže vždycky souhlasí s tím, co je v tabulce vidět. */
+.crm-kpi-pas {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 9px 14px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+}
+.crm-kpi-pas b {
+  font-variant-numeric: tabular-nums;
+}

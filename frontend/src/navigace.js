@@ -23,6 +23,14 @@ export const NABIDKA = [
       // Kalendář jede pod právem Zákazníků: aktivity visí na záznamech CRM,
       // takže kdo vidí zákazníky, má co plánovat.
       { klic: "kalendar", nazev: "Kalendář", ikona: "kalendar", cesta: "/kalendar", pravo: "zakaznici" },
+      // Čísla obchodu. Jede pod právem Případů — funnel i forecast jsou o nich.
+      {
+        klic: "prehled_obchodu",
+        nazev: "Přehled obchodu",
+        ikona: "finance",
+        cesta: "/prehled-obchodu",
+        pravo: "obchodni_pripady",
+      },
       {
         klic: "obchodni_pripady",
         nazev: "Obchodní případy",
@@ -137,6 +145,7 @@ const POPISY = {
   "/admin": ["Admin nastavení", "Uživatelé, skupiny a oprávnění"],
   "/manual": ["Manuál", "Návody modul po modulu"],
   "/kalendar": ["Kalendář", "Schůzky, telefonáty a úkoly v týdnu"],
+  "/prehled-obchodu": ["Přehled obchodu", "Pipeline, forecast a důvody proher"],
   "/nastaveni": ["Nastavení", "Tvoje osobní volby"],
   "/zmena-hesla": ["Změna hesla", "Zabezpečení účtu"],
 };
@@ -157,6 +166,7 @@ export function strankaManualu(pathname) {
   if (pathname.startsWith("/nabidky") || pathname.startsWith("/objednavky")) return "crm";
   if (pathname.startsWith("/projekty")) return "crm";
   if (pathname.startsWith("/kalendar")) return "crm";
+  if (pathname.startsWith("/prehled-obchodu")) return "crm";
   if (pathname.startsWith("/prehled-projektu")) return "prehled-projektu";
   if (pathname.startsWith("/finance")) return "prehled-financi";
   if (pathname.startsWith("/zmeny")) return "prehled-zmen";
