@@ -4,9 +4,9 @@ import Layout from "../components/Layout";
 import Aktivity from "../components/Aktivity";
 import DuvodProhry from "../components/DuvodProhry";
 import PripadFormular from "../components/PripadFormular";
+import PripadNabidky from "../components/PripadNabidky";
 import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
 import VlastniPoleVypis from "../components/VlastniPoleVypis";
-import VolbaNabidky from "../components/VolbaNabidky";
 import {
   crmPripadDetail,
   crmPripadHistorie,
@@ -16,7 +16,7 @@ import {
   logout,
   nactiMe,
 } from "../api";
-import { KATEGORIE_OP, cilNabidky, fmtDatum, fmtKc, nazvyKategorii } from "../crm";
+import { KATEGORIE_OP, fmtDatum, fmtKc, nazvyKategorii } from "../crm";
 import "../styles/crm.css";
 
 const ZALOZKY = [
@@ -25,8 +25,6 @@ const ZALOZKY = [
   { klic: "aktivity", nazev: "Aktivity a úkoly" },
   { klic: "historie", nazev: "Historie stavů" },
 ];
-
-const TYPY_NABIDKY_NAZVY = { ppa: "PPA", prodej: "Prodej", peak_shaving: "Peak shaving" };
 
 /**
  * Karta obchodního případu – odtud se zakládají nabídky a posouvá stav.
@@ -43,7 +41,6 @@ export default function ObchodniPripadDetail() {
   const [historie, setHistorie] = useState([]);
   const [zalozka, setZalozka] = useState("prehled");
   const [upravuje, setUpravuje] = useState(false);
-  const [volbaNabidky, setVolbaNabidky] = useState(false);
   const [prohra, setProhra] = useState(null);
   const [spravaPoli, setSpravaPoli] = useState(false);
   const [chyba, setChyba] = useState(null);
@@ -109,14 +106,13 @@ export default function ObchodniPripadDetail() {
     }
   }
 
+  /**
+   * „+ Vytvořit nabídku" jen přepne na záložku Nabídky – zakládání i výpočet
+   * se dějí tam, na kartě případu. Dřív to vodilo do nabídkovače; OZ ale nemá
+   * odcházet z případu, aby nahrál fakturu a spustil výpočet.
+   */
   function novaNabidka() {
-    // Jedna kategorie → přímo do výpočtu. Jinak se zeptáme.
-    const cil = cilNabidky(p.kategorie);
-    if (cil) {
-      setVolbaNabidky({ predvolba: cil });
-    } else {
-      setVolbaNabidky({ predvolba: null });
-    }
+    setZalozka("nabidky");
   }
 
   async function smaz() {
@@ -269,12 +265,14 @@ export default function ObchodniPripadDetail() {
               <div className="fm-card crm-blok">
               <h3>Co dál</h3>
               <p className="crm-tise">
-                Z případu vede celá cesta zakázky. Nabídku vytvoř tlačítkem vpravo nahoře –
-                zákazníka i adresu si vezme z karty klienta, nic se neopisuje.
+                Z případu vede celá cesta zakázky. Na záložce <b>Nabídky</b> nahraješ podklady
+                a spustíš výpočet – přímo tady, do nabídkovače chodit nemusíš. Zákazníka
+                i adresu si nabídka vezme z karty klienta, nic se neopisuje.
               </p>
               <ul className="crm-kroky">
                 <li>
-                  <b>Nabídka</b> – spočítá se v nabídkovači a zůstane navázaná na tento případ.
+                  <b>Nabídka</b> – podklady i výpočet jsou na záložce Nabídky, výsledek zůstává
+                  navázaný na tento případ.
                 </li>
                 <li>
                   <b>Objednávka</b> – vznikne z přijaté nabídky.{" "}
@@ -287,8 +285,8 @@ export default function ObchodniPripadDetail() {
               </ul>
               {p.kategorie?.length === 0 && (
                 <p className="crm-tise">
-                  Tip: doplň kategorii ({KATEGORIE_OP.map((k) => k.nazev).join(" / ")}) a
-                  nabídka se pak založí bez dalšího dotazu.
+                  Tip: doplň kategorii ({KATEGORIE_OP.map((k) => k.nazev).join(" / ")}) – na
+                  záložce Nabídky se pak nabídne jako první volba.
                 </p>
               )}
               </div>
@@ -297,43 +295,7 @@ export default function ObchodniPripadDetail() {
         )}
 
         {zalozka === "nabidky" && (
-          <div className="crm-scroll">
-            <table className="crm-tabulka">
-              <thead>
-                <tr>
-                  <th>Číslo</th>
-                  <th>Typ</th>
-                  <th>Stav</th>
-                  <th className="crm-vpravo">Spočítaná řešení</th>
-                  <th>Vytvořeno</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(p.nabidky || []).map((n) => (
-                  <tr
-                    key={n.id}
-                    onClick={() => navigate(`/nabidkovac/nabidka/${n.id}`)}
-                    title="Otevřít nabídku v nabídkovači"
-                  >
-                    <td className="crm-silne">{n.cislo || `#${n.id}`}</td>
-                    <td>{TYPY_NABIDKY_NAZVY[n.typ] || n.typ}</td>
-                    <td>
-                      <span className="crm-znacka">{n.stav}</span>
-                    </td>
-                    <td className="crm-vpravo">{n.pocet_reseni}</td>
-                    <td>{fmtDatum(n.vytvoreno_at)}</td>
-                  </tr>
-                ))}
-                {(p.nabidky || []).length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="crm-prazdno">
-                      K případu zatím není nabídka. Založ ji tlačítkem „+ Vytvořit nabídku".
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <PripadNabidky pripad={p} onZmena={nactiZnovu} />
         )}
 
         {zalozka === "aktivity" && <Aktivity entita="op" zaznamId={p.id} />}
@@ -384,15 +346,6 @@ export default function ObchodniPripadDetail() {
           nazevObrazovky="Obchodní případy"
           onZavri={() => setSpravaPoli(false)}
           onZmena={nactiZnovu}
-        />
-      )}
-
-      {volbaNabidky && (
-        <VolbaNabidky
-          pripad={p}
-          predvolba={volbaNabidky.predvolba}
-          onZavri={() => setVolbaNabidky(false)}
-          onHotovo={(nabidka) => navigate(`/nabidkovac/nabidka/${nabidka.id}`)}
         />
       )}
 

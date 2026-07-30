@@ -23,13 +23,6 @@ export const KATEGORIE_OP = [
   { klic: "peak_shaving", nazev: "Peak shaving", popis: "Baterie sráží špičky odběru." },
 ];
 
-// Do které podsekce nabídkovače kategorie vede (klíč typu nabídky).
-export const KATEGORIE_NA_NABIDKU = {
-  ppa: "ppa",
-  prodej: "prodej",
-  peak_shaving: "peak_shaving",
-};
-
 export const DRUHY_AKTIVITY = [
   { klic: "poznamka", nazev: "Poznámka", ikona: "📝" },
   { klic: "telefon", nazev: "Telefonát", ikona: "📞" },
@@ -81,16 +74,6 @@ export function nazvyKategorii(klice) {
   return (klice || [])
     .map((k) => KATEGORIE_OP.find((x) => x.klic === k)?.nazev || k)
     .join(" + ");
-}
-
-/**
- * Kam poslat OZ po kliknutí na „Vytvořit nabídku".
- * Jedna kategorie → přímo do jejího výpočtu. Žádná nebo víc → null a UI se zeptá.
- */
-export function cilNabidky(kategorie) {
-  const k = (kategorie || []).filter((x) => KATEGORIE_NA_NABIDKU[x]);
-  if (k.length === 1) return KATEGORIE_NA_NABIDKU[k[0]];
-  return null;
 }
 
 /** Barva stavu → CSS třída (tokeny appky, ne hex, kvůli tmavému režimu). */
