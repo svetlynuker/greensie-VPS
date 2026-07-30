@@ -39,6 +39,7 @@ from sqlalchemy.orm import Query, Session
 
 from app.auth.models import User
 from app.crm.models import CrmAktivita
+from app.crm.opakovani import popis_pravidla
 from app.crm.pristup import muze_vse
 
 # Jak dlouho trvá aktivita, když délku nikdo nezadal. Podle druhu, protože
@@ -170,6 +171,9 @@ def pro_uzivatele(a: CrmAktivita, user: User) -> dict:
             "kategorie_nazev": "",
             "kategorie_barva": "",
             "soukroma": a.soukroma,
+            # Ani to, že jde o sérii, se u cizího bloku neprozrazuje.
+            "serie_id": None,
+            "serie_popis": "",
             "entita": None,
             "zaznam_id": None,
             "zaznam_nazev": "",
@@ -191,6 +195,8 @@ def pro_uzivatele(a: CrmAktivita, user: User) -> dict:
         "kategorie_nazev": (a.kategorie.nazev if a.kategorie else ""),
         "kategorie_barva": (a.kategorie.barva if a.kategorie else ""),
         "soukroma": a.soukroma,
+        "serie_id": a.serie_id,
+        "serie_popis": (popis_pravidla(a.serie) if a.serie is not None else ""),
         "entita": a.entita,
         "zaznam_id": a.zaznam_id,
         # Odkaz na záznam doplňuje `udalosti_pro()` jedním dotazem na entitu.

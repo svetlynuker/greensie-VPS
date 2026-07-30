@@ -40,6 +40,16 @@ export const DRUHY_AKTIVITY = [
   { klic: "poznamka", nazev: "Poznámka", ikona: "poznamka", znak: "📝", barva: "#d3d9de" },
 ];
 
+// Frekvence opakování aktivity (zadání Dana). „Vlastní" se doplní číslem =
+// počet dní mezi opakováními, takže pokryje i „každých 14 dní".
+export const FREKVENCE_OPAKOVANI = [
+  { klic: "denne", nazev: "Každý den" },
+  { klic: "pracovni_dny", nazev: "Každý pracovní den" },
+  { klic: "tydne", nazev: "Každý týden" },
+  { klic: "mesicne", nazev: "Každý měsíc" },
+  { klic: "vlastni", nazev: "Vlastní (po N dnech)" },
+];
+
 // Priorita z předlohy. `znak` je to, co se ukazuje na dlaždici a v přepínači.
 export const PRIORITY_AKTIVITY = [
   { klic: "nizka", nazev: "Nízká", znak: "⌄" },

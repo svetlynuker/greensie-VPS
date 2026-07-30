@@ -253,6 +253,11 @@ def _lehka_migrace():
                 "kategorie_id",
                 "INTEGER REFERENCES crm_kategorie_aktivit(id) ON DELETE SET NULL",
             ),
+            # Etapa K5 – opakované události.
+            (
+                "serie_id",
+                "INTEGER REFERENCES crm_serie_aktivit(id) ON DELETE SET NULL",
+            ),
         ):
             conn.execute(
                 text(f"ALTER TABLE crm_aktivity ADD COLUMN IF NOT EXISTS {sloupec} {definice}")
@@ -262,6 +267,9 @@ def _lehka_migrace():
         )
         conn.execute(
             text("CREATE INDEX IF NOT EXISTS ix_crm_aktivity_stav ON crm_aktivity (stav)")
+        )
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_crm_aktivity_serie ON crm_aktivity (serie_id)")
         )
         # Soukromá událost nemá klienta ani případ, takže obojí musí být
         # nepovinné. IF EXISTS obalení není potřeba – DROP NOT NULL je
