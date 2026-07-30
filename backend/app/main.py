@@ -236,7 +236,10 @@ def _lehka_migrace():
         # nepřidá, proto ručně.
         for sloupec, definice in (
             ("nazev", "VARCHAR NOT NULL DEFAULT ''"),
-            ("zacatek", "TIMESTAMPTZ"),
+            # BEZ časové zóny – „místní čas firmy", viz docstring `CrmAktivita`.
+            # Server i DB běží v UTC, takže TIMESTAMPTZ by uživateli ukázal čas
+            # posunutý o dvě hodiny proti tomu, co zadal.
+            ("zacatek", "TIMESTAMP"),
             ("delka_min", "INTEGER"),
             ("stav", "VARCHAR NOT NULL DEFAULT 'naplanovano'"),
             ("vysledek", "TEXT NOT NULL DEFAULT ''"),
@@ -257,6 +260,20 @@ def _lehka_migrace():
         # idempotentní.
         conn.execute(text("ALTER TABLE crm_aktivity ALTER COLUMN entita DROP NOT NULL"))
         conn.execute(text("ALTER TABLE crm_aktivity ALTER COLUMN zaznam_id DROP NOT NULL"))
+        # Sloupec `zacatek` byl původně nasazen jako TIMESTAMPTZ (30. 7. 2026);
+        # převod na TIMESTAMP musí projít přes AT TIME ZONE, jinak by Postgres
+        # hodnoty utrhl na UTC a hodiny by se posunuly.
+        conn.execute(
+            text(
+                "DO $$ BEGIN "
+                "IF EXISTS (SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'crm_aktivity' AND column_name = 'zacatek' "
+                "AND data_type = 'timestamp with time zone') THEN "
+                "ALTER TABLE crm_aktivity ALTER COLUMN zacatek TYPE TIMESTAMP "
+                "USING zacatek AT TIME ZONE 'UTC'; "
+                "END IF; END $$;"
+            )
+        )
         # Boolean `hotovo` nahradil `stav`. Hodnotu je nutné PŘENÉST, ne jen
         # sloupec zahodit – jinak by se z hotových úkolů staly nedokončené
         # a vyskočily lidem v „moje úkoly". Teprve pak se sloupec ruší, aby

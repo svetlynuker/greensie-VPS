@@ -17,6 +17,15 @@ const CESTY = {
     </>
   ),
   nabidkovac: <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z" />,
+  // Kalendář — list s vyznačenými dny. Záměrně jiná než `zmeny` (hodiny),
+  // aby se v nabídce nepletly.
+  kalendar: (
+    <>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M3 10h18M8 3v4M16 3v4" />
+      <path d="M7.5 14h2M11 14h2M14.5 14h2M7.5 17.5h2M11 17.5h2" />
+    </>
+  ),
   zakaznici: (
     <>
       <circle cx="9" cy="8" r="3.2" />

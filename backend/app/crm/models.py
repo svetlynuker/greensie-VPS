@@ -438,7 +438,16 @@ class CrmAktivita(Base):
     text = Column(Text, nullable=False, default="", server_default="")
 
     termin = Column(Date, nullable=True)  # den (vyplněno = je to úkol)
-    zacatek = Column(DateTime(timezone=True), nullable=True)  # hodina, pro kalendář
+    # Hodina pro kalendářní mřížku. ZÁMĚRNĚ **bez časové zóny**, na rozdíl od
+    # ostatních časů v appce: je to „místní čas firmy", ne okamžik na časové
+    # ose. Firma pracuje v jedné zóně a tohle zjednodušení odstraňuje dvě chyby,
+    # které by jinak vznikly – server i DB běží v UTC, takže:
+    #   * TIMESTAMPTZ by čas 9:00 poslal prohlížeči jako 9:00 UTC a ten by
+    #     v Praze zobrazil 11:00 (uživatel zadal jedno, viděl druhé),
+    #   * `termin` se dopočítává z `zacatek.date()` – u půlnočních hodin by
+    #     převod přes UTC posunul den o jeden dozadu.
+    # Kdyby firma někdy pracovala ve víc zónách, tohle je místo, kde začít.
+    zacatek = Column(DateTime, nullable=True)
     delka_min = Column(Integer, nullable=True)  # jak dlouho trvá
 
     stav = Column(

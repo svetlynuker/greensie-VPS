@@ -225,7 +225,7 @@ jinak přidělení nic neudělá.
   |---|---|---|
   | K1 | aktivita se učí **čas** (`zacatek` + `delka_min`), **stavy** naplánováno / realizováno / nekonalo se, **výsledek**, **soukromá**, **účastníci**; pravidla viditelnosti; endpointy `/crm/kalendar` | ✅ hotovo |
   | K2 | stránka **Nastavení** (osobní volby + barvy druhů aktivit) | ✅ hotovo |
-  | K3 | kalendář: týdenní mřížka + čtvercový měsíc | — |
+  | K3 | kalendář: týdenní mřížka + čtvercový měsíc | ✅ hotovo |
   | K4 | práce v kalendáři: zakládání klikem, uzavření s výsledkem, navázání další aktivity | — |
   | K5 | opakované události (Dan chce rovnou, ne později) | — |
   | K6 | rychlé a uložené filtry + kalendáře dalších osob | — |

@@ -10,6 +10,8 @@
 // zdroje – jinak by se hlavička, filtr a porovnávací funkce rozešly.
 // ============================================================
 
+import { isoDen, pondeliTydne, posunDnu } from "./datum";
+
 /** Typy sloupců řídí, jaký filtr se nabídne a jak se porovnává. */
 export const TYPY_SLOUPCU = {
   text: "text",
@@ -97,30 +99,8 @@ export const OBDOBI = [
 
 export const VYCHOZI_OBDOBI = "tento_mesic";
 
-/** Datum → ISO den (YYYY-MM-DD) v LOKÁLNÍM čase.
- *
- * Schválně ne `toISOString()`: ten převádí na UTC, takže by v našem pásmu
- * hlásil „dnes" jako předchozí den každý večer po druhé hodině (v letním čase).
- */
-function isoDen(d) {
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const den = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${den}`;
-}
-
-function posun(d, dni) {
-  const k = new Date(d);
-  k.setDate(k.getDate() + dni);
-  return k;
-}
-
-/** Pondělí týdne, do kterého datum padá (v ČR začíná týden pondělím). */
-function pondeli(d) {
-  const k = new Date(d);
-  const den = (k.getDay() + 6) % 7; // 0 = pondělí
-  k.setDate(k.getDate() - den);
-  return k;
-}
+// Datumoví pomocníci jsou v `datum.js` – používá je i kalendář, takže je tu
+// nedržíme podruhé (dvě kopie „co je dnes" se dřív nebo později rozejdou).
 
 /**
  * Rozsah období k danému dni: `{ od, do }` v ISO, null = neomezeno.
@@ -137,32 +117,32 @@ export function rozsahObdobi(klic, dnes = new Date()) {
     case "dnes":
       return { od: d, do: d };
     case "vcera": {
-      const v = isoDen(posun(dnes, -1));
+      const v = isoDen(posunDnu(dnes, -1));
       return { od: v, do: v };
     }
     case "zitra": {
-      const z = isoDen(posun(dnes, 1));
+      const z = isoDen(posunDnu(dnes, 1));
       return { od: z, do: z };
     }
     case "tento_tyden": {
-      const po = pondeli(dnes);
-      return { od: isoDen(po), do: isoDen(posun(po, 6)) };
+      const po = pondeliTydne(dnes);
+      return { od: isoDen(po), do: isoDen(posunDnu(po, 6)) };
     }
     case "pristi_tyden": {
-      const po = posun(pondeli(dnes), 7);
-      return { od: isoDen(po), do: isoDen(posun(po, 6)) };
+      const po = posunDnu(pondeliTydne(dnes), 7);
+      return { od: isoDen(po), do: isoDen(posunDnu(po, 6)) };
     }
     // „Posledních N dní" včetně dneška – 7 dní znamená dnes a šest předchozích.
     case "poslednich_7_dni":
-      return { od: isoDen(posun(dnes, -6)), do: d };
+      return { od: isoDen(posunDnu(dnes, -6)), do: d };
     case "poslednich_30_dni":
-      return { od: isoDen(posun(dnes, -29)), do: d };
+      return { od: isoDen(posunDnu(dnes, -29)), do: d };
     case "poslednich_90_dni":
-      return { od: isoDen(posun(dnes, -89)), do: d };
+      return { od: isoDen(posunDnu(dnes, -89)), do: d };
     case "pristich_7_dni":
-      return { od: d, do: isoDen(posun(dnes, 6)) };
+      return { od: d, do: isoDen(posunDnu(dnes, 6)) };
     case "pristich_30_dni":
-      return { od: d, do: isoDen(posun(dnes, 29)) };
+      return { od: d, do: isoDen(posunDnu(dnes, 29)) };
     case "tento_mesic":
       return { od: isoDen(prvniDenMesice(0)), do: isoDen(posledniDenMesice(0)) };
     case "minuly_mesic":
@@ -174,9 +154,9 @@ export function rozsahObdobi(klic, dnes = new Date()) {
     case "minuly_rok":
       return { od: `${dnes.getFullYear() - 1}-01-01`, do: `${dnes.getFullYear() - 1}-12-31` };
     case "v_minulosti":
-      return { od: null, do: isoDen(posun(dnes, -1)) };
+      return { od: null, do: isoDen(posunDnu(dnes, -1)) };
     case "v_budoucnosti":
-      return { od: isoDen(posun(dnes, 1)), do: null };
+      return { od: isoDen(posunDnu(dnes, 1)), do: null };
     default:
       // Neznámý klíč nesmí seznam vyprázdnit – filtr, kterému nikdo nerozumí,
       // radši nefiltruje, než aby tvrdil, že data nejsou.
