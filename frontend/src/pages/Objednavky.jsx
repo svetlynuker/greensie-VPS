@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
+import CrmTabulka from "../components/CrmTabulka";
+import FiltrPanel from "../components/FiltrPanel";
 import Kanban from "../components/Kanban";
 import ObjednavkaFormular from "../components/ObjednavkaFormular";
 import StavyNastaveni from "../components/StavyNastaveni";
@@ -15,6 +17,7 @@ import {
   nactiMe,
 } from "../api";
 import { fmtDatum, fmtKc, fmtKcKratce } from "../crm";
+import pouzitFiltr from "../pouzitFiltr";
 import "../styles/crm.css";
 
 /**
@@ -38,6 +41,8 @@ export default function Objednavky() {
   const [nastaveniStavu, setNastaveniStavu] = useState(false);
   const [zruseni, setZruseni] = useState(null);
   const [chyba, setChyba] = useState(null);
+
+  const f = pouzitFiltr("obj", radky, sloupce);
 
   const nacti = useCallback(async (dotaz = "") => {
     const [k, r, s, pole] = await Promise.all([
@@ -125,7 +130,6 @@ export default function Objednavky() {
   }
   if (!me || !kanban) return null;
 
-  const celkem = kanban.sloupce.reduce((s, x) => s + x.pocet, 0);
 
   return (
     <Layout uzivatel={me.uzivatel}>
@@ -171,15 +175,26 @@ export default function Objednavky() {
           )}
           <span className="crm-mezera" />
           <span className="crm-pocet">
-            <b>{celkem}</b> objednávek
+            <b>{f.radky.length}</b>
+            {f.skryto > 0 ? ` z ${radky.length}` : ""} objednávek
           </span>
         </div>
+
+        <FiltrPanel
+          entita="obj"
+          sloupce={f.sloupce}
+          vsechnyRadky={radky}
+          podminky={f.podminky}
+          razeni={f.razeni}
+          onPodminky={f.setPodminky}
+          onRazeni={f.setRazeni}
+        />
 
         {chyba && <div className="crm-chyba">{chyba}</div>}
 
         {zobrazeni === "kanban" ? (
           <Kanban
-            sloupce={kanban.sloupce}
+            sloupce={f.filtrujKanban(kanban.sloupce)}
             onPresun={presun}
             onOtevri={(o) => setDetail(o.id)}
             dlazdice={(o) => (
@@ -202,61 +217,39 @@ export default function Objednavky() {
             )}
           />
         ) : (
-          <div className="crm-scroll">
-            <table className="crm-tabulka">
-              <thead>
-                <tr>
-                  <th>Číslo</th>
-                  <th>Zákazník</th>
-                  <th>Název</th>
-                  <th>Případ</th>
-                  <th>Nabídka</th>
-                  <th className="crm-vpravo">Cena</th>
-                  <th>Podpis</th>
-                  <th>Stav</th>
-                  <th>Projekt</th>
-                  {sloupce.map((sl) => (
-                    <th key={sl.klic}>{sl.nazev}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {radky.map((o) => (
-                  <tr key={o.id} onClick={() => setDetail(o.id)}>
-                    <td className="crm-silne">{o.cislo}</td>
-                    <td>{o.zakaznik_nazev || "—"}</td>
-                    <td>{o.nazev || "—"}</td>
-                    <td>{o.pripad_cislo}</td>
-                    <td>{o.nabidka_cislo || <span className="crm-tise">—</span>}</td>
-                    <td className="crm-vpravo">{fmtKc(o.cena_kc)}</td>
-                    <td>{fmtDatum(o.datum_podpisu) || "—"}</td>
-                    <td>
-                      <span className="crm-znacka">{o.stav_nazev}</span>
-                    </td>
-                    <td>
-                      {o.ma_projekt ? (
-                        <span className="crm-znacka crm-barva-ok">ano</span>
-                      ) : (
-                        <span className="crm-tise">—</span>
-                      )}
-                    </td>
-                    {sloupce.map((sl) => (
-                      <td key={sl.klic}>{(o.extra_text || {})[sl.klic] ?? "—"}</td>
-                    ))}
-                  </tr>
-                ))}
-                {radky.length === 0 && (
-                  <tr>
-                    <td colSpan={9 + sloupce.length} className="crm-prazdno">
-                      {hledat
-                        ? "Nic nenalezeno."
-                        : "Zatím žádné objednávky. Zakládají se z přijaté nabídky na kartě případu."}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <CrmTabulka
+            sloupce={f.sloupce}
+            radky={f.radky}
+            vsechnyRadky={radky}
+            razeni={f.razeni}
+            onRazeni={f.setRazeni}
+            podminky={f.podminky}
+            onPodminky={f.setPodminky}
+            onOtevri={(o) => setDetail(o.id)}
+            vykresli={(o, sl) => {
+              if (sl.klic === "cislo") return <span className="crm-silne">{o.cislo}</span>;
+              if (sl.klic === "cena_kc") return fmtKc(o.cena_kc);
+              if (sl.klic === "datum_podpisu") return fmtDatum(o.datum_podpisu) || "—";
+              if (sl.klic === "datum_dodani") return fmtDatum(o.datum_dodani) || "—";
+              if (sl.klic === "stav_nazev")
+                return <span className="crm-znacka">{o.stav_nazev}</span>;
+              if (sl.klic === "ma_projekt")
+                return o.ma_projekt ? (
+                  <span className="crm-znacka crm-barva-ok">ano</span>
+                ) : (
+                  <span className="crm-tise">—</span>
+                );
+              if (sl.klic === "nabidka_cislo")
+                return o.nabidka_cislo || <span className="crm-tise">—</span>;
+              if (sl.klic.startsWith("extra:")) return (o.extra_text || {})[sl.klic.slice(6)] ?? "—";
+              return o[sl.klic] || "—";
+            }}
+            prazdneHlaseni={
+              hledat || f.podminky.length
+                ? "Nic neodpovídá filtru."
+                : "Zatím žádné objednávky. Zakládají se z přijaté nabídky na kartě případu."
+            }
+          />
         )}
       </div>
 

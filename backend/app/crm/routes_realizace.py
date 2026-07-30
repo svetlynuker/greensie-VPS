@@ -25,8 +25,10 @@ from app.crm import projekty_kroky as kroky_modul
 from app.crm import stavy as stavy_modul
 from app.crm import vlastni_pole as pole_modul
 from app.crm.models import (
+    ENTITY_FILTRU,
     KATEGORIE_OP,
     STAVY_KROKU,
+    CrmUlozenyFiltr,
     CrmProjekt,
     CrmStav,
     CrmStavHistorie,
@@ -59,6 +61,8 @@ from app.crm.schemas import (
     SablonaOut,
     SablonaVstup,
     StavOut,
+    UlozenyFiltrOut,
+    UlozenyFiltrVstup,
     VlastniPoleOut,
 )
 from app.database import get_db
@@ -1331,3 +1335,156 @@ def import_z_raynetu(
 
     vysledek["zbyvalo_api_callu"] = zbyva
     return vysledek
+
+
+# ==================== UŽIVATELSKÉ FILTRY =====================================
+# Definice filtru se ukládá tady; SAMO FILTROVÁNÍ dělá frontend nad načtenými
+# řádky. Seznamy vracejí stovky záznamů (445 klientů, 210 případů), takže je to
+# okamžité a bez round-tripu – a hlavně se tím nemusí psát generátor SQL
+# z uživatelských podmínek, což je klasický zdroj chyb a děr. Až budou desetitisíce
+# záznamů, filtr se přesune na server; formát podmínek je na to připravený.
+@router.get("/filtry/{entita}", response_model=list[UlozenyFiltrOut])
+def seznam_filtru(
+    entita: str,
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    """Moje filtry + ty, které někdo nasdílel."""
+    if entita not in ENTITY_FILTRU:
+        raise HTTPException(status_code=422, detail=f"Neznámá entita filtru: {entita}")
+    filtry = (
+        db.query(CrmUlozenyFiltr)
+        .filter(
+            CrmUlozenyFiltr.entita == entita,
+            or_(
+                CrmUlozenyFiltr.vlastnik_user_id == user.id,
+                CrmUlozenyFiltr.sdileny.is_(True),
+            ),
+        )
+        .order_by(CrmUlozenyFiltr.poradi, CrmUlozenyFiltr.nazev)
+        .all()
+    )
+    return [_filtr_out(f, user) for f in filtry]
+
+
+def _filtr_out(f: CrmUlozenyFiltr, user: User) -> UlozenyFiltrOut:
+    return UlozenyFiltrOut(
+        id=f.id,
+        entita=f.entita,
+        nazev=f.nazev,
+        podminky=f.podminky or [],
+        razeni=f.razeni or [],
+        sdileny=bool(f.sdileny),
+        vychozi=bool(f.vychozi),
+        poradi=f.poradi,
+        vlastnik_user_id=f.vlastnik_user_id,
+        vlastnik_jmeno=_jmeno(f.vlastnik),
+        muj=f.vlastnik_user_id == user.id,
+    )
+
+
+def _zrus_jine_vychozi(db: Session, entita: str, user_id: int, kromě: int | None = None) -> None:
+    """Výchozí filtr může být jen jeden na entitu a uživatele – jinak by appka
+    nevěděla, který po otevření sekce použít."""
+    q = db.query(CrmUlozenyFiltr).filter(
+        CrmUlozenyFiltr.entita == entita,
+        CrmUlozenyFiltr.vlastnik_user_id == user_id,
+        CrmUlozenyFiltr.vychozi.is_(True),
+    )
+    if kromě is not None:
+        q = q.filter(CrmUlozenyFiltr.id != kromě)
+    for f in q.all():
+        f.vychozi = False
+
+
+@router.post("/filtry/{entita}", response_model=UlozenyFiltrOut)
+def uloz_filtr(
+    entita: str,
+    vstup: UlozenyFiltrVstup,
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    if entita not in ENTITY_FILTRU:
+        raise HTTPException(status_code=422, detail=f"Neznámá entita filtru: {entita}")
+    nazev = (vstup.nazev or "").strip()
+    if not nazev:
+        raise HTTPException(status_code=422, detail="Filtr potřebuje název.")
+    if not vstup.podminky and not vstup.razeni:
+        raise HTTPException(
+            status_code=422,
+            detail="Prázdný filtr nemá co dělat – přidej aspoň jednu podmínku nebo řazení.",
+        )
+    if (
+        db.query(CrmUlozenyFiltr.id)
+        .filter(
+            CrmUlozenyFiltr.entita == entita,
+            CrmUlozenyFiltr.vlastnik_user_id == user.id,
+            CrmUlozenyFiltr.nazev == nazev,
+        )
+        .first()
+    ):
+        raise HTTPException(status_code=409, detail="Filtr s tímhle názvem už máš.")
+
+    if vstup.vychozi:
+        _zrus_jine_vychozi(db, entita, user.id)
+    f = CrmUlozenyFiltr(
+        entita=entita,
+        nazev=nazev,
+        podminky=[p.model_dump() for p in vstup.podminky],
+        razeni=[r.model_dump() for r in vstup.razeni],
+        sdileny=bool(vstup.sdileny),
+        vychozi=bool(vstup.vychozi),
+        vlastnik_user_id=user.id,
+    )
+    db.add(f)
+    db.commit()
+    db.refresh(f)
+    return _filtr_out(f, user)
+
+
+@router.put("/filtry/{filtr_id}", response_model=UlozenyFiltrOut)
+def uprav_filtr(
+    filtr_id: int,
+    vstup: UlozenyFiltrVstup,
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    """Upravit smí jen autor. Nasdílený cizí filtr si ostatní mohou použít, ale
+    ne přepsat – jinak by si ho lidé navzájem měnili pod rukama."""
+    f = db.get(CrmUlozenyFiltr, filtr_id)
+    if f is None:
+        raise HTTPException(status_code=404, detail="Filtr neexistuje")
+    if f.vlastnik_user_id != user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Tenhle filtr patří někomu jinému. Ulož si ho jako vlastní kopii.",
+        )
+    nazev = (vstup.nazev or "").strip()
+    if not nazev:
+        raise HTTPException(status_code=422, detail="Filtr potřebuje název.")
+    if vstup.vychozi:
+        _zrus_jine_vychozi(db, f.entita, user.id, kromě=f.id)
+    f.nazev = nazev
+    f.podminky = [p.model_dump() for p in vstup.podminky]
+    f.razeni = [r.model_dump() for r in vstup.razeni]
+    f.sdileny = bool(vstup.sdileny)
+    f.vychozi = bool(vstup.vychozi)
+    db.commit()
+    db.refresh(f)
+    return _filtr_out(f, user)
+
+
+@router.delete("/filtry/{filtr_id}")
+def smaz_filtr(
+    filtr_id: int,
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    f = db.get(CrmUlozenyFiltr, filtr_id)
+    if f is None:
+        raise HTTPException(status_code=404, detail="Filtr neexistuje")
+    if f.vlastnik_user_id != user.id:
+        raise HTTPException(status_code=403, detail="Cizí filtr smazat nelze.")
+    db.delete(f)
+    db.commit()
+    return {"ok": True}

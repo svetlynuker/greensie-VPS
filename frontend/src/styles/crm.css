@@ -860,3 +860,64 @@
   border: 1px solid color-mix(in srgb, var(--st-warn) 35%, transparent);
   border-radius: 8px;
 }
+
+/* ---- filtry a řazení ---- */
+.crm-filtr-lista {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  margin-bottom: 10px;
+}
+.crm-tabulka-lista {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+/* Hlavička se řadí kliknutím – musí to být vidět. */
+.crm-th-razeni {
+  cursor: pointer;
+  user-select: none;
+}
+.crm-th-razeni:hover {
+  color: var(--text);
+}
+.crm-razeni-znak {
+  margin-left: 4px;
+  font-weight: 700;
+}
+.crm-razeni-znak sup {
+  font-size: 9px;
+  margin-left: 1px;
+}
+.crm-radek-filtru th {
+  padding: 4px 8px 8px;
+  background: color-mix(in srgb, var(--muted) 4%, transparent);
+}
+.crm-filtr-pole {
+  width: 100%;
+  min-width: 70px;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.crm-filtr-rozsah {
+  display: flex;
+  gap: 4px;
+}
+/* Jedna podmínka v editoru filtru */
+.crm-podminka {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 5px 0;
+}

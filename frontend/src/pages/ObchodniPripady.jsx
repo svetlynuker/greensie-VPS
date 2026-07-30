@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
+import CrmTabulka from "../components/CrmTabulka";
+import FiltrPanel from "../components/FiltrPanel";
 import Kanban from "../components/Kanban";
 import PripadFormular from "../components/PripadFormular";
 import StavyNastaveni from "../components/StavyNastaveni";
@@ -15,6 +17,7 @@ import {
   nactiMe,
 } from "../api";
 import { fmtDatum, fmtKc, nazvyKategorii } from "../crm";
+import pouzitFiltr from "../pouzitFiltr";
 import "../styles/crm.css";
 
 /**
@@ -36,6 +39,9 @@ export default function ObchodniPripady() {
   const [prohra, setProhra] = useState(null); // {pripadId, stav}
   const [sloupce, setSloupce] = useState([]);
   const [chyba, setChyba] = useState(null);
+
+  // Filtr a řazení platí zároveň pro tabulku i kanban (jeden stav pro obojí).
+  const f = pouzitFiltr("op", radky, sloupce);
 
   const nacti = useCallback(async (dotaz = "") => {
     const [k, r, s, pole] = await Promise.all([
@@ -128,7 +134,6 @@ export default function ObchodniPripady() {
   if (!me || !kanban) return null;
 
   const muzeNastaveni = me.prava?.includes("crm_nastaveni");
-  const celkem = kanban.sloupce.reduce((s, x) => s + x.pocet, 0);
 
   return (
     <Layout uzivatel={me.uzivatel}>
@@ -177,64 +182,60 @@ export default function ObchodniPripady() {
           )}
           <span className="crm-mezera" />
           <span className="crm-pocet">
-            <b>{celkem}</b> případů
+            <b>{f.radky.length}</b>
+            {f.skryto > 0 ? ` z ${radky.length}` : ""} případů
+            {f.skryto > 0 && <span className="crm-tise"> (filtr skryl {f.skryto})</span>}
           </span>
         </div>
+
+        <FiltrPanel
+          entita="op"
+          sloupce={f.sloupce}
+          vsechnyRadky={radky}
+          podminky={f.podminky}
+          razeni={f.razeni}
+          onPodminky={f.setPodminky}
+          onRazeni={f.setRazeni}
+        />
 
         {chyba && <div className="crm-chyba">{chyba}</div>}
 
         {zobrazeni === "kanban" ? (
           <Kanban
-            sloupce={kanban.sloupce}
+            sloupce={f.filtrujKanban(kanban.sloupce)}
             onPresun={presun}
             onOtevri={(z) => navigate(`/pripady/detail/${z.id}`)}
           />
         ) : (
-          <div className="crm-scroll">
-            <table className="crm-tabulka">
-              <thead>
-                <tr>
-                  <th>Číslo</th>
-                  <th>Zákazník</th>
-                  <th>Název</th>
-                  <th>Kategorie</th>
-                  <th>Stav</th>
-                  <th className="crm-vpravo">Hodnota</th>
-                  <th>Uzavření</th>
-                  <th>Vlastník</th>
-                  {sloupce.map((sl) => (
-                    <th key={sl.klic}>{sl.nazev}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {radky.map((p) => (
-                  <tr key={p.id} onClick={() => navigate(`/pripady/detail/${p.id}`)}>
-                    <td className="crm-silne">{p.cislo}</td>
-                    <td>{p.zakaznik_nazev}</td>
-                    <td>{p.nazev || "—"}</td>
-                    <td>{nazvyKategorii(p.kategorie) || "—"}</td>
-                    <td>
-                      <span className="crm-znacka">{p.stav_nazev}</span>
-                    </td>
-                    <td className="crm-vpravo">{fmtKc(p.hodnota_kc)}</td>
-                    <td>{fmtDatum(p.predpokladane_uzavreni) || "—"}</td>
-                    <td>{p.vlastnik_jmeno || "—"}</td>
-                    {sloupce.map((sl) => (
-                      <td key={sl.klic}>{(p.extra_text || {})[sl.klic] ?? "—"}</td>
-                    ))}
-                  </tr>
-                ))}
-                {radky.length === 0 && (
-                  <tr>
-                    <td colSpan={8 + sloupce.length} className="crm-prazdno">
-                      {hledat ? "Nic nenalezeno." : "Zatím žádné případy."}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <CrmTabulka
+            sloupce={f.sloupce}
+            radky={f.radky}
+            vsechnyRadky={radky}
+            razeni={f.razeni}
+            onRazeni={f.setRazeni}
+            podminky={f.podminky}
+            onPodminky={f.setPodminky}
+            onOtevri={(p) => navigate(`/pripady/detail/${p.id}`)}
+            vykresli={(p, sl) => {
+              if (sl.klic === "cislo") return <span className="crm-silne">{p.cislo}</span>;
+              if (sl.klic === "kategorie") return nazvyKategorii(p.kategorie) || "—";
+              if (sl.klic === "stav_nazev")
+                return <span className="crm-znacka">{p.stav_nazev}</span>;
+              if (sl.klic === "hodnota_kc") return fmtKc(p.hodnota_kc);
+              if (sl.klic === "pravdepodobnost")
+                return p.pravdepodobnost != null ? `${p.pravdepodobnost} %` : "—";
+              if (sl.klic === "predpokladane_uzavreni")
+                return fmtDatum(p.predpokladane_uzavreni) || "—";
+              if (sl.klic.startsWith("extra:"))
+                return (p.extra_text || {})[sl.klic.slice(6)] ?? "—";
+              return p[sl.klic] || "—";
+            }}
+            prazdneHlaseni={
+              hledat || f.podminky.length
+                ? "Nic neodpovídá filtru."
+                : "Zatím žádné případy."
+            }
+          />
         )}
       </div>
 
