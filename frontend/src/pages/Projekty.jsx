@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
+import CrmTabulka from "../components/CrmTabulka";
+import FiltrPanel from "../components/FiltrPanel";
 import Kanban from "../components/Kanban";
 import SablonyNastaveni from "../components/SablonyNastaveni";
 import StavyNastaveni from "../components/StavyNastaveni";
@@ -14,6 +16,7 @@ import {
   nactiMe,
 } from "../api";
 import { fmtDatum } from "../crm";
+import pouzitFiltr from "../pouzitFiltr";
 import "../styles/crm.css";
 
 /**
@@ -34,6 +37,8 @@ export default function Projekty() {
   const [nastaveniStavu, setNastaveniStavu] = useState(false);
   const [sablony, setSablony] = useState(false);
   const [chyba, setChyba] = useState(null);
+
+  const f = pouzitFiltr("pro", radky, sloupce);
 
   const nacti = useCallback(async (dotaz = "") => {
     const [k, r, pole] = await Promise.all([
@@ -103,7 +108,6 @@ export default function Projekty() {
   }
   if (!me || !kanban) return null;
 
-  const celkem = kanban.sloupce.reduce((s, x) => s + x.pocet, 0);
   const muzeNastaveni = me.prava?.includes("crm_nastaveni");
 
   return (
@@ -153,15 +157,26 @@ export default function Projekty() {
           )}
           <span className="crm-mezera" />
           <span className="crm-pocet">
-            <b>{celkem}</b> projektů
+            <b>{f.radky.length}</b>
+            {f.skryto > 0 ? ` z ${radky.length}` : ""} projektů
           </span>
         </div>
+
+        <FiltrPanel
+          entita="pro"
+          sloupce={f.sloupce}
+          vsechnyRadky={radky}
+          podminky={f.podminky}
+          razeni={f.razeni}
+          onPodminky={f.setPodminky}
+          onRazeni={f.setRazeni}
+        />
 
         {chyba && <div className="crm-chyba">{chyba}</div>}
 
         {zobrazeni === "kanban" ? (
           <Kanban
-            sloupce={kanban.sloupce}
+            sloupce={f.filtrujKanban(kanban.sloupce)}
             onPresun={presun}
             onOtevri={(p) => navigate(`/projekty/detail/${p.id}`)}
             dlazdice={(p) => (
@@ -192,60 +207,39 @@ export default function Projekty() {
             )}
           />
         ) : (
-          <div className="crm-scroll">
-            <table className="crm-tabulka">
-              <thead>
-                <tr>
-                  <th>Číslo</th>
-                  <th>Zákazník</th>
-                  <th>Název</th>
-                  <th>Případ</th>
-                  <th>Objednávka</th>
-                  <th>Stav</th>
-                  <th>Kroky</th>
-                  <th>Nejbližší termín</th>
-                  {sloupce.map((sl) => (
-                    <th key={sl.klic}>{sl.nazev}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {radky.map((p) => (
-                  <tr key={p.id} onClick={() => navigate(`/projekty/detail/${p.id}`)}>
-                    <td className="crm-silne">{p.cislo}</td>
-                    <td>{p.zakaznik_nazev || "—"}</td>
-                    <td>{p.nazev || "—"}</td>
-                    <td>{p.pripad_cislo}</td>
-                    <td>{p.objednavka_cislo || <span className="crm-tise">—</span>}</td>
-                    <td>
-                      <span className="crm-znacka">{p.stav_nazev}</span>
-                    </td>
-                    <td>
-                      {p.kroku > 0 ? `${p.hotovo}/${p.kroku} (${p.procent} %)` : "—"}
-                    </td>
-                    <td>
-                      {fmtDatum(p.nejblizsi_termin) || "—"}
-                      {p.po_terminu > 0 && (
-                        <span className="crm-po-terminu"> · {p.po_terminu} po termínu</span>
-                      )}
-                    </td>
-                    {sloupce.map((sl) => (
-                      <td key={sl.klic}>{(p.extra_text || {})[sl.klic] ?? "—"}</td>
-                    ))}
-                  </tr>
-                ))}
-                {radky.length === 0 && (
-                  <tr>
-                    <td colSpan={8 + sloupce.length} className="crm-prazdno">
-                      {hledat
-                        ? "Nic nenalezeno."
-                        : "Zatím žádné projekty. Zakládají se z objednávky nebo z karty případu."}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <CrmTabulka
+            sloupce={f.sloupce}
+            radky={f.radky}
+            vsechnyRadky={radky}
+            razeni={f.razeni}
+            onRazeni={f.setRazeni}
+            podminky={f.podminky}
+            onPodminky={f.setPodminky}
+            onOtevri={(p) => navigate(`/projekty/detail/${p.id}`)}
+            vykresli={(p, sl) => {
+              if (sl.klic === "cislo") return <span className="crm-silne">{p.cislo}</span>;
+              if (sl.klic === "stav_nazev")
+                return <span className="crm-znacka">{p.stav_nazev}</span>;
+              if (sl.klic === "procent")
+                return p.kroku > 0 ? `${p.hotovo}/${p.kroku} (${p.procent} %)` : "—";
+              if (sl.klic === "po_terminu")
+                return p.po_terminu > 0 ? (
+                  <span className="crm-po-terminu">{p.po_terminu}</span>
+                ) : (
+                  "—"
+                );
+              if (sl.klic === "nejblizsi_termin") return fmtDatum(p.nejblizsi_termin) || "—";
+              if (sl.klic === "objednavka_cislo")
+                return p.objednavka_cislo || <span className="crm-tise">—</span>;
+              if (sl.klic.startsWith("extra:")) return (p.extra_text || {})[sl.klic.slice(6)] ?? "—";
+              return p[sl.klic] || "—";
+            }}
+            prazdneHlaseni={
+              hledat || f.podminky.length
+                ? "Nic neodpovídá filtru."
+                : "Zatím žádné projekty. Zakládají se z objednávky nebo z karty případu."
+            }
+          />
         )}
       </div>
 

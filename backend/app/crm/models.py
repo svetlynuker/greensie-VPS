@@ -578,3 +578,71 @@ class ProjektKrok(Base):
 
     projekt = relationship("CrmProjekt", back_populates="kroky")
     odpovedny = relationship("User", foreign_keys=[odpovedny_user_id])
+
+
+# Entity, nad kterými jdou stavět uživatelské filtry (seznamy i kanbany).
+ENTITY_FILTRU = ("zakaznik", "op", "nab", "obj", "pro")
+
+# Operátory podmínek. Držíme je jako data, protože je zná i frontend (crm_filtry.js)
+# a musí se shodovat – jinak by uložený filtr znamenal jinde něco jiného.
+OPERATORY_FILTRU = (
+    "obsahuje",
+    "neobsahuje",
+    "je",
+    "neni",
+    "je_jeden_z",
+    "vetsi",
+    "mensi",
+    "mezi",
+    "je_prazdne",
+    "neni_prazdne",
+)
+
+
+class CrmUlozenyFiltr(Base):
+    """Uživatelský filtr nad seznamem/kanbanem – víc podmínek a víceúrovňové řazení.
+
+    Proč vlastní tabulka a ne jen stav v prohlížeči: filtr typu „moje otevřené
+    PPA případy nad milion, řazené podle termínu" si člověk staví jednou a chce
+    ho mít i zítra a na jiném počítači. A vedení potřebuje umět takový pohled
+    **nasdílet** ostatním (`sdileny`).
+
+    `podminky` = [{pole, operator, hodnota}], vyhodnocuje se jako AND. Víc
+    podmínek nad stejným polem se tím chová jako zúžení (rozsah), což je přesně
+    to, co lidé od „víceúrovňového" filtru čekají.
+
+    `razeni` = [{pole, smer}] v pořadí priority: první je hlavní klíč, další
+    rozhodují při shodě.
+
+    Uloženo jako JSONB, protože sada polí se u každé entity liší a bude se
+    rozšiřovat (i vlastními polemi) – pevné sloupce by znamenaly migraci při
+    každé změně.
+    """
+
+    __tablename__ = "crm_ulozene_filtry"
+    __table_args__ = (
+        UniqueConstraint("entita", "vlastnik_user_id", "nazev", name="uq_crm_filtr_nazev"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    entita = Column(String, nullable=False, index=True)  # jedna z ENTITY_FILTRU
+    nazev = Column(String, nullable=False)
+    podminky = Column(JSONB, nullable=False, default=list, server_default="[]")
+    razeni = Column(JSONB, nullable=False, default=list, server_default="[]")
+
+    # Autor filtru. NULL by znamenalo „nikoho", což nechceme – filtr vždy někomu
+    # patří a jen sdílený je vidět i ostatním.
+    vlastnik_user_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    sdileny = Column(Boolean, nullable=False, default=False, server_default="false")
+    # Filtr, který se má po otevření sekce použít sám.
+    vychozi = Column(Boolean, nullable=False, default=False, server_default="false")
+    poradi = Column(Integer, nullable=False, default=0, server_default="0")
+
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    aktualizovano_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    vlastnik = relationship("User")

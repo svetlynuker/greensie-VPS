@@ -1,6 +1,6 @@
 """Pydantic schémata CRM. Literály musí odpovídat enumům v `crm/models.py`."""
 
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel
 
@@ -531,3 +531,46 @@ class SablonaVstup(BaseModel):
     nazev: str
     popis: str = ""
     kategorie: list[str] = []
+
+
+# ---- uživatelské filtry ------------------------------------------------------
+EntitaFiltru = Literal["zakaznik", "op", "nab", "obj", "pro"]
+OperatorFiltru = Literal[
+    "obsahuje", "neobsahuje", "je", "neni", "je_jeden_z",
+    "vetsi", "mensi", "mezi", "je_prazdne", "neni_prazdne",
+]
+SmerRazeni = Literal["asc", "desc"]
+
+
+class PodminkaFiltru(BaseModel):
+    pole: str
+    operator: OperatorFiltru
+    # Hodnota může být text, číslo, seznam (je_jeden_z) nebo dvojice (mezi).
+    hodnota: Any = None
+
+
+class RazeniFiltru(BaseModel):
+    pole: str
+    smer: SmerRazeni = "asc"
+
+
+class UlozenyFiltrOut(BaseModel):
+    id: int
+    entita: EntitaFiltru
+    nazev: str
+    podminky: list[PodminkaFiltru] = []
+    razeni: list[RazeniFiltru] = []
+    sdileny: bool = False
+    vychozi: bool = False
+    poradi: int = 0
+    vlastnik_user_id: int
+    vlastnik_jmeno: Optional[str] = None
+    muj: bool = True  # smí ho volající upravit?
+
+
+class UlozenyFiltrVstup(BaseModel):
+    nazev: str
+    podminky: list[PodminkaFiltru] = []
+    razeni: list[RazeniFiltru] = []
+    sdileny: bool = False
+    vychozi: bool = False

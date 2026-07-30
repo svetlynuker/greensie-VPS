@@ -2,9 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import ImportRaynet from "../components/ImportRaynet";
+import CrmTabulka from "../components/CrmTabulka";
+import FiltrPanel from "../components/FiltrPanel";
 import ZakaznikFormular from "../components/ZakaznikFormular";
 import { nactiMe, logout, crmVlastniPole, crmZakaznici } from "../api";
 import { POHLEDY_ZAKAZNIKU, fmtDatum } from "../crm";
+import pouzitFiltr from "../pouzitFiltr";
 import "../styles/crm.css";
 
 /**
@@ -26,6 +29,9 @@ export default function Zakaznici() {
   const [importRaynet, setImportRaynet] = useState(false);
 
   const sekce = POHLEDY_ZAKAZNIKU.find((p) => p.klic === pohled);
+
+  // Filtr a řazení; výchozí řazení klientů je podle názvu (číslo nemají).
+  const f = pouzitFiltr("zakaznik", zakaznici || [], sloupce);
 
   const nacti = useCallback(
     async (dotaz = "") => {
@@ -129,65 +135,46 @@ export default function Zakaznici() {
           />
           <span className="crm-mezera" />
           <span className="crm-pocet">
-            <b>{zakaznici.length}</b> {pohled === "lead" ? "leadů" : "klientů"}
+            <b>{f.radky.length}</b>
+            {f.skryto > 0 ? ` z ${zakaznici.length}` : ""}{" "}
+            {pohled === "lead" ? "leadů" : "klientů"}
           </span>
         </div>
 
         {chyba && <div className="crm-chyba">{chyba}</div>}
 
-        <div className="crm-scroll">
-          <table className="crm-tabulka">
-            <thead>
-              <tr>
-                <th>Název</th>
-                <th>IČO</th>
-                <th>Město</th>
-                <th>Kontakt</th>
-                <th>Vlastník</th>
-                {sloupce.map((sl) => (
-                  <th key={sl.klic}>{sl.nazev}</th>
-                ))}
-                <th className="crm-vpravo">Případy</th>
-                <th>Vytvořeno</th>
-              </tr>
-            </thead>
-            <tbody>
-              {zakaznici.map((z) => (
-                <tr key={z.id} onClick={() => navigate(`/zakaznici/detail/${z.id}`)}>
-                  <td className="crm-silne">{z.nazev}</td>
-                  <td>{z.ico || "—"}</td>
-                  <td>{z.adresa_mesto || "—"}</td>
-                  <td>
-                    {z.telefon || z.email ? (
-                      <span className="crm-tise">
-                        {z.telefon}
-                        {z.telefon && z.email ? " · " : ""}
-                        {z.email}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td>{z.vlastnik_jmeno || "—"}</td>
-                  {sloupce.map((sl) => (
-                    <td key={sl.klic}>{(z.extra_text || {})[sl.klic] ?? "—"}</td>
-                  ))}
-                  <td className="crm-vpravo">{z.pocet_pripadu || 0}</td>
-                  <td>{fmtDatum(z.vytvoreno_at)}</td>
-                </tr>
-              ))}
-              {zakaznici.length === 0 && (
-                <tr>
-                  <td colSpan={7 + sloupce.length} className="crm-prazdno">
-                    {hledat
-                      ? "Nic nenalezeno. Zkus jiný výraz."
-                      : `Zatím žádní ${pohled === "lead" ? "leadi" : "klienti"}. Založ prvního tlačítkem vpravo nahoře.`}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <FiltrPanel
+          entita="zakaznik"
+          sloupce={f.sloupce}
+          vsechnyRadky={zakaznici}
+          podminky={f.podminky}
+          razeni={f.razeni}
+          onPodminky={f.setPodminky}
+          onRazeni={f.setRazeni}
+        />
+
+        <CrmTabulka
+          sloupce={f.sloupce}
+          radky={f.radky}
+          vsechnyRadky={zakaznici}
+          razeni={f.razeni}
+          onRazeni={f.setRazeni}
+          podminky={f.podminky}
+          onPodminky={f.setPodminky}
+          onOtevri={(z) => navigate(`/zakaznici/detail/${z.id}`)}
+          vykresli={(z, sl) => {
+            if (sl.klic === "nazev") return <span className="crm-silne">{z.nazev}</span>;
+            if (sl.klic === "vytvoreno_at") return fmtDatum(z.vytvoreno_at);
+            if (sl.klic === "pocet_pripadu") return z.pocet_pripadu || 0;
+            if (sl.klic.startsWith("extra:")) return (z.extra_text || {})[sl.klic.slice(6)] ?? "—";
+            return z[sl.klic] || "—";
+          }}
+          prazdneHlaseni={
+            hledat || f.podminky.length
+              ? "Nic neodpovídá filtru."
+              : `Zatím žádní ${pohled === "lead" ? "leadi" : "klienti"}. Založ prvního tlačítkem vpravo nahoře.`
+          }
+        />
       </div>
 
       {importRaynet && (

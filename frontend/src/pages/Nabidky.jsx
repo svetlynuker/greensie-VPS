@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
+import CrmTabulka from "../components/CrmTabulka";
+import FiltrPanel from "../components/FiltrPanel";
 import Kanban from "../components/Kanban";
 import MigraceNabidek from "../components/MigraceNabidek";
 import StavyNastaveni from "../components/StavyNastaveni";
@@ -13,6 +15,7 @@ import {
   nactiMe,
 } from "../api";
 import { fmtDatum } from "../crm";
+import pouzitFiltr from "../pouzitFiltr";
 import "../styles/crm.css";
 
 const TYPY = { ppa: "PPA", prodej: "Prodej", peak_shaving: "Peak shaving" };
@@ -36,6 +39,9 @@ export default function Nabidky() {
   const [nastaveniStavu, setNastaveniStavu] = useState(false);
   const [migrace, setMigrace] = useState(false);
   const [chyba, setChyba] = useState(null);
+
+  // Jeden filtr pro tabulku i kanban.
+  const f = pouzitFiltr("nab", radky);
 
   const nacti = useCallback(async (dotaz = "") => {
     const [k, r, s] = await Promise.all([
@@ -110,7 +116,6 @@ export default function Nabidky() {
   }
   if (!me || !kanban) return null;
 
-  const celkem = kanban.sloupce.reduce((s, x) => s + x.pocet, 0);
   // Nabídky bez případu visí v přehledu jako #id bez zákazníka – dokud jsou,
   // má smysl nabízet jejich dohledání.
   const bezPripadu = radky.filter((n) => !n.pripad_id).length;
@@ -172,15 +177,26 @@ export default function Nabidky() {
           )}
           <span className="crm-mezera" />
           <span className="crm-pocet">
-            <b>{celkem}</b> nabídek
+            <b>{f.radky.length}</b>
+            {f.skryto > 0 ? ` z ${radky.length}` : ""} nabídek
           </span>
         </div>
+
+        <FiltrPanel
+          entita="nab"
+          sloupce={f.sloupce}
+          vsechnyRadky={radky}
+          podminky={f.podminky}
+          razeni={f.razeni}
+          onPodminky={f.setPodminky}
+          onRazeni={f.setRazeni}
+        />
 
         {chyba && <div className="crm-chyba">{chyba}</div>}
 
         {zobrazeni === "kanban" ? (
           <Kanban
-            sloupce={kanban.sloupce}
+            sloupce={f.filtrujKanban(kanban.sloupce)}
             onPresun={presun}
             onOtevri={otevri}
             dlazdice={(n) => (
@@ -202,51 +218,36 @@ export default function Nabidky() {
             )}
           />
         ) : (
-          <div className="crm-scroll">
-            <table className="crm-tabulka">
-              <thead>
-                <tr>
-                  <th>Číslo</th>
-                  <th>Typ</th>
-                  <th>Zákazník</th>
-                  <th>Případ</th>
-                  <th>Obchodní stav</th>
-                  <th>Výpočet</th>
-                  <th>Vytvořil</th>
-                  <th>Vytvořeno</th>
-                </tr>
-              </thead>
-              <tbody>
-                {radky.map((n) => (
-                  <tr key={n.id} onClick={() => otevri(n)}>
-                    <td className="crm-silne">{n.cislo || `#${n.id}`}</td>
-                    <td>{TYPY[n.typ] || n.typ}</td>
-                    <td>{n.zakaznik_nazev || "—"}</td>
-                    <td>{n.pripad_cislo || <span className="crm-tise">bez případu</span>}</td>
-                    <td>
-                      <span className="crm-znacka">{n.stav_nazev}</span>
-                    </td>
-                    <td>
-                      {n.spocitana ? (
-                        <span className="crm-znacka crm-barva-ok">spočítáno</span>
-                      ) : (
-                        <span className="crm-tise">nespočítáno</span>
-                      )}
-                    </td>
-                    <td>{n.vytvoril_jmeno || "—"}</td>
-                    <td>{fmtDatum(n.vytvoreno_at)}</td>
-                  </tr>
-                ))}
-                {radky.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="crm-prazdno">
-                      {hledat ? "Nic nenalezeno." : "Zatím žádné nabídky."}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <CrmTabulka
+            sloupce={f.sloupce}
+            radky={f.radky}
+            vsechnyRadky={radky}
+            razeni={f.razeni}
+            onRazeni={f.setRazeni}
+            podminky={f.podminky}
+            onPodminky={f.setPodminky}
+            onOtevri={otevri}
+            vykresli={(n, sl) => {
+              if (sl.klic === "cislo")
+                return <span className="crm-silne">{n.cislo || `#${n.id}`}</span>;
+              if (sl.klic === "typ") return TYPY[n.typ] || n.typ;
+              if (sl.klic === "pripad_cislo")
+                return n.pripad_cislo || <span className="crm-tise">bez případu</span>;
+              if (sl.klic === "stav_nazev")
+                return <span className="crm-znacka">{n.stav_nazev}</span>;
+              if (sl.klic === "spocitana")
+                return n.spocitana ? (
+                  <span className="crm-znacka crm-barva-ok">spočítáno</span>
+                ) : (
+                  <span className="crm-tise">nespočítáno</span>
+                );
+              if (sl.klic === "vytvoreno_at") return fmtDatum(n.vytvoreno_at);
+              return n[sl.klic] || "—";
+            }}
+            prazdneHlaseni={
+              hledat || f.podminky.length ? "Nic neodpovídá filtru." : "Zatím žádné nabídky."
+            }
+          />
         )}
       </div>
 

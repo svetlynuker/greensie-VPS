@@ -62,6 +62,46 @@ Sekce se otevře v **kanbanu**, protože hlavní denní práce je posouvat pří
 
 Přepínačem se dá zapnout **tabulka** s hledáním podle čísla, názvu nebo zákazníka.
 
+### Filtry, řazení a vlastní pohledy
+Každý seznam (Zákazníci, Případy, Nabídky, Objednávky, Projekty) má tři vrstvy filtrování a
+všechny se dají kombinovat.
+
+**1. Řazení kliknutím na hlavičku.** Výchozí je **podle čísla záznamu** (OP / NAB / OBJ / PRO),
+nejnovější první; u Zákazníků podle názvu, protože číslo nemají. Klik přepne směr,
+**shift + klik přidá další úroveň** — dá se tak řadit „podle stavu, a v rámci stavu podle čísla".
+Aktuální řazení je vypsané nad tabulkou včetně pořadí úrovní.
+
+> Čísla se řadí **přirozeně**, ne jako text: `OP-26-0099` je před `OP-26-0100` a
+> `PRO-26-0301` před `PRO-26-0301-2`.
+
+**2. Filtry sloupců.** Tlačítko **⌕ Filtry sloupců** rozbalí nad tabulkou řádek s filtrem
+u každého sloupce. Tvar filtru se řídí typem: text (obsahuje), číslo a datum (od–do),
+stav a typ (rozbalovací nabídka jen s hodnotami, které se v datech skutečně vyskytují),
+ano/ne. Počet aktivních filtrů je vidět na tlačítku a jde je zrušit jedním kliknutím.
+
+**3. Vlastní filtry (uložené pohledy).** Nad seznamem je lišta **Filtry** s tlačítkem
+**+ Vlastní filtr**. Filtr je několik **podmínek**, které musí platit všechny, a
+**víceúrovňové řazení**. Například *„kategorie obsahuje PPA, hodnota ≥ 1 000 000, stav není
+Prohráno"* řazené podle stavu a pak podle čísla.
+
+Uložený filtr má tři přepínače:
+
+| Volba | Co dělá |
+|---|---|
+| **Nasdílet ostatním** | filtr uvidí i kolegové (jako pilulku se tvým jménem) |
+| **Použít po otevření sekce** | tenhle filtr se aktivuje sám; výchozí může být jen jeden |
+| *(bez volby)* | filtr je jen tvůj |
+
+Cizí nasdílený filtr **můžeš použít, ale ne přepsat** — kdo si ho chce upravit, dá
+*Uložit jako nový* a vznikne mu vlastní kopie. Jinak by si lidé měnili pohledy pod rukama.
+
+> **Filtr platí zároveň pro tabulku i kanban.** Když si vyfiltrujete „jen moje případy nad
+> milion", uvidíte je v tabulce i jako dlaždice v kanbanu, a součty i počty v hlavičkách
+> sloupců se přepočítají. Kdyby si každé zobrazení drželo vlastní filtr, člověk by v každém
+> viděl něco jiného a nechápal proč.
+
+Co filtr skryl, je vidět u počtu nad tabulkou (`5 z 210`).
+
 ### Čísla záznamů
 Každý záznam má viditelné ID, které se dá nadiktovat do telefonu:
 
@@ -386,6 +426,23 @@ Návaznost v **šabloně** se drží jako `zavisi_na_poradi` (pořadí předchů
 řádky s novými id — odkaz přes id by po kopii nesouhlasil. Krok nesmí navazovat sám na sebe
 (odmítne se), takže termín se nemůže zacyklit.
 
+### Filtry: jak to funguje uvnitř
+**Definice** filtrů drží backend (`crm_ulozene_filtry`), ale **samo filtrování a řazení běží
+na klientu** (`frontend/src/crmFiltry.js`). Důvody: seznamy vracejí stovky řádků, takže je
+to okamžité bez round-tripu; stejná logika obslouží tabulku i kanban; a nemusí se psát
+generátor SQL z uživatelských podmínek, což je klasický zdroj chyb i děr. Až budou
+desetitisíce záznamů, filtr se přesune na server — formát podmínek je na to připravený.
+
+Sloupce jsou **deklarativní** (`sloupceEntity`), takže hlavička tabulky, filtr sloupce
+i porovnávací funkce vycházejí z jednoho zdroje. Vlastní (admin definovaná) pole označená
+*v seznamu* se do filtrů přidávají automaticky jako textové sloupce.
+
+Podmínky se vyhodnocují jako **AND** (postupné zúžení). Filtry sloupců zapisují do stejného
+seznamu podmínek jako uložený filtr (mají jen příznak `zdroj: "sloupec"`), takže cokoli
+naklikaného ve sloupcích jde uložit jako vlastní filtr, aniž by se to zadávalo znovu.
+
+Prázdné hodnoty jdou při řazení **vždy na konec**, ať se nemíchají mezi vyplněné.
+
 ### Pipeline nabídek: jak to funguje uvnitř
 `app/crm/nabidky_pipeline.py`. Obchodní stav je sloupec `nabidky.stav_obchodni` (klíč do
 `crm_stavy`, entita `nab`), **nullable** — starším nabídkám se při čtení dopočítá první stav
@@ -445,6 +502,7 @@ Práva: **čtení definic** smí každý, kdo vidí CRM (z definic se kreslí fo
 | `crm_projekty` | realizace; `freelo_projekt_id` je most na Freelo projekt (koexistence) |
 | `crm_projekt_kroky` | kroky projektu; `zavisi_na_id` je skutečná návaznost mezi kroky |
 | `crm_projekt_sablony`, `crm_projekt_sablona_kroky` | šablony kroků; návaznost drží **pořadí** předchůdce, ne id |
+| `crm_ulozene_filtry` | uživatelské filtry: podmínky a řazení jako JSONB, příznaky sdílený/výchozí |
 
 Na `nabidky` (nabídkovač) přibyly dva sloupce: **`cislo`** (`NAB-26-NNNN`) a
 **`obchodni_pripad_id`**. Obojí je nullable schválně — nabídkovač jde pořád otevřít samostatně

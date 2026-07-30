@@ -894,3 +894,20 @@ export function crmMigraceStareNabidky(nasucho = true) {
 export function crmImportRaynet(nasucho = true) {
   return zavolej(`/crm/import/raynet?nasucho=${nasucho ? "true" : "false"}`, { method: "POST" });
 }
+
+// ---- CRM: uživatelské filtry (definice; filtruje se na klientu) ----
+export function crmFiltry(entita) {
+  return zavolej(`/crm/filtry/${entita}`);
+}
+
+export function crmFiltrUloz(entita, data) {
+  return zavolej(`/crm/filtry/${entita}`, { method: "POST", body: JSON.stringify(data) });
+}
+
+export function crmFiltrUprav(id, data) {
+  return zavolej(`/crm/filtry/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function crmFiltrSmaz(id) {
+  return zavolej(`/crm/filtry/${id}`, { method: "DELETE" });
+}
