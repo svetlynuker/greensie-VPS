@@ -765,3 +765,86 @@
   font-size: 13px;
   padding: 2px 0;
 }
+
+/* ---- kroky projektu ---- */
+.crm-kroky-seznam {
+  list-style: none;
+  counter-reset: krok;
+  margin: 0;
+  padding: 0;
+}
+.crm-krok {
+  counter-increment: krok;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--surface);
+}
+/* Krok, který čeká na nedokončeného předchůdce, je utlumený – nemá se do něj
+   pouštět, dokud nejde. */
+.crm-krok.ceka {
+  opacity: 0.62;
+}
+.crm-krok.hotovy .crm-krok-nazev {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.crm-krok-hlava {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.crm-krok-hlava::before {
+  content: counter(krok) ".";
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 18px;
+}
+.crm-krok-nazev {
+  flex: 1;
+  min-width: 120px;
+}
+.crm-krok-radek {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.crm-krok-pole {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.crm-krok-pata {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 11px;
+}
+.crm-odkaz-tlacitko {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fm-brand-dk, var(--text));
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Pruh postupu na dlaždici projektu */
+.crm-pruh {
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 20%, transparent);
+  overflow: hidden;
+  margin-top: 6px;
+}
+.crm-pruh > span {
+  display: block;
+  height: 100%;
+  background: var(--st-ok, #4a4);
+}

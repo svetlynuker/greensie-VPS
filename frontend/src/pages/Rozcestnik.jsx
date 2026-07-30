@@ -220,7 +220,7 @@ export default function Rozcestnik() {
             radky={souhrn.po_terminu}
             stav="crit"
             prazdne="Nic není po termínu"
-            onProjekty={() => navigate("/projekty")}
+            onProjekty={() => navigate("/prehled-projektu")}
           />
           <VypisUkolu
             nazev="Blíží se termín"
@@ -228,7 +228,7 @@ export default function Rozcestnik() {
             radky={souhrn.blizi_se}
             stav="warn"
             prazdne="V příštích 14 dnech nic nekončí"
-            onProjekty={() => navigate("/projekty")}
+            onProjekty={() => navigate("/prehled-projektu")}
           />
         </div>
       )}

@@ -52,7 +52,7 @@ class RadaVstup(BaseModel):
 
 
 # ---- vlastní (admin definovaná) pole ----------------------------------------
-EntitaPole = Literal["zakaznik", "op"]
+EntitaPole = Literal["zakaznik", "op", "obj", "pro"]
 TypPole = Literal["text", "dlouhy_text", "cislo", "datum", "ano_ne", "vyber"]
 
 
@@ -341,3 +341,193 @@ class UzivatelVolbaOut(BaseModel):
 
     id: int
     jmeno: str
+
+
+# ---- objednávky --------------------------------------------------------------
+class ObjednavkaRadekOut(BaseModel):
+    id: int
+    cislo: str
+    nazev: str = ""
+    pripad_id: int
+    pripad_cislo: str = ""
+    zakaznik_nazev: str = ""
+    nabidka_id: Optional[int] = None
+    nabidka_cislo: str = ""
+    cena_kc: Optional[float] = None
+    datum_podpisu: Optional[str] = None
+    datum_dodani: Optional[str] = None
+    stav: str
+    stav_nazev: str = ""
+    vlastnik_jmeno: Optional[str] = None
+    ma_projekt: bool = False
+    vytvoreno_at: Optional[str] = None
+    extra_text: dict = {}
+
+
+class ObjednavkaDetailOut(ObjednavkaRadekOut):
+    popis: str = ""
+    duvod_zruseni: str = ""
+    vlastnik_user_id: Optional[int] = None
+    spoluvlastnici: list[int] = []
+    extra: dict = {}
+    vlastni_pole: list[VlastniPoleOut] = []
+    projekt_id: Optional[int] = None
+    projekt_cislo: str = ""
+    muze_editovat: bool = True
+
+
+class ObjednavkaVstup(BaseModel):
+    """Založení objednávky. `nabidka_id` = z které nabídky vzniká (nepovinné,
+    ale obvyklé – převezme se z ní cena)."""
+
+    obchodni_pripad_id: Optional[int] = None
+    nabidka_id: Optional[int] = None
+    nazev: str = ""
+    popis: str = ""
+    cena_kc: Optional[float] = None
+    datum_podpisu: Optional[str] = None
+    datum_dodani: Optional[str] = None
+    vlastnik_user_id: Optional[int] = None
+    spoluvlastnici: list[int] = []
+    extra: dict = {}
+
+
+class ObjednavkaZmenaStavuVstup(BaseModel):
+    stav: str
+    duvod_zruseni: str = ""
+
+
+# ---- projekty ----------------------------------------------------------------
+class KrokOut(BaseModel):
+    id: int
+    nazev: str
+    popis: str = ""
+    poradi: int
+    stav: str
+    delka_dni: int = 1
+    zavisi_na_id: Optional[int] = None
+    zavisi_na_nazev: str = ""
+    termin: Optional[str] = None
+    termin_rucne: bool = False
+    hotovo_at: Optional[str] = None
+    odpovedny_user_id: Optional[int] = None
+    odpovedny_jmeno: Optional[str] = None
+    # Může se na kroku začít pracovat (předchůdce hotový)?
+    dostupny: bool = True
+    po_terminu: bool = False
+
+
+class KrokVstup(BaseModel):
+    nazev: str
+    popis: str = ""
+    delka_dni: int = 1
+    zavisi_na_id: Optional[int] = None
+    termin: Optional[str] = None
+    odpovedny_user_id: Optional[int] = None
+
+
+class KrokUprava(BaseModel):
+    nazev: Optional[str] = None
+    popis: Optional[str] = None
+    stav: Optional[str] = None
+    delka_dni: Optional[int] = None
+    zavisi_na_id: Optional[int] = None
+    termin: Optional[str] = None
+    odpovedny_user_id: Optional[int] = None
+
+
+class ProjektRadekOut(BaseModel):
+    id: int
+    cislo: str
+    nazev: str = ""
+    pripad_id: int
+    pripad_cislo: str = ""
+    zakaznik_nazev: str = ""
+    objednavka_cislo: str = ""
+    stav: str
+    stav_nazev: str = ""
+    zahajeni: Optional[str] = None
+    predani: Optional[str] = None
+    vlastnik_jmeno: Optional[str] = None
+    # Souhrn kroků: kolik hotovo, nejbližší termín, kolik po termínu
+    kroku: int = 0
+    hotovo: int = 0
+    procent: int = 0
+    nejblizsi_termin: Optional[str] = None
+    po_terminu: int = 0
+    freelo_projekt_id: Optional[int] = None
+    vytvoreno_at: Optional[str] = None
+    extra_text: dict = {}
+
+
+class ProjektDetailOut(ProjektRadekOut):
+    popis: str = ""
+    objednavka_id: Optional[int] = None
+    vlastnik_user_id: Optional[int] = None
+    spoluvlastnici: list[int] = []
+    extra: dict = {}
+    vlastni_pole: list[VlastniPoleOut] = []
+    kroky_seznam: list[KrokOut] = []
+    muze_editovat: bool = True
+
+
+class ProjektVstup(BaseModel):
+    """Projekt vzniká JEN z objednávky nebo z případu – proto je vždy potřeba
+    jedno z nich (viz kontrola v routes)."""
+
+    obchodni_pripad_id: Optional[int] = None
+    objednavka_id: Optional[int] = None
+    nazev: str = ""
+    popis: str = ""
+    zahajeni: Optional[str] = None
+    predani: Optional[str] = None
+    sablona_id: Optional[int] = None  # rozbalit kroky podle šablony
+    vlastnik_user_id: Optional[int] = None
+    spoluvlastnici: list[int] = []
+    extra: dict = {}
+
+
+class ProjektUprava(BaseModel):
+    nazev: str = ""
+    popis: str = ""
+    zahajeni: Optional[str] = None
+    predani: Optional[str] = None
+    freelo_projekt_id: Optional[int] = None
+    vlastnik_user_id: Optional[int] = None
+    spoluvlastnici: list[int] = []
+    extra: dict = {}
+
+
+class ProjektZmenaStavuVstup(BaseModel):
+    stav: str
+
+
+# ---- šablony projektových kroků ---------------------------------------------
+class SablonaKrokOut(BaseModel):
+    id: int
+    nazev: str
+    popis: str = ""
+    poradi: int
+    delka_dni: int = 1
+    zavisi_na_poradi: Optional[int] = None
+
+
+class SablonaKrokVstup(BaseModel):
+    nazev: str
+    popis: str = ""
+    delka_dni: int = 1
+    zavisi_na_poradi: Optional[int] = None
+
+
+class SablonaOut(BaseModel):
+    id: int
+    nazev: str
+    popis: str = ""
+    kategorie: list[str] = []
+    kroky: list[SablonaKrokOut] = []
+
+
+class SablonaVstup(BaseModel):
+    nazev: str
+    popis: str = ""
+    kategorie: list[str] = []

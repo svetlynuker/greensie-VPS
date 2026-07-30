@@ -13,6 +13,9 @@ import Zakaznici from "./pages/Zakaznici";
 import ZakaznikDetail from "./pages/ZakaznikDetail";
 import ObchodniPripady from "./pages/ObchodniPripady";
 import Nabidky from "./pages/Nabidky";
+import Objednavky from "./pages/Objednavky";
+import Projekty from "./pages/Projekty";
+import ProjektDetail from "./pages/ProjektDetail";
 import ObchodniPripadDetail from "./pages/ObchodniPripadDetail";
 import AdminNastaveni from "./pages/AdminNastaveni";
 import Logy from "./pages/Logy";
@@ -93,7 +96,33 @@ export default function App() {
           }
         />
         <Route
+          path="/objednavky"
+          element={
+            <VyzadujePrihlaseni>
+              <Objednavky />
+            </VyzadujePrihlaseni>
+          }
+        />
+        {/* CRM projekty žijí na /projekty; starý Přehled projektů (matice
+            z Freela) zůstává na /prehled-projektu, dokud ho appka nenahradí. */}
+        <Route
           path="/projekty"
+          element={
+            <VyzadujePrihlaseni>
+              <Projekty />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/projekty/detail/:id"
+          element={
+            <VyzadujePrihlaseni>
+              <ProjektDetail />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/prehled-projektu"
           element={
             <VyzadujePrihlaseni>
               <PrehledProjektu />

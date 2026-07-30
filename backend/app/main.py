@@ -24,6 +24,7 @@ from app.konektor import models as konektor_models  # noqa: F401 - registrace mo
 from app.konektor.routes import router as konektor_router
 from app.crm import models as crm_models  # noqa: F401 - registrace modelů
 from app.crm.routes import router as crm_router
+from app.crm.routes_realizace import router as crm_realizace_router
 from app.manual.routes import router as manual_router
 from app.database import Base, engine
 
@@ -170,7 +171,7 @@ def _lehka_migrace():
         # CRM: hodnoty vlastních (admin definovaných) polí. Tabulky
         # `crm_zakaznici` / `crm_obchodni_pripady` mohly vzniknout ještě bez
         # tohoto sloupce – create_all ho do existující tabulky nepřidá.
-        for tabulka in ("crm_zakaznici", "crm_obchodni_pripady"):
+        for tabulka in ("crm_zakaznici", "crm_obchodni_pripady", "crm_objednavky", "crm_projekty"):
             conn.execute(
                 text(
                     f"ALTER TABLE {tabulka} ADD COLUMN IF NOT EXISTS extra "
@@ -293,6 +294,7 @@ def _seed_crm():
     přepisovaly zpátky.
     """
     from app.crm.ciselne_rady import seed_rady
+    from app.crm.projekty_kroky import seed_sablony
     from app.crm.stavy import seed_stavy
     from app.database import SessionLocal
 
@@ -300,6 +302,9 @@ def _seed_crm():
     try:
         seed_stavy(db)
         seed_rady(db)
+        # Šablony projektových kroků – bez nich by si každý projekt psal kroky
+        # ručně a pokaždé jinak.
+        seed_sablony(db)
     finally:
         db.close()
 
@@ -342,6 +347,7 @@ app.include_router(zmeny_router)
 app.include_router(admin_router)
 app.include_router(konektor_router)
 app.include_router(crm_router)
+app.include_router(crm_realizace_router)
 app.include_router(manual_router)
 app.include_router(dashboard_router)
 
