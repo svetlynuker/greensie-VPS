@@ -6,6 +6,7 @@ import KalendarMesic from "../components/KalendarMesic";
 import KalendarTyden from "../components/KalendarTyden";
 import KalendarFiltry from "../components/KalendarFiltry";
 import {
+  crmAktivitaUprav,
   crmFiltrUloz,
   crmFiltry,
   crmKalendar,
@@ -148,6 +149,40 @@ export default function Kalendar() {
   function vyberDen(iso) {
     setVybranyDen(iso);
     setPondeli(pondeliTydne(new Date(`${iso}T12:00:00`)));
+  }
+
+  /**
+   * Uloží přesun nebo změnu délky z tažení v mřížce.
+   *
+   * Překreslí se HNED (optimisticky) a teprve pak se volá server — jinak by
+   * dlaždice po puštění skočila zpátky a doskočila až s odpovědí, což vypadá
+   * jako porucha. Když uložení selže, vrátí se původní stav a řekne se proč.
+   */
+  async function presunAktivitu(u, zmena) {
+    const puvodni = udalosti;
+    setUdalosti((seznam) =>
+      seznam.map((x) =>
+        x.id === u.id
+          ? {
+              ...x,
+              termin: zmena.termin ?? x.termin,
+              konec: zmena.konec ?? x.konec,
+              zacatek:
+                zmena.cas !== undefined
+                  ? `${zmena.termin ?? x.termin}T${zmena.cas.padStart(5, "0")}:00`
+                  : x.zacatek,
+              delka_min: zmena.delka_min ?? x.delka_min,
+            }
+          : x
+      )
+    );
+    try {
+      await crmAktivitaUprav(u.id, zmena);
+      await nacti();
+    } catch (e) {
+      setUdalosti(puvodni);
+      setChyba(`Přesun se nepodařilo uložit: ${e.message}`);
+    }
   }
 
   // ---- filtrování ----
@@ -349,6 +384,7 @@ export default function Kalendar() {
             onDen={setVybranyDen}
             onUdalost={setDetail}
             onPrazdno={(iso) => setVybranyDen(iso)}
+            onPresun={presunAktivitu}
           />
         </div>
       </div>

@@ -107,6 +107,20 @@ def v_rozsahu(q: Query, od: date, do: date) -> Query:
     )
 
 
+def muze_menit(a: CrmAktivita, user: User) -> bool:
+    """Smí uživatel aktivitu upravit (přesunout, uzavřít, smazat)?
+
+    Stejné pravidlo jako pro vidění detailu: vlastník, autor, účastník, nebo
+    kdo má `crm_vse` — a u soukromé události jen ti první tři. Vedení tak může
+    podřízenému přesunout schůzku, ale ne hrabat mu do dovolené.
+
+    Je to schválně jediné pravidlo pro čtení i zápis: kdyby se rozdělila,
+    vznikl by stav „vidím detail, ale nemůžu s ním nic udělat", který v UI
+    nejde vysvětlit.
+    """
+    return _cely_detail(a, user)
+
+
 def _cely_detail(a: CrmAktivita, user: User) -> bool:
     """Smí tenhle uživatel vidět obsah události, nebo jen obsazený čas?"""
     if a.vlastnik_user_id == user.id or a.vytvoril_user_id == user.id:
