@@ -133,6 +133,7 @@ const POPISY = {
   "/logy": ["Logy", "Provoz, chyby a audit"],
   "/admin": ["Admin nastavení", "Uživatelé, skupiny a oprávnění"],
   "/manual": ["Manuál", "Návody modul po modulu"],
+  "/nastaveni": ["Nastavení", "Tvoje osobní volby"],
   "/zmena-hesla": ["Změna hesla", "Zabezpečení účtu"],
 };
 

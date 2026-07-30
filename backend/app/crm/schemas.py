@@ -10,6 +10,10 @@ DruhStavu = Literal["otevreny", "vyhra", "prohra"]
 # Kategorie případu ZÁMĚRNĚ není Literal – je to konfigurovatelný seznam
 # v tabulce `crm_kategorie` (CRM-03). Validuje se proti DB, ne typem.
 DruhAktivity = Literal["poznamka", "telefon", "email", "schuzka", "ukol"]
+# Naplánováno → realizováno / nekonalo se. Enum je tu na místě (na rozdíl od
+# kategorií případu): stavy aktivity nejsou konfigurovatelné, protože na nich
+# stojí výpis „moje úkoly" a statistika činnosti.
+StavAktivity = Literal["naplanovano", "realizovano", "nekonalo_se"]
 
 
 # ---- stavy pipeline ----------------------------------------------------------
@@ -302,13 +306,27 @@ class NabidkaZmenaStavuVstup(BaseModel):
 
 # ---- aktivity ---------------------------------------------------------------
 class AktivitaOut(BaseModel):
+    """Aktivita v logu práce i v kalendáři.
+
+    `entita`/`zaznam_id` jsou nepovinné kvůli soukromým událostem (dovolená,
+    doktor) — ty klienta nemají. `stav` nahradil dřívější boolean `hotovo`,
+    aby se odlišila proběhlá schůzka od zrušené.
+    """
+
     id: int
-    entita: str
-    zaznam_id: int
+    entita: Optional[str] = None
+    zaznam_id: Optional[int] = None
     druh: DruhAktivity
+    nazev: str = ""
     text: str = ""
-    termin: Optional[str] = None
-    hotovo: bool = False
+    termin: Optional[str] = None  # den
+    zacatek: Optional[str] = None  # den + hodina (kalendář); prázdné = celodenní
+    delka_min: Optional[int] = None
+    stav: StavAktivity = "naplanovano"
+    vysledek: str = ""
+    soukroma: bool = False
+    ucastnici: list[int] = []
+    vlastnik_user_id: Optional[int] = None
     vlastnik_jmeno: Optional[str] = None
     vytvoril_jmeno: Optional[str] = None
     vytvoreno_at: Optional[str] = None
@@ -350,15 +368,93 @@ class UkolOut(AktivitaOut):
 
 class AktivitaVstup(BaseModel):
     druh: DruhAktivity = "poznamka"
+    nazev: str = ""
     text: str = ""
-    termin: Optional[str] = None
+    termin: Optional[str] = None  # ISO den
+    # Čas začátku ve formátu „09:30". Prázdný = celodenní (úkol bez hodiny).
+    # Posílá se zvlášť od dne, aby si UI nemuselo skládat ISO datetime.
+    cas: Optional[str] = None
+    delka_min: Optional[int] = None
     vlastnik_user_id: Optional[int] = None
+    ucastnici: list[int] = []
 
 
 class AktivitaUprava(BaseModel):
+    """Částečná úprava — pošle se jen to, co se mění (`None` = neměnit).
+
+    Proto `stav` a `vysledek` zvlášť: „označit jako realizované a napsat, co
+    z toho vyšlo" je nejčastější úprava v kalendáři a nemá přepisovat popis.
+    """
+
+    nazev: Optional[str] = None
     text: Optional[str] = None
     termin: Optional[str] = None
-    hotovo: Optional[bool] = None
+    cas: Optional[str] = None
+    delka_min: Optional[int] = None
+    stav: Optional[StavAktivity] = None
+    vysledek: Optional[str] = None
+    ucastnici: Optional[list[int]] = None
+
+
+# ---- kalendář ---------------------------------------------------------------
+class UdalostVstup(BaseModel):
+    """Nová událost zakládaná z kalendáře.
+
+    Liší se od `AktivitaVstup` tím, že si nese, čeho se týká: klik do mřížky
+    ještě neví, jestli půjde o schůzku u klienta, nebo o soukromý blok. Buď se
+    pošle `entita` + `zaznam_id` (obojí, nebo nic), nebo `soukroma=True`.
+    """
+
+    druh: DruhAktivity = "schuzka"
+    nazev: str
+    text: str = ""
+    termin: str  # ISO den, povinný — událost bez data v kalendáři nemá místo
+    cas: Optional[str] = None  # „09:30"; prázdné = celodenní
+    delka_min: Optional[int] = None
+    entita: Optional[str] = None
+    zaznam_id: Optional[int] = None
+    soukroma: bool = False
+    vlastnik_user_id: Optional[int] = None
+    ucastnici: list[int] = []
+
+
+class KalendarUdalostOut(BaseModel):
+    """Jedna událost v kalendáři — a to, kolik se o ní smí prozradit.
+
+    `muze_detail=False` znamená, že uživatel vidí jen obsazený čas: `nazev` je
+    „Soukromá událost" nebo „Obsazeno" a obsahová pole jsou prázdná už
+    z backendu. Schovávat je až v prohlížeči by nestačilo — v odpovědi API by
+    si je přečetl kdokoli (viz `crm/kalendar.py`).
+    """
+
+    id: int
+    druh: DruhAktivity
+    nazev: str = ""
+    text: str = ""
+    vysledek: str = ""
+    stav: StavAktivity = "naplanovano"
+    termin: Optional[str] = None
+    zacatek: Optional[str] = None
+    delka_min: int = 30
+    cely_den: bool = False
+    soukroma: bool = False
+    entita: Optional[str] = None
+    zaznam_id: Optional[int] = None
+    zaznam_nazev: str = ""
+    cesta: str = ""
+    ucastnici: list[int] = []
+    vlastnik_user_id: Optional[int] = None
+    vlastnik_jmeno: Optional[str] = None
+    muze_detail: bool = True
+
+
+class KalendarOut(BaseModel):
+    """Týden v kalendáři. `od`/`do` posílá backend zpátky schválně — UI si tak
+    nemusí samo počítat, na které pondělí dotaz vlastně spadl."""
+
+    od: str
+    do: str
+    udalosti: list[KalendarUdalostOut] = []
 
 
 # ---- kanban -----------------------------------------------------------------

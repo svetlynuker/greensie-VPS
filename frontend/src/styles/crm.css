@@ -562,6 +562,20 @@
   color: var(--muted);
   margin-top: 3px;
 }
+/* Výsledek aktivity („zavolal jsem, chce to po dovolené") – to hodnotné, co
+   z aktivity vyšlo. Odsazený svislou linkou, ať se nepletl s popisem. */
+.crm-osa-vysledek {
+  font-size: 12px;
+  margin-top: 4px;
+  padding-left: 8px;
+  border-left: 2px solid var(--line);
+  color: var(--text);
+  white-space: pre-wrap;
+}
+/* Přeškrtnutí uzavřené aktivity se na výsledek nevztahuje – ten se má číst. */
+.crm-osa-radek.hotovo .crm-osa-vysledek {
+  text-decoration: none;
+}
 .crm-po-terminu {
   color: var(--st-crit);
   font-weight: 600;
@@ -920,4 +934,65 @@
   gap: 6px;
   flex-wrap: wrap;
   padding: 5px 0;
+}
+
+/* ---- stránka Nastavení ---- */
+/* Řádek „název volby vlevo, přepínač vpravo". Zalamuje se, aby na mobilu
+   přepínač nevytlačil popis mimo obrazovku. */
+.crm-nastaveni-radek {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.crm-nastaveni-radek:last-child {
+  border-bottom: 0;
+}
+.crm-nastaveni-radek > div:first-child {
+  flex: 1;
+  min-width: 220px;
+}
+.crm-nastaveni-nazev {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Volba barev druhů aktivit. auto-fill, ať se počet sloupců řídí šířkou karty
+   a nemusel se nastavovat podle počtu druhů. */
+.crm-barvy-mrizka {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+  margin-top: 6px;
+}
+.crm-barva-volba {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+/* Náhled je zároveň ukázka dlaždice v kalendáři – barva textu se dopočítává
+   podle svítivosti podkladu (viz barvyAktivit.js), takže je vždy čitelný. */
+.crm-barva-nahled {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.crm-barva-pole {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 32px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  cursor: pointer;
 }

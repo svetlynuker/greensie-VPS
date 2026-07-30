@@ -29,8 +29,10 @@ from app.crm.schemas import UkolOut
 from app.nabidkovac.models import Nabidka
 
 # Entita aktivity → model záznamu, sloupec s lidským názvem a cesta ve frontendu.
-# `cesta` je None u entit, které nemají obrazovku detailu — proklik pak vede na
-# seznam (lepší než mrtvý odkaz).
+# U entit bez obrazovky detailu vede cesta na seznam (lepší než mrtvý odkaz).
+#
+# Používá to i kalendář (`crm/kalendar.py`) — je to jediná mapa „na co odkazuje
+# aktivita", takže nová entita se doplňuje jen tady.
 ENTITY = {
     "zakaznik": (Zakaznik, "nazev", "/zakaznici/detail/{id}"),
     "op": (ObchodniPripad, "nazev", "/pripady/detail/{id}"),
@@ -40,7 +42,7 @@ ENTITY = {
 }
 
 
-def _popisy(db: Session, entita: str, ids: set[int]) -> dict[int, str]:
+def popisy_zaznamu(db: Session, entita: str, ids: set[int]) -> dict[int, str]:
     """id → lidský popis záznamu („Firma s.r.o.", „OP-26-0301 · Střecha")."""
     zaznam = ENTITY.get(entita)
     if zaznam is None or not ids:
@@ -59,7 +61,7 @@ def _popisy(db: Session, entita: str, ids: set[int]) -> dict[int, str]:
     return out
 
 
-def _cesta(entita: str, zaznam_id: int) -> str:
+def cesta_zaznamu(entita: str, zaznam_id: int) -> str:
     zaznam = ENTITY.get(entita)
     if zaznam is None:
         return ""
@@ -76,7 +78,7 @@ def moje_ukoly(db: Session, user: User, limit: int | None = None) -> list[UkolOu
         db.query(CrmAktivita)
         .filter(
             CrmAktivita.vlastnik_user_id == user.id,
-            CrmAktivita.hotovo.is_(False),
+            CrmAktivita.stav == "naplanovano",
             CrmAktivita.termin.isnot(None),
         )
         .order_by(CrmAktivita.termin.asc())
@@ -87,11 +89,18 @@ def moje_ukoly(db: Session, user: User, limit: int | None = None) -> list[UkolOu
     if not radky:
         return []
 
-    # Jeden dotaz na entitu, ne na řádek.
+    # Jeden dotaz na entitu, ne na řádek. Aktivity bez entity (soukromé
+    # události) se přeskočí — nemají u čeho viset.
     podle_entity: dict[str, set[int]] = {}
     for a in radky:
-        podle_entity.setdefault(a.entita, set()).add(a.zaznam_id)
-    popisy = {e: _popisy(db, e, ids) for e, ids in podle_entity.items()}
+        if a.entita and a.zaznam_id:
+            podle_entity.setdefault(a.entita, set()).add(a.zaznam_id)
+    popisy = {e: popisy_zaznamu(db, e, ids) for e, ids in podle_entity.items()}
+
+    def popis(a: CrmAktivita) -> str:
+        if a.soukroma or not a.entita:
+            return "Soukromá událost"
+        return popisy.get(a.entita, {}).get(a.zaznam_id, f"#{a.zaznam_id}")
 
     dnes = date.today()
     return [
@@ -100,14 +109,21 @@ def moje_ukoly(db: Session, user: User, limit: int | None = None) -> list[UkolOu
             entita=a.entita,
             zaznam_id=a.zaznam_id,
             druh=a.druh,
+            nazev=a.nazev or "",
             text=a.text or "",
             termin=a.termin.isoformat() if a.termin else None,
-            hotovo=False,
+            zacatek=a.zacatek.isoformat() if a.zacatek else None,
+            delka_min=a.delka_min,
+            stav=a.stav,
+            vysledek=a.vysledek or "",
+            soukroma=bool(a.soukroma),
+            ucastnici=list(a.ucastnici or []),
+            vlastnik_user_id=a.vlastnik_user_id,
             vlastnik_jmeno=(a.vlastnik.jmeno if a.vlastnik else None),
             vytvoril_jmeno=(a.vytvoril.jmeno if a.vytvoril else None),
             vytvoreno_at=(a.vytvoreno_at.isoformat() if a.vytvoreno_at else None),
-            zaznam_nazev=popisy.get(a.entita, {}).get(a.zaznam_id, f"#{a.zaznam_id}"),
-            cesta=_cesta(a.entita, a.zaznam_id),
+            zaznam_nazev=popis(a),
+            cesta=cesta_zaznamu(a.entita, a.zaznam_id) if a.entita else "",
             dni=(dnes - a.termin).days,
         )
         for a in radky
@@ -118,7 +134,7 @@ def pocty(db: Session, user: User) -> tuple[int, int, int]:
     """(po termínu, dnes, celkem) — čísla do KPI dlaždic na Rozcestníku."""
     zaklad = db.query(CrmAktivita).filter(
         CrmAktivita.vlastnik_user_id == user.id,
-        CrmAktivita.hotovo.is_(False),
+        CrmAktivita.stav == "naplanovano",
         CrmAktivita.termin.isnot(None),
     )
     dnes = date.today()

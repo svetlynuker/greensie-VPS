@@ -322,6 +322,35 @@ je něco po termínu, oranžově u dnešních termínů.
 > Jsou to vždycky **jen tvoje** úkoly. I vedení, které jinak vidí všechny záznamy, tu má
 > svoje — jinak by tahle karta byla seznam práce celé firmy a nikdo by v ní nic nenašel.
 
+#### Uzavření aktivity: co z ní vyšlo
+Aktivita s termínem má tři stavy a **appka se při uzavírání zeptá na výsledek**:
+
+| Stav | Kdy ho použít |
+|---|---|
+| **Naplánováno** | čeká to na tebe, počítá se do „moje úkoly" |
+| **Realizováno** | proběhlo — do výsledku napiš, jak to šlo |
+| **Nekonalo se** | schůzku zákazník zrušil, nedovolal jsi se — do výsledku napiš proč |
+
+Proč to není jedno zaškrtávátko „hotovo": schůzka, která proběhla, a schůzka, kterou zákazník
+zrušil, jsou dvě různé věci. Kdyby obojí spadlo pod „hotovo", nešlo by spočítat, kolik jednání
+se opravdu odehrálo. A výsledek („volal jsem, chce to probrat po dovolené") je ta hodnotná
+informace — bez ní zůstane v CRM jen odškrtnutý řádek.
+
+Špatně uzavřená aktivita se dá vrátit tlačítkem **Vrátit** mezi naplánované.
+
+### Nastavení: tvoje osobní volby
+V nabídce u svého jména vpravo nahoře je **Nastavení**. Je to jedno místo pro všechno, co si
+každý nastavuje sám:
+
+- **režim zobrazení** (světlý / tmavý), **velikost textu**, **režim pro barvoslepé**,
+- **barvy druhů aktivit v kalendáři** — podle barvy poznáš na první pohled, co tě čeká.
+
+Všechno je uložené u tvého účtu, ne v prohlížeči, takže to platí i na jiném počítači. A je to
+**jen tvoje** — kolegům se kalendář nepřebarví.
+
+> Nastavení firmy (stavy pipeline, kategorie, práva, uživatelé) je jinde — v **Admin
+> nastavení**. Sem patří jen to, co je osobní.
+
 ### Vlastní pole: když chcete sledovat něco dalšího
 Rozhodne se, že u obchodního případu chcete vést třeba **číslo odběrného místa** nebo
 **napěťovou hladinu**? Není na to potřeba programátor. Na kartě zákazníka i případu je blok

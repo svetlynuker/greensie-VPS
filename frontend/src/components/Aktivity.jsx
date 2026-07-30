@@ -5,7 +5,15 @@ import {
   crmAktivitaUprav,
   crmAktivity,
 } from "../api";
-import { DRUHY_AKTIVITY, fmtDatum, jePoTerminu } from "../crm";
+import {
+  DRUHY_AKTIVITY,
+  STAVY_AKTIVITY,
+  fmtCas,
+  fmtDatum,
+  jeNaplanovana,
+  jePoTerminu,
+  nazevStavuAktivity,
+} from "../crm";
 
 /**
  * Log práce se záznamem: poznámky, telefonáty, e-maily, schůzky a úkoly.
@@ -59,9 +67,28 @@ export default function Aktivity({ entita, zaznamId }) {
     }
   }
 
-  async function prepniHotovo(a) {
+  /** Uzavření aktivity: proběhla, nebo se nekonala — a s jakým výsledkem.
+   *
+   *  Výsledek se ptá jen při uzavírání. „Zavolal jsem, chce to po dovolené" je
+   *  ta hodnotná informace; bez ní by v CRM zůstalo jen odškrtnuté políčko. */
+  async function uzavri(a, stav) {
+    const otazka =
+      stav === "realizovano"
+        ? "Jak to šlo? (nepovinné)"
+        : "Proč se to nekonalo? (nepovinné)";
+    const vysledek = window.prompt(otazka, a.vysledek || "");
+    if (vysledek === null) return; // Escape = nechat být
     try {
-      await crmAktivitaUprav(a.id, { hotovo: !a.hotovo });
+      await crmAktivitaUprav(a.id, { stav, vysledek });
+      await nacti();
+    } catch (e) {
+      setChyba(e.message);
+    }
+  }
+
+  async function vratDoPlanu(a) {
+    try {
+      await crmAktivitaUprav(a.id, { stav: "naplanovano" });
       await nacti();
     } catch (e) {
       setChyba(e.message);
@@ -138,35 +165,67 @@ export default function Aktivity({ entita, zaznamId }) {
           {seznam.map((a) => {
             const d = DRUHY_AKTIVITY.find((x) => x.klic === a.druh);
             const jeUkol = Boolean(a.termin);
-            const poTerminu = jeUkol && !a.hotovo && jePoTerminu(a.termin);
+            const ceka = jeNaplanovana(a);
+            const poTerminu = jeUkol && ceka && jePoTerminu(a.termin);
+            const stav = STAVY_AKTIVITY.find((s) => s.klic === a.stav);
             return (
-              <li key={a.id} className={`crm-osa-radek ${a.hotovo ? "hotovo" : ""}`}>
+              <li key={a.id} className={`crm-osa-radek ${ceka ? "" : "hotovo"}`}>
                 <span className="crm-osa-ikona" aria-hidden="true">
                   {d?.ikona || "•"}
                 </span>
                 <div className="crm-osa-telo">
-                  <div className="crm-osa-text">{a.text}</div>
+                  <div className="crm-osa-text">
+                    {a.nazev ? <b>{a.nazev}</b> : null}
+                    {a.nazev && a.text ? " — " : ""}
+                    {a.text}
+                  </div>
+                  {a.vysledek && (
+                    <div className="crm-osa-vysledek">
+                      <b>{a.stav === "nekonalo_se" ? "Nekonalo se:" : "Výsledek:"}</b>{" "}
+                      {a.vysledek}
+                    </div>
+                  )}
                   <div className="crm-osa-meta">
                     {d?.nazev || a.druh}
+                    {!ceka && stav ? ` · ${stav.nazev}` : ""}
                     {a.vytvoril_jmeno ? ` · ${a.vytvoril_jmeno}` : ""}
                     {a.vytvoreno_at ? ` · ${fmtDatum(a.vytvoreno_at)}` : ""}
                     {jeUkol && (
                       <span className={poTerminu ? "crm-po-terminu" : "crm-termin-ok"}>
                         {" · termín "}
                         {fmtDatum(a.termin)}
+                        {a.zacatek ? ` ${fmtCas(a.zacatek, a.delka_min)}` : ""}
                         {poTerminu ? " (po termínu)" : ""}
                       </span>
                     )}
                     {a.vlastnik_jmeno && jeUkol ? ` · řeší ${a.vlastnik_jmeno}` : ""}
                   </div>
                 </div>
-                {jeUkol && (
+                {jeUkol && ceka && (
+                  <>
+                    <button
+                      className="fm-btn crm-btn-maly"
+                      onClick={() => uzavri(a, "realizovano")}
+                      title="Proběhlo — zapiš, jak to šlo"
+                    >
+                      Realizováno
+                    </button>
+                    <button
+                      className="fm-btn crm-btn-maly"
+                      onClick={() => uzavri(a, "nekonalo_se")}
+                      title="Nekonalo se — zapiš proč"
+                    >
+                      Nekonalo se
+                    </button>
+                  </>
+                )}
+                {jeUkol && !ceka && (
                   <button
                     className="fm-btn crm-btn-maly"
-                    onClick={() => prepniHotovo(a)}
-                    title={a.hotovo ? "Vrátit jako nedokončené" : "Označit jako hotové"}
+                    onClick={() => vratDoPlanu(a)}
+                    title={`${nazevStavuAktivity(a.stav)} — vrátit mezi naplánované`}
                   >
-                    {a.hotovo ? "Vrátit" : "Hotovo"}
+                    Vrátit
                   </button>
                 )}
                 <button

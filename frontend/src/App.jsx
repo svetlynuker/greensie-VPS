@@ -22,6 +22,7 @@ import Logy from "./pages/Logy";
 import Konektor from "./pages/Konektor";
 import Manual from "./pages/Manual";
 import ZmenaHesla from "./pages/ZmenaHesla";
+import Nastaveni from "./pages/Nastaveni";
 import { getToken } from "./api";
 
 function VyzadujePrihlaseni({ children }) {
@@ -38,6 +39,15 @@ export default function App() {
           element={
             <VyzadujePrihlaseni>
               <ZmenaHesla />
+            </VyzadujePrihlaseni>
+          }
+        />
+        {/* Osobní nastavení – nepotřebuje právo, každý spravuje svoje volby. */}
+        <Route
+          path="/nastaveni"
+          element={
+            <VyzadujePrihlaseni>
+              <Nastaveni />
             </VyzadujePrihlaseni>
           }
         />

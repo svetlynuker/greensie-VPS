@@ -231,6 +231,49 @@ def _lehka_migrace():
             )
         )
 
+        # CRM aktivity → kalendář (etapa K1). Aktivita se učí čas, stav
+        # a soukromou událost; `create_all` nové sloupce do existující tabulky
+        # nepřidá, proto ručně.
+        for sloupec, definice in (
+            ("nazev", "VARCHAR NOT NULL DEFAULT ''"),
+            ("zacatek", "TIMESTAMPTZ"),
+            ("delka_min", "INTEGER"),
+            ("stav", "VARCHAR NOT NULL DEFAULT 'naplanovano'"),
+            ("vysledek", "TEXT NOT NULL DEFAULT ''"),
+            ("soukroma", "BOOLEAN NOT NULL DEFAULT false"),
+            ("ucastnici", "INTEGER[] NOT NULL DEFAULT '{}'"),
+        ):
+            conn.execute(
+                text(f"ALTER TABLE crm_aktivity ADD COLUMN IF NOT EXISTS {sloupec} {definice}")
+            )
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_crm_aktivity_zacatek ON crm_aktivity (zacatek)")
+        )
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_crm_aktivity_stav ON crm_aktivity (stav)")
+        )
+        # Soukromá událost nemá klienta ani případ, takže obojí musí být
+        # nepovinné. IF EXISTS obalení není potřeba – DROP NOT NULL je
+        # idempotentní.
+        conn.execute(text("ALTER TABLE crm_aktivity ALTER COLUMN entita DROP NOT NULL"))
+        conn.execute(text("ALTER TABLE crm_aktivity ALTER COLUMN zaznam_id DROP NOT NULL"))
+        # Boolean `hotovo` nahradil `stav`. Hodnotu je nutné PŘENÉST, ne jen
+        # sloupec zahodit – jinak by se z hotových úkolů staly nedokončené
+        # a vyskočily lidem v „moje úkoly". Teprve pak se sloupec ruší, aby
+        # nezůstaly dva zdroje pravdy, které se rozejdou. Obojí v jednom SQL
+        # bloku, aby nemohlo dojít k dropnutí bez přenesení.
+        conn.execute(
+            text(
+                "DO $$ BEGIN "
+                "IF EXISTS (SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'crm_aktivity' AND column_name = 'hotovo') THEN "
+                "UPDATE crm_aktivity SET stav = "
+                "CASE WHEN hotovo THEN 'realizovano' ELSE 'naplanovano' END; "
+                "ALTER TABLE crm_aktivity DROP COLUMN hotovo; "
+                "END IF; END $$;"
+            )
+        )
+
 
 _lehka_migrace()
 

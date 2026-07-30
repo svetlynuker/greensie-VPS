@@ -11,7 +11,7 @@ Dvě věci, které se prolínají všemi endpointy:
    nepřepisuje – stojí na něm párování složek na Disku a Freelo projektů.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_
@@ -22,6 +22,7 @@ from app.auth.permissions import get_current_user, muze_otevrit
 from app.crm import ares as ares_modul
 from app.crm import (
     ciselne_rady,
+    kalendar,
     kategorie as kategorie_modul,
     nabidky_pipeline,
     stavy as stavy_modul,
@@ -31,6 +32,8 @@ from app.crm import (
 from app.crm.models import (
     DRUHY_AKTIVITY,
     DRUHY_STAVU,
+    STAVY_AKTIVITY,
+    STAVY_UZAVRENE,
     ENTITY_AKTIVIT,
     ENTITY_CRM,
     KATEGORIE_OP,
@@ -73,6 +76,8 @@ from app.crm.schemas import (
     PripadRadekOut,
     PripadUprava,
     PripadVstup,
+    KalendarOut,
+    KalendarUdalostOut,
     KategorieOut,
     KategorieVstup,
     RadaOut,
@@ -80,6 +85,7 @@ from app.crm.schemas import (
     StavOut,
     StavVstup,
     StavyPoradi,
+    UdalostVstup,
     UkolOut,
     UzivatelVolbaOut,
     VlastniPoleOut,
@@ -1097,13 +1103,35 @@ def _aktivita_out(a: CrmAktivita) -> AktivitaOut:
         entita=a.entita,
         zaznam_id=a.zaznam_id,
         druh=a.druh,
+        nazev=a.nazev or "",
         text=a.text or "",
         termin=_iso(a.termin),
-        hotovo=bool(a.hotovo),
+        zacatek=_iso(a.zacatek),
+        delka_min=a.delka_min,
+        stav=a.stav,
+        vysledek=a.vysledek or "",
+        soukroma=bool(a.soukroma),
+        ucastnici=list(a.ucastnici or []),
+        vlastnik_user_id=a.vlastnik_user_id,
         vlastnik_jmeno=_jmeno(a.vlastnik),
         vytvoril_jmeno=_jmeno(a.vytvoril),
         vytvoreno_at=_iso(a.vytvoreno_at),
     )
+
+
+def _over_ucastniky(db: Session, ids: list[int]) -> list[int]:
+    """Ověří, že účastníci existují, a zahodí duplicity."""
+    unikatni = list(dict.fromkeys(ids or []))
+    if not unikatni:
+        return []
+    nalezeni = {u for (u,) in db.query(User.id).filter(User.id.in_(unikatni)).all()}
+    chybi = [i for i in unikatni if i not in nalezeni]
+    if chybi:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Účastník s id {', '.join(map(str, chybi))} neexistuje.",
+        )
+    return unikatni
 
 
 @router.get("/aktivity/{entita}/{zaznam_id}", response_model=list[AktivitaOut])
@@ -1117,8 +1145,10 @@ def seznam_aktivit(
     radky = (
         db.query(CrmAktivita)
         .filter(CrmAktivita.entita == entita, CrmAktivita.zaznam_id == zaznam_id)
-        # Nedokončené úkoly nahoře, pak nejnovější – OZ řeší, co ho tlačí.
-        .order_by(CrmAktivita.hotovo, CrmAktivita.vytvoreno_at.desc())
+        # Naplánované nahoře, pak nejnovější – OZ řeší, co ho tlačí.
+        # `stav` řadí abecedně: naplanovano < nekonalo_se < realizovano, což
+        # náhodou dává přesně požadované pořadí (čekající první).
+        .order_by(CrmAktivita.stav, CrmAktivita.vytvoreno_at.desc())
         .all()
     )
     return [_aktivita_out(a) for a in radky]
@@ -1143,15 +1173,21 @@ def pridej_aktivitu(
     if not db.query(User.id).filter(User.id == vlastnik).first():
         raise HTTPException(status_code=422, detail="Zvolený řešitel neexistuje.")
 
+    den = _parse_datum(vstup.termin, "termín")
     a = CrmAktivita(
         entita=entita,
         zaznam_id=zaznam_id,
         druh=vstup.druh,
+        nazev=(vstup.nazev or "").strip(),
         text=text,
-        termin=_parse_datum(vstup.termin, "termín"),
+        termin=den,
+        zacatek=kalendar.datum_a_cas(den, vstup.cas) if den else None,
+        delka_min=vstup.delka_min,
         vlastnik_user_id=vlastnik,
+        ucastnici=_over_ucastniky(db, vstup.ucastnici),
         vytvoril_user_id=user.id,
     )
+    kalendar.srovnej_termin(a)
     db.add(a)
     db.commit()
     db.refresh(a)
@@ -1170,6 +1206,8 @@ def uprav_aktivitu(
         raise HTTPException(status_code=404, detail="Aktivita neexistuje")
     _over_pristup_k_zaznamu(db, a.entita, a.zaznam_id, user)
 
+    if vstup.nazev is not None:
+        a.nazev = vstup.nazev.strip()
     if vstup.text is not None:
         text = vstup.text.strip()
         if not text:
@@ -1177,9 +1215,24 @@ def uprav_aktivitu(
         a.text = text
     if vstup.termin is not None:
         a.termin = _parse_datum(vstup.termin, "termín")
-    if vstup.hotovo is not None:
-        a.hotovo = bool(vstup.hotovo)
-        a.hotovo_at = datetime.now() if vstup.hotovo else None
+    # Čas se posílá zvlášť od dne. Prázdný string = „zruš hodinu, ať je to
+    # celodenní"; None = neměnit.
+    if vstup.cas is not None:
+        a.zacatek = kalendar.datum_a_cas(a.termin, vstup.cas) if a.termin else None
+    if vstup.delka_min is not None:
+        a.delka_min = vstup.delka_min
+    if vstup.ucastnici is not None:
+        a.ucastnici = _over_ucastniky(db, vstup.ucastnici)
+    if vstup.stav is not None:
+        if vstup.stav not in STAVY_AKTIVITY:
+            raise HTTPException(status_code=422, detail=f"Neznámý stav aktivity: {vstup.stav}")
+        a.stav = vstup.stav
+        # Datum uzavření drží stav sám: vrácení do „naplánováno" ho musí smazat,
+        # jinak by u čekající aktivity zůstalo, kdy prý byla hotová.
+        a.hotovo_at = datetime.now() if vstup.stav in STAVY_UZAVRENE else None
+    if vstup.vysledek is not None:
+        a.vysledek = vstup.vysledek.strip()
+    kalendar.srovnej_termin(a)
     db.commit()
     db.refresh(a)
     return _aktivita_out(a)
@@ -1365,6 +1418,118 @@ def smaz_stav(
     db.delete(s)
     db.commit()
     return {"ok": True}
+
+
+# ---- kalendář ---------------------------------------------------------------
+@router.get("/kalendar", response_model=KalendarOut)
+def kalendar_rozsah(
+    od: str | None = Query(default=None, description="ISO den; výchozí = pondělí tohoto týdne"),
+    do: str | None = Query(default=None, description="ISO den; výchozí = neděle téhož týdne"),
+    uzivatele: str | None = Query(
+        default=None, description="ID oddělená čárkou; výchozí = jen přihlášený"
+    ),
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Události v rozsahu dnů pro vybrané lidi.
+
+    Bez parametrů vrací aktuální týden přihlášeného uživatele. `uzivatele`
+    slouží ke srovnávání kalendářů — z cizích událostí se ale posílá jen tolik,
+    kolik dovolují pravidla v `crm/kalendar.py` (soukromé cizí události nevidí
+    ani vedení).
+    """
+    dnes = date.today()
+    zacatek = _parse_datum(od, "od") or kalendar.zacatek_tydne(dnes)
+    konec = _parse_datum(do, "do") or (zacatek + timedelta(days=6))
+    if konec < zacatek:
+        raise HTTPException(status_code=422, detail="Konec rozsahu je před začátkem.")
+    # Strop kvůli tomu, aby si nikdo omylem nevyžádal roky dat do jedné odpovědi.
+    if (konec - zacatek).days > 92:
+        raise HTTPException(status_code=422, detail="Rozsah je nejvýš 92 dní.")
+
+    if uzivatele:
+        try:
+            ids = [int(x) for x in uzivatele.split(",") if x.strip()]
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Neplatný seznam uživatelů.")
+    else:
+        ids = [user.id]
+    # Cizí kalendář si smí přidat každý – jen z něj neuvidí obsah, viz
+    # `kalendar.pro_uzivatele`. Kdyby se přidávání zakázalo, nešlo by hledat
+    # společný termín schůzky.
+
+    q = kalendar.v_rozsahu(kalendar.viditelne_pro(db, user, ids), zacatek, konec)
+    radky = q.order_by(CrmAktivita.termin, CrmAktivita.zacatek).all()
+    return KalendarOut(
+        od=zacatek.isoformat(),
+        do=konec.isoformat(),
+        udalosti=[KalendarUdalostOut(**u) for u in kalendar.udalosti_pro(db, user, radky)],
+    )
+
+
+@router.post("/kalendar/udalost", response_model=AktivitaOut)
+def pridej_udalost(
+    vstup: UdalostVstup,
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Nová událost z kalendáře — s klientem/případem, nebo soukromá.
+
+    Proč vlastní endpoint místo `POST /aktivity/{entita}/{id}`: událost
+    zakládaná kliknutím do mřížky nemusí mít žádný záznam (soukromá) a naopak
+    může mít vybraný jen jeden ze tří (klient / případ / nabídka). Entita
+    v cestě by tohle neumožnila.
+    """
+    if vstup.druh not in DRUHY_AKTIVITY:
+        raise HTTPException(status_code=422, detail=f"Neznámý druh aktivity: {vstup.druh}")
+
+    nazev = (vstup.nazev or "").strip()
+    if not nazev:
+        raise HTTPException(status_code=422, detail="Název události je povinný.")
+
+    den = _parse_datum(vstup.termin, "termín")
+    if den is None:
+        raise HTTPException(status_code=422, detail="Datum události je povinné.")
+
+    # Soukromá událost nemá k čemu patřit; u ostatních je záznam nepovinný,
+    # ale když se pošle, musí na něj mít uživatel právo.
+    entita = (vstup.entita or "").strip() or None
+    zaznam_id = vstup.zaznam_id
+    if vstup.soukroma:
+        entita, zaznam_id = None, None
+    elif entita and zaznam_id:
+        if entita not in ENTITY_AKTIVIT:
+            raise HTTPException(status_code=422, detail=f"Neznámá entita: {entita}")
+        _over_pristup_k_zaznamu(db, entita, zaznam_id, user)
+    elif entita or zaznam_id:
+        raise HTTPException(
+            status_code=422,
+            detail="U navázané události musí být vybraný typ i konkrétní záznam.",
+        )
+
+    vlastnik = vstup.vlastnik_user_id or user.id
+    if not db.query(User.id).filter(User.id == vlastnik).first():
+        raise HTTPException(status_code=422, detail="Zvolený řešitel neexistuje.")
+
+    a = CrmAktivita(
+        entita=entita,
+        zaznam_id=zaznam_id,
+        druh=vstup.druh,
+        nazev=nazev,
+        text=(vstup.text or "").strip(),
+        termin=den,
+        zacatek=kalendar.datum_a_cas(den, vstup.cas),
+        delka_min=vstup.delka_min,
+        soukroma=bool(vstup.soukroma),
+        vlastnik_user_id=vlastnik,
+        ucastnici=_over_ucastniky(db, vstup.ucastnici),
+        vytvoril_user_id=user.id,
+    )
+    kalendar.srovnej_termin(a)
+    db.add(a)
+    db.commit()
+    db.refresh(a)
+    return _aktivita_out(a)
 
 
 # ---- nastavení: kategorie obchodního případu --------------------------------
