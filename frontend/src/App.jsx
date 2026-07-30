@@ -12,6 +12,7 @@ import NabidkovacKatalog from "./pages/NabidkovacKatalog";
 import Zakaznici from "./pages/Zakaznici";
 import ZakaznikDetail from "./pages/ZakaznikDetail";
 import ObchodniPripady from "./pages/ObchodniPripady";
+import Nabidky from "./pages/Nabidky";
 import ObchodniPripadDetail from "./pages/ObchodniPripadDetail";
 import AdminNastaveni from "./pages/AdminNastaveni";
 import Logy from "./pages/Logy";
@@ -64,6 +65,14 @@ export default function App() {
           element={
             <VyzadujePrihlaseni>
               <Zakaznici />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/nabidky"
+          element={
+            <VyzadujePrihlaseni>
+              <Nabidky />
             </VyzadujePrihlaseni>
           }
         />

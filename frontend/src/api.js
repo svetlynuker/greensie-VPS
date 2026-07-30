@@ -732,3 +732,26 @@ export function crmVlastniPolePoradi(entita, poradi) {
 export function crmVlastniPoleSmaz(id) {
   return zavolej(`/crm/vlastni-pole/${id}`, { method: "DELETE" });
 }
+
+// ---- CRM: sekce Nabídky (obchodní pipeline) ----
+// Data o nabídkách zůstávají v nabídkovači; tyhle endpointy jim přidávají
+// obchodní stav a přehled napříč případy.
+export function crmNabidky({ stav, typ, hledat } = {}) {
+  const p = new URLSearchParams();
+  if (stav) p.set("stav", stav);
+  if (typ) p.set("typ", typ);
+  if (hledat) p.set("hledat", hledat);
+  const q = p.toString();
+  return zavolej(`/crm/nabidky${q ? `?${q}` : ""}`);
+}
+
+export function crmNabidkyKanban() {
+  return zavolej("/crm/nabidky/kanban");
+}
+
+export function crmNabidkaStav(id, stav) {
+  return zavolej(`/crm/nabidky/${id}/stav`, {
+    method: "POST",
+    body: JSON.stringify({ stav }),
+  });
+}

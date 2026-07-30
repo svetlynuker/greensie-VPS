@@ -231,9 +231,21 @@ class Nabidka(Base):
     zakaznik_gps_lat = Column(Numeric(9, 6), nullable=True)
     zakaznik_gps_lng = Column(Numeric(9, 6), nullable=True)
 
+    # Stav ZPRACOVÁNÍ nabídky (jsou nahraná data? je spočítáno?). Je to něco
+    # jiného než obchodní stav níž a schválně se to nemíchá: nabídka může být
+    # dávno odeslaná zákazníkovi a přitom mít rozpracovaný výpočet, a naopak.
     stav = Column(
         String, nullable=False, default=VYCHOZI_STAV_NABIDKY, server_default=VYCHOZI_STAV_NABIDKY
     )
+
+    # OBCHODNÍ stav nabídky (koncept → odeslána → přijata / zamítnuta). Klíč do
+    # `crm_stavy` pro entitu "nab", takže si fáze konfiguruje vedení v CRM
+    # a kanban z nich kreslí sloupce. Ne cizí klíč – stav se dá smazat a
+    # historie záznamů by se tím rozpadla; klíč je stabilní text.
+    #
+    # Nullable kvůli nabídkám, které vznikly před zavedením pipeline; ty se při
+    # prvním čtení berou jako první stav (viz `crm/nabidky_pipeline.py`).
+    stav_obchodni = Column(String, nullable=True, index=True)
 
     vytvoril_user_id = Column(
         Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True, index=True

@@ -27,6 +27,9 @@ export const NABIDKA = [
         cesta: "/pripady",
         pravo: "obchodni_pripady",
       },
+      // Přehled nabídek napříč případy. Jede pod právem Nabídkovače – kdo smí
+      // nabídky vytvářet, smí je i vidět v seznamu.
+      { klic: "nabidky", nazev: "Nabídky", ikona: "nabidkovac", cesta: "/nabidky", pravo: "nabidkovac" },
     ],
   },
   {
@@ -98,6 +101,7 @@ const POPISY = {
   "/rozcestnik": ["Rozcestník", "Přehled dne"],
   "/zakaznici": ["Zákazníci", "Leady a klienti"],
   "/pripady": ["Obchodní případy", "Pipeline zakázek"],
+  "/nabidky": ["Nabídky", "Co je odesláno a co zákazník přijal"],
   "/projekty": ["Přehled projektů", "Matice úkolů a fází"],
   "/finance": ["Přehled financí", "Faktury a párování POHODA"],
   "/zmeny": ["Přehled změn", "Co se pohnulo za období"],
@@ -127,6 +131,7 @@ export function popisStranky(pathname) {
 /** Která stránka manuálu patří ke které adrese (kontextová nápověda „?"). */
 export function strankaManualu(pathname) {
   if (pathname.startsWith("/zakaznici") || pathname.startsWith("/pripady")) return "crm";
+  if (pathname === "/nabidky" || pathname.startsWith("/nabidky/")) return "crm";
   if (pathname.startsWith("/projekty")) return "prehled-projektu";
   if (pathname.startsWith("/finance")) return "prehled-financi";
   if (pathname.startsWith("/zmeny")) return "prehled-zmen";
