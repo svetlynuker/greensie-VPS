@@ -685,6 +685,11 @@ export function crmUdalostPridej(data) {
 // Firemní nastavení CRM (naše adresa pro „U nás"). Čtení smí každý, změnu
 // jen právo crm_nastaveni.
 // Souhrny pro Přehled obchodu (funnel, forecast, důvody proher, KPI).
+// Můj den: úkoly po termínu, dnešní, zanedbané případy, nabídky bez reakce.
+export function crmMujDen() {
+  return zavolej("/crm/muj-den");
+}
+
 export function crmStatistiky() {
   return zavolej("/crm/statistiky");
 }

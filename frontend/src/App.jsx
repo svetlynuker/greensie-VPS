@@ -25,6 +25,7 @@ import ZmenaHesla from "./pages/ZmenaHesla";
 import Nastaveni from "./pages/Nastaveni";
 import Kalendar from "./pages/Kalendar";
 import PrehledObchodu from "./pages/PrehledObchodu";
+import MujDen from "./pages/MujDen";
 import { getToken } from "./api";
 
 function VyzadujePrihlaseni({ children }) {
@@ -41,6 +42,14 @@ export default function App() {
           element={
             <VyzadujePrihlaseni>
               <ZmenaHesla />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/muj-den"
+          element={
+            <VyzadujePrihlaseni>
+              <MujDen />
             </VyzadujePrihlaseni>
           }
         />
