@@ -660,6 +660,22 @@ export function crmUzivatele() {
   return zavolej("/crm/uzivatele");
 }
 
+// Kalendář: události v rozsahu dnů. `uzivatele` je pole ID pro srovnávání
+// kalendářů — z cizích událostí se vrací jen tolik, kolik dovolují pravidla
+// viditelnosti (soukromé cizí nevidí ani vedení, viz backend crm/kalendar.py).
+export function crmKalendar(od, do_, uzivatele = null) {
+  const q = new URLSearchParams();
+  if (od) q.set("od", od);
+  if (do_) q.set("do", do_);
+  if (uzivatele?.length) q.set("uzivatele", uzivatele.join(","));
+  const dotaz = q.toString();
+  return zavolej(`/crm/kalendar${dotaz ? `?${dotaz}` : ""}`);
+}
+
+export function crmUdalostPridej(data) {
+  return zavolej("/crm/kalendar/udalost", { method: "POST", body: JSON.stringify(data) });
+}
+
 export function crmStavy(entita) {
   return zavolej(`/crm/stavy/${entita}`);
 }

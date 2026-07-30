@@ -23,6 +23,7 @@ import Konektor from "./pages/Konektor";
 import Manual from "./pages/Manual";
 import ZmenaHesla from "./pages/ZmenaHesla";
 import Nastaveni from "./pages/Nastaveni";
+import Kalendar from "./pages/Kalendar";
 import { getToken } from "./api";
 
 function VyzadujePrihlaseni({ children }) {
@@ -39,6 +40,14 @@ export default function App() {
           element={
             <VyzadujePrihlaseni>
               <ZmenaHesla />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/kalendar"
+          element={
+            <VyzadujePrihlaseni>
+              <Kalendar />
             </VyzadujePrihlaseni>
           }
         />
