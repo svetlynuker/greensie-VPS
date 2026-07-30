@@ -1609,6 +1609,33 @@ def statistiky_obchodu(
     }
 
 
+@router.get("/muj-den")
+def muj_den(
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Co člověka dnes tlačí (CRM-16).
+
+    Vedle vlastních úkolů přidává dvě věci, které jinak nikdo nehlídá: případy,
+    kde se dlouho nic nestalo, a nabídky odeslané bez reakce. Prahy jsou různé
+    schválně — u nabídky je týden bez odpovědi signál, u případu v pipeline ne.
+    """
+    dnes = date.today()
+    ukoly = ukoly_modul.moje_ukoly(db, user)
+    return {
+        "po_terminu": [u for u in ukoly if u.dni > 0],
+        "dnes": [u for u in ukoly if u.dni == 0],
+        "nadchazejici": [u for u in ukoly if u.dni < 0][:8],
+        "zanedbane_pripady": statistiky_modul.zanedbane_pripady(db, user),
+        "nabidky_bez_reakce": statistiky_modul.nabidky_bez_reakce(db, user),
+        "prahy": {
+            "pripad_dni": statistiky_modul.TICHO_PRIPAD_DNI,
+            "nabidka_dni": statistiky_modul.TICHO_NABIDKA_DNI,
+        },
+        "dnes_datum": dnes.isoformat(),
+    }
+
+
 # ---- kalendář ---------------------------------------------------------------
 @router.get("/kalendar", response_model=KalendarOut)
 def kalendar_rozsah(

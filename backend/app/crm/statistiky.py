@@ -19,7 +19,7 @@ zakázky založené od svého spuštění. Bez téhle informace by graf vypadal,
 píše ke grafům (CRM-45).
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -194,3 +194,109 @@ def souhrn(db: Session, user: User) -> dict:
         "uspesnost_pct": round(vyhry[0] / uzavrene * 100, 1) if uzavrene else None,
         "data_od": nejstarsi.date().isoformat() if nejstarsi else None,
     }
+
+
+# ---- Můj den (CRM-16) -------------------------------------------------------
+# Jedna obrazovka s tím, co člověka tlačí. Vedle „moje úkoly" na Rozcestníku
+# přidává dvě věci, které jinak nikdo nehlídá: případy, kde se dlouho nic
+# nestalo, a nabídky odeslané bez reakce.
+
+# Po kolika dnech se ticho začne považovat za problém. Prahy jsou různé
+# schválně: u nabídky je týden bez reakce signál, u případu v pipeline ne.
+TICHO_PRIPAD_DNI = 14
+TICHO_NABIDKA_DNI = 7
+
+
+def zanedbane_pripady(db: Session, user: User, dni: int = TICHO_PRIPAD_DNI) -> list[dict]:
+    """Otevřené případy, u kterých se `dni` nic nestalo.
+
+    „Nic se nestalo" = žádná aktivita, nebo poslední aktivita starší než práh.
+    Případ bez JAKÉKOLI aktivity se počítá taky — právě ten se nejspíš ztratil.
+    Řadí se od nejdéle mlčících.
+    """
+    from app.crm.models import CrmAktivita
+
+    hranice = date.today() - timedelta(days=dni)
+    posledni = (
+        db.query(
+            CrmAktivita.zaznam_id.label("pripad_id"),
+            func.max(func.date(CrmAktivita.vytvoreno_at)).label("kdy"),
+        )
+        .filter(CrmAktivita.entita == "op")
+        .group_by(CrmAktivita.zaznam_id)
+        .subquery()
+    )
+    radky = (
+        _pripady(db, user)
+        .outerjoin(CrmStav, (CrmStav.klic == ObchodniPripad.stav) & (CrmStav.entita == "op"))
+        .outerjoin(posledni, posledni.c.pripad_id == ObchodniPripad.id)
+        .filter(CrmStav.druh == "otevreny")
+        .filter((posledni.c.kdy.is_(None)) | (posledni.c.kdy <= hranice))
+        .with_entities(
+            ObchodniPripad.id,
+            ObchodniPripad.cislo,
+            ObchodniPripad.nazev,
+            ObchodniPripad.hodnota_kc,
+            CrmStav.nazev,
+            posledni.c.kdy,
+        )
+        .all()
+    )
+    dnes = date.today()
+    out = [
+        {
+            "id": i,
+            "cislo": cislo,
+            "nazev": nazev or "",
+            "hodnota_kc": float(hodnota or 0),
+            "stav": stav or "",
+            "posledni_aktivita": kdy.isoformat() if kdy else None,
+            "dni": (dnes - kdy).days if kdy else None,
+        }
+        for i, cislo, nazev, hodnota, stav, kdy in radky
+    ]
+    # Bez aktivity (dni=None) nahoru — u nich je ticho nejdelší.
+    return sorted(out, key=lambda x: (x["dni"] is not None, -(x["dni"] or 0)))
+
+
+def nabidky_bez_reakce(db: Session, user: User, dni: int = TICHO_NABIDKA_DNI) -> list[dict]:
+    """Nabídky odeslané zákazníkovi, na které `dni` nikdo neodpověděl.
+
+    Bere se OBCHODNÍ stav nabídky (odeslána), ne stav výpočtu — nabídka může být
+    dávno odeslaná a přitom mít rozpracovaný výpočet, a naopak.
+    """
+    from app.nabidkovac.models import Nabidka
+
+    hranice = date.today() - timedelta(days=dni)
+    q = (
+        db.query(Nabidka, ObchodniPripad)
+        .outerjoin(ObchodniPripad, Nabidka.obchodni_pripad_id == ObchodniPripad.id)
+        .filter(Nabidka.stav_obchodni == "odeslana")
+        .filter(func.date(Nabidka.vytvoreno_at) <= hranice)
+    )
+    # Viditelnost: nabídka bez případu nemá vlastníka, takže ji vidí jen crm_vse.
+    from app.crm.pristup import muze_vse
+
+    dnes = date.today()
+    out = []
+    for n, p in q.all():
+        if p is None:
+            if not muze_vse(user):
+                continue
+        elif not (
+            muze_vse(user)
+            or p.vlastnik_user_id == user.id
+            or user.id in list(p.spoluvlastnici or [])
+        ):
+            continue
+        kdy = n.vytvoreno_at.date() if n.vytvoreno_at else None
+        out.append(
+            {
+                "id": n.id,
+                "cislo": n.cislo or f"#{n.id}",
+                "zakaznik": n.zakaznik_nazev or (p.nazev if p else ""),
+                "pripad_cislo": p.cislo if p else "",
+                "dni": (dnes - kdy).days if kdy else None,
+            }
+        )
+    return sorted(out, key=lambda x: -(x["dni"] or 0))

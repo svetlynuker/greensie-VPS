@@ -22,6 +22,7 @@ export const NABIDKA = [
     polozky: [
       // Jede pod právem Zákazníků: aktivity visí na záznamech CRM, takže kdo
       // vidí zákazníky, má co plánovat.
+      { klic: "muj_den", nazev: "Můj den", ikona: "ukol", cesta: "/muj-den", pravo: "zakaznici" },
       { klic: "kalendar", nazev: "Kalendář", ikona: "kalendar", cesta: "/kalendar", pravo: "zakaznici" },
     ],
   },
@@ -158,6 +159,7 @@ const POPISY = {
   "/logy": ["Logy", "Provoz, chyby a audit"],
   "/admin": ["Admin nastavení", "Uživatelé, skupiny a oprávnění"],
   "/manual": ["Manuál", "Návody modul po modulu"],
+  "/muj-den": ["Můj den", "Co tě dnes tlačí"],
   "/kalendar": ["Kalendář", "Schůzky, telefonáty a úkoly v týdnu"],
   "/prehled-obchodu": ["Přehled obchodu", "Pipeline, forecast a důvody proher"],
   "/nastaveni": ["Nastavení", "Tvoje osobní volby"],
@@ -180,6 +182,7 @@ export function strankaManualu(pathname) {
   if (pathname.startsWith("/nabidky") || pathname.startsWith("/objednavky")) return "crm";
   if (pathname.startsWith("/projekty")) return "crm";
   if (pathname.startsWith("/kalendar")) return "crm";
+  if (pathname.startsWith("/muj-den")) return "crm";
   if (pathname.startsWith("/prehled-obchodu")) return "crm";
   if (pathname.startsWith("/prehled-projektu")) return "prehled-projektu";
   if (pathname.startsWith("/finance")) return "prehled-financi";

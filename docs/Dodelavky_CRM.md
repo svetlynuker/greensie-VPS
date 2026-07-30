@@ -111,7 +111,7 @@ zakázky, je zbytek seznamu odhad — ne zkušenost. Proto se nejdřív zapíná
 | Dávka | Obsah | Odhad | Proč právě tady |
 |---|---|---|---|
 | **A · Základ** ✅ | ~~CRM-01, CRM-03, CRM-25, CRM-13~~ — **hotovo 30. 7. 2026** | — | Hotové a otestované. Práva se **záměrně nepřidělují** (rozhodl Dan 30. 7. 2026: appku zatím staví a testuje jen s Claudem, CRM vidí pouze admini). |
-| **B · Ať vedení vidí čísla** | ~~CRM-39, CRM-40, CRM-43, CRM-45, CRM-22~~ hotovo 30. 7. 2026 · zbývá **CRM-16 Můj den** | ~1 den | Grafové komponenty už v appce jsou, data se v nich sečtou sama. Jediná věc, po které vedení pozná, že přechod z Raynetu má smysl. **CRM-41 a CRM-42 sem nepatří** — bez uzavřených obchodů v appce nemají co ukázat. |
+| **B · Ať vedení vidí čísla** ✅ | ~~CRM-39, CRM-40, CRM-43, CRM-45, CRM-22, CRM-16~~ — **hotovo 30. 7. 2026** | — | Grafové komponenty už v appce jsou, data se v nich sečtou sama. Jediná věc, po které vedení pozná, že přechod z Raynetu má smysl. **CRM-41 a CRM-42 sem nepatří** — bez uzavřených obchodů v appce nemají co ukázat. |
 | **C · Denní práce se zakázkou** | CRM-05, CRM-24, CRM-27, CRM-30, CRM-18, CRM-19 + co nahlásí lidi | ~1 týden | Náplň se doladí podle prvních týdnů provozu. Rezervovaná kapacita, ne pevný seznam. |
 | **D · Peníze** | CRM-08, CRM-09 | ~5 dní | Největší přínos pro vedení a teď má na čem běžet: nové zakázky projdou celým řetězcem až k faktuře v appce. |
 | **E · Komunikace** | CRM-36 → CRM-10 → CRM-32 | ~4 dny | V tomhle pořadí. Notifikace bez volby, co chci dostávat, je obtěžování. |
