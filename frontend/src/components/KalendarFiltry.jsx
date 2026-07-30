@@ -110,7 +110,10 @@ export default function KalendarFiltry({
             <ul className="kalf-nenaplanovane">
               {nenaplanovane.map((u) => (
                 <li key={u.id}>
-                  <button className="kalf-nenapl-radek" onClick={() => onUdalost?.(u)}>
+                  <button
+                    className="kalf-nenapl-radek"
+                    onClick={(e) => onUdalost?.(u, e.currentTarget.getBoundingClientRect())}
+                  >
                     <span
                       className="kalf-barva-tecka"
                       style={{ background: u.kategorie_barva || "#d3d9de" }}

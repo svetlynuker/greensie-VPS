@@ -841,3 +841,172 @@
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
+
+/* ---- popover s detailem aktivity (podle `detail události.png`) ---- */
+/* Neviditelný závěs zavře kartu kliknutím kamkoli jinam. Nemá tmavé pozadí
+   schválně — u popoveru má zůstat vidět kalendář kolem. */
+.kd-zaves {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+}
+.kd {
+  position: fixed;
+  z-index: 71;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.26);
+  max-height: min(80vh, 620px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.kd-hlava {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 12px 10px 14px;
+}
+.kd-ikona {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+.kd-titulky {
+  flex: 1;
+  min-width: 0;
+}
+.kd-titulky h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.kd-stitek {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 13%, transparent);
+  font-size: 12px;
+  color: var(--muted);
+}
+.kd-btn-ikona {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 5px;
+}
+.kd-btn-ikona:hover {
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  color: var(--text);
+}
+
+.kd-telo {
+  padding: 4px 14px 14px;
+  overflow: auto;
+  display: grid;
+  gap: 9px;
+}
+.kd-radek {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--text);
+}
+.kd-radek > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--muted);
+}
+.kd-ctverecek {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  margin-top: 1px;
+}
+/* Dlouhý seznam účastníků se scrolluje uvnitř karty (jako v předloze),
+   ať karta nevyroste přes celou obrazovku. */
+.kd-ucastnici {
+  display: block;
+  max-height: 84px;
+  overflow: auto;
+  color: var(--muted);
+}
+.kd-text {
+  margin: 0;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+/* Rozbalený řádek akce — formulář přímo v kartě, ne další dialog. */
+.kd-formular {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+.kd-formular-pata {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.kd-presun {
+  display: flex;
+  gap: 8px;
+}
+
+.kd-pata {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--muted) 5%, transparent);
+}
+.kd-akce {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 7px;
+  white-space: nowrap;
+}
+.kd-akce:hover {
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+  color: var(--text);
+}
+/* Hlavní akce je zelená jako v předloze. */
+.kd-akce.hotovo {
+  color: var(--fm-brand-dk, #2f9e44);
+}
+.kd-akce.kruh {
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  font-size: 15px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}

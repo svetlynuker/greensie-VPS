@@ -150,7 +150,11 @@ function Dlazdice({
       }}
       // Duch je jen náhled — nesmí brát kliknutí ani reagovat na tažení.
       onPointerDown={duch ? undefined : (e) => onZacniTazeni?.(e, u, "presun")}
-      onClick={duch ? undefined : () => onKlik?.(u)}
+      onClick={
+        duch
+          ? undefined
+          : (e) => onKlik?.(u, e.currentTarget.getBoundingClientRect())
+      }
       title={duch ? undefined : popisUdalosti(u)}
       role={duch ? "presentation" : "button"}
       tabIndex={duch ? -1 : 0}
@@ -160,7 +164,7 @@ function Dlazdice({
           : (e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                onKlik?.(u);
+                onKlik?.(u, e.currentTarget.getBoundingClientRect());
               }
             }
       }
@@ -221,11 +225,15 @@ export default function KalendarTyden({
   // tažení. Kdyby byly v závislostech efektu, přidávaly a odebíraly by se při
   // každém pohybu.
   const onPresunRef = useRef(onPresun);
+  const onUdalostRef = useRef(onUdalost);
   onPresunRef.current = onPresun;
+  onUdalostRef.current = onUdalost;
 
-  // Po dokončeném tažení prohlížeč ještě vyvolá `click` na dlaždici. Bez téhle
-  // pojistky by se po každém přetažení navíc otevřel detail aktivity.
-  const potlacitKlikRef = useRef(false);
+  // Po dokončeném tažení prohlížeč MŮŽE ještě vyvolat `click` na dlaždici — bez
+  // pojistky by se po přetažení navíc otevřel detail. Drží se čas, ne boolean:
+  // kdyby ten `click` nikdy nepřišel (což se podle prohlížeče stává), zůstal by
+  // příznak nastavený a spolkl by až příští opravdové kliknutí.
+  const potlacitKlikDoRef = useRef(0);
 
   const dny = useMemo(
     () => Array.from({ length: 7 }, (_, i) => posunDnu(pondeli, i)),
@@ -289,6 +297,10 @@ export default function KalendarTyden({
     tazeniRef.current = {
       u,
       rezim,
+      // Kotva pro popover s detailem. Bere se z DLAŽDICE, ne z `currentTarget` —
+      // při chycení za úchyt je currentTarget ten úzký pásek na hraně a popover
+      // by se ukotvil ke třem pixelům.
+      kotva: e.currentTarget.closest(".kal-udalost")?.getBoundingClientRect() || null,
       celyDen: Boolean(u.cely_den),
       vicedenni: Boolean(u.vicedenni),
       // Kolik dní trvá vícedenní blok — při přesunu se délka zachovává.
@@ -323,11 +335,18 @@ export default function KalendarTyden({
       setTahnu(false);
       setNahled(null);
       if (!t) return;
-      if (!ulozit || !t.posunuto) {
-        // Bez posunu je to obyčejné kliknutí — detail otevře `onClick`.
+      if (!ulozit) return; // zrušeno Escapem nebo pointercancel
+      if (!t.posunuto) {
+        // Kliknutí bez posunu → detail. Otevírá se TADY, ne v `onClick`:
+        // `zacniTazeni` volá `preventDefault()` na pointerdown (jinak by
+        // prohlížeč začal nativní drag a vybíral text), a to v prohlížečích
+        // potlačí i následný `click`. Bez tohohle by detail nešel otevřít
+        // vůbec — právě na to Dan narazil.
+        potlacitKlikDoRef.current = Date.now() + 400;
+        onUdalostRef.current?.(t.u, t.kotva);
         return;
       }
-      potlacitKlikRef.current = true;
+      potlacitKlikDoRef.current = Date.now() + 400;
       const dnyNyni = dnyRef.current;
       const cilovyDen = dnyNyni[t.denIdx] || dnyNyni[t.puvodDenIdx];
       const zmena = { termin: isoDen(cilovyDen) };
@@ -423,12 +442,10 @@ export default function KalendarTyden({
   }
 
   /** Klik na dlaždici — ale ne ten, který právě dokončil tažení. */
-  function klikNaUdalost(u) {
-    if (potlacitKlikRef.current) {
-      potlacitKlikRef.current = false;
-      return;
-    }
-    onUdalost?.(u);
+  function klikNaUdalost(u, kotva) {
+    // Klik krátce po tažení (nebo po otevření detailu z `pointerup`) se zahodí.
+    if (Date.now() < potlacitKlikDoRef.current) return;
+    onUdalost?.(u, kotva);
   }
 
   const lzeTahnout = Boolean(onPresun);
