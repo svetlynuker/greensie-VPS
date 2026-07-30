@@ -23,13 +23,44 @@ export const POHLEDY_ZAKAZNIKU = [
 // stavy kanbanu. Kdyby se sem konstanta vrátila, appka by měla dvě pravdy
 // a nová kategorie by se v UI neobjevila.
 
+// Druhy aktivit. `barva` je VÝCHOZÍ barva v kalendáři — každý uživatel si ji
+// může přepsat v Nastavení (klíč `kalendar_barvy`, viz `barvyAktivit.js`).
+// Hodnoty jsou tokeny appky, ne hex, aby fungovaly ve světlém i tmavém režimu.
 export const DRUHY_AKTIVITY = [
-  { klic: "poznamka", nazev: "Poznámka", ikona: "📝" },
-  { klic: "telefon", nazev: "Telefonát", ikona: "📞" },
-  { klic: "email", nazev: "E-mail", ikona: "✉️" },
-  { klic: "schuzka", nazev: "Schůzka", ikona: "🤝" },
-  { klic: "ukol", nazev: "Úkol", ikona: "✅" },
+  { klic: "poznamka", nazev: "Poznámka", ikona: "📝", barva: "#7b8794" },
+  { klic: "telefon", nazev: "Telefonát", ikona: "📞", barva: "#2f9e44" },
+  { klic: "email", nazev: "E-mail", ikona: "✉️", barva: "#1c7ed6" },
+  { klic: "schuzka", nazev: "Schůzka", ikona: "🤝", barva: "#9c36b5" },
+  { klic: "ukol", nazev: "Úkol", ikona: "✅", barva: "#e8590c" },
 ];
+
+// Stav aktivity: naplánováno → realizováno / nekonalo se. Nahradil dřívější
+// zaškrtávátko „hotovo", které neumělo odlišit schůzku, co proběhla, od
+// schůzky, kterou zákazník zrušil.
+export const STAVY_AKTIVITY = [
+  { klic: "naplanovano", nazev: "Naplánováno", znacka: "info" },
+  { klic: "realizovano", nazev: "Realizováno", znacka: "ok" },
+  { klic: "nekonalo_se", nazev: "Nekonalo se", znacka: "crit" },
+];
+
+export function nazevStavuAktivity(klic) {
+  return STAVY_AKTIVITY.find((s) => s.klic === klic)?.nazev || klic;
+}
+
+/** Je aktivita ještě čekající? (jediné místo, které to rozhoduje) */
+export function jeNaplanovana(a) {
+  return (a?.stav || "naplanovano") === "naplanovano";
+}
+
+/** „9:00–10:00" pro dlaždici v kalendáři; u celodenní vrací prázdno. */
+export function fmtCas(zacatek, delkaMin) {
+  if (!zacatek) return "";
+  const d = new Date(zacatek);
+  if (Number.isNaN(d.getTime())) return "";
+  const hm = (x) => `${x.getHours()}:${String(x.getMinutes()).padStart(2, "0")}`;
+  if (!delkaMin) return hm(d);
+  return `${hm(d)}–${hm(new Date(d.getTime() + delkaMin * 60000))}`;
+}
 
 // Krátký seznam důvodů prohry. Volný text jde taky – ale nabídnutá volba
 // zajistí, že se dá aspoň něco spočítat (proto je „Jiný" až poslední).

@@ -73,6 +73,16 @@ KATEGORIE_OP = ("prodej", "ppa", "peak_shaving")
 # Druhy aktivit (Raynet-like log práce s zákazníkem).
 DRUHY_AKTIVITY = ("poznamka", "telefon", "email", "schuzka", "ukol")
 
+# Stav aktivity. Nahradil boolean `hotovo`, protože ten neumí rozlišit schůzku,
+# která proběhla, od schůzky, kterou zákazník zrušil — a obojí pod jedním
+# „hotovo" by znehodnotilo každou statistiku aktivity OZ.
+#   naplanovano  → čeká, počítá se do „moje úkoly"
+#   realizovano  → proběhlo, `vysledek` říká s jakým výsledkem
+#   nekonalo_se  → nekonalo se, `vysledek` říká proč
+STAVY_AKTIVITY = ("naplanovano", "realizovano", "nekonalo_se")
+# Stavy, kterými je aktivita uzavřená (nepočítá se do nedokončených úkolů).
+STAVY_UZAVRENE = ("realizovano", "nekonalo_se")
+
 # Obrazovky, na které smí admin přidávat vlastní pole. Rozšíření o další
 # entitu = přidat klíč sem a její model do `vlastni_pole.MODELY` (entita musí
 # mít sloupec `extra`).
@@ -379,32 +389,73 @@ class ObchodniPripad(Base):
 
 
 class CrmAktivita(Base):
-    """Poznámka nebo aktivita (telefon, e-mail, schůzka, úkol) u záznamu.
+    """Poznámka, aktivita (telefon, e-mail, schůzka, úkol) nebo událost v kalendáři.
 
     Jedna generická tabulka pro všechny entity CRM (`entita` + `zaznam_id`).
     Tohle je věc, kvůli které OZ v appce zůstane – bez logu práce a dalšího
     kroku s termínem si stejně povede zápisky vedle.
 
-    `termin` + `hotovo` dělají z aktivity úkol. Nedokončené úkoly po termínu
-    se dají vypsat napříč zákazníky, aniž by se zaváděl další modul.
+    ---- Datum a čas: `termin` je den, `zacatek` je hodina -------------------
+    Rozdělení, na kterém stojí kalendář, a snadno se poplete:
+
+      * `termin` (datum) je **den**, na který aktivita patří. Vyplněný termín
+        dělá z aktivity úkol a stojí na něm výpis „moje úkoly" i Rozcestník.
+      * `zacatek` (datum + čas) je **konkrétní hodina** pro kalendářní mřížku.
+        Nepovinný: úkol „zavolat ve čtvrtek" hodinu mít nemusí.
+
+    PRAVIDLO, které drží obojí pohromadě: když je vyplněný `zacatek`, `termin`
+    se z něj vždy dopočítá (viz `kalendar.srovnej_termin`). Díky tomu zůstává
+    `termin` jediným zdrojem pravdy pro „kterého dne se to má stát" a nic, co
+    filtruje podle termínu, se kalendářem nerozbije.
+
+    Aktivita bez `zacatek`, ale s `termin`, je v kalendáři **celodenní** pruh.
+    Aktivita bez obojího je jen zápis do historie a v kalendáři není.
+
+    ---- Stav místo dřívějšího `hotovo` -------------------------------------
+    `stav` je jedna z `STAVY_AKTIVITY`: naplánováno → realizováno / nekonalo se.
+    Nahradil boolean `hotovo`, protože ten neumí rozlišit schůzku, která
+    proběhla, od schůzky, kterou zákazník zrušil – a obojí schované pod
+    „hotovo" by rozbilo každou statistiku aktivity. `vysledek` říká, co z
+    aktivity vyšlo (nebo proč se nekonala).
+
+    ---- Soukromá událost ---------------------------------------------------
+    `soukroma=True` je osobní blok v kalendáři (dovolená, doktor). Nemá klienta,
+    proto jsou `entita` i `zaznam_id` nepovinné. Cizí soukromou událost nevidí
+    **ani vedení, ani admin** – jen obsazený čas, viz `kalendar.pro_uzivatele`.
     """
 
     __tablename__ = "crm_aktivity"
 
     id = Column(Integer, primary_key=True, index=True)
-    entita = Column(String, nullable=False, index=True)  # jedna z ENTITY_AKTIVIT
-    zaznam_id = Column(Integer, nullable=False, index=True)
+    # Čeho se aktivita týká. Nepovinné kvůli soukromým událostem – ty klienta
+    # ani případ nemají a mít pro ně druhou tabulku by znamenalo dva kalendáře.
+    entita = Column(String, nullable=True, index=True)  # jedna z ENTITY_AKTIVIT
+    zaznam_id = Column(Integer, nullable=True, index=True)
     druh = Column(String, nullable=False, default="poznamka", server_default="poznamka")
+    # Krátký titulek do dlaždice v kalendáři. `text` je delší popis/poznámka –
+    # v mřížce po hodinách se dlouhý text nemá kam vejít.
+    nazev = Column(String, nullable=False, default="", server_default="")
     text = Column(Text, nullable=False, default="", server_default="")
 
-    termin = Column(Date, nullable=True)  # vyplněno = je to úkol
-    hotovo = Column(Boolean, nullable=False, default=False, server_default="false")
-    hotovo_at = Column(DateTime(timezone=True), nullable=True)
+    termin = Column(Date, nullable=True)  # den (vyplněno = je to úkol)
+    zacatek = Column(DateTime(timezone=True), nullable=True)  # hodina, pro kalendář
+    delka_min = Column(Integer, nullable=True)  # jak dlouho trvá
+
+    stav = Column(
+        String, nullable=False, default="naplanovano", server_default="naplanovano", index=True
+    )
+    vysledek = Column(Text, nullable=False, default="", server_default="")
+    hotovo_at = Column(DateTime(timezone=True), nullable=True)  # kdy se uzavřela
+
+    soukroma = Column(Boolean, nullable=False, default=False, server_default="false")
 
     # Komu úkol patří (výchozí = kdo ho vytvořil).
     vlastnik_user_id = Column(
         Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Další lidé na schůzce. Stejný vzor jako `spoluvlastnici` u případu:
+    # účastník vidí detail události, i když není vlastník.
+    ucastnici = Column(ARRAY(Integer), nullable=False, default=list, server_default="{}")
     vytvoril_user_id = Column(Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True)
     vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 

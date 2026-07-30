@@ -181,6 +181,20 @@ export default function UserMenu({ uzivatel, prava }) {
 
           <div className="gs-menu-sep" />
 
+          {/* Celá nastavení na jednom místě (včetně barev v kalendáři, které
+              se v rozbalovací nabídce ladit nedají). */}
+          <button
+            className="gs-menu-item"
+            role="menuitem"
+            onClick={() => {
+              setOtevreno(false);
+              navigate("/nastaveni");
+            }}
+          >
+            <Ikona jmeno="admin" velikost={16} />
+            Nastavení
+          </button>
+
           <button
             className="gs-menu-item"
             role="menuitem"

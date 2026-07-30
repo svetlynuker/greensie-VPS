@@ -205,8 +205,32 @@ jinak přidělení nic neudělá.
   Jedna obrazovka: úkoly po termínu, dnešní úkoly, případy bez aktivity X dní, nabídky
   odeslané bez reakce. Staví na CRM-01.
 
-- [ ] **CRM-17 · Kalendář aktivit** — Velikost **L** · Dopad **★★**
-  Dnes jsou úkoly vidět jen v záznamu. Měsíční/týdenní pohled s možností přesunout termín.
+- [ ] **CRM-17 · Kalendář aktivit** — Velikost **XL** · Dopad **★★★** · **ROZPRACOVÁNO od 30. 7. 2026**
+  Zadání Dana z 30. 7. 2026 je širší než původní odrážka („měsíční/týdenní pohled"), proto
+  velikost L → XL a dopad ★★ → ★★★. Dělá se **před** dávkou B, protože bez kalendáře
+  nemá OZ kde plánovat den.
+
+  **Co je zadané:** týdenní mřížka po–ne (den = sloupec, hodina = řádek), vlevo čtvercový
+  měsíc s klikatelnými dny; barvy podle druhu aktivity, **barvu si každý mění ve svém
+  nastavení**; rychlé i uložitelné filtry; klik do prázdna zakládá aktivitu (klient / OP /
+  nabídka nepovinně, nebo **soukromá událost**); klik na aktivitu ji uzavře s výsledkem
+  a umí hned naplánovat další; **kalendáře dalších osob** k porovnání.
+
+  **Viditelnost (odsouhlaseno):** moje = detail · cizí **soukromá = jen blok, i pro vedení
+  a admina** · cizí běžná: účastník a `crm_vse` vidí detail, ostatní jen „Obsazeno".
+
+  **Etapy** (nasazuje se po etapách):
+
+  | | Co | Stav |
+  |---|---|---|
+  | K1 | aktivita se učí **čas** (`zacatek` + `delka_min`), **stavy** naplánováno / realizováno / nekonalo se, **výsledek**, **soukromá**, **účastníci**; pravidla viditelnosti; endpointy `/crm/kalendar` | ✅ hotovo |
+  | K2 | stránka **Nastavení** (osobní volby + barvy druhů aktivit) | ✅ hotovo |
+  | K3 | kalendář: týdenní mřížka + čtvercový měsíc | — |
+  | K4 | práce v kalendáři: zakládání klikem, uzavření s výsledkem, navázání další aktivity | — |
+  | K5 | opakované události (Dan chce rovnou, ne později) | — |
+  | K6 | rychlé a uložené filtry + kalendáře dalších osob | — |
+
+  *Vědomě mimo rozsah:* napojení na Google Kalendář.
 
 - [ ] **CRM-18 · Timeline zákazníka** — Velikost **M** · Dopad **★★**
   Všechno chronologicky na jedné ose (aktivity, nabídky, objednávky, projekty, změny stavů).
@@ -290,8 +314,12 @@ Co běžná CRM mají navíc:
 
 ## 7. Uživatelská nastavení
 
-- [ ] **CRM-35 · Profil uživatele** — Velikost **M** · Dopad **★★**
-  Dnes jen změna hesla. Chybí podpis do e-mailů, telefon, fotka/iniciály, jazyk formátů.
+- [~] **CRM-35 · Profil uživatele** — Velikost **M** · Dopad **★★** · **částečně hotovo 30. 7. 2026**
+  **Hotovo (etapa K2 kalendáře):** stránka **Nastavení** (`/nastaveni`, odkaz v nabídce
+  u jména) — osobní volby na jednom místě: režim zobrazení, velikost textu, režim pro
+  barvoslepé a **barvy druhů aktivit v kalendáři**. Vše se ukládá do
+  `uzivatelska_nastaveni`, takže to platí i na jiném počítači.
+  **Zbývá:** podpis do e-mailů (souvisí s CRM-10), telefon, fotka místo iniciál.
 
 - [ ] **CRM-36 · Volba notifikací** — Velikost **M** · Dopad **★★**
   Co chci dostávat e-mailem a co jen v appce. Bez toho je CRM-10 obtěžování.
