@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { OPERATORY, hodnotaRadku, moznostiSloupce } from "../crmFiltry";
+import { hodnotaRadku, moznostiSloupce } from "../crmFiltry";
+import { stahniCsv } from "../crmExport";
 
 /**
  * Tabulka CRM s řazením kliknutím na hlavičku a filtrem u každého sloupce.
@@ -23,6 +24,9 @@ export default function CrmTabulka({
   onOtevri,
   vykresli,
   prazdneHlaseni = "Nic k zobrazení.",
+  // Základ názvu exportovaného souboru („pripady" → pripady-2026-07-30.csv).
+  // Bez něj se tlačítko exportu nekreslí.
+  exportNazev = null,
 }) {
   const [filtryOtevrene, setFiltryOtevrene] = useState(false);
 
@@ -69,6 +73,20 @@ export default function CrmTabulka({
             onClick={() => onPodminky((podminky || []).filter((p) => p.zdroj !== "sloupec"))}
           >
             Zrušit filtry sloupců
+          </button>
+        )}
+        {exportNazev && (
+          <button
+            className="fm-btn crm-btn-maly"
+            onClick={() => stahniCsv(exportNazev, sloupce, radky, vykresli)}
+            disabled={radky.length === 0}
+            title={
+              radky.length === 0
+                ? "Není co exportovat"
+                : "Stáhne přesně to, co je v tabulce — se filtrem i řazením"
+            }
+          >
+            ↓ Export CSV ({radky.length})
           </button>
         )}
         <span className="crm-mezera" />

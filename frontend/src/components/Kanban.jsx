@@ -14,8 +14,17 @@ import { fmtKcKratce, fmtDatum, nazvyKategorii, tridaBarvy } from "../crm";
  *
  * `dlazdice` je volitelný render obsahu dlaždice. Bez něj se kreslí obchodní
  * případ; sekce Nabídky si předá vlastní, aby nemusel existovat druhý kanban.
+ *
+ * `kategorie` je seznam z `crmKategorie()` – jen k přeložení klíče na název.
+ * Kanban si ho sám nenačítá, aby ho stránka nemusela tahat dvakrát.
  */
-export default function Kanban({ sloupce, onPresun, onOtevri, dlazdice = null }) {
+export default function Kanban({
+  sloupce,
+  onPresun,
+  onOtevri,
+  dlazdice = null,
+  kategorie = [],
+}) {
   const [nesu, setNesu] = useState(null); // id přetahovaného záznamu
   const [nad, setNad] = useState(null); // klíč stavu, nad kterým visí
 
@@ -82,7 +91,7 @@ export default function Kanban({ sloupce, onPresun, onOtevri, dlazdice = null })
                     <div className="crm-dlazdice-zakaznik">{z.zakaznik_nazev}</div>
                     {z.nazev && <div className="crm-dlazdice-nazev">{z.nazev}</div>}
                     <div className="crm-dlazdice-pata">
-                      {nazvyKategorii(z.kategorie) || "bez kategorie"}
+                      {nazvyKategorii(z.kategorie, kategorie) || "bez kategorie"}
                       {z.predpokladane_uzavreni ? ` · ${fmtDatum(z.predpokladane_uzavreni)}` : ""}
                     </div>
                     {z.vlastnik_jmeno && (

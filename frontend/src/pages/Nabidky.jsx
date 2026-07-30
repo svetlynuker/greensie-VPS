@@ -226,6 +226,7 @@ export default function Nabidky() {
             onRazeni={f.setRazeni}
             podminky={f.podminky}
             onPodminky={f.setPodminky}
+            exportNazev="nabidky"
             onOtevri={otevri}
             vykresli={(n, sl) => {
               if (sl.klic === "cislo")

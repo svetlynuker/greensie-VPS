@@ -215,6 +215,7 @@ export default function Projekty() {
             onRazeni={f.setRazeni}
             podminky={f.podminky}
             onPodminky={f.setPodminky}
+            exportNazev="projekty"
             onOtevri={(p) => navigate(`/projekty/detail/${p.id}`)}
             vykresli={(p, sl) => {
               if (sl.klic === "cislo") return <span className="crm-silne">{p.cislo}</span>;

@@ -62,6 +62,15 @@ Sekce se otevře v **kanbanu**, protože hlavní denní práce je posouvat pří
 
 Přepínačem se dá zapnout **tabulka** s hledáním podle čísla, názvu nebo zákazníka.
 
+**Kategorie případu** říká, čím zakázka je — a podle ní appka pozná, **do kterého výpočtu**
+poslat nabídku. Výchozí jsou *PPA*, *Prodej* a *Peak shaving*, ale seznam si vedení
+spravuje samo (viz níž), takže se může objevit i „Servis" nebo „Dotace". Kategorií může mít
+případ **víc současně** — PPA i peak shaving je běžná kombinace a právě z ní vzniká
+kombinovaná nabídka.
+
+> Kategorie, ke které žádný výpočet neexistuje (třeba servis), je v pořádku. Na záložce
+> Nabídky se u ní jen nenabídne tlačítko „+ …", protože nabídkovač pro ni nic neumí spočítat.
+
 ### Filtry, řazení a vlastní pohledy
 Každý seznam (Zákazníci, Případy, Nabídky, Objednávky, Projekty) má tři vrstvy filtrování a
 všechny se dají kombinovat.
@@ -101,6 +110,29 @@ Cizí nasdílený filtr **můžeš použít, ale ne přepsat** — kdo si ho chc
 > viděl něco jiného a nechápal proč.
 
 Co filtr skryl, je vidět u počtu nad tabulkou (`5 z 210`).
+
+**Datumy: používej „je v období", ne od–do.** U každého datumového sloupce je operátor
+**je v období** s hotovými volbami: *dnes, včera, zítra, tento týden, příštích 7 dní,
+posledních 30 dní, tento měsíc, minulý měsíc, tento rok, v minulosti, v budoucnosti* a další.
+
+Proč na tom záleží: filtr *„od 1. 7. do 31. 7."* je za měsíc **lež** — ukazuje starý červenec
+a nic tě na to neupozorní. Relativní období se přepočítává k dnešnímu dni, takže uložený
+pohled *„uzavření tento měsíc"* platí pořád. V editoru je vedle výběru vidět, co období dnes
+znamená (`1. 7. – 31. 7. 2026`), ať je jasné, co se filtruje.
+
+Absolutní od–do zůstává pro případy, kdy opravdu chceš pevné datum (třeba kvůli auditu).
+
+### Export do Excelu
+V liště nad každou tabulkou je **↓ Export CSV (n)**. Číslo v závorce říká, kolik řádků se
+stáhne — je to **přesně to, co máš na obrazovce**: se zapnutým filtrem, ve zvoleném řazení
+a s vybranými sloupci. Soubor se jmenuje podle sekce a data (`obchodni-pripady-2026-07-30.csv`).
+
+Otevři ho v Excelu normálním dvojklikem: je připravený pro české nastavení, takže diakritika
+sedí, sloupce se rozdělí samy a s částkami i procenty jde hned počítat. Datumy jsou ve formátu
+`30.07.2026`.
+
+> Export je **jen ke čtení dat** — zpátky do appky se soubor nahrát nedá. Změny se dělají
+> v appce, aby nevznikly dvě verze pravdy.
 
 ### Čísla záznamů
 Každý záznam má viditelné ID, které se dá nadiktovat do telefonu:
@@ -234,6 +266,11 @@ znovu (tlačítko nabídne „aktualizovat"). Je to schválně: takhle je dohled
 nabídka odešla zákazníkovi — každé spojení zůstává v historii.
 
 ### Import z Raynetu
+> **Rozhodnuto 30. 7. 2026: import se dělat NEBUDE.** Stávající zakázky **dojedou v Raynetu**
+> a do appky se zakládají jen **nové**. Funkce v appce zůstává (popis níž platí), ale nikdo ji
+> nespouští. Praktický důsledek pro každodenní práci: **nová zakázka = vždycky appka**, do
+> Raynetu se už nic nezakládá. Starší zakázky hledej dál v Raynetu.
+
 V sekci **Zákazníci** je pro `crm_nastaveni` tlačítko **⬇ Import z Raynetu**. Natáhne klienty
 a obchodní případy — jednosměrně (Raynet → appka) a **idempotentně**: opakované spuštění
 existující záznamy aktualizuje, nezdvojí, protože se páruje na Raynetí `id`.
@@ -275,6 +312,15 @@ Na kartě zákazníka i případu je log práce: **poznámka, telefonát, e-mail
 Aktivita s **termínem** se stává úkolem — nedokončené jsou nahoře a po termínu se zvýrazní
 červeně. Tohle je místo, kam patří „volal jsem, chce to probrat po dovolené" — jinak to zůstane
 jen v hlavě jednoho člověka.
+
+**Nemusíš je hledat po záznamech.** Na **Rozcestníku** (úvodní stránka) je karta
+**Moje úkoly v CRM** se všemi tvými nehotovými úkoly napříč zákazníky, případy, nabídkami,
+objednávkami i projekty — nejbližší termín první. U každého je vidět, **u čeho visí**, a
+kliknutím na řádek se tam dostaneš. Nahoře je k tomu dlaždice s počtem: svítí červeně, když
+je něco po termínu, oranžově u dnešních termínů.
+
+> Jsou to vždycky **jen tvoje** úkoly. I vedení, které jinak vidí všechny záznamy, tu má
+> svoje — jinak by tahle karta byla seznam práce celé firmy a nikdo by v ní nic nenašel.
 
 ### Vlastní pole: když chcete sledovat něco dalšího
 Rozhodne se, že u obchodního případu chcete vést třeba **číslo odběrného místa** nebo
@@ -362,6 +408,32 @@ ho záznamy i historie.
 Každý přesun se zapisuje do `crm_stav_historie` (kdo, kdy, odkud kam). Na kartě případu je to
 vidět na záložce **Historie stavů**. Bez toho by nešlo zjistit, jak dlouho případ visel v které
 fázi.
+
+### Kategorie obchodního případu
+Ve stejném okně jako stavy pipeline (**Nastavení pipeline, kategorií a číslování**, právo
+`crm_nastaveni`) je tabulka kategorií. Přidání „Servisu" nebo „Dotace" je tedy práce pro
+vedení, ne pro programátora.
+
+U každé kategorie se nastavuje:
+
+| Pole | Co znamená |
+|---|---|
+| **Název** | co vidí lidé; dá se kdykoli přejmenovat |
+| **Výpočet nabídky** | do kterého výpočtu kategorie míří (PPA / Prodej / Peak shaving), nebo **bez výpočtu** |
+| **Nabízet** | vypnutá kategorie se nenabízí u nových případů, ale u těch, které ji mají, se dál zobrazuje |
+| **Pořadí** | v jakém sledu se kategorie nabízejí |
+
+**Bez výpočtu** je plnohodnotná volba: „Servis" je pořád obchodní případ, ale nabídkovač pro
+něj nic neumí — tak se u něj tlačítko „+ Servis" na kartě případu nenabídne. Kdyby se
+nabídlo, vedlo by do prázdna.
+
+Dvě věci, které appka nedovolí, a proč:
+
+- **Strojový klíč se nemění** (je vypsaný pod názvem). Nesou ho uložené případy a typ
+  nabídky, takže jeho změna by je odpojila. Přejmenovat název je proto bezpečné, klíč zůstává.
+- **Kategorii, kterou už případy mají, nelze smazat.** Appka řekne kolik jich je a doporučí ji
+  **vypnout**. Smazání by z historických případů udělalo záznamy s klíčem, který nikdo
+  nepřeloží na název.
 
 ### Číselné řady a koexistence s Raynetem
 Tabulka `crm_ciselne_rady`, jeden řádek na (entita, rok). Číslo se přiděluje **atomicky**
@@ -509,7 +581,11 @@ Na `nabidky` (nabídkovač) přibyly dva sloupce: **`cislo`** (`NAB-26-NNNN`) a
 jako výpočtový nástroj a staré nabídky případ nemají.
 
 `kategorie` u případu je **seznam**, ne jedna hodnota: případ může být PPA i peak shaving
-současně (a právě z toho vznikne kombinovaná nabídka, až se to postaví).
+současně (a právě z toho vzniká kombinovaná nabídka).
+
+Samotné kategorie jsou od 30. 7. 2026 **data v tabulce `crm_kategorie`**, ne konstanta v kódu
+(stejný princip jako stavy pipeline). V případu se drží jen jejich `klic`; převod na název
+i na výpočet nabídky (`typ_nabidky`) řeší ta tabulka.
 
 ### Řešení potíží
 | Projev | Příčina a co s tím |

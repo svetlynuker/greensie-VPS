@@ -40,6 +40,10 @@ export const OPERATORY = {
     { klic: "neni_prazdne", nazev: "je vyplněno", bezHodnoty: true },
   ],
   datum: [
+    // Relativní období je první schválně: je to ta volba, kterou člověk chce
+    // v devíti z deseti případů („co mám tenhle měsíc"), a jako jediná
+    // nezastará v uloženém filtru (viz OBDOBI níž).
+    { klic: "v_obdobi", nazev: "je v období", obdobi: true },
     { klic: "je", nazev: "= den" },
     { klic: "vetsi", nazev: "od" },
     { klic: "mensi", nazev: "do" },
@@ -60,6 +64,130 @@ export const OPERATORY = {
 };
 
 OPERATORY.penize = OPERATORY.cislo;
+
+// ---- relativní datumová období (CRM-25) ----
+//
+// Proč to vůbec existuje: uložený filtr „od 1. 7. do 31. 7." je za měsíc LEŽ.
+// Ukazuje starý měsíc a nikdo si toho nemusí všimnout, protože filtr se tváří,
+// že funguje. Relativní období proto v podmínce drží KLÍČ („tento_mesic"), ne
+// datum, a rozsah se dopočítává k dnešnímu dni při každém vyhodnocení.
+//
+// Rozsah je vždy uzavřený interval včetně krajních dnů, v ISO (YYYY-MM-DD),
+// aby se dal porovnávat jako text – stejně jako to dělá zbytek modulu.
+// `od`/`do` = null znamená „neomezeno na té straně".
+export const OBDOBI = [
+  { klic: "dnes", nazev: "dnes" },
+  { klic: "vcera", nazev: "včera" },
+  { klic: "zitra", nazev: "zítra" },
+  { klic: "tento_tyden", nazev: "tento týden (po–ne)" },
+  { klic: "pristi_tyden", nazev: "příští týden" },
+  { klic: "poslednich_7_dni", nazev: "posledních 7 dní" },
+  { klic: "poslednich_30_dni", nazev: "posledních 30 dní" },
+  { klic: "poslednich_90_dni", nazev: "posledních 90 dní" },
+  { klic: "pristich_7_dni", nazev: "příštích 7 dní" },
+  { klic: "pristich_30_dni", nazev: "příštích 30 dní" },
+  { klic: "tento_mesic", nazev: "tento měsíc" },
+  { klic: "minuly_mesic", nazev: "minulý měsíc" },
+  { klic: "pristi_mesic", nazev: "příští měsíc" },
+  { klic: "tento_rok", nazev: "tento rok" },
+  { klic: "minuly_rok", nazev: "minulý rok" },
+  { klic: "v_minulosti", nazev: "v minulosti (před dneškem)" },
+  { klic: "v_budoucnosti", nazev: "v budoucnosti (po dnešku)" },
+];
+
+export const VYCHOZI_OBDOBI = "tento_mesic";
+
+/** Datum → ISO den (YYYY-MM-DD) v LOKÁLNÍM čase.
+ *
+ * Schválně ne `toISOString()`: ten převádí na UTC, takže by v našem pásmu
+ * hlásil „dnes" jako předchozí den každý večer po druhé hodině (v letním čase).
+ */
+function isoDen(d) {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const den = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${den}`;
+}
+
+function posun(d, dni) {
+  const k = new Date(d);
+  k.setDate(k.getDate() + dni);
+  return k;
+}
+
+/** Pondělí týdne, do kterého datum padá (v ČR začíná týden pondělím). */
+function pondeli(d) {
+  const k = new Date(d);
+  const den = (k.getDay() + 6) % 7; // 0 = pondělí
+  k.setDate(k.getDate() - den);
+  return k;
+}
+
+/**
+ * Rozsah období k danému dni: `{ od, do }` v ISO, null = neomezeno.
+ * `dnes` je parametr kvůli testovatelnosti (a aby se dnešek nečetl vícekrát).
+ */
+export function rozsahObdobi(klic, dnes = new Date()) {
+  const d = isoDen(dnes);
+  const prvniDenMesice = (posunMesicu) =>
+    new Date(dnes.getFullYear(), dnes.getMonth() + posunMesicu, 1);
+  const posledniDenMesice = (posunMesicu) =>
+    new Date(dnes.getFullYear(), dnes.getMonth() + posunMesicu + 1, 0);
+
+  switch (klic) {
+    case "dnes":
+      return { od: d, do: d };
+    case "vcera": {
+      const v = isoDen(posun(dnes, -1));
+      return { od: v, do: v };
+    }
+    case "zitra": {
+      const z = isoDen(posun(dnes, 1));
+      return { od: z, do: z };
+    }
+    case "tento_tyden": {
+      const po = pondeli(dnes);
+      return { od: isoDen(po), do: isoDen(posun(po, 6)) };
+    }
+    case "pristi_tyden": {
+      const po = posun(pondeli(dnes), 7);
+      return { od: isoDen(po), do: isoDen(posun(po, 6)) };
+    }
+    // „Posledních N dní" včetně dneška – 7 dní znamená dnes a šest předchozích.
+    case "poslednich_7_dni":
+      return { od: isoDen(posun(dnes, -6)), do: d };
+    case "poslednich_30_dni":
+      return { od: isoDen(posun(dnes, -29)), do: d };
+    case "poslednich_90_dni":
+      return { od: isoDen(posun(dnes, -89)), do: d };
+    case "pristich_7_dni":
+      return { od: d, do: isoDen(posun(dnes, 6)) };
+    case "pristich_30_dni":
+      return { od: d, do: isoDen(posun(dnes, 29)) };
+    case "tento_mesic":
+      return { od: isoDen(prvniDenMesice(0)), do: isoDen(posledniDenMesice(0)) };
+    case "minuly_mesic":
+      return { od: isoDen(prvniDenMesice(-1)), do: isoDen(posledniDenMesice(-1)) };
+    case "pristi_mesic":
+      return { od: isoDen(prvniDenMesice(1)), do: isoDen(posledniDenMesice(1)) };
+    case "tento_rok":
+      return { od: `${dnes.getFullYear()}-01-01`, do: `${dnes.getFullYear()}-12-31` };
+    case "minuly_rok":
+      return { od: `${dnes.getFullYear() - 1}-01-01`, do: `${dnes.getFullYear() - 1}-12-31` };
+    case "v_minulosti":
+      return { od: null, do: isoDen(posun(dnes, -1)) };
+    case "v_budoucnosti":
+      return { od: isoDen(posun(dnes, 1)), do: null };
+    default:
+      // Neznámý klíč nesmí seznam vyprázdnit – filtr, kterému nikdo nerozumí,
+      // radši nefiltruje, než aby tvrdil, že data nejsou.
+      return { od: null, do: null };
+  }
+}
+
+/** Lidský název období do popisu podmínky. */
+export function nazevObdobi(klic) {
+  return OBDOBI.find((o) => o.klic === klic)?.nazev || klic;
+}
 
 // ---- definice sloupců jednotlivých sekcí ----
 // `klic` = klíč v řádku z API, `hodnota` volitelně přepočet (např. pole → text).
@@ -233,6 +361,10 @@ export function splnujePodminku(radek, podminka, sloupce) {
   if (typ === "datum") {
     const d = naText(surova).slice(0, 10);
     if (!d) return false;
+    if (operator === "v_obdobi") {
+      const { od, do: doD } = rozsahObdobi(naText(hodnota) || VYCHOZI_OBDOBI);
+      return (!od || d >= od) && (!doD || d <= doD);
+    }
     if (operator === "je") return d === naText(hodnota).slice(0, 10);
     if (operator === "vetsi") return d >= naText(hodnota).slice(0, 10);
     if (operator === "mensi") return d <= naText(hodnota).slice(0, 10);
@@ -340,6 +472,8 @@ export function popisPodminky(podminka, sloupce) {
   );
   const opNazev = op?.nazev || podminka.operator;
   if (op?.bezHodnoty) return `${nazev} ${opNazev}`;
+  // U období se vypisuje jeho lidský název, ne strojový klíč („tento_mesic").
+  if (op?.obdobi) return `${nazev}: ${nazevObdobi(naText(podminka.hodnota))}`;
   const h = Array.isArray(podminka.hodnota)
     ? podminka.hodnota.filter(Boolean).join(" – ")
     : naText(podminka.hodnota);

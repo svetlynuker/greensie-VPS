@@ -17,7 +17,9 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import User
 from app.auth.permissions import get_current_user, muze_otevrit
+from app.crm import ukoly as ukoly_modul
 from app.dashboard.schemas import (
+    CrmSouhrn,
     DashboardOut,
     FinanceSouhrn,
     NabidkySouhrn,
@@ -161,5 +163,12 @@ def dashboard(
 
     if muze_otevrit(user, "nabidkovac"):
         out.nabidky = _souhrn_nabidek(db, dnes)
+
+    # CRM úkoly stačí právo na Zákazníky — aktivity visí na všech entitách CRM
+    # a stejnou podmínku má endpoint /crm/ukoly.
+    if muze_otevrit(user, "zakaznici"):
+        po_terminu, dnes_pocet, celkem = ukoly_modul.pocty(db, user)
+        out.crm = CrmSouhrn(po_terminu=po_terminu, dnes=dnes_pocet, celkem=celkem)
+        out.crm_ukoly = ukoly_modul.moje_ukoly(db, user, limit=LIMIT_VYPISU)
 
     return out

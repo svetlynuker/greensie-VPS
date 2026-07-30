@@ -5,8 +5,7 @@ import KombinaceOkno from "./KombinaceOkno";
 import PeakShavingPanel from "./PeakShavingPanel";
 import PpaPanel from "./PpaPanel";
 import ProdejPanel from "./ProdejPanel";
-import { crmVytvorNabidku, nabidkaDetail } from "../api";
-import { KATEGORIE_OP } from "../crm";
+import { crmKategorie, crmVytvorNabidku, nabidkaDetail } from "../api";
 import { STAV_NABIDKY } from "../nabidkovac";
 import "../styles/nabidkovac.css";
 
@@ -32,6 +31,7 @@ export default function PripadNabidky({ pripad, onZmena }) {
   const [nacitam, setNacitam] = useState(false);
   const [zaklada, setZaklada] = useState(null); // typ, který se právě zakládá
   const [kombinace, setKombinace] = useState(false);
+  const [kategorie, setKategorie] = useState([]);
   const [chyba, setChyba] = useState(null);
 
   const nabidky = pripad.nabidky || [];
@@ -63,6 +63,15 @@ export default function PripadNabidky({ pripad, onZmena }) {
     vyber(prvni);
   }, [aktivni, nabidky, vyber]);
 
+  // Kategorie určují, jaké nabídky se dají z případu založit. Načítají se
+  // z appky (CRM-03) a berou se jen ty, které do nějakého výpočtu míří —
+  // u kategorie bez výpočtu (např. Servis) by tlačítko vedlo do prázdna.
+  useEffect(() => {
+    crmKategorie()
+      .then(setKategorie)
+      .catch(() => setKategorie([]));
+  }, []);
+
   async function zaloz(typ) {
     setZaklada(typ);
     setChyba(null);
@@ -91,8 +100,11 @@ export default function PripadNabidky({ pripad, onZmena }) {
 
   // Nabídku lze založit v kterémkoli typu; kategorie případu jdou první,
   // protože to je ta obvyklá volba.
-  const zKategorii = KATEGORIE_OP.filter((k) => (pripad.kategorie || []).includes(k.klic));
-  const ostatni = KATEGORIE_OP.filter((k) => !(pripad.kategorie || []).includes(k.klic));
+  const sVypoctem = kategorie.filter((k) => k.typ_nabidky);
+  const zKategorii = sVypoctem.filter((k) => (pripad.kategorie || []).includes(k.klic));
+  const ostatni = sVypoctem.filter(
+    (k) => k.aktivni && !(pripad.kategorie || []).includes(k.klic)
+  );
 
   return (
     <div className="crm-nabidky">
@@ -127,11 +139,11 @@ export default function PripadNabidky({ pripad, onZmena }) {
           <button
             key={k.klic}
             className={`fm-btn ${zKategorii.includes(k) ? "fm-primary" : ""}`}
-            onClick={() => zaloz(k.klic)}
+            onClick={() => zaloz(k.typ_nabidky)}
             disabled={Boolean(zaklada)}
             title={k.popis}
           >
-            {zaklada === k.klic ? "Zakládám…" : `+ ${k.nazev}`}
+            {zaklada === k.typ_nabidky ? "Zakládám…" : `+ ${k.nazev}`}
           </button>
         ))}
       </div>

@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from app.crm.schemas import UkolOut
+
 
 class ProjektySouhrn(BaseModel):
     """Souhrn matice (Pohled 1) — jen pro toho, kdo smí otevřít Přehled projektů."""
@@ -29,6 +31,18 @@ class NabidkySouhrn(BaseModel):
     nove_30_dni: int
 
 
+class CrmSouhrn(BaseModel):
+    """Moje úkoly v CRM — jen s právem na Zákazníky.
+
+    Pozor na rozdíl proti `ProjektySouhrn`: tam jsou úkoly celé firmy z matice,
+    tady jen úkoly PŘIHLÁŠENÉHO uživatele (i vedení tu má svoje, ne cizí).
+    """
+
+    po_terminu: int
+    dnes: int
+    celkem: int
+
+
 class UkolRadek(BaseModel):
     """Jeden úkol z matice pro výpis na dashboardu."""
 
@@ -47,5 +61,9 @@ class DashboardOut(BaseModel):
     projekty: ProjektySouhrn | None = None
     finance: FinanceSouhrn | None = None
     nabidky: NabidkySouhrn | None = None
+    crm: CrmSouhrn | None = None
     po_terminu: list[UkolRadek] = []
     blizi_se: list[UkolRadek] = []
+    # Moje úkoly z CRM (nejbližší termín první). Typ je UkolOut z CRM schémat —
+    # dashboard si ho nekopíruje, aby se výpis nerozešel s /crm/ukoly.
+    crm_ukoly: list[UkolOut] = []

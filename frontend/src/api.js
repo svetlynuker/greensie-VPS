@@ -683,6 +683,32 @@ export function crmStavSmaz(id) {
   return zavolej(`/crm/stavy/${id}`, { method: "DELETE" });
 }
 
+// Kategorie obchodního případu. Nejsou to konstanty ve kódu, ale data (CRM-03):
+// vedení si přidá „Servis" bez nasazení. `typ_nabidky` prázdný = ke kategorii
+// výpočet neexistuje, takže se u ní nenabízí tlačítko „+ nabídka".
+export function crmKategorie() {
+  return zavolej("/crm/kategorie");
+}
+
+export function crmKategoriePridej(data) {
+  return zavolej("/crm/kategorie", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function crmKategorieUprav(id, data) {
+  return zavolej(`/crm/kategorie/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function crmKategoriePoradi(poradi) {
+  return zavolej("/crm/kategorie/poradi", {
+    method: "PUT",
+    body: JSON.stringify({ poradi }),
+  });
+}
+
+export function crmKategorieSmaz(id) {
+  return zavolej(`/crm/kategorie/${id}`, { method: "DELETE" });
+}
+
 export function crmRady() {
   return zavolej("/crm/rady");
 }

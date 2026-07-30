@@ -22,8 +22,10 @@ from app.auth.permissions import get_current_user, muze_otevrit
 from app.crm import ares as ares_modul
 from app.crm import (
     ciselne_rady,
+    kategorie as kategorie_modul,
     nabidky_pipeline,
     stavy as stavy_modul,
+    ukoly as ukoly_modul,
     vlastni_pole as pole_modul,
 )
 from app.crm.models import (
@@ -35,6 +37,7 @@ from app.crm.models import (
     TYPY_ZAKAZNIKA,
     CiselnaRada,
     CrmAktivita,
+    CrmKategorie,
     CrmStav,
     CrmStavHistorie,
     CrmVlastniPole,
@@ -70,11 +73,14 @@ from app.crm.schemas import (
     PripadRadekOut,
     PripadUprava,
     PripadVstup,
+    KategorieOut,
+    KategorieVstup,
     RadaOut,
     RadaVstup,
     StavOut,
     StavVstup,
     StavyPoradi,
+    UkolOut,
     UzivatelVolbaOut,
     VlastniPoleOut,
     VlastniPolePoradi,
@@ -586,8 +592,14 @@ def _pripad_detail(db: Session, p: ObchodniPripad, user: User) -> PripadDetailOu
     )
 
 
-def _over_kategorie(kategorie: list[str]) -> list[str]:
-    neznama = [k for k in kategorie if k not in KATEGORIE_OP]
+def _over_kategorie(db: Session, kategorie: list[str]) -> list[str]:
+    """Ověří klíče proti tabulce kategorií (ne proti konstantě – viz CRM-03).
+
+    Vypnuté kategorie projdou schválně: případ, který ji už nese, musí zůstat
+    uložitelný, i když ji vedení mezitím schovalo z nabídky.
+    """
+    platne = kategorie_modul.platne_klice(db)
+    neznama = [k for k in kategorie if k not in platne]
     if neznama:
         raise HTTPException(
             status_code=422, detail=f"Neznámá kategorie případu: {', '.join(neznama)}"
@@ -683,7 +695,7 @@ def zaloz_pripad(
     číslo se nespotřebuje a v řadě nevznikne díra.
     """
     z = vyzaduj_zaznam(db.get(Zakaznik, vstup.zakaznik_id), user, "Zákazník")
-    kategorie = _over_kategorie(list(vstup.kategorie or []))
+    kategorie = _over_kategorie(db, list(vstup.kategorie or []))
     vlastnik, spolu = _vlastnictvi(db, vstup, user)
 
     extra = pole_modul.zpracuj(db, "op", vstup.extra)
@@ -745,7 +757,7 @@ def uprav_pripad(
     vlastnik, spolu = _vlastnictvi(db, vstup, user, zaznam=p)
     p.nazev = (vstup.nazev or "").strip()
     p.popis = vstup.popis or ""
-    p.kategorie = _over_kategorie(list(vstup.kategorie or []))
+    p.kategorie = _over_kategorie(db, list(vstup.kategorie or []))
     p.hodnota_kc = vstup.hodnota_kc
     p.pravdepodobnost = vstup.pravdepodobnost
     p.predpokladane_uzavreni = _parse_datum(
@@ -1188,27 +1200,19 @@ def smaz_aktivitu(
     return {"ok": True}
 
 
-@router.get("/ukoly", response_model=list[AktivitaOut])
+@router.get("/ukoly", response_model=list[UkolOut])
 def moje_ukoly(
     user: User = Depends(vyzaduj_zakazniky),
     db: Session = Depends(get_db),
 ):
     """Nedokončené úkoly s termínem, které patří přihlášenému uživateli.
 
-    Napříč zákazníky i případy – aby OZ nemusel proklikávat záznamy, aby
-    zjistil, co má dnes udělat.
+    Napříč zákazníky, případy, nabídkami, objednávkami i projekty – aby OZ
+    nemusel proklikávat záznamy, aby zjistil, co má dnes udělat. Skládání
+    soupisu (včetně názvu záznamu a cesty pro proklik) je v `crm/ukoly.py`,
+    ať ho souhrn na Rozcestníku počítá stejně.
     """
-    radky = (
-        db.query(CrmAktivita)
-        .filter(
-            CrmAktivita.vlastnik_user_id == user.id,
-            CrmAktivita.hotovo.is_(False),
-            CrmAktivita.termin.isnot(None),
-        )
-        .order_by(CrmAktivita.termin)
-        .all()
-    )
-    return [_aktivita_out(a) for a in radky]
+    return ukoly_modul.moje_ukoly(db, user)
 
 
 # ---- nastavení: stavy pipeline ----------------------------------------------
@@ -1359,6 +1363,158 @@ def smaz_stav(
     if len(stavy_modul.seznam(db, s.entita)) <= 1:
         raise HTTPException(status_code=409, detail="Poslední stav smazat nelze.")
     db.delete(s)
+    db.commit()
+    return {"ok": True}
+
+
+# ---- nastavení: kategorie obchodního případu --------------------------------
+def _kategorie_out(k: CrmKategorie) -> KategorieOut:
+    return KategorieOut(
+        id=k.id,
+        klic=k.klic,
+        nazev=k.nazev,
+        popis=k.popis or "",
+        poradi=k.poradi,
+        typ_nabidky=k.typ_nabidky or "",
+        aktivni=bool(k.aktivni),
+    )
+
+
+def _over_typ_nabidky(typ: str) -> str:
+    """Prázdné = kategorie bez výpočtu. Jinak to musí být typ, který nabídkovač
+    zná – jinak by tlačítko na kartě případu zakládalo nabídku, kterou žádný
+    výpočet neumí otevřít."""
+    typ = (typ or "").strip()
+    if typ and typ not in kategorie_modul.TYPY_NABIDKY_PRO_KATEGORII:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Neznámý typ nabídky: {typ}. "
+                f"Povolené: {', '.join(kategorie_modul.TYPY_NABIDKY_PRO_KATEGORII)} "
+                "(nebo prázdné, pokud ke kategorii výpočet není)."
+            ),
+        )
+    return typ
+
+
+@router.get("/kategorie", response_model=list[KategorieOut])
+def seznam_kategorii(
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Kategorie případu. Čtení stačí běžné právo na CRM – vybírá se z nich
+    ve formuláři případu a kreslí se z nich tlačítka „+ nabídka"."""
+    return [_kategorie_out(k) for k in kategorie_modul.seznam(db)]
+
+
+@router.post("/kategorie", response_model=KategorieOut)
+def pridej_kategorii(
+    vstup: KategorieVstup,
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    nazev = (vstup.nazev or "").strip()
+    if not nazev:
+        raise HTTPException(status_code=422, detail="Název kategorie je povinný.")
+    typ = _over_typ_nabidky(vstup.typ_nabidky)
+
+    poradi = vstup.poradi
+    if poradi is None:
+        posledni = db.query(func.max(CrmKategorie.poradi)).scalar()
+        poradi = int(posledni or 0) + 1
+    k = CrmKategorie(
+        klic=kategorie_modul.klic_ze_nazvu(db, nazev),
+        nazev=nazev,
+        popis=(vstup.popis or "").strip(),
+        poradi=poradi,
+        typ_nabidky=typ,
+        aktivni=True if vstup.aktivni is None else bool(vstup.aktivni),
+    )
+    db.add(k)
+    db.commit()
+    db.refresh(k)
+    return _kategorie_out(k)
+
+
+# POZOR na pořadí definic: `/kategorie/poradi` musí být PŘED
+# `/kategorie/{kategorie_id}`, jinak by ho FastAPI namatchovalo jako id
+# a požadavek by skončil na „poradi není číslo".
+@router.put("/kategorie/poradi", response_model=list[KategorieOut])
+def zmen_poradi_kategorii(
+    vstup: StavyPoradi,
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    """Nové pořadí (seznam id ve výsledném pořadí) – řídí, v jakém sledu se
+    kategorie nabízejí ve formuláři a na kartě případu."""
+    podle_id = {k.id: k for k in kategorie_modul.seznam(db)}
+    for poradi, kid in enumerate(vstup.poradi):
+        k = podle_id.get(kid)
+        if k is not None:
+            k.poradi = poradi
+    db.commit()
+    return [_kategorie_out(k) for k in kategorie_modul.seznam(db)]
+
+
+@router.put("/kategorie/{kategorie_id}", response_model=KategorieOut)
+def uprav_kategorii(
+    kategorie_id: int,
+    vstup: KategorieVstup,
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    """Přejmenování a přepnutí výpočtu. `klic` se NEMĚNÍ – nesou ho uložené
+    případy i typ nabídky, takže by se jeho změnou odpojily."""
+    k = db.get(CrmKategorie, kategorie_id)
+    if k is None:
+        raise HTTPException(status_code=404, detail="Kategorie neexistuje")
+    nazev = (vstup.nazev or "").strip()
+    if not nazev:
+        raise HTTPException(status_code=422, detail="Název kategorie je povinný.")
+    k.nazev = nazev
+    k.popis = (vstup.popis or "").strip()
+    k.typ_nabidky = _over_typ_nabidky(vstup.typ_nabidky)
+    if vstup.aktivni is not None:
+        k.aktivni = bool(vstup.aktivni)
+    if vstup.poradi is not None:
+        k.poradi = vstup.poradi
+    db.commit()
+    db.refresh(k)
+    return _kategorie_out(k)
+
+
+@router.delete("/kategorie/{kategorie_id}")
+def smaz_kategorii(
+    kategorie_id: int,
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    """Smaže kategorii, kterou nikdo nepoužívá.
+
+    Když ji případy mají, mazání se odmítne a nabídne se vypnutí (`aktivni`):
+    smazaná kategorie by z historických případů udělala záznamy se strojovým
+    klíčem, který nikdo nepřeloží.
+    """
+    k = db.get(CrmKategorie, kategorie_id)
+    if k is None:
+        raise HTTPException(status_code=404, detail="Kategorie neexistuje")
+
+    pocet = (
+        db.query(func.count(ObchodniPripad.id))
+        .filter(ObchodniPripad.kategorie.any(k.klic))
+        .scalar()
+    )
+    if int(pocet or 0) > 0:
+        n = int(pocet)
+        kolik = "1 případ" if n == 1 else f"{n} případy" if n < 5 else f"{n} případů"
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Kategorii {k.nazev} má {kolik}. Smazat ji nelze – "
+                "vypni ji, ať se nenabízí u nových případů."
+            ),
+        )
+    db.delete(k)
     db.commit()
     return {"ok": True}
 

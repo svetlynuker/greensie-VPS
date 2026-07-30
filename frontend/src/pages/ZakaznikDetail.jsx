@@ -8,6 +8,7 @@ import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
 import VlastniPoleVypis from "../components/VlastniPoleVypis";
 import ZakaznikFormular from "../components/ZakaznikFormular";
 import {
+  crmKategorie,
   crmPripady,
   crmZakaznikDetail,
   crmZakaznikKonvertuj,
@@ -42,6 +43,14 @@ export default function ZakaznikDetail() {
   const [novyPripad, setNovyPripad] = useState(false);
   const [spravaPoli, setSpravaPoli] = useState(false);
   const [chyba, setChyba] = useState(null);
+  // Kategorie jen na překlad klíče na název v seznamu případů (CRM-03).
+  const [kategorie, setKategorie] = useState([]);
+
+  useEffect(() => {
+    crmKategorie()
+      .then(setKategorie)
+      .catch(() => setKategorie([]));
+  }, []);
 
   useEffect(() => {
     Promise.all([nactiMe(), crmZakaznikDetail(id), crmPripady({ zakaznikId: id })])
@@ -230,7 +239,7 @@ export default function ZakaznikDetail() {
                   <tr key={p.id} onClick={() => navigate(`/pripady/detail/${p.id}`)}>
                     <td className="crm-silne">{p.cislo}</td>
                     <td>{p.nazev || "—"}</td>
-                    <td>{nazvyKategorii(p.kategorie) || "—"}</td>
+                    <td>{nazvyKategorii(p.kategorie, kategorie) || "—"}</td>
                     <td>
                       <span className="crm-znacka">{p.stav_nazev}</span>
                     </td>
