@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import {
   crmKategorie,
+  crmKategorieAktivit,
+  crmKategorieAktivityPridej,
+  crmKategorieAktivitySmaz,
+  crmKategorieAktivityUprav,
+  crmNastaveni,
+  crmNastaveniUloz,
   crmKategoriePoradi,
   crmKategoriePridej,
   crmKategorieSmaz,
@@ -55,6 +61,10 @@ export default function StavyNastaveni({ entita, onZavri, onZmena }) {
   const [navrh, setNavrh] = useState(null);
   const [kategorie, setKategorie] = useState(null);
   const [novaKat, setNovaKat] = useState({ nazev: "", typ_nabidky: "" });
+  // Barevné štítky aktivit pro kalendář + firemní adresa pro „U nás".
+  const [stitky, setStitky] = useState(null);
+  const [novyStitek, setNovyStitek] = useState({ nazev: "", barva: "#b9e6c9" });
+  const [naseAdresa, setNaseAdresa] = useState("");
   const [chyba, setChyba] = useState(null);
 
   // Kategorie se spravují jen u obchodního případu – u nabídky, objednávky
@@ -65,7 +75,10 @@ export default function StavyNastaveni({ entita, onZavri, onZmena }) {
     const [s, r] = await Promise.all([crmStavy(entita), crmRady()]);
     setStavy(s);
     setRady(r);
-    if (jeOp) setKategorie(await crmKategorie().catch(() => []));
+    if (jeOp) {
+      setKategorie(await crmKategorie().catch(() => []));
+      setStitky(await crmKategorieAktivit().catch(() => []));
+    }
   }
 
   useEffect(() => {
@@ -74,12 +87,16 @@ export default function StavyNastaveni({ entita, onZavri, onZmena }) {
       crmRady(),
       crmNavrhStartu(entita).catch(() => null),
       entita === "op" ? crmKategorie().catch(() => []) : Promise.resolve(null),
+      entita === "op" ? crmKategorieAktivit().catch(() => []) : Promise.resolve(null),
+      entita === "op" ? crmNastaveni().catch(() => null) : Promise.resolve(null),
     ])
-      .then(([s, r, n, k]) => {
+      .then(([s, r, n, k, st, nast]) => {
         setStavy(s);
         setRady(r);
         setNavrh(n);
         setKategorie(k);
+        setStitky(st);
+        setNaseAdresa(nast?.nase_adresa || "");
       })
       .catch((e) => setChyba(e.message));
   }, [entita]);
@@ -146,6 +163,60 @@ export default function StavyNastaveni({ entita, onZavri, onZmena }) {
     try {
       await crmRaduUprav(rada.entita, zmeny);
       await nacti();
+    } catch (e) {
+      hlas(e);
+    }
+  }
+
+  // ---- barevné štítky aktivit (kalendář) ----
+  async function pridejStitek() {
+    if (!novyStitek.nazev.trim()) return;
+    try {
+      await crmKategorieAktivityPridej({
+        nazev: novyStitek.nazev.trim(),
+        barva: novyStitek.barva,
+      });
+      setNovyStitek({ nazev: "", barva: "#b9e6c9" });
+      await nacti();
+    } catch (e) {
+      hlas(e);
+    }
+  }
+
+  async function upravStitek(k, zmeny) {
+    try {
+      await crmKategorieAktivityUprav(k.id, {
+        nazev: zmeny.nazev ?? k.nazev,
+        barva: zmeny.barva ?? k.barva,
+        aktivni: zmeny.aktivni ?? k.aktivni,
+      });
+      await nacti();
+    } catch (e) {
+      hlas(e);
+    }
+  }
+
+  async function smazStitek(k) {
+    if (!window.confirm(`Smazat kategorii „${k.nazev}"? Aktivity zůstanou, jen bez štítku.`)) {
+      return;
+    }
+    try {
+      const out = await crmKategorieAktivitySmaz(k.id);
+      await nacti();
+      if (out?.aktivit_bez_kategorie) {
+        setChyba(
+          `Kategorie smazána. ${out.aktivit_bez_kategorie} aktivit zůstalo bez štítku.`
+        );
+      }
+    } catch (e) {
+      hlas(e);
+    }
+  }
+
+  async function ulozAdresu(hodnota) {
+    try {
+      await crmNastaveniUloz({ nase_adresa: hodnota });
+      setNaseAdresa(hodnota);
     } catch (e) {
       hlas(e);
     }
@@ -428,6 +499,113 @@ export default function StavyNastaveni({ entita, onZavri, onZmena }) {
                   Přidat kategorii
                 </button>
               </div>
+            </>
+          )}
+
+          {jeOp && (
+            <>
+              <h3 style={{ marginTop: 22 }}>Kategorie aktivit (barvy v kalendáři)</h3>
+              <p className="crm-tise">
+                Barevné škatulky, kterými se v kalendáři třídí schůzky a úkoly — a podle
+                kterých se dá filtrovat. <b>Není to totéž jako kategorie případu výš:</b> ta
+                říká, do kterého výpočtu míří nabídka. Smazání štítku aktivity nesmaže, jen
+                jim štítek odebere.
+              </p>
+
+              {stitky === null ? null : (
+                <table className="crm-tabulka crm-tabulka-hustá">
+                  <thead>
+                    <tr>
+                      <th>Název</th>
+                      <th>Barva</th>
+                      <th>Nabízet</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stitky.map((k) => (
+                      <tr key={k.id}>
+                        <td>
+                          <input
+                            className="crm-pole"
+                            defaultValue={k.nazev}
+                            onBlur={(e) => {
+                              if (e.target.value.trim() && e.target.value !== k.nazev) {
+                                upravStitek(k, { nazev: e.target.value.trim() });
+                              }
+                            }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="color"
+                            className="crm-barva-pole"
+                            value={k.barva}
+                            onChange={(e) => upravStitek(k, { barva: e.target.value })}
+                            aria-label={`Barva pro ${k.nazev}`}
+                          />
+                        </td>
+                        <td>
+                          <label className="crm-tise" style={{ display: "flex", gap: 6 }}>
+                            <input
+                              type="checkbox"
+                              checked={k.aktivni}
+                              onChange={(e) => upravStitek(k, { aktivni: e.target.checked })}
+                            />
+                            {k.aktivni ? "ano" : "ne"}
+                          </label>
+                        </td>
+                        <td>
+                          <button
+                            className="fm-btn crm-btn-maly crm-btn-smazat"
+                            onClick={() => smazStitek(k)}
+                            title="Smazat kategorii"
+                          >
+                            ✕
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              <div className="crm-stav-novy">
+                <input
+                  className="crm-pole"
+                  value={novyStitek.nazev}
+                  onChange={(e) => setNovyStitek((n) => ({ ...n, nazev: e.target.value }))}
+                  placeholder="Název nové kategorie (např. Reklamace)"
+                />
+                <input
+                  type="color"
+                  className="crm-barva-pole"
+                  value={novyStitek.barva}
+                  onChange={(e) => setNovyStitek((n) => ({ ...n, barva: e.target.value }))}
+                  aria-label="Barva nové kategorie"
+                />
+                <button
+                  className="fm-btn fm-primary"
+                  onClick={pridejStitek}
+                  disabled={!novyStitek.nazev.trim()}
+                >
+                  Přidat kategorii
+                </button>
+              </div>
+
+              <h3 style={{ marginTop: 22 }}>Naše adresa</h3>
+              <p className="crm-tise">
+                Vyplní se tlačítkem <b>U nás</b> u místa konání, když se schůzka koná
+                u nás. Prázdné = tlačítko se nenabízí.
+              </p>
+              <input
+                className="crm-pole"
+                defaultValue={naseAdresa}
+                placeholder="např. Bedřichovská 2183/16, Praha 8, 182 00"
+                onBlur={(e) => {
+                  if (e.target.value.trim() !== naseAdresa) ulozAdresu(e.target.value.trim());
+                }}
+              />
             </>
           )}
 

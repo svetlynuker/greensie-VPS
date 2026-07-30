@@ -209,6 +209,10 @@ export default function KalendarTyden({
   onUdalost,
   onPrazdno, // (isoDen, "HH:MM")
   onPresun, // (udalost, {termin, cas, delka_min, konec}) → ulož
+  // Kolik dní mřížka kreslí. 7 = týden, 1 = denní pohled. Denní pohled je
+  // schválně TATÁŽ komponenta: kdyby byl vlastní, měl by druhou kopii
+  // pozicování, tažení i vrstvení souběhů — a ty by se rozešly.
+  pocetDnu = 7,
 }) {
   const dnesIso = isoDen(new Date());
   const refMrizka = useRef(null);
@@ -236,8 +240,8 @@ export default function KalendarTyden({
   const potlacitKlikDoRef = useRef(0);
 
   const dny = useMemo(
-    () => Array.from({ length: 7 }, (_, i) => posunDnu(pondeli, i)),
-    [pondeli]
+    () => Array.from({ length: pocetDnu }, (_, i) => posunDnu(pondeli, i)),
+    [pondeli, pocetDnu]
   );
   const dnyRef = useRef(dny);
   dnyRef.current = dny;
@@ -270,18 +274,21 @@ export default function KalendarTyden({
   }, [vMrizce]);
 
   /** Z pozice kurzoru spočítá, nad kterým dnem a v které minutě je. */
-  const miraKurzoru = useCallback((e) => {
+  const miraKurzoru = useCallback(
+    (e) => {
     const mrizka = refMrizka.current?.getBoundingClientRect();
     const osa = refOsa.current?.getBoundingClientRect();
     if (!mrizka || !osa) return null;
-    const sirkaDne = (mrizka.width - osa.width) / 7;
+    const sirkaDne = (mrizka.width - osa.width) / pocetDnu;
     if (!(sirkaDne > 0)) return null;
     const idx = Math.floor((e.clientX - mrizka.left - osa.width) / sirkaDne);
     return {
-      denIdx: Math.max(0, Math.min(6, idx)),
-      minuty: minutyZY(e.clientY - mrizka.top),
-    };
-  }, []);
+      denIdx: Math.max(0, Math.min(pocetDnu - 1, idx)),
+        minuty: minutyZY(e.clientY - mrizka.top),
+      };
+    },
+    [pocetDnu]
+  );
 
   function zacniTazeni(e, u, rezim) {
     // Cizí blok táhnout nelze a levé tlačítko je jediné, které táhne.
@@ -378,7 +385,7 @@ export default function KalendarTyden({
 
       const nove = zTazeni(t.rezim, t.puvodOd, t.puvodDelka, deltaMin);
       if (t.rezim === "presun") {
-        t.denIdx = Math.max(0, Math.min(6, t.puvodDenIdx + deltaDen));
+        t.denIdx = Math.max(0, Math.min(dnyRef.current.length - 1, t.puvodDenIdx + deltaDen));
         if (!t.celyDen) {
           t.od = nove.od;
           t.delka = nove.delka;
@@ -427,11 +434,11 @@ export default function KalendarTyden({
   /** Vícedenní pruh: od kterého do kterého sloupce týdne se táhne. */
   function rozsahPruhu(u) {
     const prvni = isoDen(pondeli);
-    const posledni = isoDen(dny[6]);
+    const posledni = isoDen(dny[dny.length - 1]);
     const od = (u.termin || "").slice(0, 10);
     const do_ = (u.konec || u.termin || "").slice(0, 10);
     const odIdx = od < prvni ? 0 : dny.findIndex((d) => isoDen(d) === od);
-    const doIdx = do_ > posledni ? 6 : dny.findIndex((d) => isoDen(d) === do_);
+    const doIdx = do_ > posledni ? dny.length - 1 : dny.findIndex((d) => isoDen(d) === do_);
     const bezpecnyOd = Math.max(odIdx, 0);
     return {
       od: bezpecnyOd,
@@ -453,8 +460,12 @@ export default function KalendarTyden({
   // dlaždice bliknul náhled na tomtéž místě.
   const duchAktivni = nahled?.posunuto ? nahled : null;
 
+  // Počet sloupců řídí CSS proměnná, ne pevná trojice pravidel — týden i den
+  // tak používají stejnou mřížku.
+  const styleMrizky = { "--kal-dnu": pocetDnu };
+
   return (
-    <div className={`kal-tyden${tahnu ? " tahne-se" : ""}`}>
+    <div className={`kal-tyden${tahnu ? " tahne-se" : ""}`} style={styleMrizky}>
       {/* ---- hlavička dnů ---- */}
       <div className="kal-tyden-hlava">
         <div className="kal-osa-rohu" />
@@ -492,9 +503,9 @@ export default function KalendarTyden({
             const r = n
               ? {
                   od: n.denIdx,
-                  do: Math.min(6, n.denIdx + (n.dniDelka || 0)),
+                  do: Math.min(dny.length - 1, n.denIdx + (n.dniDelka || 0)),
                   pretekaVlevo: false,
-                  pretekaVpravo: n.denIdx + (n.dniDelka || 0) > 6,
+                  pretekaVpravo: n.denIdx + (n.dniDelka || 0) > dny.length - 1,
                 }
               : rozsahPruhu(u);
             return (

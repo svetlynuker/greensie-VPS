@@ -682,6 +682,16 @@ export function crmUdalostPridej(data) {
 
 // Barevné štítky aktivit (jiná věc než kategorie obchodního případu —
 // tohle jsou škatulky v kalendáři, kterými se filtruje).
+// Firemní nastavení CRM (naše adresa pro „U nás"). Čtení smí každý, změnu
+// jen právo crm_nastaveni.
+export function crmNastaveni() {
+  return zavolej("/crm/nastaveni");
+}
+
+export function crmNastaveniUloz(data) {
+  return zavolej("/crm/nastaveni", { method: "PUT", body: JSON.stringify(data) });
+}
+
 export function crmKategorieAktivit() {
   return zavolej("/crm/kategorie-aktivit");
 }

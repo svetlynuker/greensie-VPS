@@ -4,6 +4,7 @@ import {
   crmAktivitaUprav,
   crmKategorieAktivit,
   crmNabidky,
+  crmNastaveni,
   crmPripady,
   crmUdalostPridej,
   crmUzivatele,
@@ -36,10 +37,6 @@ import "../styles/aktivitaModal.css";
 
 // Trvání v nabídce. Delší schůzky se zadají přes „vlastní" (minuty).
 const TRVANI = [15, 30, 45, 60, 90, 120, 180, 240, 480];
-
-// Adresa firmy pro tlačítko „U nás". Zatím konstanta — až bude v Admin
-// nastavení firemní profil, načte se odtud.
-const NASE_ADRESA = "Bedřichovská 2183/16, Praha 8, 182 00";
 
 // Na co lze aktivitu navázat. Klíče se drží ENTITY_AKTIVIT na backendu.
 const ENTITY = [
@@ -104,6 +101,7 @@ export default function AktivitaModal({
   const [kategorie, setKategorie] = useState([]);
   const [lide, setLide] = useState([]);
   const [zaznamy, setZaznamy] = useState([]);
+  const [naseAdresa, setNaseAdresa] = useState("");
   const [uklada, setUklada] = useState(false);
   const [chyba, setChyba] = useState(null);
 
@@ -114,6 +112,10 @@ export default function AktivitaModal({
     crmUzivatele()
       .then(setLide)
       .catch(() => setLide([]));
+    // Naše adresa pro tlačítko „U nás" — firemní nastavení, ne konstanta v kódu.
+    crmNastaveni()
+      .then((n) => setNaseAdresa(n?.nase_adresa || ""))
+      .catch(() => setNaseAdresa(""));
   }, [aktivita?.kategorie_id]);
 
   // Seznam záznamů pro vybraný typ vazby. Načítá se až po volbě typu — než
@@ -459,9 +461,16 @@ export default function AktivitaModal({
                     onChange={(e) => setMisto(e.target.value)}
                     placeholder="Doplňte adresu nebo jiné označení"
                   />
-                  <button className="am-unas" onClick={() => setMisto(NASE_ADRESA)} type="button">
-                    U nás
-                  </button>
+                  {naseAdresa && (
+                    <button
+                      className="am-unas"
+                      onClick={() => setMisto(naseAdresa)}
+                      type="button"
+                      title={naseAdresa}
+                    >
+                      U nás
+                    </button>
+                  )}
                 </div>
               </div>
 
