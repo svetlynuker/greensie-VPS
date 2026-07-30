@@ -26,12 +26,25 @@ export const POHLEDY_ZAKAZNIKU = [
 // Druhy aktivit. `barva` je VÝCHOZÍ barva v kalendáři — každý uživatel si ji
 // může přepsat v Nastavení (klíč `kalendar_barvy`, viz `barvyAktivit.js`).
 // Hodnoty jsou tokeny appky, ne hex, aby fungovaly ve světlém i tmavém režimu.
+// Pořadí se drží předlohy kalendáře (Úkol, Schůzka, Událost, Telefonát, Dopis);
+// e-mail a poznámka jsou navíc — poznámka je zápis do historie bez plánování
+// a v kalendáři se nekreslí.
+// `ikona` je klíč do komponenty Ikona, `znak` emoji pro drobné výpisy.
 export const DRUHY_AKTIVITY = [
-  { klic: "poznamka", nazev: "Poznámka", ikona: "📝", barva: "#7b8794" },
-  { klic: "telefon", nazev: "Telefonát", ikona: "📞", barva: "#2f9e44" },
-  { klic: "email", nazev: "E-mail", ikona: "✉️", barva: "#1c7ed6" },
-  { klic: "schuzka", nazev: "Schůzka", ikona: "🤝", barva: "#9c36b5" },
-  { klic: "ukol", nazev: "Úkol", ikona: "✅", barva: "#e8590c" },
+  { klic: "ukol", nazev: "Úkol", ikona: "ukol", znak: "☑", barva: "#f3b98f" },
+  { klic: "schuzka", nazev: "Schůzka", ikona: "schuzka", znak: "☕", barva: "#a8d8b9" },
+  { klic: "udalost", nazev: "Událost", ikona: "kalendar", znak: "📅", barva: "#f7c08a" },
+  { klic: "telefon", nazev: "Telefonát", ikona: "telefon", znak: "📞", barva: "#f5b8c1" },
+  { klic: "dopis", nazev: "Dopis", ikona: "dopis", znak: "✉", barva: "#c9c2ea" },
+  { klic: "email", nazev: "E-mail", ikona: "dopis", znak: "✉️", barva: "#a9cdf0" },
+  { klic: "poznamka", nazev: "Poznámka", ikona: "poznamka", znak: "📝", barva: "#d3d9de" },
+];
+
+// Priorita z předlohy. `znak` je to, co se ukazuje na dlaždici a v přepínači.
+export const PRIORITY_AKTIVITY = [
+  { klic: "nizka", nazev: "Nízká", znak: "⌄" },
+  { klic: "stredni", nazev: "Střední", znak: "–" },
+  { klic: "vysoka", nazev: "Vysoká", znak: "!" },
 ];
 
 // Stav aktivity: naplánováno → realizováno / nekonalo se. Nahradil dřívější

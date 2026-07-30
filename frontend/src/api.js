@@ -676,6 +676,24 @@ export function crmUdalostPridej(data) {
   return zavolej("/crm/kalendar/udalost", { method: "POST", body: JSON.stringify(data) });
 }
 
+// Barevné štítky aktivit (jiná věc než kategorie obchodního případu —
+// tohle jsou škatulky v kalendáři, kterými se filtruje).
+export function crmKategorieAktivit() {
+  return zavolej("/crm/kategorie-aktivit");
+}
+
+export function crmKategorieAktivityPridej(data) {
+  return zavolej("/crm/kategorie-aktivit", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function crmKategorieAktivityUprav(id, data) {
+  return zavolej(`/crm/kategorie-aktivit/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function crmKategorieAktivitySmaz(id) {
+  return zavolej(`/crm/kategorie-aktivit/${id}`, { method: "DELETE" });
+}
+
 export function crmStavy(entita) {
   return zavolej(`/crm/stavy/${entita}`);
 }

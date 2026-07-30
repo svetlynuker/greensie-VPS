@@ -70,8 +70,19 @@ DRUHY_STAVU = ("otevreny", "vyhra", "prohra")
 # kdyby byla tabulka prázdná. Validace i výpisy čtou DB, viz `crm/kategorie.py`.
 KATEGORIE_OP = ("prodej", "ppa", "peak_shaving")
 
-# Druhy aktivit (Raynet-like log práce s zákazníkem).
-DRUHY_AKTIVITY = ("poznamka", "telefon", "email", "schuzka", "ukol")
+# Druhy aktivit. Sada se drží předlohy kalendáře z Raynetu (Úkol, Schůzka,
+# Událost, Telefonát, Dopis), aby se lidem po přechodu nezměnil slovník.
+#
+# Dva rozdíly proti té předloze, oba schválně:
+#   * `poznamka` zůstává navíc – je to záznam do historie BEZ plánování
+#     („volal, chce to po dovolené"), který se do kalendáře nekreslí. Log práce
+#     na kartě zákazníka na něm stojí.
+#   * `email` zůstává vedle `dopis`: dopis je fyzická pošta (a v CRM se hlídá
+#     kvůli doporučeným zásilkám), e-mail je něco jiného.
+DRUHY_AKTIVITY = ("ukol", "schuzka", "udalost", "telefon", "dopis", "email", "poznamka")
+
+# Priorita aktivity — tři stupně jako v předloze (šipka dolů / – / !).
+PRIORITY_AKTIVITY = ("nizka", "stredni", "vysoka")
 
 # Stav aktivity. Nahradil boolean `hotovo`, protože ten neumí rozlišit schůzku,
 # která proběhla, od schůzky, kterou zákazník zrušil — a obojí pod jedním
@@ -125,6 +136,35 @@ class CiselnaRada(Base):
     aktualizovano_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class CrmKategorieAktivity(Base):
+    """Barevný štítek aktivity („Porada", „Servis", „Reklamace").
+
+    POZOR na jméno: tohle NENÍ `CrmKategorie` (ta říká, do kterého výpočtu míří
+    obchodní případ). Tady jde o barevné škatulky v kalendáři, kterými si firma
+    tříditelně označuje aktivity — v předloze je to sekce „KATEGORIE" v panelu
+    filtrů a barevné tečky ve výběru u nové aktivity.
+
+    Proč vlastní tabulka a ne výčet v kódu: stejný důvod jako u stavů pipeline —
+    přidání kategorie je práce pro vedení, ne pro programátora. A protože se
+    kategorií filtruje, musí mít stabilní `id`, na které se odkáže uložený filtr.
+
+    `barva` je hex, ne token appky: uživatel si ji vybírá z palety a je to jeho
+    volba, ne stavová barva (u té by tokeny byly správně kvůli tmavému režimu).
+    Čitelnost textu na štítku se dopočítává ze svítivosti (frontend).
+    """
+
+    __tablename__ = "crm_kategorie_aktivit"
+    __table_args__ = (UniqueConstraint("nazev", name="uq_crm_kategorie_aktivity_nazev"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    nazev = Column(String, nullable=False)
+    barva = Column(String, nullable=False, default="#7b8794", server_default="#7b8794")
+    poradi = Column(Integer, nullable=False, default=0, server_default="0")
+    aktivni = Column(Boolean, nullable=False, default=True, server_default="true")
+
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class CrmKategorie(Base):
@@ -449,6 +489,26 @@ class CrmAktivita(Base):
     # Kdyby firma někdy pracovala ve víc zónách, tohle je místo, kde začít.
     zacatek = Column(DateTime, nullable=True)
     delka_min = Column(Integer, nullable=True)  # jak dlouho trvá
+    # Poslední den vícedenní aktivity (školení, dovolená přes týden). Prázdné =
+    # jednodenní. V kalendáři se z toho kreslí pruh v řádku „vícedenní";
+    # ukládá se jako DEN, ne konec s hodinou, protože vícedenní věci se plánují
+    # „od pondělí do středy", ne „do středy 17:30".
+    konec = Column(Date, nullable=True)
+
+    # Priorita z předlohy (nízká / střední / vysoká). Řídí jen zobrazení —
+    # vykřičník na dlaždici, ať je na první pohled vidět, co nepočká.
+    priorita = Column(
+        String, nullable=False, default="stredni", server_default="stredni"
+    )
+    # Místo konání jako volný text (adresa nebo „u nás“, „online"). Ne cizí klíč
+    # na adresu zákazníka: schůzka bývá i jinde než na jeho sídle.
+    misto = Column(String, nullable=False, default="", server_default="")
+    kategorie_id = Column(
+        Integer,
+        ForeignKey("crm_kategorie_aktivit.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     stav = Column(
         String, nullable=False, default="naplanovano", server_default="naplanovano", index=True
@@ -470,6 +530,7 @@ class CrmAktivita(Base):
 
     vlastnik = relationship("User", foreign_keys=[vlastnik_user_id])
     vytvoril = relationship("User", foreign_keys=[vytvoril_user_id])
+    kategorie = relationship("CrmKategorieAktivity")
 
 
 # ---- Objednávky a projekty --------------------------------------------------
@@ -682,7 +743,11 @@ class ProjektKrok(Base):
 
 
 # Entity, nad kterými jdou stavět uživatelské filtry (seznamy i kanbany).
-ENTITY_FILTRU = ("zakaznik", "op", "nab", "obj", "pro")
+# „kalendar" je tu navíc proti seznamům: kalendář ukládá stav svého panelu
+# (uživatelé, typy, kategorie, přepínače) do TÉŽE tabulky, takže sdílení filtru
+# a výchozí pohled fungují bez druhého mechanismu. Podmínky u něj nemají formát
+# pole/operátor/hodnota — je to jedna položka s JSON stavem, viz Kalendar.jsx.
+ENTITY_FILTRU = ("zakaznik", "op", "nab", "obj", "pro", "kalendar")
 
 # Operátory podmínek. Držíme je jako data, protože je zná i frontend (crm_filtry.js)
 # a musí se shodovat – jinak by uložený filtr znamenal jinde něco jiného.

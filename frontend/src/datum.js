@@ -29,3 +29,40 @@ export function posunDnu(d, dni) {
   k.setDate(k.getDate() + dni);
   return k;
 }
+
+export const MESICE = [
+  "Leden",
+  "Únor",
+  "Březen",
+  "Duben",
+  "Květen",
+  "Červen",
+  "Červenec",
+  "Srpen",
+  "Září",
+  "Říjen",
+  "Listopad",
+  "Prosinec",
+];
+
+export function nazevMesice(index) {
+  return MESICE[index] || "";
+}
+
+/**
+ * ISO číslo týdne (1–53) — to, které se v ČR běžně používá („32. týden").
+ *
+ * Pravidlo ISO 8601: týden patří tomu roku, do kterého padá jeho **čtvrtek**.
+ * Proto se nejdřív skočí na čtvrtek daného týdne a až od něj se počítá — prosté
+ * dělení dnů od 1. ledna by u přelomu roku dávalo špatná čísla (např. 1. 1.
+ * 2027 patří do 53. týdne roku 2026).
+ */
+export function cisloTydne(datum) {
+  const d = new Date(datum);
+  d.setHours(0, 0, 0, 0);
+  // Posun na čtvrtek téhož ISO týdne (pondělí = 0 → +3).
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + 3);
+  const prvniCtvrtek = new Date(d.getFullYear(), 0, 4);
+  prvniCtvrtek.setDate(prvniCtvrtek.getDate() - ((prvniCtvrtek.getDay() + 6) % 7) + 3);
+  return 1 + Math.round((d - prvniCtvrtek) / (7 * 86400000));
+}

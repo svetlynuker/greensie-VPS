@@ -245,6 +245,14 @@ def _lehka_migrace():
             ("vysledek", "TEXT NOT NULL DEFAULT ''"),
             ("soukroma", "BOOLEAN NOT NULL DEFAULT false"),
             ("ucastnici", "INTEGER[] NOT NULL DEFAULT '{}'"),
+            # Etapa K4a – doplnění podle předlohy kalendáře.
+            ("konec", "DATE"),
+            ("priorita", "VARCHAR NOT NULL DEFAULT 'stredni'"),
+            ("misto", "VARCHAR NOT NULL DEFAULT ''"),
+            (
+                "kategorie_id",
+                "INTEGER REFERENCES crm_kategorie_aktivit(id) ON DELETE SET NULL",
+            ),
         ):
             conn.execute(
                 text(f"ALTER TABLE crm_aktivity ADD COLUMN IF NOT EXISTS {sloupec} {definice}")
@@ -354,7 +362,7 @@ def _seed_crm():
     přepisovaly zpátky.
     """
     from app.crm.ciselne_rady import seed_rady
-    from app.crm.kategorie import seed_kategorie
+    from app.crm.kategorie import seed_kategorie, seed_kategorie_aktivit
     from app.crm.projekty_kroky import seed_sablony
     from app.crm.stavy import seed_stavy
     from app.database import SessionLocal
@@ -366,6 +374,8 @@ def _seed_crm():
         # Kategorie případu (dřív konstanta v kódu) – bez nich by u případu
         # nebylo z čeho vybírat a nešlo by založit nabídku.
         seed_kategorie(db)
+        # Barevné štítky aktivit pro kalendář (jiná věc než kategorie případu).
+        seed_kategorie_aktivit(db)
         # Šablony projektových kroků – bez nich by si každý projekt psal kroky
         # ručně a pokaždé jinak.
         seed_sablony(db)

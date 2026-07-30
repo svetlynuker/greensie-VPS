@@ -1,23 +1,90 @@
-/* Kalendář aktivit: týdenní mřížka a čtvercový měsíc.
-   Staví nad tokeny appky (global.css) – barvy událostí přicházejí z osobního
-   nastavení uživatele jako inline styl, všechno ostatní je z tokenů, aby
-   fungoval světlý i tmavý režim. */
+/* Kalendář aktivit — vzhled podle předlohy v docs/moduly/Kalendář/.
+   Staví nad tokeny appky (global.css). Barvy dlaždic přicházejí z kategorie
+   nebo z osobního nastavení jako inline styl; všechno ostatní je z tokenů,
+   aby fungoval světlý i tmavý režim. */
 
 :root {
-  /* Výška jedné hodiny. MUSÍ odpovídat PX_HODINA v KalendarTyden.jsx —
-     dlaždice se pozicují v pixelech, takže rozdíl by je rozhodil. */
+  /* Výšky pásem MUSÍ odpovídat konstantám v KalendarTyden.jsx (PX_HODINA,
+     PX_NOC, PX_VECER) — dlaždice se pozicují v pixelech, takže rozdíl by je
+     rozhodil. Držet na jednom místě nešlo: JS potřebuje čísla pro výpočet. */
   --kal-hodina: 44px;
-  --kal-osa: 52px;
+  --kal-osa: 56px;
 }
 
-/* ---- rozvržení: měsíc vlevo, mřížka vpravo ---- */
+/* ---- horní lišta ---- */
+.kal-lista-hlavni {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.kal-titulek {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.kal-select {
+  appearance: none;
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 30px 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  /* Šipka dolů jako v předloze; inline SVG, ať se netahá obrázek. */
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 16px) 55%, calc(100% - 11px) 55%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+/* Segment ‹ Dnes › — zelené vyplněné, pilulkovité. */
+.kal-navigace {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--fm-brand, #2f9e44);
+}
+.kal-navigace button {
+  appearance: none;
+  font: inherit;
+  font-size: 14px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  padding: 7px 12px;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.kal-navigace button:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+.kal-navigace .kal-dnes {
+  font-weight: 700;
+  padding: 7px 18px;
+}
+.kal-zobrazeni {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+/* ---- rozvržení: panel vlevo, mřížka vpravo ---- */
 .kal-plocha {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
 }
-@media (max-width: 980px) {
+@media (max-width: 1000px) {
   .kal-plocha {
     grid-template-columns: 1fr;
   }
@@ -27,33 +94,25 @@
   gap: 12px;
 }
 
-.kal-lista {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
-
 /* ---- čtvercový měsíc ---- */
 .kal-mesic {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow-1);
-  padding: 10px;
+  padding: 12px;
 }
 .kal-mesic-hlava {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 .kal-mesic-nazev {
   flex: 1;
-  text-align: center;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 17px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
 }
 .kal-btn-ikona {
   padding: 2px 8px;
@@ -63,18 +122,15 @@
 .kal-mesic-mrizka {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
+  gap: 1px 0;
 }
 .kal-mesic-zahlavi {
   text-align: center;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
+  font-size: 11px;
   color: var(--muted);
-  padding-bottom: 2px;
+  padding-bottom: 6px;
 }
-/* Dny jsou čtvercové (aspect-ratio), aby dlaždice držela tvar bez ohledu na
-   šířku panelu — proto „čtvercová dlaždice" v zadání. */
+/* Dny drží čtvercový tvar bez ohledu na šířku panelu. */
 .kal-mesic-den {
   position: relative;
   appearance: none;
@@ -83,32 +139,46 @@
   align-items: center;
   justify-content: center;
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text);
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: 7px;
+  border: 0;
   cursor: pointer;
 }
 .kal-mesic-den:hover {
-  border-color: var(--line);
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+  border-radius: 6px;
 }
 .kal-mesic-den.mimo {
   color: var(--muted);
-  opacity: 0.55;
+  opacity: 0.5;
 }
+/* Celý zobrazený týden je podbarvený — je vidět, kde v měsíci člověk je. */
+.kal-mesic-den.vtydnu {
+  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 16%, transparent);
+}
+.kal-mesic-mrizka > .kal-mesic-den.vtydnu:nth-child(7n + 1) {
+  border-radius: 999px 0 0 999px;
+}
+.kal-mesic-mrizka > .kal-mesic-den.vtydnu:nth-child(7n) {
+  border-radius: 0 999px 999px 0;
+}
+/* Dnešek: tmavý kroužek jako v předloze. */
 .kal-mesic-den.dnes {
-  font-weight: 700;
-  border-color: var(--fm-brand, #2f9e44);
+  background: color-mix(in srgb, var(--text) 78%, transparent);
+  color: var(--surface);
+  border-radius: 6px;
+  font-weight: 600;
 }
-.kal-mesic-den.vybrany {
-  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 18%, transparent);
-  font-weight: 700;
+.kal-mesic-den.vybrany:not(.dnes) {
+  outline: 1px solid var(--fm-brand, #2f9e44);
+  outline-offset: -2px;
+  border-radius: 6px;
+  font-weight: 600;
 }
-/* Tečka = v ten den něco je. Vedle čísla by se do čtverečku nevešla. */
 .kal-tecka {
   position: absolute;
-  bottom: 3px;
+  bottom: 2px;
   left: 50%;
   transform: translateX(-50%);
   width: 4px;
@@ -116,9 +186,267 @@
   border-radius: 50%;
   background: var(--fm-brand, #2f9e44);
 }
+.kal-mesic-den.dnes .kal-tecka {
+  background: var(--surface);
+}
 
-.kal-detail {
-  padding: 12px 14px;
+/* ---- panel filtrů ---- */
+.kalf {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+.kalf-zalozky {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+}
+.kalf-zalozka {
+  appearance: none;
+  flex: 1;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 10px 6px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: color-mix(in srgb, var(--muted) 7%, transparent);
+  color: var(--muted);
+  cursor: pointer;
+}
+.kalf-zalozka.aktivni {
+  background: var(--surface);
+  color: var(--fm-brand-dk, var(--text));
+  border-bottom-color: var(--fm-brand, #2f9e44);
+}
+.kalf-pocet {
+  display: inline-block;
+  margin-left: 5px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--fm-brand, #2f9e44);
+  color: #fff;
+  font-size: 10px;
+}
+
+.kalf-sekce {
+  border-bottom: 1px solid var(--line);
+}
+.kalf-sekce:last-of-type {
+  border-bottom: 0;
+}
+.kalf-sekce-hlava {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+}
+.kalf-sekce-prepinac {
+  appearance: none;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  /* Tyrkysová jako v předloze; přes token, ať drží tmavý režim. */
+  color: var(--fm-brand-dk, #0b7285);
+  background: transparent;
+  border: 0;
+  padding: 11px 0;
+  cursor: pointer;
+  text-align: left;
+}
+.kalf-sipka {
+  display: inline-block;
+  transition: transform 0.12s ease;
+  font-size: 13px;
+}
+.kalf-sipka.dolu {
+  transform: rotate(90deg);
+}
+.kalf-sekce-telo {
+  padding: 2px 12px 12px;
+}
+.kalf-pridat {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.kalf-lide,
+.kalf-typy,
+.kalf-kategorie,
+.kalf-nenaplanovane {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.kalf-lide li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 3px 0;
+}
+.kalf-avatar {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #2f9e44, #1c7ed6);
+}
+.kalf-jmeno {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kalf-odebrat {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+.kalf-odebrat:hover {
+  color: var(--st-crit);
+}
+
+.kalf-typ,
+.kalf-kategorie-radek {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+}
+.kalf-typ:hover,
+.kalf-kategorie-radek:hover {
+  background: color-mix(in srgb, var(--muted) 9%, transparent);
+}
+.kalf-typ.aktivni,
+.kalf-kategorie-radek.aktivni {
+  color: var(--text);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 10%, transparent);
+}
+.kalf-barva-tecka {
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.kalf-radek {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  padding: 5px 0;
+}
+/* Přepínač (toggle switch) – dvě volby, ne zaškrtávátko: v předloze je to
+   posuvník a lidé podle něj poznají, že to platí okamžitě. */
+.kalf-toggle {
+  appearance: none;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+  position: relative;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.14s ease;
+}
+.kalf-toggle.zap {
+  background: var(--fm-brand, #2f9e44);
+  border-color: var(--fm-brand, #2f9e44);
+}
+.kalf-toggle-kolecko {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.14s ease;
+}
+.kalf-toggle.zap .kalf-toggle-kolecko {
+  transform: translateX(18px);
+}
+
+.kalf-nenapl-radek {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.kalf-nenapl-radek:hover {
+  background: color-mix(in srgb, var(--muted) 9%, transparent);
+}
+.kalf-nenapl-nazev {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kalf-pata {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--muted) 5%, transparent);
 }
 
 /* ---- týdenní mřížka ---- */
@@ -129,20 +457,14 @@
   box-shadow: var(--shadow-1);
   overflow: hidden;
 }
-
 .kal-tyden-hlava,
-.kal-celodenni,
+.kal-vicedenni,
 .kal-mrizka {
   display: grid;
   grid-template-columns: var(--kal-osa) repeat(7, minmax(0, 1fr));
 }
-
 .kal-tyden-hlava {
   border-bottom: 1px solid var(--line);
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  background: var(--surface);
 }
 .kal-osa-rohu {
   border-right: 1px solid var(--line);
@@ -153,78 +475,103 @@
   background: transparent;
   border: 0;
   border-right: 1px solid var(--line);
-  padding: 6px 4px;
+  padding: 12px 4px;
   cursor: pointer;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 1px;
-  color: var(--text);
+  justify-content: center;
+  gap: 7px;
+  color: var(--muted);
 }
 .kal-den-hlava:last-child {
   border-right: 0;
 }
 .kal-den-nazev {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.04em;
 }
 .kal-den-cislo {
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
+  color: var(--text);
 }
-.kal-den-hlava.dnes .kal-den-cislo {
+.kal-den-hlava.dnes .kal-den-cislo,
+.kal-den-hlava.dnes .kal-den-nazev {
   color: var(--fm-brand-dk, var(--fm-brand, #2f9e44));
 }
 .kal-den-hlava.vybrany {
-  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 10%, transparent);
+  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 8%, transparent);
 }
 
-/* ---- pruh celodenních ---- */
-.kal-celodenni {
+/* ---- pruh vícedenních ---- */
+.kal-vicedenni {
   border-bottom: 1px solid var(--line);
-  min-height: 26px;
-  background: color-mix(in srgb, var(--muted) 5%, transparent);
+  min-height: 30px;
+  background: color-mix(in srgb, var(--muted) 4%, transparent);
 }
-.kal-celodenni-label {
-  font-size: 10px;
+.kal-vicedenni-label {
+  font-size: 11px;
   color: var(--muted);
-  padding: 4px;
+  padding: 7px 8px;
   text-align: right;
   border-right: 1px solid var(--line);
 }
-.kal-celodenni-den {
-  border-right: 1px solid var(--line);
-  padding: 3px;
+/* Plocha pruhu je vlastní 7sloupcová mřížka, aby se dlaždice mohla táhnout
+   přes několik dní přes `grid-column`. */
+.kal-vicedenni-plocha {
+  grid-column: 2 / -1;
   display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 2px;
+  padding: 3px;
   align-content: start;
 }
-.kal-celodenni-den:last-child {
-  border-right: 0;
+.kal-vicedenni-prazdno {
+  grid-column: 1 / -1;
+  height: 22px;
+}
+.kal-vicedenni-radek {
+  min-width: 0;
+  display: flex;
 }
 
-/* ---- hodinová osa a sloupce dnů ---- */
+/* ---- osa hodin ---- */
 .kal-mrizka {
   position: relative;
 }
 .kal-osa {
   border-right: 1px solid var(--line);
+  position: relative;
 }
 .kal-osa-hodina {
-  height: var(--kal-hodina);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   text-align: right;
-  padding-right: 6px;
-  /* Číslo patří k LINCE hodiny, ne doprostřed pásu – proto posun nahoru. */
+  padding-right: 8px;
+  /* Číslo patří k LINCE hodiny, ne doprostřed pásu. */
   transform: translateY(-6px);
 }
+/* Zúžená pásma (noc, večer) mají dva časy — od a do, ať je vidět, co se do
+   nich vešlo. */
+.kal-osa-pas {
+  position: relative;
+  font-size: 10px;
+  color: var(--muted);
+}
+.kal-osa-cas {
+  position: absolute;
+  right: 8px;
+}
+.kal-osa-cas.horni {
+  top: -5px;
+}
+.kal-osa-cas.dolni {
+  bottom: -5px;
+}
+
 .kal-den {
   position: relative;
   border-right: 1px solid var(--line);
-  /* Vodorovné linky hodin kreslí gradient, ne 13 prázdných divů. */
   background-image: repeating-linear-gradient(
     to bottom,
     var(--line) 0,
@@ -232,19 +579,34 @@
     transparent 1px,
     transparent var(--kal-hodina)
   );
+  /* Linky hodin začínají až pod zúženým nočním pásem (PX_NOC = 26). */
+  background-position: 0 26px;
 }
 .kal-den:last-child {
   border-right: 0;
 }
 .kal-den.dnes {
-  background-color: color-mix(in srgb, var(--fm-brand, #2f9e44) 4%, transparent);
+  background-color: color-mix(in srgb, var(--fm-brand, #2f9e44) 3%, transparent);
 }
 .kal-den.vybrany {
-  background-color: color-mix(in srgb, var(--fm-brand, #2f9e44) 8%, transparent);
+  background-color: color-mix(in srgb, var(--fm-brand, #2f9e44) 6%, transparent);
+}
+/* Zúžená pásma jsou jemně podbarvená – měřítko je v nich jiné. */
+.kal-pas {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: color-mix(in srgb, var(--muted) 7%, transparent);
+  pointer-events: none;
+}
+.kal-pas.noc {
+  top: 0;
+  border-bottom: 1px solid var(--line);
+}
+.kal-pas.vecer {
+  border-top: 1px solid var(--line);
 }
 
-/* Terč pro zakládání kliknutím do prázdna. Neviditelný, dokud na něj člověk
-   nenajede — jinak by mřížka vypadala jako tabulka tlačítek. */
 .kal-slot {
   position: absolute;
   left: 0;
@@ -256,92 +618,132 @@
   cursor: pointer;
 }
 .kal-slot:hover {
-  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 12%, transparent);
+  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 10%, transparent);
 }
 
-/* ---- dlaždice události ---- */
+/* ---- dlaždice aktivity ---- */
 .kal-udalost {
   position: absolute;
-  left: 2px;
-  right: 2px;
   appearance: none;
   font: inherit;
   text-align: left;
   border: 0;
-  border-radius: 6px;
-  padding: 2px 5px;
+  border-radius: 7px;
+  padding: 3px 6px;
   overflow: hidden;
   cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  line-height: 1.25;
-  box-shadow: var(--shadow-1);
+  line-height: 1.3;
   z-index: 1;
 }
 .kal-udalost:hover {
   z-index: 2;
-  filter: brightness(1.06);
+  filter: brightness(0.97);
+}
+.kal-udalost-radek {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 .kal-udalost-cas {
-  font-size: 10px;
-  opacity: 0.85;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
+  opacity: 0.9;
 }
 .kal-udalost-nazev {
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 12px;
+  font-weight: 500;
 }
 .kal-udalost-zaznam {
-  font-size: 10px;
-  opacity: 0.85;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 11px;
+  opacity: 0.8;
 }
-/* Uzavřená aktivita (realizovaná i nekonaná) je vybledlá – v kalendáři má
-   být vidět, co ještě čeká. */
-.kal-udalost.uzavrena {
+/* Krátká dlaždice (do 30 min) nemá výšku na zalomení — text musí zůstat v řádku. */
+.kal-udalost.kratka .kal-udalost-radek {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.kal-priorita {
+  font-weight: 800;
+  font-size: 11px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.16);
+}
+.kal-udalost.realizovana {
   opacity: 0.55;
 }
-/* Cizí událost bez nároku na detail: šrafovaný blok bez barvy druhu, protože
+.kal-udalost.zrusena {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+/* Cizí aktivita bez nároku na detail: šrafovaný blok BEZ barvy kategorie —
    barva sama by prozradila, o co jde. */
 .kal-udalost.blok {
   background: repeating-linear-gradient(
     45deg,
-    color-mix(in srgb, var(--muted) 22%, transparent) 0,
-    color-mix(in srgb, var(--muted) 22%, transparent) 5px,
+    color-mix(in srgb, var(--muted) 20%, transparent) 0,
+    color-mix(in srgb, var(--muted) 20%, transparent) 5px,
     transparent 5px,
     transparent 10px
   );
   color: var(--muted);
   border: 1px dashed var(--line);
-  box-shadow: none;
   cursor: default;
 }
-/* Událost, která začíná před zobrazeným rozsahem (nebo za ním) — připnutá
-   na kraj a označená šipkou v čase, ať nezmizí bez varování. */
-.kal-udalost.mimo-pred {
-  border-top: 2px dashed currentColor;
-}
-.kal-udalost.mimo-po {
-  border-bottom: 2px dashed currentColor;
+/* Vícedenní pruh se roztahuje na celou přidělenou šířku. */
+.kal-vicedenni-radek .kal-udalost {
+  position: static;
+  width: 100%;
+  height: auto;
 }
 
-.kal-udalost.celodenni {
-  position: static;
-  left: auto;
-  right: auto;
-  flex-direction: row;
+/* ---- detail aktivity ---- */
+.kal-detail-plast {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 20, 25, 0.4);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 60;
+}
+.kal-detail-karta {
+  background: var(--surface);
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+  width: min(520px, 100%);
+  max-height: 80vh;
+  overflow: auto;
+}
+.kal-detail-hlava {
+  display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 6px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: block;
+  gap: 10px;
+  padding: 16px 16px 8px;
+}
+.kal-detail-hlava h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.kal-detail-ikona {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #1a1f24;
+}
+.kal-detail-telo {
+  padding: 0 16px 18px;
+}
+.kal-detail-stitek {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
 }

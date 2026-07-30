@@ -9,7 +9,12 @@ EntitaCrm = Literal["op", "nab", "obj", "pro"]
 DruhStavu = Literal["otevreny", "vyhra", "prohra"]
 # Kategorie případu ZÁMĚRNĚ není Literal – je to konfigurovatelný seznam
 # v tabulce `crm_kategorie` (CRM-03). Validuje se proti DB, ne typem.
-DruhAktivity = Literal["poznamka", "telefon", "email", "schuzka", "ukol"]
+# Sada se drží předlohy kalendáře (Úkol, Schůzka, Událost, Telefonát, Dopis);
+# `poznamka` a `email` jsou navíc — viz DRUHY_AKTIVITY v models.py.
+DruhAktivity = Literal[
+    "ukol", "schuzka", "udalost", "telefon", "dopis", "email", "poznamka"
+]
+PrioritaAktivity = Literal["nizka", "stredni", "vysoka"]
 # Naplánováno → realizováno / nekonalo se. Enum je tu na místě (na rozdíl od
 # kategorií případu): stavy aktivity nejsou konfigurovatelné, protože na nich
 # stojí výpis „moje úkoly" a statistika činnosti.
@@ -322,6 +327,12 @@ class AktivitaOut(BaseModel):
     termin: Optional[str] = None  # den
     zacatek: Optional[str] = None  # den + hodina (kalendář); prázdné = celodenní
     delka_min: Optional[int] = None
+    konec: Optional[str] = None  # poslední den vícedenní aktivity
+    priorita: PrioritaAktivity = "stredni"
+    misto: str = ""
+    kategorie_id: Optional[int] = None
+    kategorie_nazev: str = ""
+    kategorie_barva: str = ""
     stav: StavAktivity = "naplanovano"
     vysledek: str = ""
     soukroma: bool = False
@@ -375,6 +386,10 @@ class AktivitaVstup(BaseModel):
     # Posílá se zvlášť od dne, aby si UI nemuselo skládat ISO datetime.
     cas: Optional[str] = None
     delka_min: Optional[int] = None
+    konec: Optional[str] = None
+    priorita: PrioritaAktivity = "stredni"
+    misto: str = ""
+    kategorie_id: Optional[int] = None
     vlastnik_user_id: Optional[int] = None
     ucastnici: list[int] = []
 
@@ -391,9 +406,33 @@ class AktivitaUprava(BaseModel):
     termin: Optional[str] = None
     cas: Optional[str] = None
     delka_min: Optional[int] = None
+    konec: Optional[str] = None
+    priorita: Optional[PrioritaAktivity] = None
+    misto: Optional[str] = None
+    # -1 znamená „zruš kategorii"; None = neměnit. Bez téhle domluvy by se
+    # kategorie nedala odebrat, protože None už znamená „nech to být".
+    kategorie_id: Optional[int] = None
     stav: Optional[StavAktivity] = None
     vysledek: Optional[str] = None
     ucastnici: Optional[list[int]] = None
+
+
+class KategorieAktivityOut(BaseModel):
+    """Barevný štítek aktivity. Pozor: NENÍ to `KategorieOut` (ta patří
+    obchodnímu případu a říká, do kterého výpočtu míří)."""
+
+    id: int
+    nazev: str
+    barva: str = "#7b8794"
+    poradi: int = 0
+    aktivni: bool = True
+
+
+class KategorieAktivityVstup(BaseModel):
+    nazev: str
+    barva: str = "#7b8794"
+    poradi: Optional[int] = None
+    aktivni: Optional[bool] = None
 
 
 # ---- kalendář ---------------------------------------------------------------
@@ -411,6 +450,12 @@ class UdalostVstup(BaseModel):
     termin: str  # ISO den, povinný — událost bez data v kalendáři nemá místo
     cas: Optional[str] = None  # „09:30"; prázdné = celodenní
     delka_min: Optional[int] = None
+    konec: Optional[str] = None  # ISO den; vyplněné = vícedenní
+    priorita: PrioritaAktivity = "stredni"
+    misto: str = ""
+    kategorie_id: Optional[int] = None
+    stav: StavAktivity = "naplanovano"
+    vysledek: str = ""
     entita: Optional[str] = None
     zaznam_id: Optional[int] = None
     soukroma: bool = False
@@ -437,6 +482,12 @@ class KalendarUdalostOut(BaseModel):
     zacatek: Optional[str] = None
     delka_min: int = 30
     cely_den: bool = False
+    konec: Optional[str] = None
+    vicedenni: bool = False
+    priorita: PrioritaAktivity = "stredni"
+    misto: str = ""
+    kategorie_nazev: str = ""
+    kategorie_barva: str = ""
     soukroma: bool = False
     entita: Optional[str] = None
     zaznam_id: Optional[int] = None

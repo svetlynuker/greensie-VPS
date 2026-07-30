@@ -31,11 +31,18 @@ const MESICE = [
 export default function KalendarMesic({
   mesic, // Date kdekoli v zobrazovaném měsíci
   vybranyDen, // ISO den, který je označený
+  zobrazenyTyden, // Date – pondělí týdne, který je v hlavní mřížce
   dnySUdalostmi, // Set ISO dnů, kde něco je
   onDen,
   onMesic, // (Date) → přepnout zobrazovaný měsíc
 }) {
   const dnesIso = isoDen(new Date());
+  // Celý zobrazený týden je podbarvený (podle předlohy) – je tak vidět, kde
+  // v měsíci se člověk nachází, ne jen na kterém dni stojí kurzor.
+  const tydenOd = zobrazenyTyden ? isoDen(pondeliTydne(zobrazenyTyden)) : null;
+  const tydenDo = zobrazenyTyden
+    ? isoDen(new Date(pondeliTydne(zobrazenyTyden).getTime() + 6 * 86400000))
+    : null;
 
   // 6 × 7 dnů počínaje pondělím týdne, do kterého padá první den měsíce.
   const dny = useMemo(() => {
@@ -76,9 +83,11 @@ export default function KalendarMesic({
         {dny.map((d) => {
           const iso = isoDen(d);
           const jinyMesic = d.getMonth() !== mesic.getMonth();
+          const vTydnu = tydenOd && iso >= tydenOd && iso <= tydenDo;
           const trida = [
             "kal-mesic-den",
             jinyMesic ? "mimo" : "",
+            vTydnu ? "vtydnu" : "",
             iso === vybranyDen ? "vybrany" : "",
             iso === dnesIso ? "dnes" : "",
           ]

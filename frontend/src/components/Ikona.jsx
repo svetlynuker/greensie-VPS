@@ -17,6 +17,36 @@ const CESTY = {
     </>
   ),
   nabidkovac: <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z" />,
+  // ---- druhy aktivit v kalendáři (drží se předlohy: checkbox, šálek,
+  // kalendář, telefon, obálka) ----
+  ukol: (
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="2.5" />
+      <path d="M8.5 12.5l2.5 2.5 4.5-5" />
+    </>
+  ),
+  schuzka: (
+    <>
+      <path d="M4 8h11v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8z" />
+      <path d="M15 9.5h2.2a2.3 2.3 0 0 1 0 4.6H15" />
+      <path d="M3.5 21h12" />
+    </>
+  ),
+  telefon: (
+    <path d="M7 3.5c1 0 1.6.4 1.9 1.3l.8 2.2c.2.7 0 1.3-.6 1.7l-1 .7c.8 1.9 2.3 3.4 4.2 4.2l.7-1c.4-.6 1-.8 1.7-.6l2.2.8c.9.3 1.3.9 1.3 1.9v1.8c0 1.2-1 2.1-2.2 2A15.5 15.5 0 0 1 3.7 5.7C3.6 4.5 4.5 3.5 5.7 3.5H7z" />
+  ),
+  dopis: (
+    <>
+      <rect x="3" y="5.5" width="18" height="13" rx="2" />
+      <path d="M3.6 7l8.4 6 8.4-6" />
+    </>
+  ),
+  poznamka: (
+    <>
+      <path d="M5 3.5h9.5L19 8v12.5H5z" />
+      <path d="M14 3.5V8h5M8 12h8M8 15.5h8M8 18h5" />
+    </>
+  ),
   // Kalendář — list s vyznačenými dny. Záměrně jiná než `zmeny` (hodiny),
   // aby se v nabídce nepletly.
   kalendar: (
