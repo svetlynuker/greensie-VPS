@@ -16,21 +16,20 @@ export const NABIDKA = [
     ],
   },
   {
-    // CRM: odtud vede celá cesta zakázky (zákazník → případ → nabídka).
+    // Kalendář je nahoře a sám: je to jediná obrazovka, kterou člověk otevírá
+    // proto, aby zjistil „co mám dnes", ne aby hledal záznam.
+    skupina: "Agenda",
+    polozky: [
+      // Jede pod právem Zákazníků: aktivity visí na záznamech CRM, takže kdo
+      // vidí zákazníky, má co plánovat.
+      { klic: "kalendar", nazev: "Kalendář", ikona: "kalendar", cesta: "/kalendar", pravo: "zakaznici" },
+    ],
+  },
+  {
+    // CRM: odtud vede celá cesta zakázky (zákazník → případ → nabídka → objednávka).
     skupina: "Obchod",
     polozky: [
       { klic: "zakaznici", nazev: "Zákazníci", ikona: "zakaznici", cesta: "/zakaznici", pravo: "zakaznici" },
-      // Kalendář jede pod právem Zákazníků: aktivity visí na záznamech CRM,
-      // takže kdo vidí zákazníky, má co plánovat.
-      { klic: "kalendar", nazev: "Kalendář", ikona: "kalendar", cesta: "/kalendar", pravo: "zakaznici" },
-      // Čísla obchodu. Jede pod právem Případů — funnel i forecast jsou o nich.
-      {
-        klic: "prehled_obchodu",
-        nazev: "Přehled obchodu",
-        ikona: "finance",
-        cesta: "/prehled-obchodu",
-        pravo: "obchodni_pripady",
-      },
       {
         klic: "obchodni_pripady",
         nazev: "Obchodní případy",
@@ -48,8 +47,15 @@ export const NABIDKA = [
         cesta: "/objednavky",
         pravo: "obchodni_pripady",
       },
-      // CRM projekty (realizace). Přehled projektů z Freela je zvlášť pod
-      // Přehledy – appka ho má časem nahradit, do té doby běží obojí.
+    ],
+  },
+  {
+    // Realizace zakázky. Oddělené od Obchodu schválně: podepsanou zakázku
+    // přebírá technika a je to jiná parta lidí i jiná denní práce.
+    skupina: "Technické",
+    polozky: [
+      // POZOR na dvojí význam slova „projekt": tohle je CRM projekt (realizace).
+      // Přehled projektů z Freela je v Přehledech, dokud ho appka nenahradí.
       {
         klic: "crm_projekty",
         nazev: "Projekty",
@@ -62,6 +68,14 @@ export const NABIDKA = [
   {
     skupina: "Přehledy",
     polozky: [
+      // Čísla obchodu. Jede pod právem Případů — funnel i forecast jsou o nich.
+      {
+        klic: "prehled_obchodu",
+        nazev: "Přehled obchodu",
+        ikona: "finance",
+        cesta: "/prehled-obchodu",
+        pravo: "obchodni_pripady",
+      },
       { klic: "projekty", nazev: "Přehled projektů", ikona: "projekty", cesta: "/prehled-projektu", pravo: "projekty" },
       { klic: "finance", nazev: "Přehled financí", ikona: "finance", cesta: "/finance", pravo: "finance" },
       { klic: "zmeny", nazev: "Přehled změn", ikona: "zmeny", cesta: "/zmeny", pravo: "zmeny" },
