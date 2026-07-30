@@ -9,6 +9,7 @@ všechno podstatné se zakládá a ukládá u zákazníka a u případu, a výpo
 jen zavolá.
 
 > 📸 SCREENSHOT: kanban obchodních případů se sloupci fází a dlaždicemi zakázek
+> 📸 SCREENSHOT: karta případu, záložka Nabídky – podklady a pracovní stůl výpočtu na jednom místě
 
 ---
 
@@ -77,15 +78,26 @@ se stejným ID. Řada se každý rok restartuje.
 > ⚠️ **Čísla `OP-` používá i Raynet.** Dokud běží obojí, appka čísluje **nad** nejvyšším
 > Raynetím číslem (proto začíná na `OP-26-0301`, ne na jedničce). Podrobně v sekci pro admina.
 
-### Vytvoření nabídky z případu
-Tlačítko **„+ Vytvořit nabídku"** na kartě případu:
+### Nabídky: celý výpočet na kartě případu
+Všechno se děje na záložce **Nabídky** u obchodního případu — **do nabídkovače chodit nemusíš**.
 
-- Má-li případ **jednu kategorii** (PPA / Prodej / Peak shaving), předvybere ji.
-- Má-li **víc kategorií nebo žádnou**, appka se zeptá, na co nabídku chceš.
+1. **Založení** je jedno kliknutí: tlačítka *+ PPA*, *+ Peak shaving*, *+ Prodej* vpravo nahoře.
+   Kategorie případu jsou zvýrazněné jako obvyklá volba, ale založit jde kterýkoli typ.
+   Číslo (`NAB-26-NNNN`) přidělí appka a **údaje zákazníka** — jméno, adresu i GPS — si nabídka
+   vezme z karty klienta. Nic se neopisuje.
+2. **Podklady** nahraješ hned pod tím: faktura za elektřinu (PDF), diagram spotřeby (XLS/CSV).
+   Dokud není nic nahráno, je ta část rozbalená, protože bez podkladů se výpočet nerozjede.
+3. **Výpočet** je rovnou tam — stejný pracovní stůl jako v nabídkovači (vstupy vlevo,
+   spočítané hodnoty vpravo). Výsledky se vrací na místě, na kartě případu.
 
-Nabídka se založí **pod případem** a **údaje zákazníka si vezme z jeho karty** — jméno, adresu
-i GPS. Nic se neopisuje. Pak už jsi v nabídkovači a počítáš jako dřív; nabídka zůstane
-navázaná na případ a je vidět na záložce **Nabídky**.
+Má-li případ víc nabídek, přepínají se pilulkami s čísly vlevo nahoře. Když případ nabídku
+už má, otevře se sama.
+
+Dvě tlačítka vedou dál, protože jsou to jiné úlohy:
+
+- **Nabídka pro zákazníka (PDF)** — sestavení dokumentu (papír, náhled, tisk).
+- **Otevřít v nabídkovači** — tatáž nabídka na samostatné obrazovce; hodí se na testování
+  nebo když chceš mít víc místa.
 
 ### Aktivity a úkoly
 Na kartě zákazníka i případu je log práce: **poznámka, telefonát, e-mail, schůzka, úkol**.
@@ -209,6 +221,16 @@ nepřepisuje na prázdno.
 Řadu lze přenastavit v okně **Stavy pipeline** (šířka čísla, další číslo). Zpět pod už vydané
 číslo to nepustí — vznikla by duplicitní ID.
 
+### Nabídky na kartě případu: jak to funguje uvnitř
+Výpočtové panely se **nepřekreslují znovu** — `PripadNabidky.jsx` vkládá tytéž komponenty,
+které používá nabídkovač (`PpaPanel`, `PeakShavingPanel`, `ProdejPanel`, `DokumentUpload`).
+Kdyby existovaly dva pracovní stoly, po první úpravě výpočtu by se rozešly.
+
+Panely potřebují z nabídky jen `id`, `dokumenty` a `reseni`, takže si karta případu při výběru
+nabídky dotáhne její detail (`GET /nabidkovac/nabidky/{id}`) a po každém nahrání podkladu ho
+načte znovu. Seznam nabídek případu chodí v jeho detailu (`nabidky`), obsah nabídek si CRM
+nekopíruje — zdroj pravdy o výpočtech zůstává nabídkovač.
+
 ### Vlastní pole: jak to funguje uvnitř
 Stejný princip, jaký appka už používá pro vlastní sloupce katalogu technologií
 (`KatalogSloupec` + `Technologie.extra`):
@@ -249,6 +271,7 @@ Práva: **čtení definic** smí každý, kdo vidí CRM (z definic se kreslí fo
 | `crm_stav_historie` | dráha záznamu fázemi (generická pro všechny entity) |
 | `crm_ciselne_rady` | viditelná ID: prefix, rok, šířka, další číslo, počátek |
 | `crm_aktivity` | poznámky, telefonáty, schůzky a úkoly (generická pro všechny entity) |
+| *(nabídky)* | zůstávají v tabulce `nabidky` nabídkovače – CRM si je jen zobrazuje |
 | `crm_vlastni_pole` | definice admin přidaných polí; hodnoty jsou v `extra` daného záznamu |
 
 Na `nabidky` (nabídkovač) přibyly dva sloupce: **`cislo`** (`NAB-26-NNNN`) a

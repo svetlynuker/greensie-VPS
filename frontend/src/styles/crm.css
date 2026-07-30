@@ -737,3 +737,31 @@
   border: 1px solid color-mix(in srgb, var(--st-ok) 30%, transparent);
   border-radius: 8px;
 }
+
+/* ---- nabídky na kartě obchodního případu ---- */
+/* Výpočet se dělá tady, ne v nabídkovači – proto sem patří i lišta pro výběr
+   nabídky a zakládání dalších. */
+.crm-nabidky {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.crm-nabidky-lista {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  padding: 10px 14px;
+}
+.crm-nabidka-hlava {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  padding: 2px 0;
+}
