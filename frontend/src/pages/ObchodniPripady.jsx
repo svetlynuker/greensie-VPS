@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import CrmTabulka from "../components/CrmTabulka";
@@ -17,7 +17,7 @@ import {
   logout,
   nactiMe,
 } from "../api";
-import { fmtDatum, fmtKc, nazvyKategorii } from "../crm";
+import { fmtDatum, fmtKc, fmtKcKratce, nazvyKategorii } from "../crm";
 import pouzitFiltr from "../pouzitFiltr";
 import "../styles/crm.css";
 
@@ -44,6 +44,20 @@ export default function ObchodniPripady() {
 
   // Filtr a řazení platí zároveň pro tabulku i kanban (jeden stav pro obojí).
   const f = pouzitFiltr("op", radky, sloupce);
+
+  // KPI nad seznamem (CRM-22). Počítá se z VYFILTROVANÝCH řádků, ne ze všech —
+  // jinak by čísla nad tabulkou nesouhlasila s tím, co je v ní vidět.
+  const kpi = useMemo(() => {
+    const r = f.radky || [];
+    const hodnoty = r.map((x) => Number(x.hodnota_kc) || 0);
+    const soucet = hodnoty.reduce((a, b) => a + b, 0);
+    return {
+      pocet: r.length,
+      soucet,
+      prumer: r.length ? soucet / r.length : 0,
+      bezHodnoty: r.filter((x) => !x.hodnota_kc).length,
+    };
+  }, [f.radky]);
 
   const nacti = useCallback(async (dotaz = "") => {
     const [k, r, s, pole, kat] = await Promise.all([
@@ -205,6 +219,31 @@ export default function ObchodniPripady() {
         />
 
         {chyba && <div className="crm-chyba">{chyba}</div>}
+
+        {/* KPI nad seznamem (CRM-22). Reaguje na filtr — proto „z vyfiltrovaných". */}
+        {kpi.pocet > 0 && (
+          <div className="crm-kpi-pas">
+            <span>
+              <b>{kpi.pocet}</b> případů
+              {f.podminky.length ? " (po filtru)" : ""}
+            </span>
+            <span>
+              celkem <b>{fmtKcKratce(kpi.soucet)}</b>
+            </span>
+            <span>
+              průměr <b>{fmtKcKratce(kpi.prumer)}</b>
+            </span>
+            {kpi.bezHodnoty > 0 && (
+              <span className="crm-tise" title="Případy bez hodnoty se do součtu nepočítají">
+                {kpi.bezHodnoty}× bez hodnoty
+              </span>
+            )}
+            <span className="crm-mezera" />
+            <a className="crm-odkaz" href="/prehled-obchodu">
+              Přehled obchodu →
+            </a>
+          </div>
+        )}
 
         {zobrazeni === "kanban" ? (
           <Kanban

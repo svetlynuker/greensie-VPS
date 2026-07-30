@@ -1,0 +1,140 @@
+/* Grafy obchodu — pruhy a sloupce z tokenů appky (drží světlý, tmavý
+   i barvoslepý režim). Bez knihovny, bez vlastní palety. */
+
+.go {
+  display: grid;
+  gap: 7px;
+}
+/* Název | pruh | číslo. Název má pevnou šířku, ať pruhy začínají zarovnaně —
+   jinak by se délky nedaly srovnat očima, což je celý smysl grafu. */
+.go-radek {
+  display: grid;
+  grid-template-columns: minmax(120px, 190px) minmax(0, 1fr) minmax(96px, auto);
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+@media (max-width: 620px) {
+  .go-radek {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+}
+.go-nazev {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.go-popis,
+.go-pocet {
+  color: var(--muted);
+  font-size: 12px;
+}
+.go-drazka {
+  height: 20px;
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+  border-radius: 5px;
+  overflow: hidden;
+}
+/* Zaoblený konec dat u nulové základny; 100 % výšky drážky, žádný stín. */
+.go-pruh {
+  height: 100%;
+  border-radius: 0 5px 5px 0;
+  transition: width 0.18s ease;
+}
+.go-pruh.otevreny {
+  background: color-mix(in srgb, var(--fm-brand-dk, #1c7ed6) 70%, transparent);
+}
+.go-pruh.ok {
+  background: var(--st-ok);
+}
+.go-pruh.crit {
+  background: var(--st-crit);
+}
+.go-cislo {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* ---- forecast ---- */
+.go-forecast {
+  display: grid;
+  gap: 10px;
+}
+.go-legenda {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted);
+}
+.go-vzorek {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+.go-vzorek.vazena {
+  background: var(--fm-brand, #2f9e44);
+}
+.go-vzorek.hruba {
+  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 26%, transparent);
+}
+.go-sloupce {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 10px;
+  align-items: end;
+}
+.go-sloupec {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  min-width: 0;
+}
+/* Plocha s pevnou výškou — sloupce se musí dát srovnat mezi měsíci. */
+.go-sloupec-plocha {
+  position: relative;
+  width: 100%;
+  max-width: 54px;
+  height: 130px;
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+  border-radius: 5px;
+}
+.go-sl {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  border-radius: 5px 5px 0 0;
+  transition: height 0.18s ease;
+}
+/* Hrubá hodnota je podklad, vážená leží na ní — proto užší a nad ní. */
+.go-sl.hruba {
+  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 26%, transparent);
+}
+.go-sl.vazena {
+  left: 18%;
+  right: 18%;
+  background: var(--fm-brand, #2f9e44);
+}
+.go-sloupec-hodnota {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.go-sloupec-label {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.go-poznamka {
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}

@@ -684,6 +684,11 @@ export function crmUdalostPridej(data) {
 // tohle jsou škatulky v kalendáři, kterými se filtruje).
 // Firemní nastavení CRM (naše adresa pro „U nás"). Čtení smí každý, změnu
 // jen právo crm_nastaveni.
+// Souhrny pro Přehled obchodu (funnel, forecast, důvody proher, KPI).
+export function crmStatistiky() {
+  return zavolej("/crm/statistiky");
+}
+
 export function crmNastaveni() {
   return zavolej("/crm/nastaveni");
 }

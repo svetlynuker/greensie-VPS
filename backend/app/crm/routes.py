@@ -24,6 +24,7 @@ from app.crm import ares as ares_modul
 from app.crm import (
     ciselne_rady,
     nastaveni_crm,
+    statistiky as statistiky_modul,
     kalendar,
     opakovani as opakovani_modul,
     kategorie as kategorie_modul,
@@ -1581,6 +1582,31 @@ def smaz_stav(
     db.delete(s)
     db.commit()
     return {"ok": True}
+
+
+# ---- statistiky obchodu (grafy pro vedení) ----------------------------------
+@router.get("/statistiky")
+def statistiky_obchodu(
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    """Souhrny pro dashboard: funnel, forecast, důvody proher a KPI.
+
+    Všechno naráz jedním dotazem — dashboard by jinak dělal pět kol na server
+    a „otevřený případ" by se dal definovat na pěti místech jinak.
+
+    Viditelnost je stejná jako v seznamech: OZ vidí svoje čísla, vedení
+    (`crm_vse`) čísla firmy. Díky tomu souhrn nad tabulkou a graf nad ním
+    vždycky souhlasí.
+    """
+    fc = statistiky_modul.forecast(db, user)[0]
+    return {
+        "souhrn": statistiky_modul.souhrn(db, user),
+        "funnel": statistiky_modul.funnel(db, user),
+        "forecast": fc["mesice"],
+        "forecast_bez_terminu": fc["bez_terminu"],
+        "duvody_proher": statistiky_modul.duvody_proher(db, user),
+    }
 
 
 # ---- kalendář ---------------------------------------------------------------
