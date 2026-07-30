@@ -755,14 +755,28 @@
   touch-action: none;
   cursor: grab;
 }
-.kal-udalost.tahnu {
+/* Během tažení se nesmí nic v mřížce vybírat ani reagovat na kurzor —
+   jinak tažení přes dlaždice a terče „chytá" cizí prvky. */
+.kal-tyden.tahne-se {
+  user-select: none;
   cursor: grabbing;
-  z-index: 5;
-  opacity: 0.92;
+}
+.kal-tyden.tahne-se .kal-slot,
+.kal-tyden.tahne-se .kal-udalost {
+  pointer-events: none;
+}
+/* Originál zůstává na místě ztlumený, aby bylo vidět, odkud se táhne. */
+.kal-udalost.ztlumena {
+  opacity: 0.3;
+}
+/* Duch = náhled na cílovém místě. Nereaguje na kurzor vůbec. */
+.kal-udalost.duch {
+  pointer-events: none;
+  z-index: 6;
+  opacity: 0.95;
+  outline: 2px solid color-mix(in srgb, var(--fm-brand, #2f9e44) 70%, transparent);
+  outline-offset: -2px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
-  /* Během tažení se nesmí spustit přechod – dlaždice by se za kurzorem
-     opožďovala a působila „gumově". */
-  transition: none;
 }
 /* Úchyty na hranách. Vysoké 7 px: dost na to, aby se daly chytit myší,
    a málo na to, aby ukradly klik uprostřed dlaždice. */
@@ -773,6 +787,7 @@
   height: 7px;
   cursor: ns-resize;
   touch-action: none;
+  z-index: 2;
 }
 .kal-uchyt.horni {
   top: 0;
