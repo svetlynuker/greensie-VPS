@@ -1,7 +1,7 @@
 # Zákazníci a Obchodní případy (CRM)
 
-> **Sekce v nabídce:** `zakaznici`, `obchodni_pripady` · **Adresy (routy):** `/zakaznici/lead`, `/zakaznici/klient`, `/zakaznici/detail/:id`, `/pripady`, `/pripady/detail/:id` · **Kdo smí otevřít:** kdokoli s právem `zakaznici` resp. `obchodni_pripady` (bez práva se sekce v nabídce vůbec nezobrazí; admin vždy)
-> **Kód:** frontend `frontend/src/pages/Zakaznici.jsx`, `ZakaznikDetail.jsx`, `ObchodniPripady.jsx`, `ObchodniPripadDetail.jsx`, backend `backend/app/crm/`
+> **Sekce v nabídce:** `zakaznici`, `obchodni_pripady`, `nabidky` · **Adresy (routy):** `/zakaznici/lead`, `/zakaznici/klient`, `/zakaznici/detail/:id`, `/pripady`, `/pripady/detail/:id`, `/nabidky` · **Kdo smí otevřít:** právo `zakaznici` resp. `obchodni_pripady`; sekce Nabídky jede pod právem `nabidkovac` (bez práva se sekce v nabídce vůbec nezobrazí; admin vždy)
+> **Kód:** frontend `frontend/src/pages/Zakaznici.jsx`, `ZakaznikDetail.jsx`, `ObchodniPripady.jsx`, `ObchodniPripadDetail.jsx`, `Nabidky.jsx`, backend `backend/app/crm/`
 
 Evidence obchodu: **zákazník → obchodní případ → nabídka** (a dál objednávka a projekt, které
 se připravují). Cílem je, aby obchodní zástupce nemusel chodit do samotného nabídkovače —
@@ -98,6 +98,29 @@ Dvě tlačítka vedou dál, protože jsou to jiné úlohy:
 - **Nabídka pro zákazníka (PDF)** — sestavení dokumentu (papír, náhled, tisk).
 - **Otevřít v nabídkovači** — tatáž nabídka na samostatné obrazovce; hodí se na testování
   nebo když chceš mít víc místa.
+
+### Sekce Nabídky: co je odesláno a co zákazník přijal
+Vedle Zákazníků a Obchodních případů je sekce **Nabídky** — přehled napříč všemi případy.
+Odpovídá na jiné otázky než karta případu: *co jsme odeslali, co visí bez reakce, co zákazník
+přijal.* Nepočítá se tu; klik na nabídku vede na její obchodní případ, kde je pracovní stůl.
+
+Nabídka má **dva stavy na dvou různých osách** a schválně se nemíchají:
+
+| Osa | Kde se mění | Hodnoty |
+|---|---|---|
+| **Obchodní stav** | kanban sekce Nabídky | koncept → ke kontrole → odeslána → přijata / zamítnuta |
+| **Stav zpracování** | výpočet na kartě případu | koncept, data nahrána, zkontrolováno, spočítáno, hotovo |
+
+Nabídka totiž může být dávno odeslaná a přitom mít rozpracovaný výpočet — a naopak. V tabulce
+je proto vidět obojí, včetně sloupce, jestli je nabídka vůbec **spočítaná** (nespočítanou nemá
+smysl posílat).
+
+Kanban se přetahuje stejně jako u případů a každý přesun se zapisuje do historie, takže jde
+zjistit, jak dlouho nabídka u zákazníka visela. Stavy si vedení upraví tlačítkem
+**„⚙ Stavy nabídek"** (právo `crm_nastaveni`).
+
+> **Přijatá nabídka NEPOSOUVÁ obchodní případ na výhru.** Přijatá nabídka ještě není podepsaná
+> objednávka; předbíhat rozhodnutí obchodníka by bylo horší než nechat ho případ posunout sám.
 
 ### Aktivity a úkoly
 Na kartě zákazníka i případu je log práce: **poznámka, telefonát, e-mail, schůzka, úkol**.
@@ -231,6 +254,19 @@ nabídky dotáhne její detail (`GET /nabidkovac/nabidky/{id}`) a po každém na
 načte znovu. Seznam nabídek případu chodí v jeho detailu (`nabidky`), obsah nabídek si CRM
 nekopíruje — zdroj pravdy o výpočtech zůstává nabídkovač.
 
+### Pipeline nabídek: jak to funguje uvnitř
+`app/crm/nabidky_pipeline.py`. Obchodní stav je sloupec `nabidky.stav_obchodni` (klíč do
+`crm_stavy`, entita `nab`), **nullable** — starším nabídkám se při čtení dopočítá první stav
+pipeline, ale nezapisuje se; zápis proběhne teprve, když s nabídkou někdo v kanbanu pohne.
+Čtení nemá měnit data.
+
+**Viditelnost** nabídka nemá vlastní: řídí se právy svého obchodního případu. Nabídku **bez
+případu** (vznikla přímo v nabídkovači) vidí jen její autor a kdokoli s `crm_vse` — jinak by
+„nikomu nepatřící" nabídky byly vidět všem.
+
+Kanban sekce Nabídky používá **tutéž komponentu** jako kanban případů; liší se jen render
+dlaždice (`dlazdice` prop). Dva kanbany by se rozešly.
+
 ### Vlastní pole: jak to funguje uvnitř
 Stejný princip, jaký appka už používá pro vlastní sloupce katalogu technologií
 (`KatalogSloupec` + `Technologie.extra`):
@@ -271,7 +307,7 @@ Práva: **čtení definic** smí každý, kdo vidí CRM (z definic se kreslí fo
 | `crm_stav_historie` | dráha záznamu fázemi (generická pro všechny entity) |
 | `crm_ciselne_rady` | viditelná ID: prefix, rok, šířka, další číslo, počátek |
 | `crm_aktivity` | poznámky, telefonáty, schůzky a úkoly (generická pro všechny entity) |
-| *(nabídky)* | zůstávají v tabulce `nabidky` nabídkovače – CRM si je jen zobrazuje |
+| *(nabídky)* | zůstávají v tabulce `nabidky` nabídkovače – CRM jim přidává jen `stav_obchodni` a pohled |
 | `crm_vlastni_pole` | definice admin přidaných polí; hodnoty jsou v `extra` daného záznamu |
 
 Na `nabidky` (nabídkovač) přibyly dva sloupce: **`cislo`** (`NAB-26-NNNN`) a
@@ -292,6 +328,8 @@ současně (a právě z toho vznikne kombinovaná nabídka, až se to postaví).
 | Po smazání vlastního pole zmizely hodnoty | Nezmizely, jen se neukazují. Založ pole znovu se stejným názvem. |
 | Vlastní pole nejde uložit s textem v čísle | Číselné pole přijímá jen čísla (i s mezerami a čárkou). Změň typ pole, nebo hodnotu. |
 | V kanbanu chybí sloupec, ale případy někde jsou | Stav byl smazán z nastavení; případy v neexistujícím stavu padají do prvního sloupce, aby se neztratily. |
+| Nabídka je v kanbanu Nabídek, ale nemá případ | Vznikla přímo v nabídkovači. Vidí ji jen autor; navázat ji na případ jde tím, že se nová založí z případu. |
+| Nabídka je „přijata", ale případ pořád není vyhraný | Správné chování — případ posouvá obchodník sám, přijatá nabídka ještě není podepsaná objednávka. |
 
 ### Poznámky a úskalí
 - **Dvě pravdy o zákazníkovi.** Dokud běží Raynet i appka, vedou se klienti na dvou místech

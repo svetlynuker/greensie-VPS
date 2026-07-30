@@ -261,6 +261,40 @@ class ZmenaStavuVstup(BaseModel):
     duvod_prohry: str = ""
 
 
+# ---- nabídky (obchodní pipeline) --------------------------------------------
+class NabidkaRadekOut(BaseModel):
+    """Řádek/dlaždice v sekci Nabídky. Obsah výpočtu tu není – jen to, co
+    obchod potřebuje k rozhodnutí, co s nabídkou dál."""
+
+    id: int
+    cislo: str = ""
+    typ: str  # ppa / prodej / peak_shaving
+    stav: str  # obchodní stav (klíč do crm_stavy, entita "nab")
+    stav_nazev: str = ""
+    stav_zpracovani: str = ""  # stav výpočtu – jiná osa než obchodní stav
+    spocitana: bool = False
+    zakaznik_nazev: str = ""
+    pripad_id: Optional[int] = None
+    pripad_cislo: str = ""
+    vytvoril_jmeno: Optional[str] = None
+    vytvoreno_at: Optional[str] = None
+
+
+class NabidkaKanbanSloupec(BaseModel):
+    stav: StavOut
+    zaznamy: list[NabidkaRadekOut] = []
+    pocet: int = 0
+
+
+class NabidkaKanbanOut(BaseModel):
+    entita: str = "nab"
+    sloupce: list[NabidkaKanbanSloupec] = []
+
+
+class NabidkaZmenaStavuVstup(BaseModel):
+    stav: str
+
+
 # ---- aktivity ---------------------------------------------------------------
 class AktivitaOut(BaseModel):
     id: int

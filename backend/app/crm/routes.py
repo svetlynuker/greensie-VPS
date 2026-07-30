@@ -18,9 +18,14 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.auth.models import User
-from app.auth.permissions import muze_otevrit
+from app.auth.permissions import get_current_user, muze_otevrit
 from app.crm import ares as ares_modul
-from app.crm import ciselne_rady, stavy as stavy_modul, vlastni_pole as pole_modul
+from app.crm import (
+    ciselne_rady,
+    nabidky_pipeline,
+    stavy as stavy_modul,
+    vlastni_pole as pole_modul,
+)
 from app.crm.models import (
     DRUHY_AKTIVITY,
     DRUHY_STAVU,
@@ -55,6 +60,10 @@ from app.crm.schemas import (
     AresOut,
     KanbanOut,
     KanbanSloupec,
+    NabidkaKanbanOut,
+    NabidkaKanbanSloupec,
+    NabidkaRadekOut,
+    NabidkaZmenaStavuVstup,
     KontaktOut,
     KontaktVstup,
     PripadDetailOut,
@@ -79,6 +88,19 @@ from app.crm.schemas import (
 from app.database import get_db
 
 router = APIRouter(prefix="/crm", tags=["crm"])
+
+
+def vyzaduj_nabidkovac_crm(user: User = Depends(get_current_user)) -> User:
+    """Sekce Nabídky jede pod stávajícím právem Nabídkovače.
+
+    Kdo smí nabídky vytvářet, smí je i vidět v přehledu – zavádět kvůli
+    seznamu další právo by katalog jen zaplevelilo.
+    """
+    if not muze_otevrit(user, "nabidkovac"):
+        raise HTTPException(
+            status_code=403, detail="Na Nabídky nemáš oprávnění (Nabídkovač)."
+        )
+    return user
 
 
 # ---- pomocné ----------------------------------------------------------------
@@ -905,6 +927,140 @@ def smaz_pripad(
     db.delete(p)
     db.commit()
     return {"ok": True}
+
+
+# ---- nabídky: obchodní pipeline a sekce Nabídky -----------------------------
+# Nabídky zůstávají v tabulce nabídkovače (ten je zdroj pravdy o výpočtech);
+# CRM jim přidává obchodní stav a pohled „co je odesláno a co viselo".
+def _nabidka_radek(db: Session, n, stav_mapa: dict[str, CrmStav]) -> NabidkaRadekOut:
+    klic = nabidky_pipeline.stav_nabidky(db, n)
+    stav = stav_mapa.get(klic)
+    pripad = n.obchodni_pripad_id and db.get(ObchodniPripad, n.obchodni_pripad_id)
+    return NabidkaRadekOut(
+        id=n.id,
+        cislo=n.cislo or "",
+        typ=n.typ,
+        stav=klic,
+        stav_nazev=stav.nazev if stav is not None else klic,
+        stav_zpracovani=n.stav or "",
+        spocitana=nabidky_pipeline.je_spocitana(n),
+        # Zákazník: přednost má karta klienta z případu, protože je aktuální;
+        # u nabídek bez případu zůstává text zapsaný v nabídce.
+        zakaznik_nazev=(
+            pripad.zakaznik.nazev
+            if pripad is not None and pripad.zakaznik is not None
+            else (n.zakaznik_nazev or "")
+        ),
+        pripad_id=pripad.id if pripad is not None else None,
+        pripad_cislo=pripad.cislo if pripad is not None else "",
+        vytvoril_jmeno=_jmeno(n.vytvoril),
+        vytvoreno_at=_iso(n.vytvoreno_at),
+    )
+
+
+@router.get("/nabidky", response_model=list[NabidkaRadekOut])
+def seznam_nabidek_crm(
+    stav: str | None = Query(default=None),
+    typ: str | None = Query(default=None),
+    hledat: str | None = Query(default=None),
+    user: User = Depends(vyzaduj_nabidkovac_crm),
+    db: Session = Depends(get_db),
+):
+    """Nabídky napříč případy – obchodní přehled, ne výpočet."""
+    from app.nabidkovac.models import Nabidka
+
+    q = db.query(Nabidka)
+    if typ:
+        q = q.filter(Nabidka.typ == typ)
+    if hledat:
+        vzor = f"%{hledat.strip()}%"
+        q = q.filter(
+            or_(Nabidka.cislo.ilike(vzor), Nabidka.zakaznik_nazev.ilike(vzor))
+        )
+    q = nabidky_pipeline.omez_na_moje(q, user)
+    nabidky = q.order_by(Nabidka.id.desc()).all()
+
+    mapa = _mapa_stavu(db, "nab")
+    radky = [_nabidka_radek(db, n, mapa) for n in nabidky]
+    # Filtr podle stavu až tady: starší nabídky stav v DB nemají a dopočítává
+    # se jim první stav pipeline, takže v SQL by se nechytily.
+    if stav:
+        radky = [r for r in radky if r.stav == stav]
+    return radky
+
+
+@router.get("/nabidky/kanban", response_model=NabidkaKanbanOut)
+def kanban_nabidek(
+    user: User = Depends(vyzaduj_nabidkovac_crm),
+    db: Session = Depends(get_db),
+):
+    """Nabídky rozdělené do sloupců podle obchodních stavů."""
+    from app.nabidkovac.models import Nabidka
+
+    q = nabidky_pipeline.omez_na_moje(db.query(Nabidka), user)
+    nabidky = q.order_by(Nabidka.id.desc()).all()
+    seznam_stavu = stavy_modul.seznam(db, "nab")
+    mapa = {s.klic: s for s in seznam_stavu}
+
+    koše: dict[str, list] = {s.klic: [] for s in seznam_stavu}
+    for n in nabidky:
+        klic = nabidky_pipeline.stav_nabidky(db, n)
+        # Nabídka ve smazaném stavu spadne do prvního sloupce, ať nezmizí z dohledu.
+        if klic not in koše and seznam_stavu:
+            klic = seznam_stavu[0].klic
+        if klic in koše:
+            koše[klic].append(n)
+
+    sloupce = [
+        NabidkaKanbanSloupec(
+            stav=_stav_out(s),
+            zaznamy=[_nabidka_radek(db, n, mapa) for n in koše.get(s.klic, [])],
+            pocet=len(koše.get(s.klic, [])),
+        )
+        for s in seznam_stavu
+    ]
+    return NabidkaKanbanOut(sloupce=sloupce)
+
+
+@router.post("/nabidky/{nabidka_id}/stav", response_model=NabidkaRadekOut)
+def zmen_stav_nabidky(
+    nabidka_id: int,
+    vstup: NabidkaZmenaStavuVstup,
+    user: User = Depends(vyzaduj_nabidkovac_crm),
+    db: Session = Depends(get_db),
+):
+    """Přesun nabídky v obchodní pipeline (odeslána, přijata, zamítnuta…).
+
+    Zapisuje historii, aby šlo zjistit, jak dlouho nabídka u zákazníka visela.
+    Stav obchodního případu se NEMĚNÍ automaticky: přijatá nabídka ještě není
+    podepsaná objednávka a předbíhat rozhodnutí obchodníka by bylo horší než
+    nechat ho případ posunout sám.
+    """
+    from app.nabidkovac.models import Nabidka
+
+    n = db.get(Nabidka, nabidka_id)
+    if n is None or not nabidky_pipeline.vidi_nabidku(db, n, user):
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+
+    novy = stavy_modul.najdi(db, "nab", vstup.stav)
+    if novy is None:
+        raise HTTPException(status_code=422, detail=f"Stav '{vstup.stav}' neexistuje.")
+
+    puvodni = nabidky_pipeline.stav_nabidky(db, n)
+    if puvodni != novy.klic:
+        n.stav_obchodni = novy.klic
+        db.add(
+            CrmStavHistorie(
+                entita="nab",
+                zaznam_id=n.id,
+                ze_stavu=puvodni,
+                do_stavu=novy.klic,
+                zmenil_user_id=user.id,
+            )
+        )
+        db.commit()
+        db.refresh(n)
+    return _nabidka_radek(db, n, _mapa_stavu(db, "nab"))
 
 
 # ---- aktivity a poznámky ----------------------------------------------------

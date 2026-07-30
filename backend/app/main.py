@@ -192,6 +192,18 @@ def _lehka_migrace():
         # Cizí klíč zakládáme až po vytvoření CRM tabulek (create_all výš), a jen
         # pokud ještě není – opakovaný start by na duplicitním klíči spadl.
         conn.execute(text("ALTER TABLE nabidky ADD COLUMN IF NOT EXISTS cislo VARCHAR"))
+        # Obchodní stav nabídky (odeslána / přijata / zamítnuta) – jiná osa než
+        # `stav`, který drží stav zpracování výpočtu. Nullable: starším nabídkám
+        # se při čtení dopočítá první stav pipeline.
+        conn.execute(
+            text("ALTER TABLE nabidky ADD COLUMN IF NOT EXISTS stav_obchodni VARCHAR")
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_nabidky_stav_obchodni "
+                "ON nabidky (stav_obchodni)"
+            )
+        )
         conn.execute(
             text(
                 "CREATE UNIQUE INDEX IF NOT EXISTS ix_nabidky_cislo ON nabidky (cislo) "

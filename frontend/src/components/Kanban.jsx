@@ -11,8 +11,11 @@ import { fmtKcKratce, fmtDatum, nazvyKategorii, tridaBarvy } from "../crm";
  * závislosti, takže se sem netahá knihovna. Klávesová obsluha je zajištěná
  * jinak: dlaždice má na sobě rozbalovací volbu stavu, aby se dal záznam
  * přesunout i bez myši (a na mobilu, kde drag & drop nefunguje).
+ *
+ * `dlazdice` je volitelný render obsahu dlaždice. Bez něj se kreslí obchodní
+ * případ; sekce Nabídky si předá vlastní, aby nemusel existovat druhý kanban.
  */
-export default function Kanban({ sloupce, onPresun, onOtevri }) {
+export default function Kanban({ sloupce, onPresun, onOtevri, dlazdice = null }) {
   const [nesu, setNesu] = useState(null); // id přetahovaného záznamu
   const [nad, setNad] = useState(null); // klíč stavu, nad kterým visí
 
@@ -51,10 +54,8 @@ export default function Kanban({ sloupce, onPresun, onOtevri }) {
             <span className="crm-kanban-nazev">{s.stav.nazev}</span>
             <span className="crm-kanban-pocet">{s.pocet}</span>
           </div>
-          {s.soucet_kc ? (
+          {s.soucet_kc != null && (
             <div className="crm-kanban-soucet">{fmtKcKratce(s.soucet_kc)}</div>
-          ) : (
-            <div className="crm-kanban-soucet crm-tise">—</div>
           )}
 
           <div className="crm-kanban-telo">
@@ -68,20 +69,26 @@ export default function Kanban({ sloupce, onPresun, onOtevri }) {
                 onClick={() => onOtevri(z)}
                 title="Klikni pro detail, přetáhni pro změnu stavu"
               >
-                <div className="crm-dlazdice-hlava">
-                  <span className="crm-dlazdice-cislo">{z.cislo}</span>
-                  {z.hodnota_kc ? (
-                    <span className="crm-dlazdice-hodnota">{fmtKcKratce(z.hodnota_kc)}</span>
-                  ) : null}
-                </div>
-                <div className="crm-dlazdice-zakaznik">{z.zakaznik_nazev}</div>
-                {z.nazev && <div className="crm-dlazdice-nazev">{z.nazev}</div>}
-                <div className="crm-dlazdice-pata">
-                  {nazvyKategorii(z.kategorie) || "bez kategorie"}
-                  {z.predpokladane_uzavreni ? ` · ${fmtDatum(z.predpokladane_uzavreni)}` : ""}
-                </div>
-                {z.vlastnik_jmeno && (
-                  <div className="crm-dlazdice-vlastnik">{z.vlastnik_jmeno}</div>
+                {dlazdice ? (
+                  dlazdice(z)
+                ) : (
+                  <>
+                    <div className="crm-dlazdice-hlava">
+                      <span className="crm-dlazdice-cislo">{z.cislo}</span>
+                      {z.hodnota_kc ? (
+                        <span className="crm-dlazdice-hodnota">{fmtKcKratce(z.hodnota_kc)}</span>
+                      ) : null}
+                    </div>
+                    <div className="crm-dlazdice-zakaznik">{z.zakaznik_nazev}</div>
+                    {z.nazev && <div className="crm-dlazdice-nazev">{z.nazev}</div>}
+                    <div className="crm-dlazdice-pata">
+                      {nazvyKategorii(z.kategorie) || "bez kategorie"}
+                      {z.predpokladane_uzavreni ? ` · ${fmtDatum(z.predpokladane_uzavreni)}` : ""}
+                    </div>
+                    {z.vlastnik_jmeno && (
+                      <div className="crm-dlazdice-vlastnik">{z.vlastnik_jmeno}</div>
+                    )}
+                  </>
                 )}
 
                 {/* Náhrada přetahování pro klávesnici a mobil. */}
