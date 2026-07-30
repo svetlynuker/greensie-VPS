@@ -889,3 +889,8 @@ export function crmMigraceStareNabidky(nasucho = true) {
     method: "POST",
   });
 }
+
+// Import klientů a případů z Raynetu. `nasucho=true` jen vrátí náhled.
+export function crmImportRaynet(nasucho = true) {
+  return zavolej(`/crm/import/raynet?nasucho=${nasucho ? "true" : "false"}`, { method: "POST" });
+}

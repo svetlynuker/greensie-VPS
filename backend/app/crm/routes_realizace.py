@@ -1277,3 +1277,57 @@ def migruj_stare_nabidky(
         "preskoceno": preskoceno,
         "plan": plan,
     }
+
+
+# ==================== IMPORT Z RAYNETU =======================================
+@router.post("/import/raynet")
+def import_z_raynetu(
+    nasucho: bool = Query(default=True),
+    limit_firem: int | None = Query(default=None),
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    """Natáhne klienty a obchodní případy z Raynetu (jednosměrně, idempotentně).
+
+    Používá přístup, který už má nastavený konektor – žádné další heslo se
+    nezadává. `nasucho=true` (výchozí) nic nezapisuje, jen spočítá, co by se
+    stalo; skutečný import je nevratný.
+
+    Před spuštěním se kontroluje **denní limit API callů** Raynetu: import čte
+    stránkované výpisy (ne detail po detailu), ale u stovek záznamů se to sečte
+    a vyčerpat limit uprostřed by nechalo data rozpůlená.
+    """
+    from app.crm import import_raynet
+    from app.konektor.logika import NastaveniNepripraveno, vytvor_klienty
+    from app.konektor.models import KonektorNastaveni
+
+    nastaveni = db.query(KonektorNastaveni).first()
+    if nastaveni is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Konektor na Raynet není nastavený – doplň přístupy v sekci Konektor.",
+        )
+    try:
+        raynet, _drive = vytvor_klienty(nastaveni)
+    except NastaveniNepripraveno as e:
+        raise HTTPException(status_code=422, detail=f"Přístup k Raynetu není hotový: {e}")
+
+    zbyva = raynet.zbyva_api()
+    if zbyva is not None and zbyva < 200:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Raynet má dnes jen {zbyva} zbývajících API callů. Import by se nedokončil – "
+                "zkus to zítra, limit se resetuje."
+            ),
+        )
+
+    try:
+        vysledek = import_raynet.importuj(
+            db, raynet, user, nasucho=nasucho, limit_firem=limit_firem
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=f"Raynet odpověděl chybou: {e}")
+
+    vysledek["zbyvalo_api_callu"] = zbyva
+    return vysledek
