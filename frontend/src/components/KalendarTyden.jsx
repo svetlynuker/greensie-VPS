@@ -150,7 +150,11 @@ function Dlazdice({
       }}
       // Duch je jen náhled — nesmí brát kliknutí ani reagovat na tažení.
       onPointerDown={duch ? undefined : (e) => onZacniTazeni?.(e, u, "presun")}
-      onClick={duch ? undefined : () => onKlik?.(u)}
+      onClick={
+        duch
+          ? undefined
+          : (e) => onKlik?.(u, e.currentTarget.getBoundingClientRect())
+      }
       title={duch ? undefined : popisUdalosti(u)}
       role={duch ? "presentation" : "button"}
       tabIndex={duch ? -1 : 0}
@@ -160,7 +164,7 @@ function Dlazdice({
           : (e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                onKlik?.(u);
+                onKlik?.(u, e.currentTarget.getBoundingClientRect());
               }
             }
       }
@@ -423,12 +427,12 @@ export default function KalendarTyden({
   }
 
   /** Klik na dlaždici — ale ne ten, který právě dokončil tažení. */
-  function klikNaUdalost(u) {
+  function klikNaUdalost(u, kotva) {
     if (potlacitKlikRef.current) {
       potlacitKlikRef.current = false;
       return;
     }
-    onUdalost?.(u);
+    onUdalost?.(u, kotva);
   }
 
   const lzeTahnout = Boolean(onPresun);

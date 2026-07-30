@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
-import Ikona from "../components/Ikona";
 import KalendarMesic from "../components/KalendarMesic";
 import KalendarTyden from "../components/KalendarTyden";
 import KalendarFiltry from "../components/KalendarFiltry";
 import AktivitaModal from "../components/AktivitaModal";
+import KalendarDetail from "../components/KalendarDetail";
 import {
+  crmAktivitaSmaz,
   crmAktivitaUprav,
   crmFiltrUloz,
   crmFiltry,
@@ -53,6 +54,7 @@ export default function Kalendar() {
   const [kategorie, setKategorie] = useState([]);
   const [lide, setLide] = useState([]);
   const [ulozeneFiltry, setUlozeneFiltry] = useState([]);
+  // Detail nese i „kotvu" = pozici dlaždice, u které se popover ukotví.
   const [detail, setDetail] = useState(null);
   // Modál: {vychozi: {termin, cas}} pro novou, {aktivita} pro úpravu.
   const [modal, setModal] = useState(null);
@@ -161,6 +163,27 @@ export default function Kalendar() {
    * dlaždice po puštění skočila zpátky a doskočila až s odpovědí, což vypadá
    * jako porucha. Když uložení selže, vrátí se původní stav a řekne se proč.
    */
+  /** Změna z popoveru (uzavření s výsledkem, přesun, vrácení do plánu). */
+  async function zmenAktivitu(id, zmena) {
+    try {
+      await crmAktivitaUprav(id, zmena);
+      await nacti();
+      setChyba(null);
+    } catch (e) {
+      setChyba(`Změnu se nepodařilo uložit: ${e.message}`);
+    }
+  }
+
+  async function smazAktivitu(u) {
+    try {
+      await crmAktivitaSmaz(u.id);
+      setDetail(null);
+      await nacti();
+    } catch (e) {
+      setChyba(`Smazat se nepodařilo: ${e.message}`);
+    }
+  }
+
   async function presunAktivitu(u, zmena) {
     const puvodni = udalosti;
     setUdalosti((seznam) =>
@@ -379,7 +402,7 @@ export default function Kalendar() {
               ulozZobrazeni({ zobrazit_zrusene: v });
             }}
             nenaplanovane={nenaplanovane}
-            onUdalost={setDetail}
+            onUdalost={(u, kotva) => setDetail({ u, kotva })}
             onUlozitFiltr={ulozitFiltr}
             onVycistit={vycisti}
             maFiltr={maFiltr}
@@ -393,7 +416,7 @@ export default function Kalendar() {
             barvy={barvy}
             vybranyDen={vybranyDen}
             onDen={setVybranyDen}
-            onUdalost={setDetail}
+            onUdalost={(u, kotva) => setDetail({ u, kotva })}
             onPrazdno={(iso, cas) => {
               setVybranyDen(iso);
               setModal({ vychozi: { termin: iso, cas } });
@@ -403,114 +426,22 @@ export default function Kalendar() {
         </div>
       </div>
 
-      {/* ---- detail aktivity (plný popover s akcemi přijde v etapě K4c) ---- */}
       {detail && (
-        <div className="kal-detail-plast" onClick={() => setDetail(null)}>
-          <div className="kal-detail-karta" onClick={(e) => e.stopPropagation()}>
-            <div className="kal-detail-hlava">
-              <span
-                className="kal-detail-ikona"
-                style={{ background: detail.kategorie_barva || barvy[detail.druh] || "#d3d9de" }}
-              >
-                <Ikona
-                  jmeno={DRUHY_AKTIVITY.find((d) => d.klic === detail.druh)?.ikona || "kalendar"}
-                  velikost={16}
-                />
-              </span>
-              <h2>{detail.nazev || "Aktivita"}</h2>
-              <span className="crm-mezera" />
-              <button className="crm-zavrit" onClick={() => setDetail(null)} aria-label="Zavřít">
-                ✕
-              </button>
-            </div>
-
-            <div className="kal-detail-telo">
-              {detail.muze_detail ? (
-                <>
-                  {detail.zaznam_nazev && (
-                    <div className="kal-detail-stitek">
-                      <Ikona jmeno="zakaznici" velikost={13} />
-                      {detail.cesta ? (
-                        <a className="crm-odkaz" href={detail.cesta}>
-                          {detail.zaznam_nazev}
-                        </a>
-                      ) : (
-                        detail.zaznam_nazev
-                      )}
-                    </div>
-                  )}
-                  <dl className="crm-udaje" style={{ marginTop: 10 }}>
-                    <dt>Termín</dt>
-                    <dd>
-                      {detail.cely_den
-                        ? `${detail.termin} · celý den`
-                        : `${detail.termin} · ${detail.zacatek.slice(11, 16)} (${detail.delka_min} min)`}
-                      {detail.vicedenni ? ` → ${detail.konec}` : ""}
-                    </dd>
-                    {detail.kategorie_nazev && (
-                      <>
-                        <dt>Kategorie</dt>
-                        <dd>
-                          <span
-                            className="kalf-barva-tecka"
-                            style={{ background: detail.kategorie_barva }}
-                          />{" "}
-                          {detail.kategorie_nazev}
-                        </dd>
-                      </>
-                    )}
-                    {detail.misto && (
-                      <>
-                        <dt>Místo</dt>
-                        <dd>{detail.misto}</dd>
-                      </>
-                    )}
-                    <dt>Stav</dt>
-                    <dd>
-                      {detail.stav === "realizovano"
-                        ? "Realizováno"
-                        : detail.stav === "nekonalo_se"
-                          ? "Nekonalo se"
-                          : "Naplánováno"}
-                      {detail.priorita === "vysoka" ? " · vysoká priorita" : ""}
-                    </dd>
-                  </dl>
-                  {detail.text && (
-                    <p style={{ fontSize: 13, whiteSpace: "pre-wrap", marginTop: 8 }}>
-                      {detail.text}
-                    </p>
-                  )}
-                  {detail.vysledek && (
-                    <div className="crm-osa-vysledek" style={{ marginTop: 8 }}>
-                      <b>{detail.stav === "nekonalo_se" ? "Nekonalo se:" : "Výsledek:"}</b>{" "}
-                      {detail.vysledek}
-                    </div>
-                  )}
-                  <div className="kal-detail-akce">
-                    <button
-                      className="fm-btn"
-                      onClick={() => {
-                        setModal({ aktivita: detail });
-                        setDetail(null);
-                      }}
-                    >
-                      ✎ Upravit
-                    </button>
-                    <span className="crm-tise">
-                      Mám hotovo / Zrušit / Přesunout přidám v další etapě.
-                    </span>
-                  </div>
-                </>
-              ) : (
-                <p className="crm-tise">
-                  {detail.vlastnik_jmeno ? `${detail.vlastnik_jmeno} — ` : ""}
-                  v tuhle dobu nemá volno. Podrobnosti téhle aktivity ti appka neukáže.
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
+        <KalendarDetail
+          udalost={detail.u}
+          kotva={detail.kotva}
+          barvy={barvy}
+          lide={lide}
+          onZavri={() => setDetail(null)}
+          onZmena={zmenAktivitu}
+          onUprav={(u) => {
+            setDetail(null);
+            setModal({ aktivita: u });
+          }}
+          onSmaz={smazAktivitu}
+        />
       )}
+
       {modal && (
         <AktivitaModal
           vychozi={modal.vychozi}
