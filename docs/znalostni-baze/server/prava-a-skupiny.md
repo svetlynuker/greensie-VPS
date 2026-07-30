@@ -53,7 +53,7 @@ Práva jsou textové klíče z jednoho katalogu (`PRAVA` v `permissions.py`). D�
 | `nabidkovac` | Nabídkovač – vytvářet/upravovat nabídky (OZ) | otevření sekce | vstup do Nabídkovače (tvorba/úprava nabídek) |
 | `admin` | Otevřít Admin nastavení | otevření sekce | vstup do Admin nastavení (správa uživatelů, skupin, práv) |
 | `logy` | Otevřít Logy (provoz, chyby, audit) | otevření sekce | vstup do modulu Logy |
-| `konektor` | Otevřít Konektor Raynet ↔ Google Drive | otevření sekce | vstup do Konektoru (nastavení, logy) |
+| `konektor` | Otevřít Konektor Raynet ↔ Google Disk | otevření sekce | vstup do Konektoru (nastavení, logy) |
 | `editace` | Editace matice (Přehled projektů) | akční | úpravy v Přehledu projektů (buňky, projekty/sloupce, prahy, Disk…) |
 | `nabidkovac_katalog` | Nabídkovač – editace katalogu a výpočtů (vedení) | akční | úprava katalogu technologií a výpočtových nastavení v Nabídkovači |
 

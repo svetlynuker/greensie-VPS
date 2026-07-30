@@ -16,5 +16,15 @@ Cíl: aby šlo modul pochopit a udržovat bez pročítání celého kódu a hist
 - Historii větších změn (PR) klidně veď v tabulce na konci.
 
 ## Obsah
-- [`peak-shaving.md`](./peak-shaving.md) – peak shaving kalkulátor (sazby distributorů, ekonomika 2026/2027, Koeficient AKU, grafy, návratnosti).
+- [`peak-shaving.md`](./peak-shaving.md) – peak shaving kalkulátor (sazby distributorů, ekonomika 2026/2027, Koeficient AKU, grafy, návratnosti, obchodní režimy na spotu).
 - [`ppa-fve.md`](./ppa-fve.md) – PPA pro FVE (simulace výroby, spárování se spotřebou, ekonomika klienta i investora, ekonomický návrh velikosti, % pokrytí spotřeby).
+- [`raynet-gdrive-konektor-spec.md`](./raynet-gdrive-konektor-spec.md) – konektor Raynet ↔ Google Disk: zadání a technický návrh (fáze F0–F3, datový model, fronta úloh, šifrování tajemství).
+- [`raynet-gdrive-INVENTORY.md`](./raynet-gdrive-INVENTORY.md) – inventura původního Node.js konektoru, ze které se vycházelo (co se přebralo a co ne).
+
+Návodová (uživatelská) dokumentace k týmž modulům je ve [`docs/znalostni-baze/`](../znalostni-baze/README.md)
+– tam se popisuje **obsluha**, tady **implementace**. Rešerše a podklady k výpočtům, ze kterých
+kalkulátory vycházejí, jsou v [`docs/reserze_kalkulator/`](../reserze_kalkulator/README.md).
+
+Moduly bez samostatného technického popisu (Přehled projektů, financí, změn, Logy, Admin nastavení,
+rámec appky) mají implementační poznámky v sekci „Jak to funguje uvnitř" příslušného návodu
+ve znalostní bázi.

@@ -1,5 +1,9 @@
 # Technický spec: Konektor RAYNET CRM ↔ Google Drive
 
+> **Poznámka k názvu (doplněno později):** modul se v appce jmenuje **„Konektor Raynet ↔ Google Disk"**
+> (v nabídce vlevo zkráceně „Konektor Raynet ↔ Disk"). Tenhle dokument je původní **zadání** a nese
+> název, pod kterým vznikl. Aktuální stav a obsluha: [`docs/znalostni-baze/moduly/konektor-raynet-gdrive.md`](../znalostni-baze/moduly/konektor-raynet-gdrive.md).
+
 > **Pro koho:** tento dokument je zadání pro Claude Code běžící na cílovém serveru (VPS). Je psaný tak, aby ho šlo vzít, provést **Fázi 0 (inventura serveru)** a pak postupně implementovat.
 >
 > **Jazyk kódu:** implementace v angličtině (identifikátory, logy), tento spec v češtině.

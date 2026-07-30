@@ -317,22 +317,65 @@
   text-transform: none;
 }
 
-/* Položka palety – tahá se na papír */
+/* Položka palety – tahá se na papír. Uvnitř je grafický náhled toho, jak prvek
+   vypadá na papíře, ne jen jeho název. */
 .ed-paleta-polozka {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
-  padding: 4px 6px;
-  margin-bottom: 3px;
+  padding: 6px;
+  margin-bottom: 6px;
   border: 1px solid var(--fm-line, #dfe4e2);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--surface, #fff);
   font-size: 12.5px;
   cursor: grab;
 }
 .ed-paleta-polozka:hover { border-color: var(--fm-brand-dk, #248139); }
-.ed-paleta-polozka.ztlumene { opacity: 0.5; }
+.ed-paleta-polozka.ztlumene { opacity: 0.45; }
+.ed-paleta-telo { flex: 1; min-width: 0; }
+.ed-paleta-popisek {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fm-muted, #7a857f);
+}
 .ed-uchop { color: var(--fm-muted, #7a857f); cursor: grab; }
+
+/* Náhled dlaždice v paletě je skutečná karta z papíru – necháme jí papírové
+   barvy i v tmavém režimu, ať odpovídá výsledku. */
+.ed-paleta-telo .vy-karta { background: #f7faf8; color: #1c2321; }
+
+/* Miniatura strukturního prvku: výřez papíru zmenšený na šířku panelu.
+   Obsah má šířku textového sloupce A4 (210 − 2×16 mm), takže se poměry chovají
+   stejně jako na papíře; --k je zmenšení, výška výřezu je pevná a obsah se
+   ustřihne (nejde o čtení, ale o tvar). */
+.ed-nahled {
+  --k: 0.43;
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid var(--fm-line, #dfe4e2);
+  background: #fff;
+  color: #1c2321;
+}
+.ed-nahled-obsah {
+  width: 178mm;
+  transform: scale(var(--k));
+  transform-origin: top left;
+  padding: 6px 8px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+/* Výšky výřezu na míru jednotlivým prvkům (výška obsahu × --k). */
+.ed-nahled-text { height: 52px; }
+.ed-nahled-udaje { height: 62px; }
+.ed-nahled-graf { height: 80px; }
+.ed-nahled-tabulka { height: 74px; }
+.ed-nahled-zlom { height: 20px; }
+.ed-nahled-zlom .ed-nahled-obsah { padding-top: 2px; }
+/* Uvnitř miniatury nechceme spodní mezery bloků – kradou výšku výřezu. */
+.ed-nahled .vy-blok { margin-bottom: 0; }
 
 /* ---- Ovládání na papíře ---- */
 .vystup-editace .ed-polozka { position: relative; cursor: pointer; }

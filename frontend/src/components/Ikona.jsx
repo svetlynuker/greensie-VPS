@@ -17,6 +17,19 @@ const CESTY = {
     </>
   ),
   nabidkovac: <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z" />,
+  zakaznici: (
+    <>
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3 20c0-3.3 2.7-5.4 6-5.4s6 2.1 6 5.4" />
+      <path d="M16 5.2a3.2 3.2 0 0 1 0 5.9M18.5 20c0-2.3-.9-4-2.5-5" />
+    </>
+  ),
+  pripady: (
+    <>
+      <rect x="3" y="7" width="18" height="13" rx="2" />
+      <path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 12h18" />
+    </>
+  ),
   admin: (
     <>
       <circle cx="12" cy="12" r="3" />

@@ -1,0 +1,739 @@
+/* Styl sekcí CRM (Zákazníci, Obchodní případy).
+   Staví nad tokeny appky (global.css) – žádné vlastní barvy natvrdo, aby
+   fungoval světlý i tmavý režim a režim pro barvoslepé. */
+
+.crm-app {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+/* Kanban potřebuje šířku na sloupce – jinak by se posouval i na velkém monitoru. */
+.crm-app.siroky {
+  max-width: 1720px;
+}
+
+.crm-zpet {
+  display: inline-block;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+  margin-bottom: 10px;
+}
+.crm-zpet:hover {
+  color: var(--fm-brand-dk, var(--text));
+}
+
+.crm-hlava,
+.crm-karta-hlava {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.crm-hlava h1,
+.crm-karta-hlava h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.crm-popis {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 80ch;
+}
+.crm-karta-radek {
+  font-size: 12px;
+  color: var(--muted);
+}
+.crm-mezera {
+  flex: 1;
+}
+.crm-odkaz {
+  color: var(--fm-brand-dk, var(--text));
+  text-decoration: none;
+  font-weight: 600;
+}
+.crm-odkaz:hover {
+  text-decoration: underline;
+}
+
+/* ---- záložky a přepínače ---- */
+.crm-zalozky {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.crm-zalozka {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  text-decoration: none;
+}
+.crm-zalozka:hover {
+  color: var(--text);
+}
+.crm-zalozka.aktivni {
+  color: var(--text);
+  border-bottom-color: var(--fm-brand, currentColor);
+}
+.crm-prepinac {
+  display: flex;
+  gap: 2px;
+}
+
+/* ---- nástrojová lišta ---- */
+.crm-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.crm-pocet {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ---- formulářová pole ---- */
+.crm-pole {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.crm-pole:focus {
+  outline: 2px solid var(--fm-brand, #4a4);
+  outline-offset: 1px;
+}
+.crm-pole:disabled {
+  color: var(--muted);
+  background: var(--bg, transparent);
+}
+.crm-pole-uzke {
+  width: auto;
+  min-width: 160px;
+}
+.crm-pole-cislo {
+  width: 90px;
+}
+.crm-hledani {
+  max-width: 380px;
+}
+.crm-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.crm-zaskrtavaci {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  margin: 6px 0;
+  cursor: pointer;
+}
+.crm-mrizka {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.crm-sirka2 {
+  grid-column: span 2;
+}
+.crm-sirka3 {
+  grid-column: 1 / -1;
+}
+@media (max-width: 800px) {
+  .crm-mrizka {
+    grid-template-columns: 1fr;
+  }
+  .crm-sirka2,
+  .crm-sirka3 {
+    grid-column: auto;
+  }
+}
+
+.crm-volby {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.crm-volby-svisle {
+  flex-direction: column;
+  gap: 2px;
+}
+.crm-pilulka {
+  appearance: none;
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.crm-pilulka:hover {
+  color: var(--text);
+}
+.crm-pilulka.aktivni {
+  border-color: var(--fm-brand, currentColor);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ---- tabulka ---- */
+.crm-scroll {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+}
+.crm-tabulka {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.crm-tabulka th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.crm-tabulka td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.crm-tabulka tbody tr:hover {
+  background: color-mix(in srgb, var(--fm-brand, #4a4) 6%, transparent);
+  cursor: pointer;
+}
+.crm-tabulka-hustá td,
+.crm-tabulka-hustá th {
+  padding: 6px 10px;
+}
+.crm-tabulka-hustá tbody tr:hover {
+  cursor: default;
+}
+.crm-vpravo {
+  text-align: right;
+}
+.crm-silne {
+  font-weight: 600;
+}
+.crm-tise {
+  color: var(--muted);
+  font-size: 12px;
+}
+.crm-prazdno {
+  padding: 22px 12px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.crm-chyba {
+  margin: 8px 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--st-crit);
+  background: color-mix(in srgb, var(--st-crit) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--st-crit) 30%, transparent);
+  border-radius: 8px;
+}
+
+/* ---- značky stavů ---- */
+.crm-znacka {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  white-space: nowrap;
+  margin-left: 6px;
+}
+.crm-znacka:first-child {
+  margin-left: 0;
+}
+.crm-barva-ok {
+  color: var(--st-ok);
+  border-color: color-mix(in srgb, var(--st-ok) 40%, transparent);
+  background: color-mix(in srgb, var(--st-ok) 10%, transparent);
+}
+.crm-barva-warn {
+  color: var(--st-warn);
+  border-color: color-mix(in srgb, var(--st-warn) 40%, transparent);
+  background: color-mix(in srgb, var(--st-warn) 10%, transparent);
+}
+.crm-barva-crit {
+  color: var(--st-crit);
+  border-color: color-mix(in srgb, var(--st-crit) 40%, transparent);
+  background: color-mix(in srgb, var(--st-crit) 10%, transparent);
+}
+.crm-barva-info {
+  color: var(--muted);
+}
+
+/* ---- dva sloupce (detail) ---- */
+.crm-dva-sloupce {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 1000px) {
+  .crm-dva-sloupce {
+    grid-template-columns: 1fr;
+  }
+}
+.crm-blok {
+  padding: 16px;
+}
+.crm-blok h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+.crm-blok-pata {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+.crm-udaje {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) 1fr;
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+.crm-udaje dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.crm-udaje dd {
+  margin: 0;
+}
+.crm-poznamka {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+  border-radius: 8px;
+  white-space: pre-wrap;
+}
+.crm-kroky {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+.crm-kroky li {
+  margin-bottom: 6px;
+}
+
+/* ---- kontakty ---- */
+.crm-kontakty {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+}
+.crm-kontakty li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.crm-kontakt-jmeno {
+  font-size: 13px;
+  font-weight: 600;
+}
+.crm-kontakt-form {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+/* ---- kanban ---- */
+.crm-kanban {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  align-items: stretch;
+}
+.crm-kanban-sloupec {
+  flex: 0 0 260px;
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--muted) 5%, transparent);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px;
+  min-height: 220px;
+}
+/* Zvýraznění cílového sloupce při přetahování – bez toho člověk netrefí. */
+.crm-kanban-sloupec.nad {
+  border-color: var(--fm-brand, #4a4);
+  background: color-mix(in srgb, var(--fm-brand, #4a4) 8%, transparent);
+}
+.crm-kanban-hlava {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.crm-kanban-nazev {
+  flex: 1;
+  min-width: 0;
+}
+.crm-kanban-pocet {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.crm-kanban-soucet {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 2px 6px 6px;
+}
+.crm-kanban-telo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+.crm-kanban-prazdno {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  padding: 16px 0;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+}
+.crm-dlazdice {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow-1);
+  padding: 10px;
+  cursor: grab;
+}
+.crm-dlazdice:hover {
+  border-color: color-mix(in srgb, var(--fm-brand, #4a4) 50%, var(--line));
+}
+.crm-dlazdice.nesu {
+  opacity: 0.45;
+}
+.crm-dlazdice-hlava {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.crm-dlazdice-cislo {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.crm-dlazdice-hodnota {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.crm-dlazdice-zakaznik {
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+.crm-dlazdice-nazev {
+  font-size: 12px;
+  color: var(--text);
+  margin-top: 2px;
+}
+.crm-dlazdice-pata,
+.crm-dlazdice-vlastnik {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.crm-dlazdice-stav {
+  width: 100%;
+  margin-top: 8px;
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 6px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+/* ---- aktivity / časová osa ---- */
+.crm-aktivity {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  padding: 16px;
+}
+.crm-aktivita-novy {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+}
+.crm-aktivita-druhy {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.crm-aktivita-pata {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.crm-casova-osa {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.crm-osa-radek {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.crm-osa-radek.hotovo .crm-osa-text {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.crm-osa-ikona {
+  flex: 0 0 22px;
+  text-align: center;
+  font-size: 14px;
+}
+.crm-osa-telo {
+  flex: 1;
+  min-width: 0;
+}
+.crm-osa-text {
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+.crm-osa-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+.crm-po-terminu {
+  color: var(--st-crit);
+  font-weight: 600;
+}
+.crm-termin-ok {
+  color: var(--muted);
+}
+
+/* ---- okno (modal) ---- */
+.crm-okno-plast {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px;
+  overflow-y: auto;
+}
+.crm-okno {
+  width: 100%;
+  max-width: 820px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2, 0 12px 40px rgba(0, 0, 0, 0.3));
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 80px);
+}
+.crm-okno-uzke {
+  max-width: 520px;
+}
+.crm-okno-hlava,
+.crm-okno-pata {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+}
+.crm-okno-hlava {
+  border-bottom: 1px solid var(--line);
+}
+.crm-okno-hlava h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.crm-okno-pata {
+  border-top: 1px solid var(--line);
+}
+.crm-okno-telo {
+  padding: 18px;
+  overflow-y: auto;
+}
+.crm-okno-telo h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+.crm-zavrit {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.crm-zavrit:hover {
+  color: var(--text);
+}
+
+/* ---- ARES ---- */
+.crm-ares {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.crm-ares-ok {
+  font-size: 12px;
+  color: var(--st-ok);
+}
+.crm-ares-varovani {
+  font-size: 12px;
+  color: var(--st-warn);
+  max-width: 46ch;
+}
+
+/* ---- nastavení stavů ---- */
+.crm-stavy {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+.crm-stavy li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.crm-stavy li .crm-pole:first-child {
+  flex: 1;
+  min-width: 120px;
+}
+.crm-stav-novy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.crm-stav-novy .crm-pole:first-child {
+  flex: 1;
+  min-width: 160px;
+}
+
+/* ---- malá tlačítka ---- */
+.crm-btn-maly {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.crm-btn-smazat {
+  color: var(--st-crit);
+}
+
+/* ---- vlastní (admin definovaná) pole ---- */
+/* Oddělovač mezi standardními a doplňujícími poli ve formuláři – ať je jasné,
+   že dál pokračují údaje, které si firma přidala sama. */
+.crm-oddelovac {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  margin-top: 4px;
+}
+.crm-podnadpis {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.crm-napoveda {
+  margin: 4px 0 0;
+}
+.crm-blok-hlava {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.crm-blok-hlava h3 {
+  margin: 0;
+  font-size: 14px;
+}
+/* Pravý sloupec detailu nese víc karet pod sebou. */
+.crm-sloupec-bloky {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.crm-zprava {
+  margin: 8px 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--st-ok);
+  background: color-mix(in srgb, var(--st-ok) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--st-ok) 30%, transparent);
+  border-radius: 8px;
+}

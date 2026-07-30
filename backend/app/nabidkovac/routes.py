@@ -159,11 +159,18 @@ def zaloz_nabidku(
     user: User = Depends(vyzaduj_nabidkovac),
     db: Session = Depends(get_db),
 ):
-    """Založí nový záznam nabídky (stav = koncept) a vrátí detail k vyplnění."""
+    """Založí nový záznam nabídky (stav = koncept) a vrátí detail k vyplnění.
+
+    Číslo NAB-RR-NNNN přiděluje číselná řada CRM, aby každá nabídka měla
+    viditelné ID, i když vznikla přímo v nabídkovači (bez obchodního případu).
+    """
     if vstup.typ not in TYPY_NABIDKY:
         raise HTTPException(status_code=422, detail=f"Neznámý typ nabídky: {vstup.typ}")
+    from app.crm.ciselne_rady import dalsi_cislo as dalsi_cislo_crm
+
     n = Nabidka(
         typ=vstup.typ,
+        cislo=dalsi_cislo_crm(db, "nab"),
         zakaznik_nazev=(vstup.zakaznik_nazev or "").strip(),
         vytvoril_user_id=user.id,
     )

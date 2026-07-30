@@ -22,6 +22,8 @@ from app.admin.routes import router as admin_router
 from app.dashboard.routes import router as dashboard_router
 from app.konektor import models as konektor_models  # noqa: F401 - registrace modelů
 from app.konektor.routes import router as konektor_router
+from app.crm import models as crm_models  # noqa: F401 - registrace modelů
+from app.crm.routes import router as crm_router
 from app.manual.routes import router as manual_router
 from app.database import Base, engine
 
@@ -165,6 +167,57 @@ def _lehka_migrace():
             text("ALTER TABLE konektor_nastaveni ADD COLUMN IF NOT EXISTS dms_baseline JSONB")
         )
 
+        # CRM: hodnoty vlastních (admin definovaných) polí. Tabulky
+        # `crm_zakaznici` / `crm_obchodni_pripady` mohly vzniknout ještě bez
+        # tohoto sloupce – create_all ho do existující tabulky nepřidá.
+        for tabulka in ("crm_zakaznici", "crm_obchodni_pripady"):
+            conn.execute(
+                text(
+                    f"ALTER TABLE {tabulka} ADD COLUMN IF NOT EXISTS extra "
+                    "JSONB NOT NULL DEFAULT '{}'::jsonb"
+                )
+            )
+
+        # CRM: počátek číselné řady. Tabulka `crm_ciselne_rady` mohla vzniknout
+        # ještě bez tohoto sloupce (create_all ho do existující tabulky nepřidá).
+        conn.execute(
+            text(
+                "ALTER TABLE crm_ciselne_rady ADD COLUMN IF NOT EXISTS pocatek "
+                "INTEGER NOT NULL DEFAULT 1"
+            )
+        )
+
+        # CRM: navázání nabídky na obchodní případ + viditelné číslo nabídky.
+        # `nabidky` je existující tabulka, takže create_all nové sloupce nepřidá.
+        # Cizí klíč zakládáme až po vytvoření CRM tabulek (create_all výš), a jen
+        # pokud ještě není – opakovaný start by na duplicitním klíči spadl.
+        conn.execute(text("ALTER TABLE nabidky ADD COLUMN IF NOT EXISTS cislo VARCHAR"))
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_nabidky_cislo ON nabidky (cislo) "
+                "WHERE cislo IS NOT NULL"
+            )
+        )
+        conn.execute(
+            text("ALTER TABLE nabidky ADD COLUMN IF NOT EXISTS obchodni_pripad_id INTEGER")
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_nabidky_obchodni_pripad_id "
+                "ON nabidky (obchodni_pripad_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "DO $$ BEGIN "
+                "IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+                "WHERE conname = 'fk_nabidky_obchodni_pripad') THEN "
+                "ALTER TABLE nabidky ADD CONSTRAINT fk_nabidky_obchodni_pripad "
+                "FOREIGN KEY (obchodni_pripad_id) REFERENCES crm_obchodni_pripady(id) "
+                "ON DELETE SET NULL; END IF; END $$;"
+            )
+        )
+
 
 _lehka_migrace()
 
@@ -219,9 +272,30 @@ def _seed_spotove_ceny():
         db.close()
 
 
+def _seed_crm():
+    """Naseeduje stavy pipeline a číselné řady CRM (idempotentní).
+
+    Bez stavů by kanban neměl sloupce a nový případ by neměl kam padnout;
+    bez řad by nešlo vydat viditelné ID. Doplňuje jen chybějící – přejmenované
+    či smazané stavy se nevracejí, jinak by se změny vedení po každém restartu
+    přepisovaly zpátky.
+    """
+    from app.crm.ciselne_rady import seed_rady
+    from app.crm.stavy import seed_stavy
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        seed_stavy(db)
+        seed_rady(db)
+    finally:
+        db.close()
+
+
 _seed_sazby()
 _seed_baterie()
 _seed_spotove_ceny()
+_seed_crm()
 
 app = FastAPI(title="Greensie")
 
@@ -255,6 +329,7 @@ app.include_router(logy_router)
 app.include_router(zmeny_router)
 app.include_router(admin_router)
 app.include_router(konektor_router)
+app.include_router(crm_router)
 app.include_router(manual_router)
 app.include_router(dashboard_router)
 
@@ -276,7 +351,7 @@ def _zastav_planovac_synchronizace():
 
 @app.on_event("startup")
 def _spust_konektor_worker():
-    # worker fronty úloh konektoru (Raynet ↔ Google Drive)
+    # worker fronty úloh konektoru (Raynet ↔ Google Disk)
     from app.konektor.scheduler import spust_worker
 
     spust_worker()

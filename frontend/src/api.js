@@ -536,3 +536,199 @@ export function nactiZmeny({ od, do: doDatum } = {}) {
   const q = p.toString();
   return zavolej(`/zmeny${q ? `?${q}` : ""}`);
 }
+
+// ============================================================
+// CRM: Zákazníci (leady/klienti) → Obchodní případy
+//
+// Viditelnost záznamů řeší backend (kdo nemá právo `crm_vse`, dostane jen
+// svoje). Frontend nic nefiltruje – jinak by se dvě pravidla rozešla.
+// ============================================================
+
+export function crmZakaznici({ typ, hledat } = {}) {
+  const p = new URLSearchParams();
+  if (typ) p.set("typ", typ);
+  if (hledat) p.set("hledat", hledat);
+  const q = p.toString();
+  return zavolej(`/crm/zakaznici${q ? `?${q}` : ""}`);
+}
+
+export function crmZakaznikDetail(id) {
+  return zavolej(`/crm/zakaznici/${id}`);
+}
+
+export function crmZakaznikZaloz(data) {
+  return zavolej("/crm/zakaznici", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function crmZakaznikUprav(id, data) {
+  return zavolej(`/crm/zakaznici/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function crmZakaznikSmaz(id) {
+  return zavolej(`/crm/zakaznici/${id}`, { method: "DELETE" });
+}
+
+export function crmZakaznikKonvertuj(id) {
+  return zavolej(`/crm/zakaznici/${id}/konvertuj`, { method: "POST" });
+}
+
+// Doplnění firmy z ARESu podle IČO. Selhání není chyba appky – uživatel
+// vyplní ručně, proto to volající chytá jako varování.
+export function crmAres(ico) {
+  return zavolej(`/crm/ares/${encodeURIComponent(ico)}`);
+}
+
+export function crmKontaktPridej(zakaznikId, data) {
+  return zavolej(`/crm/zakaznici/${zakaznikId}/kontakty`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function crmKontaktUprav(id, data) {
+  return zavolej(`/crm/kontakty/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function crmKontaktSmaz(id) {
+  return zavolej(`/crm/kontakty/${id}`, { method: "DELETE" });
+}
+
+export function crmPripady({ stav, zakaznikId, hledat } = {}) {
+  const p = new URLSearchParams();
+  if (stav) p.set("stav", stav);
+  if (zakaznikId) p.set("zakaznik_id", String(zakaznikId));
+  if (hledat) p.set("hledat", hledat);
+  const q = p.toString();
+  return zavolej(`/crm/pripady${q ? `?${q}` : ""}`);
+}
+
+export function crmPripadyKanban() {
+  return zavolej("/crm/pripady/kanban");
+}
+
+export function crmPripadDetail(id) {
+  return zavolej(`/crm/pripady/${id}`);
+}
+
+export function crmPripadZaloz(data) {
+  return zavolej("/crm/pripady", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function crmPripadUprav(id, data) {
+  return zavolej(`/crm/pripady/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function crmPripadStav(id, stav, duvodProhry = "") {
+  return zavolej(`/crm/pripady/${id}/stav`, {
+    method: "POST",
+    body: JSON.stringify({ stav, duvod_prohry: duvodProhry }),
+  });
+}
+
+export function crmPripadHistorie(id) {
+  return zavolej(`/crm/pripady/${id}/historie`);
+}
+
+export function crmPripadSmaz(id) {
+  return zavolej(`/crm/pripady/${id}`, { method: "DELETE" });
+}
+
+export function crmAktivity(entita, zaznamId) {
+  return zavolej(`/crm/aktivity/${entita}/${zaznamId}`);
+}
+
+export function crmAktivitaPridej(entita, zaznamId, data) {
+  return zavolej(`/crm/aktivity/${entita}/${zaznamId}`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function crmAktivitaUprav(id, data) {
+  return zavolej(`/crm/aktivity/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export function crmAktivitaSmaz(id) {
+  return zavolej(`/crm/aktivity/${id}`, { method: "DELETE" });
+}
+
+export function crmMojeUkoly() {
+  return zavolej("/crm/ukoly");
+}
+
+export function crmUzivatele() {
+  return zavolej("/crm/uzivatele");
+}
+
+export function crmStavy(entita) {
+  return zavolej(`/crm/stavy/${entita}`);
+}
+
+export function crmStavPridej(entita, data) {
+  return zavolej(`/crm/stavy/${entita}`, { method: "POST", body: JSON.stringify(data) });
+}
+
+export function crmStavUprav(id, data) {
+  return zavolej(`/crm/stavy/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function crmStavyPoradi(entita, poradi) {
+  return zavolej(`/crm/stavy/${entita}/poradi`, {
+    method: "PUT",
+    body: JSON.stringify({ poradi }),
+  });
+}
+
+export function crmStavSmaz(id) {
+  return zavolej(`/crm/stavy/${id}`, { method: "DELETE" });
+}
+
+export function crmRady() {
+  return zavolej("/crm/rady");
+}
+
+export function crmRaduUprav(entita, data) {
+  return zavolej(`/crm/rady/${entita}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function crmNavrhStartu(entita) {
+  return zavolej(`/crm/rady/${entita}/navrh-startu`);
+}
+
+// Vytvoření nabídky z obchodního případu. Zákazníka, adresu a GPS doplní
+// backend z karty klienta – v UI se neopisují.
+export function crmVytvorNabidku(pripadId, typ) {
+  return zavolej(`/crm/pripady/${pripadId}/nabidka`, {
+    method: "POST",
+    body: JSON.stringify({ typ }),
+  });
+}
+
+// ---- CRM: vlastní (admin definovaná) pole na obrazovkách ----
+// Čtení smí každý, kdo vidí CRM (z definic se kreslí formulář i sloupce);
+// měnit je smí jen právo `crm_nastaveni`.
+export function crmVlastniPole(entita) {
+  return zavolej(`/crm/vlastni-pole/${entita}`);
+}
+
+export function crmVlastniPolePridej(entita, data) {
+  return zavolej(`/crm/vlastni-pole/${entita}`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function crmVlastniPoleUprav(id, data) {
+  return zavolej(`/crm/vlastni-pole/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function crmVlastniPolePoradi(entita, poradi) {
+  return zavolej(`/crm/vlastni-pole/${entita}/poradi`, {
+    method: "PUT",
+    body: JSON.stringify({ poradi }),
+  });
+}
+
+export function crmVlastniPoleSmaz(id) {
+  return zavolej(`/crm/vlastni-pole/${id}`, { method: "DELETE" });
+}

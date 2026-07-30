@@ -140,7 +140,7 @@ Práva se dělí na **otevírací** (stejný klíč jako sekce v nabídce) a **a
 | `admin` | Otevřít Admin nastavení | otevírací |
 | `editace` | Editace matice (Přehled projektů) | akční |
 | `logy` | Otevřít Logy (provoz, chyby, audit) | otevírací |
-| `konektor` | Otevřít Konektor Raynet ↔ Google Drive | otevírací |
+| `konektor` | Otevřít Konektor Raynet ↔ Google Disk | otevírací |
 
 ### Dlaždice (`DLAZDICE`) — pozůstatek
 Historický katalog položek starého dlaždicového rozcestníku: `projekty`, `finance`, `zmeny`, `nabidkovac`, `admin`, `logy`, `konektor`. **Frontend ho už nepoužívá** — nabídku vlevo skládá z pole `prava` (viz `frontend/src/navigace.js`) a sekce bez práva se vůbec nezobrazí. Katalog zůstal v `permissions.py` a `GET /auth/me` ho dál vrací, aby se nerozbilo API.

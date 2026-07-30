@@ -212,6 +212,19 @@ class Nabidka(Base):
     id = Column(Integer, primary_key=True, index=True)
     typ = Column(String, nullable=False)  # jedna z TYPY_NABIDKY
 
+    # Viditelné ID nabídky (NAB-RR-NNNN) z číselné řady CRM. Nullable kvůli
+    # nabídkám, které vznikly před zavedením řad – ty číslo nemají a doplní se
+    # jim až při navázání na obchodní případ.
+    cislo = Column(String, nullable=True, unique=True, index=True)
+
+    # Obchodní případ, pod který nabídka patří. Nullable schválně: nabídkovač
+    # jde pořád otevřít i samostatně (výpočtový nástroj) a staré nabídky případ
+    # nemají. Cílový stav je, že OZ zakládá nabídky z případu a tohle je vyplněné.
+    obchodni_pripad_id = Column(
+        Integer, ForeignKey("crm_obchodni_pripady.id", ondelete="SET NULL"), nullable=True,
+        index=True,
+    )
+
     zakaznik_nazev = Column(String, nullable=False, default="", server_default="")
     zakaznik_adresa = Column(String, nullable=False, default="", server_default="")
     # Pro budoucí PVGIS – lat/lng. Zatím ručně nebo geokódováním z adresy.
