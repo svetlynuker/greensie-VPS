@@ -1,8 +1,24 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import Ikona from "./Ikona";
 import { barvaDruhu, barvaTextuNa } from "../barvyAktivit";
 import { DRUHY_AKTIVITY } from "../crm";
-import { isoDen } from "../datum";
+import { isoDen, posunDnu } from "../datum";
+import {
+  KROK_MIN,
+  MIN_DELKA,
+  PRAC_DO,
+  PRAC_OD,
+  PX_HODINA,
+  PX_NOC,
+  PX_VECER,
+  VYSKA_DNE,
+  hm,
+  minutyZCasu,
+  minutyZY,
+  naCas,
+  yZMinut,
+  zTazeni,
+} from "../kalendarCas";
 
 /**
  * Týdenní mřížka: den je sloupec, hodina řádek.
@@ -30,36 +46,6 @@ import { isoDen } from "../datum";
  */
 
 const DNY = ["Pondělí", "Úterý", "Středa", "Čtvrtek", "Pátek", "Sobota", "Neděle"];
-
-// Hranice pracovní části a výšky pásem v pixelech.
-const PRAC_OD = 7;
-const PRAC_DO = 19;
-const PX_HODINA = 44; // musí odpovídat --kal-hodina v CSS
-const PX_NOC = 26; // zúžený pás 0:00–7:00
-const PX_VECER = 26; // zúžený pás 19:00–23:59
-
-/** Minuta dne (0–1440) → svislá pozice v pixelech. */
-function yZMinut(min) {
-  const odMin = PRAC_OD * 60;
-  const doMin = PRAC_DO * 60;
-  if (min <= odMin) return (min / odMin) * PX_NOC;
-  if (min >= doMin) {
-    return PX_NOC + (doMin - odMin) / 60 * PX_HODINA + ((min - doMin) / (1440 - doMin)) * PX_VECER;
-  }
-  return PX_NOC + ((min - odMin) / 60) * PX_HODINA;
-}
-
-const VYSKA_DNE = PX_NOC + (PRAC_DO - PRAC_OD) * PX_HODINA + PX_VECER;
-
-function minutyZCasu(iso) {
-  const d = new Date(iso);
-  return d.getHours() * 60 + d.getMinutes();
-}
-
-function hm(iso) {
-  const d = new Date(iso);
-  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
 
 /**
  * Rozdělí překrývající se události do sloupců.
@@ -95,8 +81,14 @@ export default function KalendarTyden({
   onDen,
   onUdalost,
   onPrazdno, // (isoDen, "HH:MM")
+  onPresun, // (udalost, {termin, cas, delka_min, konec}) → ulož
 }) {
   const dnesIso = isoDen(new Date());
+  const refMrizka = useRef(null);
+  const refOsa = useRef(null);
+  // Probíhající tažení. `posunuto` rozlišuje klik od tažení: bez toho by každé
+  // kliknutí na dlaždici skončilo uložením „přesunu" na totéž místo.
+  const [tazeni, setTazeni] = useState(null);
 
   const dny = useMemo(
     () =>
@@ -151,6 +143,110 @@ export default function KalendarTyden({
     };
   }
 
+  // ---- tažení: přesun a změna délky ----------------------------------------
+  //
+  // Pointer events (ne HTML5 drag&drop): ten neumí plynulý náhled ani tažení za
+  // hranu a na dotykovém displeji nefunguje vůbec. `setPointerCapture` drží
+  // události u dlaždice, i když kurzor vyjede jinam.
+
+  /** Z pozice kurzoru spočítá, nad kterým dnem a v které minutě je. */
+  function miraKurzoru(e) {
+    const mrizka = refMrizka.current?.getBoundingClientRect();
+    const osa = refOsa.current?.getBoundingClientRect();
+    if (!mrizka || !osa) return null;
+    const sirkaDne = (mrizka.width - osa.width) / 7;
+    const idx = Math.floor((e.clientX - mrizka.left - osa.width) / sirkaDne);
+    return {
+      denIdx: Math.max(0, Math.min(6, idx)),
+      minuty: minutyZY(e.clientY - mrizka.top),
+    };
+  }
+
+  function zacniTazeni(e, u, rezim) {
+    // Cizí blok se přesouvat nesmí a levé tlačítko je jediné, které táhne.
+    if (!u.muze_detail || (e.pointerType === "mouse" && e.button !== 0)) return;
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    const start = miraKurzoru(e);
+    if (!start) return;
+    const odMin = u.cely_den ? 0 : minutyZCasu(u.zacatek);
+    setTazeni({
+      id: u.id,
+      rezim,
+      celyDen: Boolean(u.cely_den),
+      vicedenni: Boolean(u.vicedenni),
+      // Kolik dní trvá vícedenní blok – při přesunu se délka zachovává.
+      dniDelka:
+        u.vicedenni && u.konec
+          ? Math.round(
+              (new Date(`${u.konec}T12:00:00`) - new Date(`${u.termin}T12:00:00`)) / 86400000
+            )
+          : 0,
+      startMin: start.minuty,
+      startDenIdx: start.denIdx,
+      puvodOd: odMin,
+      puvodDelka: Math.max(u.delka_min || 30, MIN_DELKA),
+      puvodDenIdx: dny.findIndex((d) => isoDen(d) === (u.termin || "").slice(0, 10)),
+      od: odMin,
+      delka: Math.max(u.delka_min || 30, MIN_DELKA),
+      denIdx: dny.findIndex((d) => isoDen(d) === (u.termin || "").slice(0, 10)),
+      posunuto: false,
+    });
+  }
+
+  function pokracujTazeni(e) {
+    if (!tazeni) return;
+    const nyni = miraKurzoru(e);
+    if (!nyni) return;
+    const deltaMin = nyni.minuty - tazeni.startMin;
+    const deltaDen = nyni.denIdx - tazeni.startDenIdx;
+    // Práh, aby se z drobného cuknutí při kliknutí nestal přesun.
+    const posunuto =
+      tazeni.posunuto || Math.abs(deltaMin) >= KROK_MIN / 2 || deltaDen !== 0;
+
+    setTazeni((t) => {
+      if (!t) return t;
+      // Přepočet je v `kalendarCas.zTazeni` — čistá funkce, ať je testovatelná.
+      const nove = zTazeni(t.rezim, t.puvodOd, t.puvodDelka, deltaMin);
+      if (t.rezim === "presun") {
+        return {
+          ...t,
+          posunuto,
+          denIdx: Math.max(0, Math.min(6, t.puvodDenIdx + deltaDen)),
+          od: t.celyDen ? t.od : nove.od,
+          delka: nove.delka,
+        };
+      }
+      return { ...t, posunuto, od: nove.od, delka: nove.delka };
+    });
+  }
+
+  function dokonciTazeni(e, u) {
+    if (!tazeni || tazeni.id !== u.id) return;
+    const t = tazeni;
+    setTazeni(null);
+    // Bez posunu je to obyčejné kliknutí → detail.
+    if (!t.posunuto) {
+      onUdalost?.(u);
+      return;
+    }
+    e.stopPropagation();
+
+    const novyDen = isoDen(dny[t.denIdx]);
+    const zmena = { termin: novyDen };
+    if (t.celyDen) {
+      // Celodenní a vícedenní se jen přesouvají mezi dny; délka ve dnech se
+      // zachová, aby se třídenní školení nezkrátilo na jeden den.
+      if (t.vicedenni && t.dniDelka > 0) {
+        zmena.konec = isoDen(posunDnu(dny[t.denIdx], t.dniDelka));
+      }
+    } else {
+      zmena.cas = naCas(t.od);
+      zmena.delka_min = Math.round(t.delka);
+    }
+    onPresun?.(u, zmena);
+  }
+
   function styl(u) {
     // Kategorie má přednost před barvou druhu: když si někdo aktivitu označí
     // štítkem, čeká, že se podle něj obarví. Bez štítku padá na osobní barvu
@@ -176,6 +272,10 @@ export default function KalendarTyden({
 
   function Dlazdice({ u, styleExtra, kratka }) {
     const druh = DRUHY_AKTIVITY.find((x) => x.klic === u.druh);
+    const tahnuta = tazeni?.id === u.id && tazeni.posunuto;
+    // Úchyty jen tam, kde má změna délky smysl: celodenní a vícedenní aktivita
+    // hodinu nemá, takže by se protahovala do prázdna.
+    const lzeMenitDelku = u.muze_detail && !u.cely_den && Boolean(onPresun);
     return (
       <button
         className={[
@@ -184,13 +284,35 @@ export default function KalendarTyden({
           u.stav === "nekonalo_se" ? "zrusena" : "",
           u.muze_detail ? "" : "blok",
           kratka ? "kratka" : "",
+          u.muze_detail && onPresun ? "tahnutelna" : "",
+          tahnuta ? "tahnu" : "",
         ]
           .filter(Boolean)
           .join(" ")}
         style={{ ...styl(u), ...styleExtra }}
-        onClick={() => onUdalost?.(u)}
+        onPointerDown={(e) => onPresun && zacniTazeni(e, u, "presun")}
+        onPointerMove={pokracujTazeni}
+        onPointerUp={(e) => dokonciTazeni(e, u)}
+        onPointerCancel={() => setTazeni(null)}
+        // Klik obsluhuje `dokonciTazeni` (rozlišuje klik od tažení). Bez
+        // onPresun tažení neexistuje, takže se detail otevírá přímo.
+        onClick={onPresun ? undefined : () => onUdalost?.(u)}
         title={popis(u)}
       >
+        {lzeMenitDelku && (
+          <>
+            <span
+              className="kal-uchyt horni"
+              onPointerDown={(e) => zacniTazeni(e, u, "horni")}
+              title="Táhnutím změníš začátek"
+            />
+            <span
+              className="kal-uchyt dolni"
+              onPointerDown={(e) => zacniTazeni(e, u, "dolni")}
+              title="Táhnutím změníš délku"
+            />
+          </>
+        )}
         <span className="kal-udalost-radek">
           {u.priorita === "vysoka" && (
             <span className="kal-priorita" title="Vysoká priorita">
@@ -241,7 +363,15 @@ export default function KalendarTyden({
         <div className="kal-vicedenni-plocha">
           {pruh.length === 0 && <div className="kal-vicedenni-prazdno" />}
           {pruh.map((u) => {
-            const r = rozsahPruhu(u);
+            const t = tazeni?.id === u.id && tazeni.posunuto ? tazeni : null;
+            const r = t
+              ? {
+                  od: t.denIdx,
+                  do: Math.min(6, t.denIdx + (t.dniDelka || 0)),
+                  pretekaVlevo: false,
+                  pretekaVpravo: t.denIdx + (t.dniDelka || 0) > 6,
+                }
+              : rozsahPruhu(u);
             return (
               <div
                 key={u.id}
@@ -265,8 +395,8 @@ export default function KalendarTyden({
       </div>
 
       {/* ---- mřížka hodin ---- */}
-      <div className="kal-mrizka" style={{ height: VYSKA_DNE }}>
-        <div className="kal-osa">
+      <div className="kal-mrizka" style={{ height: VYSKA_DNE }} ref={refMrizka}>
+        <div className="kal-osa" ref={refOsa}>
           <div className="kal-osa-pas" style={{ height: PX_NOC }}>
             <span className="kal-osa-cas horni">0:00</span>
             <span className="kal-osa-cas dolni">7:00</span>
@@ -284,8 +414,18 @@ export default function KalendarTyden({
 
         {dny.map((d) => {
           const iso = isoDen(d);
-          const seznam = vMrizce.get(iso) || [];
+          let seznam = vMrizce.get(iso) || [];
           const vrstva = vrstvy.get(iso);
+          // Tažení do jiného dne: dlaždici kreslí cílový sloupec, ne původní.
+          if (tazeni?.posunuto && !tazeni.celyDen) {
+            const cil = isoDen(dny[tazeni.denIdx]);
+            if (iso === cil) {
+              const tazena = (udalosti || []).find((x) => x.id === tazeni.id);
+              if (tazena && !seznam.some((x) => x.id === tazeni.id)) seznam = [...seznam, tazena];
+            } else {
+              seznam = seznam.filter((x) => x.id !== tazeni.id);
+            }
+          }
           return (
             <div
               key={iso}
@@ -319,11 +459,16 @@ export default function KalendarTyden({
               )}
 
               {seznam.map((u) => {
-                const od = minutyZCasu(u.zacatek);
+                // Během tažení se kreslí na místo, kam kurzor míří (náhled).
+                const t = tazeni?.id === u.id && tazeni.posunuto ? tazeni : null;
+                const od = t ? t.od : minutyZCasu(u.zacatek);
+                const delka = Math.max(t ? t.delka : u.delka_min || 30, MIN_DELKA);
                 const top = yZMinut(od);
-                const vyska = Math.max(yZMinut(od + Math.max(u.delka_min || 30, 15)) - top, 16);
+                const vyska = Math.max(yZMinut(od + delka) - top, 16);
                 const v = vrstva?.get(u.id) || { sloupec: 0, sloupcu: 1 };
-                const sirka = 100 / v.sloupcu;
+                // Tažená dlaždice zabírá celou šířku dne — jinak by při přesunu
+                // do jiného sloupce zůstala zúžená podle původního souběhu.
+                const sirka = t ? 100 : 100 / v.sloupcu;
                 return (
                   <Dlazdice
                     key={u.id}
@@ -331,8 +476,8 @@ export default function KalendarTyden({
                     styleExtra={{
                       top,
                       height: vyska,
-                      left: `calc(${v.sloupec * sirka}% + 2px)`,
-                      width: `calc(${sirka}% - 4px)`,
+                      left: t ? "2px" : `calc(${v.sloupec * sirka}% + 2px)`,
+                      width: t ? "calc(100% - 4px)" : `calc(${sirka}% - 4px)`,
                     }}
                     kratka={vyska < 30}
                   />

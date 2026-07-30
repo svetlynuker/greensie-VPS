@@ -747,3 +747,55 @@
   border-radius: 999px;
   background: color-mix(in srgb, var(--muted) 12%, transparent);
 }
+
+/* ---- tažení: přesun a změna délky ---- */
+/* `touch-action: none` je pro tažení na dotykovém displeji povinné — bez něj
+   prohlížeč gesto sebere jako scrollování a pointermove nepřijde. */
+.kal-udalost.tahnutelna {
+  touch-action: none;
+  cursor: grab;
+}
+.kal-udalost.tahnu {
+  cursor: grabbing;
+  z-index: 5;
+  opacity: 0.92;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  /* Během tažení se nesmí spustit přechod – dlaždice by se za kurzorem
+     opožďovala a působila „gumově". */
+  transition: none;
+}
+/* Úchyty na hranách. Vysoké 7 px: dost na to, aby se daly chytit myší,
+   a málo na to, aby ukradly klik uprostřed dlaždice. */
+.kal-uchyt {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 7px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+.kal-uchyt.horni {
+  top: 0;
+}
+.kal-uchyt.dolni {
+  bottom: 0;
+}
+/* Naznačení, že se dá chytit — plná linka by z mřížky udělala pruhovaný chaos,
+   proto se ukáže až při přejezdu nad dlaždicí. */
+.kal-udalost.tahnutelna:hover .kal-uchyt::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 22px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.5;
+}
+.kal-uchyt.horni::after {
+  top: 1px;
+}
+.kal-uchyt.dolni::after {
+  bottom: 1px;
+}

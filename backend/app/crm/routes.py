@@ -1101,6 +1101,28 @@ def _over_pristup_k_zaznamu(db: Session, entita: str, zaznam_id: int, user: User
         )
 
 
+def _vyzaduj_aktivitu(db: Session, aktivita_id: int, user: User) -> CrmAktivita:
+    """Najde aktivitu a ověří, že s ní uživatel smí něco dělat.
+
+    Nahradilo to samostatné `_over_pristup_k_zaznamu(a.entita, ...)`, které
+    u SOUKROMÉ události padalo na „Neznámá entita: None" — soukromá aktivita
+    žádný záznam nemá, takže ji nešlo upravit ani smazat.
+
+    Kontroluje se obojí: přístup k nadřazenému záznamu (když existuje)
+    a nárok na aktivitu samotnou (`kalendar.muze_menit`). Bez druhé kontroly by
+    OZ mohl přesunout kolegovi schůzku u klienta, kterého oba vidí.
+    """
+    a = db.get(CrmAktivita, aktivita_id)
+    if a is None:
+        raise HTTPException(status_code=404, detail="Aktivita neexistuje")
+    if a.entita and a.zaznam_id:
+        _over_pristup_k_zaznamu(db, a.entita, a.zaznam_id, user)
+    if not kalendar.muze_menit(a, user):
+        # 404, ne 403 — cizí soukromá aktivita se nemá projevit ani existencí.
+        raise HTTPException(status_code=404, detail="Aktivita neexistuje")
+    return a
+
+
 def _aktivita_out(a: CrmAktivita) -> AktivitaOut:
     return AktivitaOut(
         id=a.id,
@@ -1223,10 +1245,7 @@ def uprav_aktivitu(
     user: User = Depends(vyzaduj_zakazniky),
     db: Session = Depends(get_db),
 ):
-    a = db.get(CrmAktivita, aktivita_id)
-    if a is None:
-        raise HTTPException(status_code=404, detail="Aktivita neexistuje")
-    _over_pristup_k_zaznamu(db, a.entita, a.zaznam_id, user)
+    a = _vyzaduj_aktivitu(db, aktivita_id, user)
 
     if vstup.nazev is not None:
         a.nazev = vstup.nazev.strip()
@@ -1278,10 +1297,7 @@ def smaz_aktivitu(
     user: User = Depends(vyzaduj_zakazniky),
     db: Session = Depends(get_db),
 ):
-    a = db.get(CrmAktivita, aktivita_id)
-    if a is None:
-        raise HTTPException(status_code=404, detail="Aktivita neexistuje")
-    _over_pristup_k_zaznamu(db, a.entita, a.zaznam_id, user)
+    a = _vyzaduj_aktivitu(db, aktivita_id, user)
     db.delete(a)
     db.commit()
     return {"ok": True}
