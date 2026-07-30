@@ -992,3 +992,288 @@ def smaz_sablonu(
     db.delete(s)
     db.commit()
     return {"ok": True}
+
+
+# ======================= KOMBINACE OPATŘENÍ ==================================
+# Spojení hotové PPA a peak shaving nabídky téhož případu do jedné nabídky pro
+# zákazníka, který chce obojí. NIC SE NEPOČÍTÁ – viz `nabidkovac/kombinace.py`.
+@router.get("/pripady/{pripad_id}/kombinace-zdroje")
+def zdroje_kombinace(
+    pripad_id: int,
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    """Které nabídky případu se dají spojit + jestli už kombinace existuje.
+
+    Nabídka je použitelná jen se SPOČÍTANÝM řešením – z prázdné nabídky není co
+    spojovat, a kdyby ji UI nabídlo, vznikla by kombinace bez čísel.
+    """
+    from app.nabidkovac.models import Nabidka, NavrhovaneReseni
+
+    _vidi_pripad(db, pripad_id, user)
+    nabidky = (
+        db.query(Nabidka)
+        .filter(Nabidka.obchodni_pripad_id == pripad_id)
+        .order_by(Nabidka.id.desc())
+        .all()
+    )
+
+    def _polozky(typ: str) -> list[dict]:
+        out = []
+        for n in nabidky:
+            if n.typ != typ:
+                continue
+            reseni = [r for r in (n.reseni or []) if r.typ_reseni == typ]
+            out.append(
+                {
+                    "id": n.id,
+                    "cislo": n.cislo or f"#{n.id}",
+                    "spocitana": len(reseni) > 0,
+                    "vytvoreno_at": _iso(n.vytvoreno_at),
+                }
+            )
+        return out
+
+    kombinace = [
+        {
+            "id": n.id,
+            "cislo": n.cislo or f"#{n.id}",
+            "spojeno_at": _g_spojeno(n),
+        }
+        for n in nabidky
+        if n.typ == "kombinace"
+    ]
+    return {
+        "ppa": _polozky("ppa"),
+        "peak_shaving": _polozky("peak_shaving"),
+        "kombinace": kombinace,
+    }
+
+
+def _g_spojeno(n) -> str | None:
+    """Kdy byla kombinace naposledy spojena (ze zdrojů uložených v řešení)."""
+    for r in sorted(n.reseni or [], key=lambda x: x.id, reverse=True):
+        if r.typ_reseni == "kombinace":
+            return ((r.popis_json or {}).get("zdroje") or {}).get("spojeno_at")
+    return None
+
+
+@router.post("/pripady/{pripad_id}/kombinace")
+def spoj_nabidky(
+    pripad_id: int,
+    vstup: dict,
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    """Spojí PPA a peak shaving nabídku do nabídky typu `kombinace`.
+
+    `nabidka_id` ve vstupu = existující kombinace, kterou se má AKTUALIZOVAT
+    (jinak se založí nová). Aktualizace je vědomý krok obchodníka: kombinace se
+    sama nepřepočítává, aby bylo dohledatelné, s jakými čísly nabídka odešla.
+    """
+    from app.nabidkovac import kombinace as kombinace_modul
+    from app.nabidkovac.models import Nabidka, NavrhovaneReseni
+
+    pripad = _vidi_pripad(db, pripad_id, user)
+    ppa_id = vstup.get("ppa_nabidka_id")
+    ps_id = vstup.get("ps_nabidka_id")
+    if not ppa_id or not ps_id:
+        raise HTTPException(
+            status_code=422, detail="Vyber PPA nabídku i nabídku na peak shaving."
+        )
+
+    def _nabidka_se_resenim(nid: int, typ: str):
+        n = db.get(Nabidka, nid)
+        if n is None or n.obchodni_pripad_id != pripad.id or n.typ != typ:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Nabídka #{nid} k tomuto případu jako {typ} nepatří.",
+            )
+        reseni = (
+            db.query(NavrhovaneReseni)
+            .filter(
+                NavrhovaneReseni.nabidka_id == n.id,
+                NavrhovaneReseni.typ_reseni == typ,
+            )
+            .order_by(NavrhovaneReseni.id.desc())
+            .first()
+        )
+        if reseni is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Nabídka {n.cislo or n.id} nemá spočítané řešení – nejdřív spusť "
+                    "výpočet, jinak by kombinace byla bez čísel."
+                ),
+            )
+        return n, reseni
+
+    ppa_n, ppa_r = _nabidka_se_resenim(int(ppa_id), "ppa")
+    ps_n, ps_r = _nabidka_se_resenim(int(ps_id), "peak_shaving")
+
+    popis = kombinace_modul.slouceny_popis(
+        ppa_r.popis_json or {},
+        ps_r.popis_json or {},
+        ppa_nabidka_id=ppa_n.id,
+        ps_nabidka_id=ps_n.id,
+        ppa_cislo=ppa_n.cislo or "",
+        ps_cislo=ps_n.cislo or "",
+    )
+
+    cilova_id = vstup.get("nabidka_id")
+    if cilova_id:
+        k = db.get(Nabidka, int(cilova_id))
+        if k is None or k.obchodni_pripad_id != pripad.id or k.typ != "kombinace":
+            raise HTTPException(status_code=404, detail="Kombinovaná nabídka neexistuje")
+    else:
+        k = Nabidka(
+            typ="kombinace",
+            cislo=ciselne_rady.dalsi_cislo(db, "nab"),
+            obchodni_pripad_id=pripad.id,
+            zakaznik_nazev=(pripad.zakaznik.nazev if pripad.zakaznik is not None else ""),
+            zakaznik_adresa=ppa_n.zakaznik_adresa or ps_n.zakaznik_adresa or "",
+            zakaznik_gps_lat=ppa_n.zakaznik_gps_lat,
+            zakaznik_gps_lng=ppa_n.zakaznik_gps_lng,
+            stav="spocitano",
+            vytvoril_user_id=user.id,
+        )
+        db.add(k)
+        db.flush()
+
+    # Nové spojení = nové řešení. Starší se nemažou, takže je dohledatelné,
+    # co se posílalo dřív (stejně jako u přepočtů PPA/peak shavingu).
+    db.add(
+        NavrhovaneReseni(nabidka_id=k.id, typ_reseni="kombinace", popis_json=popis)
+    )
+    k.stav = "spocitano"
+    db.commit()
+    db.refresh(k)
+    return {
+        "id": k.id,
+        "cislo": k.cislo,
+        "typ": k.typ,
+        "souhrn": popis["souhrn"],
+        "zdroje": popis["zdroje"],
+    }
+
+
+# ==================== MIGRACE STARÝCH NABÍDEK ================================
+@router.post("/migrace/stare-nabidky")
+def migruj_stare_nabidky(
+    nasucho: bool = Query(default=True),
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    """Dohledá nabídky z doby před CRM a zavěsí je na zákazníka a případ.
+
+    Nabídky vzniklé přímo v nabídkovači nemají číslo ani obchodní případ, takže
+    v přehledech visí jako `#21` bez zákazníka. Tahle operace pro každou z nich:
+      1. najde nebo založí **klienta** podle jména z nabídky (dedup, case-insensitive),
+      2. založí **obchodní případ** s kategorií podle typu nabídky,
+      3. nabídku k případu zavěsí a doplní jí **číslo** z řady.
+
+    `nasucho=true` (výchozí) nic nemění – jen vrátí, co by se stalo. Skutečná
+    migrace je nevratná, takže se nesmí spustit omylem jedním kliknutím.
+
+    Nabídky **bez jména zákazníka** se přeskočí: nemají kam patřit a zakládat
+    pro ně prázdné klienty by jen zaneslo evidenci. Vypíšou se, ať je Dan může
+    dořešit ručně.
+    """
+    from app.crm.models import Zakaznik
+    from app.nabidkovac.models import Nabidka
+
+    sirotci = (
+        db.query(Nabidka)
+        .filter(Nabidka.obchodni_pripad_id.is_(None))
+        .order_by(Nabidka.id)
+        .all()
+    )
+
+    # Existující klienti pro dedup podle jména (case-insensitive).
+    podle_jmena = {
+        (z.nazev or "").strip().lower(): z
+        for z in db.query(Zakaznik).all()
+        if (z.nazev or "").strip()
+    }
+    stav_obj = stavy_modul.vychozi_klic(db, "op")
+
+    plan: list[dict] = []
+    preskoceno: list[dict] = []
+    novi_zakaznici: dict[str, Zakaznik] = {}
+
+    for n in sirotci:
+        jmeno = (n.zakaznik_nazev or "").strip()
+        if not jmeno:
+            preskoceno.append(
+                {"id": n.id, "cislo": n.cislo or "", "typ": n.typ,
+                 "duvod": "nabídka nemá jméno zákazníka"}
+            )
+            continue
+
+        klic = jmeno.lower()
+        existujici = podle_jmena.get(klic)
+        zakaznik = existujici or novi_zakaznici.get(klic)
+
+        if not nasucho:
+            if zakaznik is None:
+                zakaznik = Zakaznik(
+                    typ="klient",  # nabídka už mu byla dělaná, tedy ne lead
+                    nazev=jmeno,
+                    adresa_ulice=(n.zakaznik_adresa or "").strip(),
+                    gps_lat=n.zakaznik_gps_lat,
+                    gps_lng=n.zakaznik_gps_lng,
+                    # Vlastníkem je autor nabídky, ne ten, kdo migraci spustil –
+                    # jinak by všechny staré zakázky spadly vedení.
+                    vlastnik_user_id=n.vytvoril_user_id,
+                    vytvoril_user_id=n.vytvoril_user_id or user.id,
+                )
+                db.add(zakaznik)
+                db.flush()
+                novi_zakaznici[klic] = zakaznik
+
+            kategorie = [n.typ] if n.typ in KATEGORIE_OP else []
+            pripad = ObchodniPripad(
+                cislo=ciselne_rady.dalsi_cislo(db, "op"),
+                zakaznik_id=zakaznik.id,
+                nazev=f"Migrováno z nabídky {n.cislo or f'#{n.id}'}",
+                kategorie=kategorie,
+                stav=stav_obj,
+                vlastnik_user_id=n.vytvoril_user_id,
+                vytvoril_user_id=n.vytvoril_user_id or user.id,
+            )
+            db.add(pripad)
+            db.flush()
+            db.add(
+                CrmStavHistorie(
+                    entita="op", zaznam_id=pripad.id, ze_stavu=None,
+                    do_stavu=stav_obj, zmenil_user_id=user.id,
+                )
+            )
+            n.obchodni_pripad_id = pripad.id
+            if not n.cislo:
+                n.cislo = ciselne_rady.dalsi_cislo(db, "nab")
+            plan.append(
+                {"nabidka_id": n.id, "cislo": n.cislo, "typ": n.typ,
+                 "zakaznik": jmeno, "pripad": pripad.cislo,
+                 "zakaznik_novy": klic in novi_zakaznici}
+            )
+        else:
+            plan.append(
+                {"nabidka_id": n.id, "cislo": n.cislo or "(doplní se)", "typ": n.typ,
+                 "zakaznik": jmeno, "pripad": "(vytvoří se)",
+                 "zakaznik_novy": zakaznik is None}
+            )
+            if zakaznik is None:
+                novi_zakaznici[klic] = None  # jen pro počítání v náhledu
+
+    if not nasucho:
+        db.commit()
+
+    return {
+        "nasucho": nasucho,
+        "nabidek_bez_pripadu": len(sirotci),
+        "zpracovano": len(plan),
+        "novych_zakazniku": sum(1 for x in plan if x["zakaznik_novy"]),
+        "preskoceno": preskoceno,
+        "plan": plan,
+    }

@@ -164,6 +164,47 @@ už vznikly, zůstanou nedotčené (kroky se do nich zkopírovaly).
 
 Šablonu lze přidat i k rozjetému projektu; kroky se přidají za existující.
 
+### Kombinace opatření: PPA + baterie v jedné nabídce
+Když zákazník chce obojí, není potřeba posílat dvě nabídky. Na kartě případu je na záložce
+**Nabídky** tlačítko **⇄ Kombinace** (objeví se, jen když případ má nabídku na PPA i na peak
+shaving). Vybereš obě, appka je spojí do **nové nabídky typu Kombinace** — a ta má vlastní
+dokument pro zákazníka se souhrnem, oběma grafy a společnou tabulkou úspor po letech.
+
+**Nic se nepřepočítává.** Kombinace bere hotové výsledky obou nabídek. Proto obě musí mít
+spuštěný výpočet — z prázdné nabídky by vznikla kombinace bez čísel a appka to odmítne.
+
+Co je v souhrnu:
+
+| Údaj | Jak se počítá |
+|---|---|
+| Vaše investice | jen **cena baterie** — PPA je bez počáteční investice zákazníka |
+| Úspora v 1. roce | úspora z elektrárny + úspora z baterie |
+| Celková úspora | součet po letech za dobu kontraktu |
+| Návratnost | vztažená **pouze k baterii** — vázat ji na úsporu z elektrárny by tvrdilo, že se baterie zaplatí i z toho, co ušetří FVE |
+
+> ⚠️ **Výhrada, kterou je potřeba znát:** oba výpočty běžely nad *původním* profilem spotřeby.
+> Fotovoltaika přes den snižuje odběr ze sítě, takže skutečné špičky po její instalaci mohou být
+> nižší a baterie může být navržená s rezervou. Úspory se nesčítají dvakrát za totéž (elektrárna
+> šetří na ceně energie v Kč/MWh, baterie na rezervované kapacitě v Kč/kW), ale dimenzování
+> baterie by přesně vzato mělo vycházet z profilu po odečtení výroby FVE. Tuhle poznámku appka
+> zobrazuje i při spojování.
+
+**Aktualizace:** když se zdrojová nabídka přepočítá, kombinace se **nezmění sama**. Spoj ji
+znovu (tlačítko nabídne „aktualizovat"). Je to schválně: takhle je dohledatelné, s jakými čísly
+nabídka odešla zákazníkovi — každé spojení zůstává v historii.
+
+### Staré nabídky bez případu
+Nabídky vytvořené v nabídkovači před CRM nemají zákazníka ani případ a v přehledu visí jako
+`#21`. V sekci Nabídky je pro ně tlačítko **🔗 Dohledat staré** (právo `crm_nastaveni`): podle
+jména zákazníka z nabídky založí klienta a obchodní případ a doplní číslo.
+
+Vlastníkem se stane **autor nabídky**, ne ten, kdo dohledání spustil — jinak by všechny staré
+zakázky spadly na jednoho člověka. Nabídky **bez jména zákazníka** se přeskočí a vypíšou; nemají
+kam patřit a prázdní klienti by jen zanesli evidenci.
+
+Nejdřív se vždy ukáže **náhled** (nic se nemění) a teprve druhé potvrzení migraci provede —
+je nevratná.
+
 ### Aktivity a úkoly
 Na kartě zákazníka i případu je log práce: **poznámka, telefonát, e-mail, schůzka, úkol**.
 Aktivita s **termínem** se stává úkolem — nedokončené jsou nahoře a po termínu se zvýrazní

@@ -467,3 +467,11 @@
   .vy-list > thead { display: table-header-group; break-inside: avoid; }
   .vy-list > tfoot { display: table-footer-group; }
 }
+
+/* Podnadpis uvnitř bloku – kombinace opatření kreslí dva grafy pod sebou
+   a každý potřebuje vlastní popisek. */
+.vy-podnadpis {
+  margin: 12px 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+}

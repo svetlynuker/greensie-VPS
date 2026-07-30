@@ -4,7 +4,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-TypNabidky = Literal["ppa", "prodej", "peak_shaving"]
+TypNabidky = Literal["ppa", "prodej", "peak_shaving", "kombinace"]
 StavNabidky = Literal["koncept", "data_nahrana", "zkontrolovano_oz", "spocitano", "hotovo"]
 TypTechnologie = Literal["fve_panel", "invertor", "baterie", "jina"]
 TypDokumentu = Literal["faktura_pdf", "spotreba_csv", "jiny"]
@@ -276,7 +276,9 @@ class PpaVstup(BaseModel):
 
 
 # ---- Nabídková šablona / výstup (viz sablona_katalog.py) ----
-TypReseniVystup = Literal["ppa", "peak_shaving"]
+# Typy řešení, pro které existuje nabídková šablona (viz sablona_katalog).
+# "kombinace" spojuje PPA a peak shaving do jednoho dokumentu.
+TypReseniVystup = Literal["ppa", "peak_shaving", "kombinace"]
 # `udaj` = jedna dlaždice s hodnotou (tahá se z palety), `zlom` = ruční zlom
 # stránky. `udaje` (celý blok s několika poli) zůstává kvůli starším nabídkám.
 DruhBloku = Literal["hlavicka", "text", "udaje", "udaj", "graf", "tabulka", "zlom"]
