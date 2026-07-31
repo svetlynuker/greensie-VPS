@@ -27,6 +27,9 @@ export const NABIDKA = [
       // (funkce se zatím zkouší interně, viz backend crm/novinky.py).
       { klic: "mapa", nazev: "Mapa", ikona: "mapa", cesta: "/mapa", pravo: "zakaznici", novinka: true },
       { klic: "kalendar", nazev: "Kalendář", ikona: "kalendar", cesta: "/kalendar", pravo: "zakaznici" },
+      // E-mailový klient (CRM-33). Patří k Agendě, ne k Obchodu: člověk ho
+      // otevírá kvůli „co mi přišlo", ne kvůli hledání záznamu.
+      { klic: "emaily", nazev: "E-mail", ikona: "obalka", cesta: "/emaily", pravo: "emaily", novinka: true },
     ],
   },
   {
@@ -167,6 +170,7 @@ const POPISY = {
   "/muj-den": ["Můj den", "Co tě dnes tlačí"],
   "/mapa": ["Mapa", "Zákazníci a projekty na mapě"],
   "/kalendar": ["Kalendář", "Schůzky, telefonáty a úkoly v týdnu"],
+  "/emaily": ["E-mail", "Tvoje schránka propojená s CRM"],
   "/prehled-obchodu": ["Přehled obchodu", "Pipeline, forecast a důvody proher"],
   "/nastaveni": ["Nastavení", "Tvoje osobní volby"],
   "/zmena-hesla": ["Změna hesla", "Zabezpečení účtu"],
@@ -188,6 +192,7 @@ export function strankaManualu(pathname) {
   if (pathname.startsWith("/nabidky") || pathname.startsWith("/objednavky")) return "crm";
   if (pathname.startsWith("/projekty")) return "crm";
   if (pathname.startsWith("/kalendar")) return "crm";
+  if (pathname.startsWith("/emaily")) return "emaily";
   if (pathname.startsWith("/muj-den")) return "crm";
   if (pathname.startsWith("/mapa")) return "crm";
   if (pathname.startsWith("/prehled-obchodu")) return "crm";

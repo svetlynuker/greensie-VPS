@@ -27,6 +27,7 @@ from app.konektor.routes import router as konektor_router
 from app.crm import models as crm_models  # noqa: F401 - registrace modelů
 from app.crm.routes import router as crm_router
 from app.crm.routes_realizace import router as crm_realizace_router
+from app.crm.email_routes import router as crm_email_router
 from app.manual.routes import router as manual_router
 from app.database import Base, engine
 
@@ -476,6 +477,98 @@ def _lehka_migrace():
             )
         )
 
+        # CRM-31 druhá dávka: pravidlo už není „jeden stav → jedna akce", ale
+        # celá věta KDYŽ / POKUD / PAK. `crm_pravidla` existuje z první dávky,
+        # takže create_all nové sloupce nedoplní.
+        for sloupec, definice in (
+            ("spoust_typ", "VARCHAR NOT NULL DEFAULT 'stav'"),
+            ("spoust_pole", "VARCHAR NOT NULL DEFAULT ''"),
+            ("cas_nastaveni", "JSONB NOT NULL DEFAULT '{}'::jsonb"),
+            ("podminky", "JSONB NOT NULL DEFAULT '{}'::jsonb"),
+            ("kroky", "JSONB NOT NULL DEFAULT '[]'::jsonb"),
+            ("opakovat", "VARCHAR NOT NULL DEFAULT 'jednou'"),
+        ):
+            conn.execute(
+                text(f"ALTER TABLE crm_pravidla ADD COLUMN IF NOT EXISTS {sloupec} {definice}")
+            )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_crm_pravidla_spoust_typ "
+                "ON crm_pravidla (spoust_typ)"
+            )
+        )
+        # Spouštěč jiný než „stav" nemá cílový stav – NOT NULL zůstává (staré
+        # řádky ho vždycky měly), ale nová pravidla ukládají prázdný text.
+        conn.execute(text("ALTER TABLE crm_pravidla ALTER COLUMN spoust_stav SET DEFAULT ''"))
+        # Původní jedna akce se překlopí do `kroky`. Zdrojem pravdy jsou od teď
+        # kroky; `akce`/`nastaveni` zůstávají v tabulce jen pro případ, že by se
+        # nasazení muselo vrátit. Podmínka `kroky = '[]'` dělá překlopení
+        # idempotentním – po druhém startu už není co převádět.
+        conn.execute(
+            text(
+                "UPDATE crm_pravidla SET kroky = jsonb_build_array("
+                "jsonb_build_object('akce', akce, 'nastaveni', "
+                "COALESCE(nastaveni, '{}'::jsonb))) "
+                "WHERE kroky = '[]'::jsonb AND akce IS NOT NULL AND akce <> ''"
+            )
+        )
+        conn.execute(text("ALTER TABLE crm_pravidla ALTER COLUMN akce DROP NOT NULL"))
+
+        # Opakovatelné běhy: unikátnost už není nad trojicí, ale nad čtveřicí
+        # s `klic_behu` (viz docstring `CrmPravidloBeh`). Starý constraint se
+        # musí zahodit, jinak by druhý běh pravidla „vždy" spadl na duplicitě.
+        for sloupec, definice in (
+            ("klic_behu", "VARCHAR NOT NULL DEFAULT ''"),
+            ("spoustec", "VARCHAR NOT NULL DEFAULT ''"),
+        ):
+            conn.execute(
+                text(
+                    f"ALTER TABLE crm_pravidlo_behy ADD COLUMN IF NOT EXISTS {sloupec} {definice}"
+                )
+            )
+        conn.execute(
+            text("ALTER TABLE crm_pravidlo_behy DROP CONSTRAINT IF EXISTS uq_crm_pravidlo_beh")
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_crm_pravidlo_beh_klic "
+                "ON crm_pravidlo_behy (pravidlo_id, entita, zaznam_id, klic_behu)"
+            )
+        )
+
+        # E-mailový klient (CRM-33). Tabulky samotné vytvoří `create_all`; tohle
+        # je pojistka pro sloupce, které přibyly do už nasazených tabulek – bez
+        # ní by starší instalace spadla na chybějící sloupec až za běhu.
+        if inspect(engine).has_table("crm_email_ucty"):
+            for sloupec, definice in (
+                ("ooo_zapnuto", "BOOLEAN NOT NULL DEFAULT false"),
+                ("ooo_od", "DATE"),
+                ("ooo_do", "DATE"),
+                ("ooo_predmet", "VARCHAR NOT NULL DEFAULT ''"),
+                ("ooo_text", "TEXT NOT NULL DEFAULT ''"),
+                ("preposilani_zapnuto", "BOOLEAN NOT NULL DEFAULT false"),
+                ("preposilani_komu", "VARCHAR NOT NULL DEFAULT ''"),
+                ("preposilani_nechat_kopii", "BOOLEAN NOT NULL DEFAULT true"),
+                ("podpis", "TEXT NOT NULL DEFAULT ''"),
+                ("prvni_sync_pocet", "INTEGER NOT NULL DEFAULT 300"),
+            ):
+                conn.execute(
+                    text(
+                        f"ALTER TABLE crm_email_ucty ADD COLUMN IF NOT EXISTS {sloupec} {definice}"
+                    )
+                )
+        if inspect(engine).has_table("crm_email_zpravy"):
+            for sloupec, definice in (
+                ("zpracovano_at", "TIMESTAMPTZ"),
+                ("automat", "BOOLEAN NOT NULL DEFAULT false"),
+                ("vlakno_klic", "VARCHAR NOT NULL DEFAULT ''"),
+            ):
+                conn.execute(
+                    text(
+                        f"ALTER TABLE crm_email_zpravy ADD COLUMN IF NOT EXISTS {sloupec} {definice}"
+                    )
+                )
+
 
 _lehka_migrace()
 
@@ -626,6 +719,7 @@ app.include_router(admin_router)
 app.include_router(konektor_router)
 app.include_router(crm_router)
 app.include_router(crm_realizace_router)
+app.include_router(crm_email_router)
 app.include_router(manual_router)
 app.include_router(dashboard_router)
 
@@ -669,6 +763,16 @@ def _zapni_audit():
 
 
 @app.on_event("startup")
+def _zapni_sledovani_zmen():
+    # CRM-31: spouštěč „změní se pole“ potřebuje vědět, co se změnilo. Sbírá se
+    # stejnou cestou jako audit (událost `before_flush`), protože historii
+    # atributů zahodí každý dotaz, který endpoint mezitím udělá.
+    from app.crm.automatizace import zapni_sledovani
+
+    zapni_sledovani()
+
+
+@app.on_event("startup")
 def _spust_notifikace():
     # denní souhrn úkolů (CRM-10) – lehké vlákno, jeden dotaz za den
     from app.crm.notifikace_scheduler import spust_planovac
@@ -679,6 +783,23 @@ def _spust_notifikace():
 @app.on_event("shutdown")
 def _zastav_notifikace():
     from app.crm.notifikace_scheduler import zastav_planovac
+
+    zastav_planovac()
+
+
+@app.on_event("startup")
+def _spust_automatizaci():
+    # Časové spouštěče pravidel (CRM-31) – „5 dní před termínem“, „14 dní beze
+    # změny“. Taky lehké vlákno: jednou denně, a když časové pravidlo neexistuje,
+    # skončí hned. Cokoli těžšího patří do vlastního procesu, ne sem.
+    from app.crm.automatizace_scheduler import spust_planovac
+
+    spust_planovac()
+
+
+@app.on_event("shutdown")
+def _zastav_automatizaci():
+    from app.crm.automatizace_scheduler import zastav_planovac
 
     zastav_planovac()
 

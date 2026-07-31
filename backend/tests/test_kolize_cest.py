@@ -30,6 +30,7 @@ MODULY_ROUTERU = [
     "app.nabidkovac.routes",
     "app.crm.routes",
     "app.crm.routes_realizace",
+    "app.crm.email_routes",
     "app.konektor.routes",
     "app.logy.routes",
     "app.manual.routes",

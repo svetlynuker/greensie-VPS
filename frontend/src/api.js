@@ -1471,7 +1471,10 @@ export function crmMapa() {
 // konfigurovatelné (`crm_stavy`), takže seznam ve frontendu by po přeskládání
 // kanbanu nabízel neexistující fáze.
 export function crmAutomatizaceAkce() {
-  return zavolej("/crm/automatizace/akce");
+  // Cesta je `/katalog`, ne `/akce`: backend endpoint přejmenoval, když začal
+  // vracet i pole a volby, ne jen seznam akcí. Frontend za tím zaostal a
+  // obrazovka automatizace padala na 404 — opraveno 31. 7. 2026.
+  return zavolej("/crm/automatizace/katalog");
 }
 
 export function crmPravidla() {
@@ -1492,4 +1495,194 @@ export function crmPravidloPrepni(id) {
 
 export function crmPravidloSmaz(id) {
   return zavolej(`/crm/automatizace/${id}`, { method: "DELETE" });
+}
+
+// ---- E-mailový klient (CRM-33) ----
+// Schránka je vždycky ta přihlášeného člověka – v žádné adrese není ID účtu.
+// Není to zjednodušení: kdyby se účet bral z URL, dala by se cizí pošta
+// otevřít hádáním čísla (viz backend app/crm/email_routes.py).
+export function emailUcet() {
+  return zavolej("/crm/emaily/ucet");
+}
+
+export function emailUcetUloz(data) {
+  return zavolej("/crm/emaily/ucet", { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function emailUcetOtestuj(data) {
+  return zavolej("/crm/emaily/ucet/test", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function emailUcetOdpoj() {
+  return zavolej("/crm/emaily/ucet", { method: "DELETE" });
+}
+
+export function emailSlozky() {
+  return zavolej("/crm/emaily/slozky");
+}
+
+export function emailSlozkaPrepniSync(slozkaId) {
+  return zavolej(`/crm/emaily/slozky/${slozkaId}/sync-prepnout`, { method: "POST" });
+}
+
+// `jenInbox` = rychlé „zkontrolovat poštu". Plný průběh přes všechny složky
+// trvá desítky sekund, takže se na něj nečeká při každém kliknutí.
+export function emailSync(jenInbox = true) {
+  return zavolej(`/crm/emaily/sync?jen_inbox=${jenInbox ? "true" : "false"}`, { method: "POST" });
+}
+
+export function emailZpravy({
+  slozkaId = null,
+  hledat = "",
+  jenNeprectene = false,
+  jenOznacene = false,
+  zakaznikId = null,
+  strana = 1,
+  naStranu = 50,
+} = {}) {
+  const p = new URLSearchParams();
+  if (slozkaId) p.set("slozka_id", slozkaId);
+  if (hledat) p.set("hledat", hledat);
+  if (jenNeprectene) p.set("jen_neprectene", "true");
+  if (jenOznacene) p.set("jen_oznacene", "true");
+  if (zakaznikId) p.set("zakaznik_id", zakaznikId);
+  p.set("strana", strana);
+  p.set("na_stranu", naStranu);
+  return zavolej(`/crm/emaily/zpravy?${p.toString()}`);
+}
+
+// `oznacitPrecteno=false` je pro náhled bez „přečtení" (např. na kartě firmy).
+export function emailZprava(id, oznacitPrecteno = true) {
+  return zavolej(`/crm/emaily/zpravy/${id}?oznacit_precteno=${oznacitPrecteno ? "true" : "false"}`);
+}
+
+export function emailZpravaPriznaky(id, data) {
+  return zavolej(`/crm/emaily/zpravy/${id}/priznaky`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function emailZpravaPresun(id, slozkaId) {
+  return zavolej(`/crm/emaily/zpravy/${id}/presun`, {
+    method: "POST",
+    body: JSON.stringify({ slozka_id: slozkaId }),
+  });
+}
+
+export function emailZpravaDoKose(id) {
+  return zavolej(`/crm/emaily/zpravy/${id}`, { method: "DELETE" });
+}
+
+export function emailAdresar(dotaz, limit = 12) {
+  return zavolej(`/crm/emaily/adresar?q=${encodeURIComponent(dotaz)}&limit=${limit}`);
+}
+
+// Přílohu nejde stáhnout přes <a href>, protože požadavek potřebuje token
+// v hlavičce. Stahuje se proto do blobu a klikne se za uživatele.
+export async function emailPrilohaStahni(prilohaId, nazev) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/crm/emaily/prilohy/${prilohaId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    let detail = `Chyba ${res.status}`;
+    try {
+      const chyba = await res.json();
+      if (chyba.detail) detail = chyba.detail;
+    } catch {
+      // ponech výchozí hlášku
+    }
+    throw new Error(detail);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const odkaz = document.createElement("a");
+  odkaz.href = url;
+  odkaz.download = nazev || "priloha";
+  document.body.appendChild(odkaz);
+  odkaz.click();
+  odkaz.remove();
+  // Uvolnit až po kliknutí, jinak Safari stahování zruší.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+// Předvyplnění okna psaní dělá backend (citace, Re:/Fwd:, odhození vlastní
+// adresy) — pravidla mají být na jednom místě, ne duplikovaná v prohlížeči.
+export function emailPriprevOdpoved(zpravaId, vsem = false) {
+  return zavolej(`/crm/emaily/zpravy/${zpravaId}/odpoved?vsem=${vsem ? "true" : "false"}`);
+}
+
+export function emailPripravPreposlani(zpravaId) {
+  return zavolej(`/crm/emaily/zpravy/${zpravaId}/preposlani`);
+}
+
+// Odesílá se jako multipart kvůli přílohám (base64 v JSONu by požadavek
+// nafoukl o třetinu). Vlastní fetch, ne `zavolej`: ten posílá JSON hlavičku.
+export async function emailOdeslat({
+  komu = [],
+  kopie = [],
+  skrytaKopie = [],
+  predmet = "",
+  telo = "",
+  odpovedNaId = null,
+  zakaznikId = null,
+  pripadId = null,
+  prilohy = [],
+}) {
+  const token = getToken();
+  const form = new FormData();
+  form.append("komu", komu.join(","));
+  form.append("kopie", kopie.join(","));
+  form.append("skryta_kopie", skrytaKopie.join(","));
+  form.append("predmet", predmet);
+  form.append("telo", telo);
+  if (odpovedNaId) form.append("odpoved_na_id", odpovedNaId);
+  if (zakaznikId) form.append("zakaznik_id", zakaznikId);
+  if (pripadId) form.append("pripad_id", pripadId);
+  for (const f of prilohy) form.append("prilohy", f);
+
+  const res = await fetch(`${API_BASE}/crm/emaily/odeslat`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!res.ok) {
+    let detail = `Chyba ${res.status}`;
+    try {
+      const chyba = await res.json();
+      if (chyba.detail) detail = chyba.detail;
+    } catch {
+      // ponech výchozí hlášku
+    }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+// ---- pravidla pošty, OOO a přeposílání (CRM-33, dávka E4) ----
+export function emailPravidla() {
+  return zavolej("/crm/emaily/pravidla");
+}
+
+export function emailPravidloPridej(data) {
+  return zavolej("/crm/emaily/pravidla", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function emailPravidloUprav(id, data) {
+  return zavolej(`/crm/emaily/pravidla/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function emailPravidloPrepni(id) {
+  return zavolej(`/crm/emaily/pravidla/${id}/prepni`, { method: "POST" });
+}
+
+export function emailPravidloSmaz(id) {
+  return zavolej(`/crm/emaily/pravidla/${id}`, { method: "DELETE" });
+}
+
+// OOO oznámení a automatické přeposílání. Dělá to appka, ne Seznam — funguje
+// to tedy jen když na serveru běží stahování pošty (greensie-email.service).
+export function emailAutomatikaUloz(data) {
+  return zavolej("/crm/emaily/automatika", { method: "PUT", body: JSON.stringify(data) });
 }

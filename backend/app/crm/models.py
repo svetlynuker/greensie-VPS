@@ -29,6 +29,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -1247,7 +1248,7 @@ class CrmAudit(Base):
 
 
 class CrmPravidlo(Base):
-    """Pravidlo automatizace: „když záznam přejde do stavu X, udělej Y" (CRM-31).
+    """Pravidlo automatizace: „když se stane tohle, udělej tohle a tohle" (CRM-31).
 
     Kroky jako „případ vyhrán → založ objednávku" nebo „objednávka podepsaná →
     založ projekt ze šablony" dneska dělá člověk ručně. Jsou to vždycky tytéž
@@ -1264,6 +1265,22 @@ class CrmPravidlo(Base):
     věřit. Proto se KAŽDÉ provedení zapíše do `crm_pravidlo_behy` **a** jako
     poznámka do aktivit záznamu, a každé pravidlo se dá vypnout (`aktivni`).
 
+    ---- Tři části pravidla -------------------------------------------------
+    Pravidlo se čte jako věta **KDYŽ … POKUD … PAK …**:
+
+      * **KDYŽ** = spouštěč: `spoust_typ` (co se stalo) + `spoust_entita` (komu)
+        + podrobnost podle typu (`spoust_stav`, `spoust_pole`, `cas_nastaveni`),
+      * **POKUD** = `podminky`: filtr nad poli záznamu. Bez něj by pravidlo
+        platilo na všechno a firma by nemohla mít jiný postup pro FVE a jiný
+        pro peak shaving.
+      * **PAK** = `kroky`: seznam akcí provedených po sobě. Jedna akce na
+        pravidlo nestačí — „založ projekt A pošli e-mail A přiřaď vlastníka"
+        je jeden lidský postup, ne tři pravidla.
+
+    Všechno tři jsou JSONB, ne tabulky: pravidlo se vždycky čte a ukládá celé
+    (nikdo neupravuje jednu podmínku zvlášť) a JSONB ušetří tři tabulky
+    a čtyři joiny. Struktury popisuje `crm/automatizace.py`.
+
     `spoust_stav` je klíč stavu z `crm_stavy` (ne id): klíč je neměnný, takže
     přejmenování sloupce kanbanu pravidlo nerozbije.
     """
@@ -1277,13 +1294,48 @@ class CrmPravidlo(Base):
     aktivni = Column(Boolean, nullable=False, default=True, server_default="true")
     poradi = Column(Integer, nullable=False, default=0, server_default="0")
 
-    # Spouštěč: entita ("op" | "nab" | "obj" | "pro") a klíč cílového stavu.
+    # ---- KDYŽ: spouštěč -----------------------------------------------------
+    # Entita ("op" | "nab" | "obj" | "pro"), na jejíchž záznamech pravidlo stojí.
     spoust_entita = Column(String, nullable=False, index=True)
-    spoust_stav = Column(String, nullable=False, index=True)
+    # Co se muselo stát – klíč z `automatizace.SPOUSTECE`:
+    #   "stav"  → záznam přešel do stavu `spoust_stav`,
+    #   "vznik" → záznam byl založen,
+    #   "pole"  → změnila se hodnota pole `spoust_pole`,
+    #   "cas"   → nastal čas podle `cas_nastaveni` (hlídá plánovač),
+    #   "rucne" → nikdy samo, jen tlačítkem u záznamu.
+    spoust_typ = Column(String, nullable=False, default="stav", server_default="stav", index=True)
+    # Klíč cílového stavu (jen u typu "stav"). U ostatních typů prázdný —
+    # NOT NULL zůstává kvůli starým řádkům, které ho vždycky měly.
+    spoust_stav = Column(String, nullable=False, default="", server_default="", index=True)
+    # Klíč pole (jen u typu "pole"), např. "hodnota_kc" nebo "extra.dotace".
+    spoust_pole = Column(String, nullable=False, default="", server_default="")
+    # Parametry časového spouštěče, např. {"zaklad": "pole",
+    # "pole": "predpokladane_uzavreni", "posun_dni": -5} nebo
+    # {"zaklad": "necinnost", "dni": 14}.
+    cas_nastaveni = Column(JSONB, nullable=False, default=dict, server_default="{}")
 
-    # Akce: klíč z `automatizace.AKCE`; parametry v `nastaveni`
-    # (např. {"sablona_id": 3} nebo {"za_dni": 7, "nazev": "Zavolat"}).
-    akce = Column(String, nullable=False)
+    # ---- POKUD: podmínky ----------------------------------------------------
+    # {"spojka": "vse" | "cokoli", "polozky": [{"pole", "operator", "hodnota"}]}
+    # Prázdné = pravidlo platí pro každý záznam, který spouštěč zachytí.
+    podminky = Column(JSONB, nullable=False, default=dict, server_default="{}")
+
+    # ---- PAK: kroky ---------------------------------------------------------
+    # [{"akce": "ukol", "nastaveni": {...}}, …] – provádí se v tomto pořadí.
+    kroky = Column(JSONB, nullable=False, default=list, server_default="[]")
+
+    # Smí pravidlo na jeden záznam zabrat opakovaně?
+    #   "jednou" → nejvýš jednou za život záznamu (chrání před druhou
+    #              objednávkou u případu, který se vrátil a znovu vyhrál),
+    #   "vzdy"   → při každém spuštění. Správné u „změnilo se pole" — tam je
+    #              opakování to, co člověk čeká.
+    opakovat = Column(String, nullable=False, default="jednou", server_default="jednou")
+
+    # ---- historické sloupce -------------------------------------------------
+    # Původní podoba pravidla „jedna akce + parametry" (CRM-31, první dávka).
+    # Engine je **nečte** – zdrojem pravdy jsou `kroky`, do kterých se staré
+    # řádky překlopily při nasazení (viz migrace v `main.py`). Zůstávají kvůli
+    # tomu, aby se nasazení dalo vrátit zpátky, kdyby se něco pokazilo.
+    akce = Column(String, nullable=True)
     nastaveni = Column(JSONB, nullable=False, default=dict, server_default="{}")
 
     vytvoril_user_id = Column(
@@ -1311,11 +1363,25 @@ class CrmPravidloBeh(Base):
 
     Neúspěch se zapisuje taky (`vysledek="chyba"`). Kdyby se logoval jen úspěch,
     tichá chyba by znamenala „pravidlo se nikdy nespustilo" a nikdo by nehledal.
+
+    ---- Proč je v unikátním indexu i `klic_behu` ---------------------------
+    „Nejvýš jednou" platí jen pro pravidla s `opakovat="jednou"`. U spouštěče
+    „změnilo se pole" je opakování správné chování (pole se mění pořád) a index
+    nad trojicí (pravidlo, entita, záznam) by druhý běh zablokoval. Proto je
+    v indexu čtvrtý sloupec: u „jednou" je prázdný (a index funguje jako dřív),
+    u „vždy" nese unikátní hodnotu, takže se řádky nesrazí.
     """
 
     __tablename__ = "crm_pravidlo_behy"
     __table_args__ = (
-        UniqueConstraint("pravidlo_id", "entita", "zaznam_id", name="uq_crm_pravidlo_beh"),
+        Index(
+            "uq_crm_pravidlo_beh_klic",
+            "pravidlo_id",
+            "entita",
+            "zaznam_id",
+            "klic_behu",
+            unique=True,
+        ),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -1325,9 +1391,15 @@ class CrmPravidloBeh(Base):
     # Záznam, který pravidlo spustil (spouštěcí entita, ne to, co vzniklo).
     entita = Column(String, nullable=False)
     zaznam_id = Column(Integer, nullable=False)
+    # Prázdno u pravidel „nejvýš jednou", unikátní text u opakovatelných.
+    klic_behu = Column(String, nullable=False, default="", server_default="")
     # "hotovo" | "preskoceno" | "chyba"
     vysledek = Column(String, nullable=False, default="hotovo", server_default="hotovo")
     popis = Column(Text, nullable=False, default="", server_default="")
+    # Čím se pravidlo spustilo (klíč z `automatizace.SPOUSTECE`, nebo "rucne").
+    # V logu je to důležitý údaj: „proč mi to appka udělala teď" má jinou
+    # odpověď u přesunu v kanbanu a u nočního plánovače.
+    spoustec = Column(String, nullable=False, default="", server_default="")
     spustil_user_id = Column(
         Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True
     )
@@ -1335,3 +1407,322 @@ class CrmPravidloBeh(Base):
 
     pravidlo = relationship("CrmPravidlo", back_populates="behy")
     spustil = relationship("User")
+
+
+# ---- E-mailový klient (CRM-33) ----------------------------------------------
+# Druhy složek. `vlastni` = cokoli, co si člověk založil sám; ostatní jsou
+# systémové a poznají se podle příznaku serveru nebo názvu (email_imap.py).
+DRUHY_SLOZEK = ["inbox", "koncepty", "odeslane", "spam", "kos", "archiv", "vlastni"]
+# Stav připojení schránky – co je vidět v nastavení jako kolečko u účtu.
+STAVY_UCTU = ["nenastaveno", "ok", "chyba"]
+# Odkud zpráva je. Odchozí je i to, co appka sama odeslala nebo přeposlala.
+SMERY_ZPRAVY = ["prichozi", "odchozi"]
+
+
+class CrmEmailUcet(Base):
+    """Připojená e-mailová schránka jednoho člověka (Seznam.cz).
+
+    ROZHODNUTÍ DANA (31. 7. 2026): **každý si připojí svoji osobní schránku.**
+    Ne jedna firemní pro všechny – jinak by si lidé viděli do pošty. Účet je
+    proto svázaný s uživatelem appky a nikdo jiný ho nevidí ani nečte, včetně
+    vedení a supersprávce (na rozdíl od CRM záznamů, kde `crm_vse` funguje).
+
+    ---- Proč je tu heslo, a ne token --------------------------------------
+    Seznam Email nemá OAuth ani „hesla pro aplikace" – IMAP a SMTP jedou na
+    heslo od schránky. Nedá se to obejít, takže heslo v DB být musí. Ukládá se
+    zašifrované (`app/crypto.py`, klíč jen v `.env`) a z appky se **nikdy
+    nevrací** – API hlásí jen „nastaveno / nenastaveno". Kdo si heslo změní na
+    Seznamu, musí ho přepsat i tady; do té doby účet hlásí `stav="chyba"`.
+
+    ---- OOO a přeposílání dělá appka sama ---------------------------------
+    Seznam neumí ani jedno nastavit zdálky, takže to není zrcadlo cizího
+    nastavení, ale vlastní funkce: worker vidí příchozí zprávu a sám odpoví
+    nebo přepošle přes SMTP. Důsledek, který musí být vidět v UI: **funguje to
+    jen když appka běží.** Pojistky proti smyčce jsou v `email_automat.py`.
+    """
+
+    __tablename__ = "crm_email_ucty"
+    __table_args__ = (
+        # Jeden člověk může mít víc schránek (dnes UI nabízí jednu, ale model
+        # to nebrání – rozšíření na společné schránky pak není přepis modelu).
+        UniqueConstraint("user_id", "adresa", name="uq_crm_email_ucet_user_adresa"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Jak se schránka jmenuje v přepínači (když si někdo připojí dvě).
+    nazev = Column(String, nullable=False, default="", server_default="")
+    adresa = Column(String, nullable=False)
+    # Jméno, které uvidí příjemce vedle adresy. Prázdné = vezme se jméno z appky.
+    jmeno_odesilatele = Column(String, nullable=False, default="", server_default="")
+
+    imap_host = Column(String, nullable=False, default="imap.seznam.cz", server_default="imap.seznam.cz")
+    imap_port = Column(Integer, nullable=False, default=993, server_default="993")
+    smtp_host = Column(String, nullable=False, default="smtp.seznam.cz", server_default="smtp.seznam.cz")
+    # 587 (STARTTLS), NE 465 (implicitní SSL): Hetzner blokuje odchozí 465 i 25,
+    # ověřeno na tomhle serveru – spojení na 465 timeoutuje. Stejný důvod má
+    # výchozí 587 v `app/mailer.py`. Kdo běží jinde, port si přepíše.
+    smtp_port = Column(Integer, nullable=False, default=587, server_default="587")
+    # Fernet šifra hesla. Prázdno = schránka čeká na zadání hesla.
+    heslo_sifra = Column(Text, nullable=False, default="", server_default="")
+
+    aktivni = Column(Boolean, nullable=False, default=True, server_default="true")
+    # Vypnutá synchronizace = schránka se needituje ani nestahuje, ale zůstává
+    # nastavená. Užitečné, když Seznam zlobí a člověk nechce vidět chyby.
+    sync_zapnuto = Column(Boolean, nullable=False, default=True, server_default="true")
+    # Kolik nejnovějších zpráv stáhnout při prvním připojení. Bez stropu by
+    # první synchronizace tahala i patnáct let staré newslettery.
+    prvni_sync_pocet = Column(Integer, nullable=False, default=300, server_default="300")
+
+    stav = Column(String, nullable=False, default="nenastaveno", server_default="nenastaveno")
+    posledni_sync_at = Column(DateTime(timezone=True), nullable=True)
+    posledni_chyba = Column(Text, nullable=False, default="", server_default="")
+
+    # Podpis se přidává pod odeslaný text. Držíme ho u schránky, ne u člověka:
+    # z pracovní a osobní schránky se podepisuje jinak.
+    podpis = Column(Text, nullable=False, default="", server_default="")
+
+    ooo_zapnuto = Column(Boolean, nullable=False, default=False, server_default="false")
+    # Prázdné datum = bez omezení (od / do kdy oznámení platí).
+    ooo_od = Column(Date, nullable=True)
+    ooo_do = Column(Date, nullable=True)
+    ooo_predmet = Column(String, nullable=False, default="", server_default="")
+    ooo_text = Column(Text, nullable=False, default="", server_default="")
+
+    preposilani_zapnuto = Column(Boolean, nullable=False, default=False, server_default="false")
+    preposilani_komu = Column(String, nullable=False, default="", server_default="")
+    # Přeposlanou zprávu nechat i ve schránce (jinak by šla do Koše).
+    preposilani_nechat_kopii = Column(Boolean, nullable=False, default=True, server_default="true")
+
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    upraveno_at = Column(DateTime(timezone=True), nullable=True, onupdate=func.now())
+
+    uzivatel = relationship("User")
+    slozky = relationship(
+        "CrmEmailSlozka", back_populates="ucet", cascade="all, delete-orphan"
+    )
+    pravidla = relationship(
+        "CrmEmailPravidlo", back_populates="ucet", cascade="all, delete-orphan"
+    )
+
+
+class CrmEmailSlozka(Base):
+    """Složka schránky – zrcadlo toho, co je na serveru.
+
+    `imap_nazev` je surový název, kterým se mluví se serverem (v „modified
+    UTF-7", takže `Odesl&AOE-n&AOk-`); `nazev` je rozluštěný pro člověka.
+    Obojí schválně: operace se surovým názvem fungují vždy, s rozluštěným
+    jen u složek bez diakritiky – a to je chyba, která se hledá hodiny.
+
+    `uidvalidity` je pojistka serveru: když se změní, **všechna UID přestala
+    platit** a cache téhle složky se musí zahodit a stáhnout znovu. Bez téhle
+    kontroly by se po přeindexování schránky u Seznamu začaly zprávy míchat.
+    """
+
+    __tablename__ = "crm_email_slozky"
+    __table_args__ = (
+        UniqueConstraint("ucet_id", "imap_nazev", name="uq_crm_email_slozka"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    ucet_id = Column(
+        Integer, ForeignKey("crm_email_ucty.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    imap_nazev = Column(String, nullable=False)
+    nazev = Column(String, nullable=False)
+    druh = Column(String, nullable=False, default="vlastni", server_default="vlastni")
+    oddelovac = Column(String, nullable=False, default=".", server_default=".")
+    poradi = Column(Integer, nullable=False, default=100, server_default="100")
+
+    uidvalidity = Column(BigInteger, nullable=False, default=0, server_default="0")
+    posledni_uid = Column(BigInteger, nullable=False, default=0, server_default="0")
+    celkem = Column(Integer, nullable=False, default=0, server_default="0")
+    nepreectenych = Column(Integer, nullable=False, default=0, server_default="0")
+
+    # Spam a Koš se ve výchozím stavu nesynchronizují – zabírají nejvíc a čtou
+    # se nejméně. Člověk si je může zapnout.
+    sync_zapnuto = Column(Boolean, nullable=False, default=True, server_default="true")
+    posledni_sync_at = Column(DateTime(timezone=True), nullable=True)
+
+    ucet = relationship("CrmEmailUcet", back_populates="slozky")
+    zpravy = relationship(
+        "CrmEmailZprava", back_populates="slozka", cascade="all, delete-orphan"
+    )
+
+
+class CrmEmailZprava(Base):
+    """Jedna zpráva – hlavičky v DB, tělo se dotahuje až při otevření.
+
+    Proč se pošta vůbec ukládá k nám a nečte se z IMAPu naživo: jeden FETCH
+    hlaviček stovky zpráv trvá sekundy. Kdyby se seznam pošty stavěl při každém
+    otevření obrazovky, appka by byla nepoužitelná. V DB jsou proto hlavičky
+    a náhled (`vypis`), zatímco `telo_text`/`telo_html` se doplní při prvním
+    otevření zprávy a pak už zůstanou (`telo_stazeno`).
+
+    ---- UID není id ---------------------------------------------------------
+    `uid` je číslo zprávy **v rámci složky na serveru** a platí jen dokud se
+    nezmění `uidvalidity` složky. Nikdy ho nepoužívej jako globální
+    identifikátor – zprávy ze dvou složek klidně mají UID 1. Napříč schránkami
+    se zprávy párují přes `message_id`.
+
+    ---- Vazba na CRM --------------------------------------------------------
+    `zakaznik_id`/`pripad_id` se vyplňují automaticky podle adresy odesílatele
+    (dohledání v adresáři CRM) a dají se přepsat ručně. To je celý důvod, proč
+    má e-mailový klient být v CRM a ne vedle: pošta zákazníka je vidět na jeho
+    kartě, aniž by ji tam někdo přepisoval.
+    """
+
+    __tablename__ = "crm_email_zpravy"
+    __table_args__ = (
+        # UID je unikátní v rámci složky – tímhle se pozná „už ji máme".
+        UniqueConstraint("slozka_id", "uid", name="uq_crm_email_zprava_uid"),
+        # Seznam pošty se řadí od nejnovější, filtruje se po schránce.
+        Index("ix_crm_email_zprava_ucet_datum", "ucet_id", "datum_at"),
+        # Napojení na kartu zákazníka.
+        Index("ix_crm_email_zprava_zakaznik", "zakaznik_id", "datum_at"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    ucet_id = Column(
+        Integer, ForeignKey("crm_email_ucty.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    slozka_id = Column(
+        Integer, ForeignKey("crm_email_slozky.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    uid = Column(BigInteger, nullable=False)
+
+    message_id = Column(String, nullable=False, default="", server_default="", index=True)
+    in_reply_to = Column(String, nullable=False, default="", server_default="")
+    # Podle čeho se zprávy slepují do vlákna (normalizovaný předmět + účastníci).
+    vlakno_klic = Column(String, nullable=False, default="", server_default="", index=True)
+
+    od_jmeno = Column(String, nullable=False, default="", server_default="")
+    od_adresa = Column(String, nullable=False, default="", server_default="", index=True)
+    # [{jmeno, adresa}] – seznam, protože příjemců je běžně víc.
+    komu = Column(JSONB, nullable=False, default=list, server_default="[]")
+    kopie = Column(JSONB, nullable=False, default=list, server_default="[]")
+    odpovedet_na = Column(String, nullable=False, default="", server_default="")
+
+    predmet = Column(String, nullable=False, default="", server_default="")
+    datum_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    smer = Column(String, nullable=False, default="prichozi", server_default="prichozi")
+
+    precteno = Column(Boolean, nullable=False, default=False, server_default="false")
+    oznaceno = Column(Boolean, nullable=False, default=False, server_default="false")
+    zodpovezeno = Column(Boolean, nullable=False, default=False, server_default="false")
+    koncept = Column(Boolean, nullable=False, default=False, server_default="false")
+    # Strojová pošta (newsletter, autoresponder, bounce) – OOO na ni neodpovídá.
+    automat = Column(Boolean, nullable=False, default=False, server_default="false")
+
+    ma_prilohy = Column(Boolean, nullable=False, default=False, server_default="false")
+    velikost = Column(Integer, nullable=False, default=0, server_default="0")
+    vypis = Column(String, nullable=False, default="", server_default="")
+
+    telo_text = Column(Text, nullable=False, default="", server_default="")
+    telo_html = Column(Text, nullable=False, default="", server_default="")
+    telo_stazeno = Column(Boolean, nullable=False, default=False, server_default="false")
+
+    zakaznik_id = Column(
+        Integer, ForeignKey("crm_zakaznici.id", ondelete="SET NULL"), nullable=True
+    )
+    pripad_id = Column(
+        Integer, ForeignKey("crm_obchodni_pripady.id", ondelete="SET NULL"), nullable=True
+    )
+    # Aktivita v timeline, která ke zprávě patří (ať se nezaloží dvakrát).
+    aktivita_id = Column(
+        Integer, ForeignKey("crm_aktivity.id", ondelete="SET NULL"), nullable=True
+    )
+    # Pravidla i automatika (OOO, přeposílání) běží na zprávu jen jednou.
+    zpracovano_at = Column(DateTime(timezone=True), nullable=True)
+
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    slozka = relationship("CrmEmailSlozka", back_populates="zpravy")
+    prilohy = relationship(
+        "CrmEmailPriloha", back_populates="zprava", cascade="all, delete-orphan"
+    )
+
+
+class CrmEmailPriloha(Base):
+    """Příloha zprávy – v DB jen popis, obsah se tahá z IMAPu na vyžádání.
+
+    Obsah se schválně neukládá: schránka s pěti roky pošty má příloh na
+    gigabajty a databáze appky není archiv pošty. `cislo_casti` je cesta
+    v MIME struktuře (`2.1`), kterou se příloha stáhne jedním FETCH.
+    """
+
+    __tablename__ = "crm_email_prilohy"
+
+    id = Column(Integer, primary_key=True, index=True)
+    zprava_id = Column(
+        Integer, ForeignKey("crm_email_zpravy.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    nazev = Column(String, nullable=False, default="", server_default="")
+    mime = Column(String, nullable=False, default="", server_default="")
+    velikost = Column(Integer, nullable=False, default=0, server_default="0")
+    cislo_casti = Column(String, nullable=False, default="1", server_default="1")
+    # Obrázek vložený do těla (cid:) – nemá se počítat do sponky u zprávy.
+    vlozeny = Column(Boolean, nullable=False, default=False, server_default="false")
+
+    zprava = relationship("CrmEmailZprava", back_populates="prilohy")
+
+
+class CrmEmailPravidlo(Base):
+    """Pravidlo pro příchozí poštu: podmínky → akce (sortování, přeposlání…).
+
+    Vědomě NEsdílí model s `CrmPravidlo` (automatizace CRM). Ta pracuje se
+    záznamy a stavy pipeline; tohle s hlavičkami zprávy. Jeden model pro obojí
+    by znamenal podmínky, které u poloviny spouštěčů nemají smysl.
+
+    `zastavit_dalsi` je totéž co „stop processing more rules" v Outlooku: bez
+    toho by zpráva propadla i pravidly, která už nemají platit (typicky
+    „všechno od dodavatele do složky Dodavatelé" následované obecným úklidem).
+    """
+
+    __tablename__ = "crm_email_pravidla"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ucet_id = Column(
+        Integer, ForeignKey("crm_email_ucty.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    nazev = Column(String, nullable=False)
+    poradi = Column(Integer, nullable=False, default=100, server_default="100")
+    aktivni = Column(Boolean, nullable=False, default=True, server_default="true")
+
+    # "a" = musí platit všechny podmínky, "nebo" = stačí jedna.
+    spojka = Column(String, nullable=False, default="a", server_default="a")
+    # [{pole: "od"|"komu"|"predmet"|"telo"|"ma_prilohy", operator: …, hodnota: …}]
+    podminky = Column(JSONB, nullable=False, default=list, server_default="[]")
+    # [{typ: "presun"|"oznacit_precteno"|"oznacit"|"preposlat"|"prirad", …}]
+    akce = Column(JSONB, nullable=False, default=list, server_default="[]")
+    zastavit_dalsi = Column(Boolean, nullable=False, default=False, server_default="false")
+
+    pocet_pouziti = Column(Integer, nullable=False, default=0, server_default="0")
+    posledni_pouziti_at = Column(DateTime(timezone=True), nullable=True)
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    ucet = relationship("CrmEmailUcet", back_populates="pravidla")
+
+
+class CrmEmailAutoOdpoved(Base):
+    """Komu už OOO odpověď odešla – pojistka proti nekonečné smyčce.
+
+    Bez tohohle záznamu vznikne klasická past autoresponderů: dva lidé mají
+    oba zapnuté OOO, appka odpoví na odpověď a schránky se zaplní za minutu.
+    Pravidlo je „jedné adrese nejvýš jedna odpověď za `ODSTUP_OOO_H` hodin",
+    což je zavedené chování poštovních serverů, ne vlastní vynález.
+    """
+
+    __tablename__ = "crm_email_auto_odpovedi"
+    __table_args__ = (
+        UniqueConstraint("ucet_id", "adresa", name="uq_crm_email_auto_odpoved"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    ucet_id = Column(
+        Integer, ForeignKey("crm_email_ucty.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    adresa = Column(String, nullable=False)
+    odeslano_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())

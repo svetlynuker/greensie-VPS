@@ -9,6 +9,7 @@ import PripadFormular from "../components/PripadFormular";
 import PripadNabidky from "../components/PripadNabidky";
 import PripadRealizace from "../components/PripadRealizace";
 import EmailOkno from "../components/EmailOkno";
+import RychleAkce from "../components/RychleAkce";
 import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
 import VlastniPoleVypis from "../components/VlastniPoleVypis";
 import DiskSlozka from "../components/DiskSlozka";
@@ -25,6 +26,7 @@ import {
 } from "../api";
 import { fmtDatum, fmtKc, nazvyKategorii } from "../crm";
 import "../styles/crm.css";
+import "../styles/rychleAkce.css";
 
 const ZALOZKY = [
   { klic: "prehled", nazev: "Přehled" },
@@ -157,7 +159,7 @@ export default function ObchodniPripadDetail() {
 
   return (
     <Layout uzivatel={me.uzivatel}>
-      <div className="crm-app siroky">
+      <div className="crm-app siroky ra-misto">
         <Link to="/pripady" className="crm-zpet">
           ← Zpět na Obchodní případy
         </Link>
@@ -414,6 +416,49 @@ export default function ObchodniPripadDetail() {
       )}
 
       {prohra && <DuvodProhry onZavri={() => setProhra(null)} onPotvrd={potvrdProhru} />}
+
+      {/* U případu je nabídka nejužší a nejkonkrétnější: tady se ví i firma,
+          i zakázka, takže dává smysl počítat nabídku a psát zákazníkovi. */}
+      <RychleAkce
+        titulek={`Rychlé akce · ${p.cislo}`}
+        akce={[
+          {
+            klic: "nabidka",
+            znak: "⚡",
+            nazev: "Vytvořit nabídku",
+            popis: "Otevřít výpočet podle kategorie",
+            onClick: novaNabidka,
+          },
+          me.novinky && {
+            klic: "email",
+            znak: "✉",
+            nazev: "Poslat e-mail",
+            popis: "Zapíše se k případu jako aktivita",
+            onClick: () => setPosilaEmail(true),
+          },
+          {
+            klic: "aktivita",
+            znak: "🗒",
+            nazev: "Aktivita nebo úkol",
+            popis: "Telefonát, schůzka, poznámka",
+            onClick: () => setZalozka("aktivity"),
+          },
+          {
+            klic: "realizace",
+            znak: "🔧",
+            nazev: "Objednávky a projekty",
+            popis: "Přejít na realizaci zakázky",
+            onClick: () => setZalozka("realizace"),
+          },
+          {
+            klic: "upravit",
+            znak: "✎",
+            nazev: "Upravit případ",
+            popis: "Název, kategorie, vlastník",
+            onClick: () => setUpravuje(true),
+          },
+        ]}
+      />
     </Layout>
   );
 }

@@ -28,7 +28,7 @@ import {
  * z „Vyhráno" do „Vyjednávání" a zpátky nevyrobí druhou objednávku. Je to
  * napsané i v nápovědě okna, protože jinak by to působilo jako chyba.
  *
- * Nabídku stavů i katalog akcí dodává backend (`/crm/automatizace/akce`):
+ * Nabídku stavů i katalog akcí dodává backend (`/crm/automatizace/katalog`):
  * stavy jsou konfigurovatelné, takže seznam zadrátovaný tady by po přeskládání
  * kanbanu nabízel fáze, které neexistují.
  */

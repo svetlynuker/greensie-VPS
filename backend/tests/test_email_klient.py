@@ -1,0 +1,547 @@
+"""Testy e-mailového klienta (CRM-33) – části, které nepotřebují DB ani IMAP.
+
+Co se tady hlídá a proč právě to:
+
+* **Kódování názvů složek.** IMAP posílá `Odesl&AOE-n&AOk-` místo `Odeslané`.
+  Když se dekodér rozbije, appka ukáže složky jako hieroglyfy a přesun do
+  složky přestane fungovat – a hledá se to hodiny, protože nic nespadne.
+* **Rozpoznání robota.** Na tom stojí pojistka proti smyčce OOO odpovědí.
+  Chyba tady znamená dva autorespondery, které si píší navzájem, dokud
+  někdo nevypne server.
+* **Klíč vlákna.** Kdyby `Re: Nabídka` a `Nabídka` spadly do různých vláken,
+  konverzace se rozsype na jednotlivé zprávy.
+* **Šifrování hesel.** Heslo od schránky je to nejcitlivější, co appka drží.
+  Test hlídá, že se dešifruje zpátky a že bez klíče nejde uložit (a hlavně že
+  se dešifrování cizím klíčem nechová jako úspěch).
+"""
+
+from datetime import datetime, timezone
+from email.message import EmailMessage
+
+import pytest
+
+from app import crypto
+from app.crm.email_imap import (
+    dekoduj_nazev,
+    druh_slozky,
+    hlavicky_ze_zpravy,
+    telo_ze_zpravy,
+    vypis_z_tela,
+    zakoduj_nazev,
+)
+from app.crm.email_sync import vlakno_klic
+
+
+# ---- názvy složek ------------------------------------------------------------
+@pytest.mark.parametrize(
+    "zakodovano,cekano",
+    [
+        ("INBOX", "INBOX"),
+        ("Ko&AWE-", "Koš"),
+        ("Pr&AOE-ce", "Práce"),
+        ("Test &- spol", "Test & spol"),
+        ("Prace/2026", "Prace/2026"),
+    ],
+)
+def test_dekoduj_nazev_slozky(zakodovano, cekano):
+    assert dekoduj_nazev(zakodovano) == cekano
+
+
+@pytest.mark.parametrize(
+    "nazev", ["Odeslané", "Koš", "Školní věci", "Práce/2026", "INBOX", "Test & spol", "žluťoučký"]
+)
+def test_kodovani_nazvu_je_obousmerne(nazev):
+    """Co appka zakóduje, musí jít zpátky – jinak se složka „ztratí"."""
+    assert dekoduj_nazev(zakoduj_nazev(nazev)) == nazev
+
+
+def test_rozbity_nazev_slozky_nespadne():
+    """Neuzavřená sekvence se vrátí, jak přišla. Ošklivé, ale funkční."""
+    assert dekoduj_nazev("Nezn&amy") == "Nezn&amy"
+
+
+def test_druh_slozky_podle_priznaku_i_nazvu():
+    # Server někdy pošle příznak, Seznam u části složek nic – musí fungovat obojí.
+    assert druh_slozky("Cokoli", ["\\Sent"]) == "odeslane"
+    assert druh_slozky("Odeslané", []) == "odeslane"
+    assert druh_slozky("Koš", []) == "kos"
+    assert druh_slozky("Moje složka", []) == "vlastni"
+    # Příznak má přednost před názvem – server ví lépe než my.
+    assert druh_slozky("Odeslané", ["\\Trash"]) == "kos"
+
+
+# ---- vlákna ------------------------------------------------------------------
+def test_vlakno_klic_slepi_odpovedi_k_originalu():
+    zaklad = vlakno_klic("Nabídka FVE")
+    assert vlakno_klic("Re: Nabídka FVE") == zaklad
+    assert vlakno_klic("RE: Fwd: Nabídka FVE") == zaklad
+    assert vlakno_klic("Odp: Nabídka FVE") == zaklad
+    # Jiný předmět je jiné vlákno.
+    assert vlakno_klic("Objednávka FVE") != zaklad
+
+
+# ---- rozpoznání strojové pošty (pojistka OOO) --------------------------------
+def _zprava(hlavicky: dict, telo: str = "ahoj") -> EmailMessage:
+    m = EmailMessage()
+    for k, v in hlavicky.items():
+        m[k] = v
+    m.set_content(telo)
+    return m
+
+
+def test_bezny_email_neni_automat():
+    m = _zprava({"From": "Jan Novák <jan@firma.cz>", "Subject": "Dotaz", "To": "dan@greensie.cz"})
+    assert hlavicky_ze_zpravy(m)["automat"] is False
+
+
+@pytest.mark.parametrize(
+    "hlavicka,hodnota",
+    [
+        ("Auto-Submitted", "auto-replied"),
+        ("Precedence", "bulk"),
+        ("List-Id", "<novinky.firma.cz>"),
+        ("List-Unsubscribe", "<mailto:off@firma.cz>"),
+        ("X-Auto-Response-Suppress", "All"),
+    ],
+)
+def test_strojova_posta_se_pozna(hlavicka, hodnota):
+    """Na tohle OOO odpovídat NESMÍ – jinak vznikne nekonečná smyčka."""
+    m = _zprava({"From": "robot@firma.cz", "Subject": "Novinky", hlavicka: hodnota})
+    assert hlavicky_ze_zpravy(m)["automat"] is True
+
+
+def test_zprava_bez_odesilatele_je_automat():
+    """Prázdný odesílatel = odraz nedoručitelnosti. Odpovídat na něj nemá komu."""
+    m = _zprava({"Subject": "Undelivered Mail Returned to Sender"})
+    assert hlavicky_ze_zpravy(m)["automat"] is True
+
+
+# ---- hlavičky ----------------------------------------------------------------
+def test_hlavicky_rozlusti_diakritiku_a_adresy():
+    m = _zprava(
+        {
+            "From": "=?utf-8?B?SmFuIE5vdsOhaw==?= <Jan.Novak@Firma.CZ>",
+            "To": "dan@greensie.cz, Petra <petra@firma.cz>",
+            "Cc": "sef@firma.cz",
+            "Subject": "=?utf-8?B?TmFiw61ka2E=?=",
+        }
+    )
+    h = hlavicky_ze_zpravy(m)
+    assert h["od_jmeno"] == "Jan Novák"
+    # Adresy se normalizují na malá písmena, jinak by párování na CRM míjelo.
+    assert h["od_adresa"] == "jan.novak@firma.cz"
+    assert h["predmet"] == "Nabídka"
+    assert [a["adresa"] for a in h["komu"]] == ["dan@greensie.cz", "petra@firma.cz"]
+    assert [a["adresa"] for a in h["kopie"]] == ["sef@firma.cz"]
+
+
+def test_predmet_pres_vic_radku_zustane_na_jednom():
+    """Zalomený předmět by v seznamu zpráv rozhodil řádek.
+
+    Dlouhé hlavičky přicházejí ze sítě „složené" na víc řádků (RFC 5322), takže
+    se test staví z surových bajtů – nastavit takovou hlavičku přes
+    `EmailMessage` totiž knihovna zakazuje.
+    """
+    import email as email_modul
+
+    surove = (
+        b"From: a@b.cz\r\n"
+        b"Subject: Dlouhy predmet,\r\n ktery pokracuje na druhem radku\r\n"
+        b"\r\ntelo\r\n"
+    )
+    h = hlavicky_ze_zpravy(email_modul.message_from_bytes(surove))
+    assert "\n" not in h["predmet"] and "\r" not in h["predmet"]
+    assert h["predmet"] == "Dlouhy predmet, ktery pokracuje na druhem radku"
+
+
+# ---- tělo a přílohy ----------------------------------------------------------
+def test_telo_rozdeli_text_html_a_prilohy():
+    m = EmailMessage()
+    m["From"] = "a@b.cz"
+    m["Subject"] = "S přílohou"
+    m.set_content("Textová verze")
+    m.add_alternative("<p>HTML verze</p>", subtype="html")
+    m.add_attachment(
+        b"%PDF-1.4 fake", maintype="application", subtype="pdf", filename="nabidka.pdf"
+    )
+
+    telo = telo_ze_zpravy(m)
+    assert "Textová verze" in telo["text"]
+    assert "HTML verze" in telo["html"]
+    nazvy = [p["nazev"] for p in telo["prilohy"]]
+    assert "nabidka.pdf" in nazvy
+    priloha = next(p for p in telo["prilohy"] if p["nazev"] == "nabidka.pdf")
+    assert priloha["mime"] == "application/pdf"
+    assert priloha["velikost"] > 0
+    # Číslo části se používá k pozdějšímu stažení – nesmí být prázdné.
+    assert priloha["cislo_casti"]
+
+
+def test_vypis_z_html_odstrani_znacky_i_entity():
+    vypis = vypis_z_tela(
+        "", "<html><head><style>a{color:red}</style></head><body><p>Ahoj&nbsp;sv&#283;te</p>"
+        "<script>zlo()</script></body></html>"
+    )
+    assert vypis == "Ahoj světe"
+    assert "script" not in vypis
+    assert "zlo" not in vypis
+
+
+def test_vypis_dava_prednost_textu():
+    assert vypis_z_tela("Čistý text", "<p>HTML</p>") == "Čistý text"
+
+
+# ---- šifrování hesel ---------------------------------------------------------
+KLIC_A = "iCA1YAqJlXBqQ0vJkTZlWvBM3TfMQ2z2xdNfTZ8sIYE="
+KLIC_B = "9r0nSHBBoJDL_VqJqmzBLTt4h6uCTLKMh1kMv6QqoLE="
+
+
+@pytest.fixture
+def s_klicem(monkeypatch):
+    monkeypatch.setenv("APP_ENC_KEY", KLIC_A)
+    crypto._zapomen_klic()
+    yield
+    crypto._zapomen_klic()
+
+
+def test_heslo_se_zasifruje_a_desifruje(s_klicem):
+    sifra = crypto.sifruj("tajneHeslo123")
+    assert sifra and sifra != "tajneHeslo123"
+    assert crypto.desifruj(sifra) == "tajneHeslo123"
+
+
+def test_prazdne_heslo_znamena_nenastaveno(s_klicem):
+    assert crypto.sifruj("") == ""
+    assert crypto.desifruj("") == ""
+
+
+def test_bez_klice_se_heslo_neulozi(monkeypatch):
+    """Radši chyba než heslo v čitelné podobě v databázi."""
+    monkeypatch.delenv("APP_ENC_KEY", raising=False)
+    monkeypatch.delenv("KONEKTOR_ENC_KEY", raising=False)
+    crypto._zapomen_klic()
+    assert crypto.klic_dostupny() is False
+    with pytest.raises(RuntimeError):
+        crypto.sifruj("heslo")
+    crypto._zapomen_klic()
+
+
+def test_desifrovani_cizim_klicem_vraci_prazdno(monkeypatch):
+    """Nesmí to projít jako úspěch – appka pak řekne „zadej heslo znovu"."""
+    monkeypatch.setenv("APP_ENC_KEY", KLIC_A)
+    crypto._zapomen_klic()
+    sifra = crypto.sifruj("heslo")
+
+    monkeypatch.setenv("APP_ENC_KEY", KLIC_B)
+    crypto._zapomen_klic()
+    assert crypto.desifruj(sifra) == ""
+    crypto._zapomen_klic()
+
+
+def test_zaloha_na_konektorovy_klic(monkeypatch):
+    """Na produkci klíč konektoru už existuje – e-mail nemá čekat na nový."""
+    monkeypatch.delenv("APP_ENC_KEY", raising=False)
+    monkeypatch.setenv("KONEKTOR_ENC_KEY", KLIC_A)
+    crypto._zapomen_klic()
+    assert crypto.klic_dostupny() is True
+    assert crypto.zdroj_klice() == "KONEKTOR_ENC_KEY"
+    assert crypto.desifruj(crypto.sifruj("x")) == "x"
+    crypto._zapomen_klic()
+
+
+def test_neplatny_klic_se_preskoci_na_dalsi(monkeypatch):
+    """Překlep v APP_ENC_KEY nesmí odstřihnout appku od fungujícího klíče."""
+    monkeypatch.setenv("APP_ENC_KEY", "tohle-neni-platny-fernet-klic")
+    monkeypatch.setenv("KONEKTOR_ENC_KEY", KLIC_A)
+    crypto._zapomen_klic()
+    assert crypto.klic_dostupny() is True
+    assert crypto.zdroj_klice() == "KONEKTOR_ENC_KEY"
+    crypto._zapomen_klic()
+
+
+# ============================================================================
+# Automatika příchozí pošty (dávka E4)
+#
+# Nejdůležitější testy celého modulu. Chyba v pravidlech znamená přeházenou
+# schránku; chyba v pojistkách OOO znamená dva roboty, kteří si píší navzájem,
+# dokud někdo nevypne server. Proto se tady testují hlavně situace, kdy se
+# odpovědět NESMÍ.
+# ============================================================================
+from datetime import date
+
+from app.crm import email_automat
+from app.crm.email_smtp import (
+    _adresy_ze_textu,
+    _pridej_podpis,
+    priprav_odpoved,
+    priprav_preposlani,
+)
+
+
+class FalesnaZprava:
+    """Zpráva bez databáze – stačí atributy, které automatika čte."""
+
+    def __init__(self, **kw):
+        self.od_jmeno = kw.get("od_jmeno", "Jan Novák")
+        self.od_adresa = kw.get("od_adresa", "jan@firma.cz")
+        self.komu = kw.get("komu", [{"jmeno": "Dan", "adresa": "dan@greensie.cz"}])
+        self.kopie = kw.get("kopie", [])
+        self.predmet = kw.get("predmet", "Poptávka FVE")
+        self.vypis = kw.get("vypis", "Dobrý den, měli bychom zájem o nabídku.")
+        self.telo_text = kw.get("telo_text", self.vypis)
+        self.telo_html = kw.get("telo_html", "")
+        self.ma_prilohy = kw.get("ma_prilohy", False)
+        self.automat = kw.get("automat", False)
+        self.smer = kw.get("smer", "prichozi")
+        self.datum_at = kw.get("datum_at", datetime(2026, 7, 31, 9, 0, tzinfo=timezone.utc))
+        self.message_id = kw.get("message_id", "<abc@firma.cz>")
+        self.in_reply_to = kw.get("in_reply_to", "")
+        self.odpovedet_na = kw.get("odpovedet_na", "")
+        self.id = kw.get("id", 1)
+        self.zakaznik_id = kw.get("zakaznik_id", None)
+        self.pripad_id = kw.get("pripad_id", None)
+
+
+class FalesnePravidlo:
+    def __init__(self, podminky, spojka="a", akce=None):
+        self.podminky = podminky
+        self.spojka = spojka
+        self.akce = akce or [{"typ": "oznacit"}]
+        self.nazev = "Test"
+        self.zastavit_dalsi = False
+
+
+class FalesnyUcet:
+    def __init__(self, **kw):
+        self.id = 1
+        self.adresa = kw.get("adresa", "dan@greensie.cz")
+        self.jmeno_odesilatele = kw.get("jmeno_odesilatele", "Dan Lupínek")
+        self.ooo_zapnuto = kw.get("ooo_zapnuto", True)
+        self.ooo_od = kw.get("ooo_od", None)
+        self.ooo_do = kw.get("ooo_do", None)
+        self.ooo_predmet = kw.get("ooo_predmet", "Jsem mimo kancelář")
+        self.ooo_text = kw.get("ooo_text", "Vrátím se v pondělí.")
+        self.podpis = kw.get("podpis", "")
+        self.smtp_host = "smtp.seznam.cz"
+        self.smtp_port = 587
+
+
+# ---- podmínky pravidel -------------------------------------------------------
+def test_pravidlo_sedi_na_odesilatele():
+    z = FalesnaZprava(od_adresa="faktury@dodavatel.cz")
+    p = FalesnePravidlo([{"pole": "od", "operator": "obsahuje", "hodnota": "dodavatel.cz"}])
+    assert email_automat.pravidlo_sedi(z, p) is True
+
+
+def test_pravidlo_nesedi_na_jineho_odesilatele():
+    z = FalesnaZprava(od_adresa="jan@firma.cz")
+    p = FalesnePravidlo([{"pole": "od", "operator": "obsahuje", "hodnota": "dodavatel.cz"}])
+    assert email_automat.pravidlo_sedi(z, p) is False
+
+
+def test_spojka_a_vyzaduje_obe_podminky():
+    z = FalesnaZprava(od_adresa="jan@firma.cz", predmet="Faktura 2026")
+    obe = [
+        {"pole": "od", "operator": "obsahuje", "hodnota": "firma.cz"},
+        {"pole": "predmet", "operator": "obsahuje", "hodnota": "faktura"},
+    ]
+    assert email_automat.pravidlo_sedi(z, FalesnePravidlo(obe, "a")) is True
+
+    nesedici = [
+        {"pole": "od", "operator": "obsahuje", "hodnota": "firma.cz"},
+        {"pole": "predmet", "operator": "obsahuje", "hodnota": "objednávka"},
+    ]
+    assert email_automat.pravidlo_sedi(z, FalesnePravidlo(nesedici, "a")) is False
+    # …ale „nebo" stačí jedna.
+    assert email_automat.pravidlo_sedi(z, FalesnePravidlo(nesedici, "nebo")) is True
+
+
+def test_pravidlo_bez_podminek_nesedi_na_nic():
+    """Prázdné podmínky by znamenaly „platí vždy" – rozházelo by to schránku."""
+    assert email_automat.pravidlo_sedi(FalesnaZprava(), FalesnePravidlo([])) is False
+
+
+@pytest.mark.parametrize(
+    "operator,hodnota,ceka",
+    [
+        ("je", "poptávka fve", True),
+        ("je", "poptávka", False),
+        ("zacina", "poptávka", True),
+        ("konci", "fve", True),
+        ("konci", "poptávka", False),
+        ("neobsahuje", "objednávka", True),
+        ("neobsahuje", "poptávka", False),
+    ],
+)
+def test_operatory_pravidel(operator, hodnota, ceka):
+    z = FalesnaZprava(predmet="Poptávka FVE")
+    p = FalesnePravidlo([{"pole": "predmet", "operator": operator, "hodnota": hodnota}])
+    assert email_automat.pravidlo_sedi(z, p) is ceka
+
+
+def test_podminka_na_prilohu():
+    p = FalesnePravidlo([{"pole": "ma_prilohy", "operator": "ano", "hodnota": ""}])
+    assert email_automat.pravidlo_sedi(FalesnaZprava(ma_prilohy=True), p) is True
+    assert email_automat.pravidlo_sedi(FalesnaZprava(ma_prilohy=False), p) is False
+
+
+def test_presun_se_radi_az_nakonec():
+    """Po přesunu zpráva v cache není – další akce by sahaly do prázdna."""
+    p = FalesnePravidlo(
+        [{"pole": "od", "operator": "obsahuje", "hodnota": "x"}],
+        akce=[{"typ": "presun", "slozka_id": 3}, {"typ": "oznacit_precteno"}],
+    )
+    serazeno = [a["typ"] for a in email_automat._serad_akce(p)]
+    assert serazeno[-1] == "presun"
+
+
+# ---- pojistky OOO (nejdůležitější část) --------------------------------------
+def test_ooo_odpovi_na_bezny_email():
+    ucet, z = FalesnyUcet(), FalesnaZprava()
+    smi, duvod = email_automat.smi_ooo_odpovedet(_bez_db(), ucet, z)
+    assert smi is True, duvod
+
+
+def test_ooo_neodpovi_robotovi():
+    """RFC 3834: autoresponder nesmí odpovídat robotovi. Jinak vznikne smyčka."""
+    smi, duvod = email_automat.smi_ooo_odpovedet(
+        _bez_db(), FalesnyUcet(), FalesnaZprava(automat=True)
+    )
+    assert smi is False
+    assert "strojová" in duvod
+
+
+def test_ooo_neodpovi_sam_sobe():
+    smi, duvod = email_automat.smi_ooo_odpovedet(
+        _bez_db(), FalesnyUcet(adresa="dan@greensie.cz"),
+        FalesnaZprava(od_adresa="DAN@greensie.cz"),
+    )
+    assert smi is False
+    assert "sama" in duvod
+
+
+def test_ooo_neodpovi_na_odchozi_postu():
+    smi, _ = email_automat.smi_ooo_odpovedet(
+        _bez_db(), FalesnyUcet(), FalesnaZprava(smer="odchozi")
+    )
+    assert smi is False
+
+
+def test_ooo_neodpovi_bez_odesilatele():
+    smi, _ = email_automat.smi_ooo_odpovedet(
+        _bez_db(), FalesnyUcet(), FalesnaZprava(od_adresa="")
+    )
+    assert smi is False
+
+
+def test_ooo_mimo_obdobi_neodpovida():
+    dnes = date(2026, 7, 31)
+    minulost = FalesnyUcet(ooo_od=date(2026, 7, 1), ooo_do=date(2026, 7, 15))
+    smi, _ = email_automat.smi_ooo_odpovedet(_bez_db(), minulost, FalesnaZprava(), dnes)
+    assert smi is False
+
+    budoucnost = FalesnyUcet(ooo_od=date(2026, 8, 10))
+    smi, _ = email_automat.smi_ooo_odpovedet(_bez_db(), budoucnost, FalesnaZprava(), dnes)
+    assert smi is False
+
+    prave_ted = FalesnyUcet(ooo_od=date(2026, 7, 20), ooo_do=date(2026, 8, 5))
+    smi, duvod = email_automat.smi_ooo_odpovedet(_bez_db(), prave_ted, FalesnaZprava(), dnes)
+    assert smi is True, duvod
+
+
+def test_ooo_vypnute_neodpovida():
+    smi, _ = email_automat.smi_ooo_odpovedet(
+        _bez_db(), FalesnyUcet(ooo_zapnuto=False), FalesnaZprava()
+    )
+    assert smi is False
+
+
+def _bez_db():
+    """Náhrada session – `smi_ooo_odpovedet` se jí ptá jen na dřívější odpovědi."""
+
+    class PrazdnyDotaz:
+        def filter(self, *_a, **_k):
+            return self
+
+        def first(self):
+            return None
+
+    class PrazdnaSession:
+        def query(self, *_a, **_k):
+            return PrazdnyDotaz()
+
+    return PrazdnaSession()
+
+
+# ---- odesílání: parsování adres a podpis -------------------------------------
+@pytest.mark.parametrize(
+    "vstup,ceka",
+    [
+        ("a@b.cz", ["a@b.cz"]),
+        ("a@b.cz, c@d.cz", ["a@b.cz", "c@d.cz"]),
+        ("a@b.cz; c@d.cz", ["a@b.cz", "c@d.cz"]),
+        ("Jan Novák <jan@firma.cz>", ["jan@firma.cz"]),
+        ("a@b.cz, a@b.cz", ["a@b.cz"]),          # duplicita se zahodí
+        ("nesmysl, a@b.cz", ["a@b.cz"]),          # adresa bez zavináče vypadne
+        (["a@b.cz", " c@d.cz "], ["a@b.cz", "c@d.cz"]),
+        ("", []),
+    ],
+)
+def test_parsovani_adres(vstup, ceka):
+    assert _adresy_ze_textu(vstup) == ceka
+
+
+def test_podpis_se_neprida_dvakrat():
+    """Šablony podpis často obsahují – druhý by vypadal jako chyba appky."""
+    podpis = "Dan Lupínek\nGreensie s.r.o."
+    s_podpisem = _pridej_podpis("Dobrý den,\n\nDan Lupínek\nGreensie s.r.o.", podpis)
+    assert s_podpisem.count("Dan Lupínek") == 1
+
+    bez_podpisu = _pridej_podpis("Dobrý den,", podpis)
+    assert "Dan Lupínek" in bez_podpisu
+    assert bez_podpisu.count("Dan Lupínek") == 1
+
+
+# ---- příprava odpovědi a přeposlání ------------------------------------------
+def test_odpoved_ma_re_prefix_a_citaci():
+    z = FalesnaZprava(predmet="Poptávka FVE", telo_text="Dobrý den,\nmáme zájem.")
+    v = priprav_odpoved(z, vsem=False, moje_adresa="dan@greensie.cz")
+    assert v["predmet"] == "Re: Poptávka FVE"
+    assert v["komu"] == ["jan@firma.cz"]
+    assert "> Dobrý den," in v["telo"]
+    assert v["odpoved_na_id"] == z.id
+
+
+def test_odpoved_nezdvojuje_re():
+    z = FalesnaZprava(predmet="Re: Poptávka")
+    assert priprav_odpoved(z, False, "dan@greensie.cz")["predmet"] == "Re: Poptávka"
+
+
+def test_odpovedet_vsem_vynecha_moji_adresu():
+    """Odpovídat sám sobě nechce nikdo."""
+    z = FalesnaZprava(
+        komu=[{"adresa": "dan@greensie.cz"}, {"adresa": "kolega@greensie.cz"}],
+        kopie=[{"adresa": "sef@firma.cz"}],
+    )
+    v = priprav_odpoved(z, vsem=True, moje_adresa="dan@greensie.cz")
+    assert "dan@greensie.cz" not in v["kopie"]
+    assert set(v["kopie"]) == {"kolega@greensie.cz", "sef@firma.cz"}
+    assert v["komu"] == ["jan@firma.cz"]
+
+
+def test_odpoved_respektuje_reply_to():
+    z = FalesnaZprava(od_adresa="noreply@firma.cz", odpovedet_na="obchod@firma.cz")
+    assert priprav_odpoved(z, False, "dan@greensie.cz")["komu"] == ["obchod@firma.cz"]
+
+
+def test_preposlani_ma_fwd_prefix_a_zadneho_prijemce():
+    z = FalesnaZprava(predmet="Poptávka FVE")
+    v = priprav_preposlani(z)
+    assert v["predmet"] == "Fwd: Poptávka FVE"
+    assert v["komu"] == []
+    assert "Přeposlaná zpráva" in v["telo"]
+
+
+def test_preposlani_upozorni_na_neprenesene_prilohy():
+    v = priprav_preposlani(FalesnaZprava(ma_prilohy=True))
+    assert "přílohy" in v["telo"].lower()

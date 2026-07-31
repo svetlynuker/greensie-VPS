@@ -204,6 +204,11 @@ def zaloz_nabidku(
         vytvoril_user_id=user.id,
     )
     db.add(n)
+    db.flush()
+    # CRM-31: pravidla navěšená na „vznikla nová nabídka“.
+    from app.crm import automatizace as automatizace_modul
+
+    automatizace_modul.po_vzniku(db, "nab", n, user)
     db.commit()
     db.refresh(n)
     return _nabidka_detail(n, db)
@@ -241,6 +246,10 @@ def uprav_nabidku(
         from app.crm import vlastni_pole as pole_modul
 
         n.extra = pole_modul.zpracuj(db, "nab", vstup.extra)
+    # CRM-31: změna pole nabídky (např. doplněný zákazník).
+    from app.crm import automatizace as automatizace_modul
+
+    automatizace_modul.po_zmene_poli(db, "nab", n, user)
     db.commit()
     db.refresh(n)
     return _nabidka_detail(n, db)

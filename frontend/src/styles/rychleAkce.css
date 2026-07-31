@@ -1,0 +1,140 @@
+/* ============================================================
+   Zelené kolečko „+" s rychlými akcemi (CRM-34)
+
+   Plovoucí tlačítko vpravo dole. Sedí NAD obsahem, takže nesmí zakrývat nic
+   podstatného — proto je vpravo dole, kde v appce nekončí žádná tabulka ani
+   ovládání, a proto má stránka s ním dole odsazení (`.ra-misto`).
+   ============================================================ */
+
+.ra-obal {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  /* Nad obsahem, ale POD dialogy (ty mají 200+) — kolečko nesmí trčet přes
+     otevřené okno, které samo otevřelo. */
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.ra-kolecko {
+  border: 0;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #fff;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  /* Vyšší stín než u karet: kolečko má vypadat, že leží nad stránkou. */
+  box-shadow: 0 6px 18px rgba(16, 33, 24, 0.28), 0 2px 4px rgba(16, 33, 24, 0.18);
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  flex: 0 0 auto;
+}
+
+.ra-kolecko:hover {
+  background: var(--brand-strong);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgba(16, 33, 24, 0.32), 0 2px 6px rgba(16, 33, 24, 0.2);
+}
+
+.ra-kolecko:focus-visible {
+  outline: 3px solid var(--brand-strong);
+  outline-offset: 3px;
+}
+
+.ra-kolecko:active { transform: translateY(0); }
+
+/* Otevřené kolečko se otočí na „×" — bez otáčení není poznat, že druhý klik
+   menu zavře. */
+.ra-kolecko[aria-expanded="true"] svg {
+  transform: rotate(45deg);
+}
+
+.ra-kolecko svg { transition: transform 0.18s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ra-kolecko,
+  .ra-kolecko svg { transition: none; }
+  .ra-kolecko:hover { transform: none; }
+}
+
+/* ---- nabídka akcí ----------------------------------------------------- */
+.ra-menu {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(16, 33, 24, 0.18);
+  padding: 6px;
+  min-width: 240px;
+  max-width: min(320px, calc(100vw - 48px));
+  /* Dlouhá nabídka nesmí vylézt z obrazovky. */
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+}
+
+.ra-menu-titulek {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 6px 10px 4px;
+}
+
+.ra-polozka {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ra-polozka:hover { background: var(--brand-wash); color: var(--brand-strong); }
+
+.ra-polozka:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+  background: var(--brand-wash);
+}
+
+.ra-polozka-znak {
+  flex: 0 0 22px;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.ra-polozka-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ra-polozka-popis {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.ra-polozka:hover .ra-polozka-popis { color: color-mix(in srgb, var(--brand-strong) 65%, var(--muted)); }
+
+/* ---- odsazení obsahu -------------------------------------------------- */
+/* Stránka s kolečkem si dole nechá místo, aby kolečko nezakrývalo poslední
+   řádek tabulky ani stránkování. */
+.ra-misto { padding-bottom: 96px; }
+
+@media (max-width: 760px) {
+  .ra-obal { right: 16px; bottom: 16px; }
+  .ra-menu { min-width: 200px; }
+}

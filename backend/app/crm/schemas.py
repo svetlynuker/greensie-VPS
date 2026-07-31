@@ -1164,19 +1164,46 @@ class AuditOut(BaseModel):
 
 
 # ---- automatizace (CRM-31) ---------------------------------------------------
-class PravidloVstup(BaseModel):
-    """Pravidlo „když záznam přejde do stavu X, udělej Y".
+class PravidloKrok(BaseModel):
+    """Jeden krok pravidla: co udělat a s jakými parametry.
 
-    `akce` ZÁMĚRNĚ není Literal — katalog akcí je v `crm/automatizace.py` a
-    validuje se proti němu (`over_pravidlo`). Druhý seznam v typu by se dřív
-    nebo později rozešel s tím, co appka umí vykonat.
+    `akce` ZÁMĚRNĚ není Literal — katalog akcí je v `crm/automatizace_akce.py`
+    a validuje se proti němu (`over_krok`). Druhý seznam v typu by se dřív nebo
+    později rozešel s tím, co appka umí vykonat. Ze stejného důvodu je
+    `nastaveni` volný slovník: parametry se u každé akce liší.
     """
+
+    akce: str
+    nastaveni: dict[str, Any] = {}
+
+
+class PravidloPodminka(BaseModel):
+    """Jedna podmínka: pole, srovnání, hodnota. Hodnota chybí u „je prázdné“."""
+
+    pole: str
+    operator: str
+    hodnota: Optional[Any] = None
+
+
+class PravidloPodminky(BaseModel):
+    # "vse" = musí platit všechny, "cokoli" = stačí jedna.
+    spojka: str = "vse"
+    polozky: list[PravidloPodminka] = []
+
+
+class PravidloVstup(BaseModel):
+    """Pravidlo „KDYŽ se stane tohle, POKUD platí tohle, PAK udělej tohle“."""
 
     nazev: str
     spoust_entita: EntitaCrm
-    spoust_stav: str
-    akce: str
-    nastaveni: dict[str, Any] = {}
+    # "stav" | "vznik" | "pole" | "cas" | "rucne"; validuje `over_pravidlo`.
+    spoust_typ: str = "stav"
+    spoust_stav: str = ""
+    spoust_pole: str = ""
+    cas_nastaveni: dict[str, Any] = {}
+    podminky: Optional[PravidloPodminky] = None
+    kroky: list[PravidloKrok] = []
+    opakovat: str = "jednou"
     aktivni: Optional[bool] = None
     poradi: Optional[int] = None
 
@@ -1187,6 +1214,7 @@ class PravidloBehOut(BaseModel):
     zaznam_id: int
     vysledek: str  # hotovo | preskoceno | chyba
     popis: str = ""
+    spoustec: str = ""
     kdo: Optional[str] = None
     kdy: Optional[str] = None
 
@@ -1197,16 +1225,48 @@ class PravidloOut(BaseModel):
     aktivni: bool = True
     poradi: int = 0
     spoust_entita: str
-    spoust_stav: str
+    spoust_typ: str = "stav"
+    spoust_stav: str = ""
     spoust_stav_nazev: str = ""
+    spoust_pole: str = ""
+    cas_nastaveni: dict[str, Any] = {}
     entita_nazev: str = ""
-    akce: str
-    akce_nazev: str = ""
-    nastaveni: dict[str, Any] = {}
+    podminky: dict[str, Any] = {}
+    kroky: list[dict[str, Any]] = []
+    opakovat: str = "jednou"
+    # Věty pro seznam pravidel („Obchodní případ → Vyhráno“, „Založ objednávku“).
+    # Skládá je backend, protože zná katalogy; druhý popis v JSX by se s nimi
+    # rozešel při každé nové akci.
+    spoustec_popis: str = ""
+    podminky_popis: str = ""
+    kroky_popis: list[str] = []
     # Počet úspěšných běhů; `behy` se posílá jen u detailu, aby seznam pravidel
     # netahal celou historii.
     behu: int = 0
     behy: Optional[list[PravidloBehOut]] = None
+
+
+class PravidloSpusteniVstup(BaseModel):
+    """Který záznam pustit pravidlem — ručně nebo nanečisto."""
+
+    zaznam_id: int
+
+
+class PravidloZkouskaOut(BaseModel):
+    """Výsledek suchého běhu: co by se stalo, aniž se to stalo."""
+
+    zaznam_popis: str = ""
+    plati: bool = True
+    duvod: str = ""
+    kroky: list[str] = []
+
+
+class PravidloKandidatOut(BaseModel):
+    """Záznam, na který by pravidlo teď sedělo (náhled pro časová pravidla)."""
+
+    id: int
+    popis: str = ""
+    uz_bezelo: bool = False
 
 
 # ---- mapa (CRM-20) -----------------------------------------------------------
@@ -1221,3 +1281,259 @@ class MapaBodOut(BaseModel):
     mesto: str = ""
     otevrenych_pripadu: int = 0
     projektu: int = 0
+
+
+# ---- e-mailový klient (CRM-33) ----------------------------------------------
+# POZOR na názvy: `EmailVstup`/`EmailOut` výš už patří jednorázovému odeslání
+# z firemní schránky (CRM-10). Schémata klienta proto mají prefix `EmailUcet`,
+# `EmailSlozka`, `EmailZprava` – dvě třídy stejného jména by se v tomhle
+# modulu tiše přepsaly (hlídá test_kolize_cest.py).
+DruhSlozky = Literal["inbox", "koncepty", "odeslane", "spam", "kos", "archiv", "vlastni"]
+StavUctu = Literal["nenastaveno", "ok", "chyba"]
+SmerZpravy = Literal["prichozi", "odchozi"]
+
+
+class EmailUcetVstup(BaseModel):
+    """Nastavení schránky. Heslo je „write-only" – posílá se sem, nikdy zpět."""
+
+    adresa: str
+    nazev: str = ""
+    jmeno_odesilatele: str = ""
+    imap_host: str = "imap.seznam.cz"
+    imap_port: int = 993
+    smtp_host: str = "smtp.seznam.cz"
+    smtp_port: int = 587
+    # None = neměnit uložené heslo (úprava nastavení bez opsání hesla).
+    heslo: Optional[str] = None
+    aktivni: bool = True
+    sync_zapnuto: bool = True
+    prvni_sync_pocet: int = 300
+    podpis: str = ""
+
+
+class EmailUcetOut(BaseModel):
+    id: int
+    adresa: str
+    nazev: str = ""
+    jmeno_odesilatele: str = ""
+    imap_host: str = ""
+    imap_port: int = 993
+    smtp_host: str = ""
+    smtp_port: int = 587
+    # Jen příznak, nikdy samotné heslo (viz app/crypto.py).
+    heslo_nastaveno: bool = False
+    aktivni: bool = True
+    sync_zapnuto: bool = True
+    prvni_sync_pocet: int = 300
+    podpis: str = ""
+    stav: StavUctu = "nenastaveno"
+    posledni_sync_at: Optional[str] = None
+    posledni_chyba: str = ""
+    # Bez šifrovacího klíče v .env se heslo nedá uložit – frontend to musí říct
+    # rovnou, ne až po marném pokusu.
+    klic_dostupny: bool = True
+    ooo_zapnuto: bool = False
+    ooo_od: Optional[str] = None
+    ooo_do: Optional[str] = None
+    ooo_predmet: str = ""
+    ooo_text: str = ""
+    preposilani_zapnuto: bool = False
+    preposilani_komu: str = ""
+    preposilani_nechat_kopii: bool = True
+
+
+class EmailTestOut(BaseModel):
+    """Výsledek tlačítka „Otestovat připojení"."""
+
+    ok: bool = False
+    zprava: str = ""
+    pocet_slozek: int = 0
+    zprav_v_doruceni: int = 0
+    slozky: list[str] = []
+
+
+class EmailSlozkaOut(BaseModel):
+    id: int
+    nazev: str
+    druh: DruhSlozky = "vlastni"
+    poradi: int = 100
+    celkem: int = 0
+    nepreectenych: int = 0
+    sync_zapnuto: bool = True
+    posledni_sync_at: Optional[str] = None
+
+
+class EmailAdresaOut(BaseModel):
+    jmeno: str = ""
+    adresa: str = ""
+
+
+class EmailPrilohaOut(BaseModel):
+    id: int
+    nazev: str = ""
+    mime: str = ""
+    velikost: int = 0
+    vlozeny: bool = False
+
+
+class EmailZpravaOut(BaseModel):
+    """Zpráva v seznamu. Tělo tady NENÍ – dotáhne se až při otevření."""
+
+    id: int
+    slozka_id: int
+    uid: int
+    od_jmeno: str = ""
+    od_adresa: str = ""
+    komu: list[EmailAdresaOut] = []
+    kopie: list[EmailAdresaOut] = []
+    predmet: str = ""
+    datum_at: str = ""
+    smer: SmerZpravy = "prichozi"
+    precteno: bool = False
+    oznaceno: bool = False
+    zodpovezeno: bool = False
+    ma_prilohy: bool = False
+    velikost: int = 0
+    vypis: str = ""
+    # Napojení na CRM – podle toho se u zprávy ukáže odkaz na kartu firmy.
+    zakaznik_id: Optional[int] = None
+    zakaznik_nazev: str = ""
+    pripad_id: Optional[int] = None
+    pripad_cislo: str = ""
+
+
+class EmailZpravyOut(BaseModel):
+    zpravy: list[EmailZpravaOut] = []
+    celkem: int = 0
+    strana: int = 1
+    na_stranu: int = 50
+
+
+class EmailZpravaDetailOut(EmailZpravaOut):
+    """Otevřená zpráva – navíc tělo a přílohy."""
+
+    telo_text: str = ""
+    telo_html: str = ""
+    prilohy: list[EmailPrilohaOut] = []
+    odpovedet_na: str = ""
+
+
+class EmailPriznakVstup(BaseModel):
+    precteno: Optional[bool] = None
+    oznaceno: Optional[bool] = None
+
+
+class EmailPresunVstup(BaseModel):
+    slozka_id: int
+
+
+class EmailSyncOut(BaseModel):
+    ok: bool = True
+    nove: int = 0
+    zmenene: int = 0
+    smazane: int = 0
+    trvani_s: float = 0
+    zprava: str = ""
+
+
+class EmailNaseptavacOut(BaseModel):
+    """Jedna napovězená adresa z adresáře CRM."""
+
+    adresa: str
+    jmeno: str = ""
+    popis: str = ""
+    # kontakt = osoba u zákazníka, zakaznik = obecná adresa firmy, kolega = appka
+    druh: str = "kontakt"
+    zakaznik_id: Optional[int] = None
+
+
+# ---- odesílání z e-mailového klienta (CRM-33, dávka E2) ----------------------
+class EmailPsaniOut(BaseModel):
+    """Předvyplněné okno psaní (odpověď / přeposlání).
+
+    Vrací to backend, ne frontend, schválně: citace, `Re:`/`Fwd:` prefixy
+    a odhození vlastní adresy z příjemců jsou pravidla, která mají být na jednom
+    místě. Frontend by je musel duplikovat a rozjížděly by se.
+    """
+
+    komu: list[str] = []
+    kopie: list[str] = []
+    predmet: str = ""
+    telo: str = ""
+    odpoved_na_id: Optional[int] = None
+    zakaznik_id: Optional[int] = None
+    pripad_id: Optional[int] = None
+
+
+class EmailOdeslanoOut(BaseModel):
+    ok: bool = True
+    aktivita_id: Optional[int] = None
+    # Kopie do Odeslaných je „nice to have": když se neuloží, zpráva už je
+    # u příjemce a odeslání se za chybu považovat nesmí.
+    kopie_ulozena: bool = False
+    zakaznik_id: Optional[int] = None
+    pripad_id: Optional[int] = None
+    poznamka: str = ""
+
+
+# ---- pravidla, OOO a přeposílání (CRM-33, dávka E4) --------------------------
+PoleZpravy = Literal["od", "komu", "predmet", "telo", "ma_prilohy"]
+OperatorPravidla = Literal["obsahuje", "neobsahuje", "je", "zacina", "konci", "ano", "ne"]
+TypAkcePosty = Literal["presun", "oznacit_precteno", "oznacit", "preposlat", "prirad"]
+
+
+class EmailPodminkaVstup(BaseModel):
+    pole: PoleZpravy
+    operator: OperatorPravidla = "obsahuje"
+    hodnota: str = ""
+
+
+class EmailAkceVstup(BaseModel):
+    typ: TypAkcePosty
+    # `presun` → slozka_id, `preposlat` → komu, `prirad` → zakaznik_id.
+    slozka_id: Optional[int] = None
+    komu: str = ""
+    zakaznik_id: Optional[int] = None
+
+
+class EmailPravidloVstup(BaseModel):
+    nazev: str
+    aktivni: bool = True
+    poradi: int = 100
+    spojka: Literal["a", "nebo"] = "a"
+    podminky: list[EmailPodminkaVstup] = []
+    akce: list[EmailAkceVstup] = []
+    zastavit_dalsi: bool = False
+
+
+class EmailPravidloOut(BaseModel):
+    id: int
+    nazev: str
+    aktivni: bool = True
+    poradi: int = 100
+    spojka: str = "a"
+    podminky: list[dict] = []
+    akce: list[dict] = []
+    zastavit_dalsi: bool = False
+    pocet_pouziti: int = 0
+    posledni_pouziti_at: Optional[str] = None
+    # Věta, kterou pravidlo popisuje česky – ať se nemusí luštit z JSONu.
+    popis: str = ""
+
+
+class EmailAutomatikaVstup(BaseModel):
+    """OOO oznámení a automatické přeposílání.
+
+    Obojí dělá appka sama (Seznam to zdálky nastavit neumí), takže to funguje
+    jen když běží worker – frontend to musí říct nahlas.
+    """
+
+    ooo_zapnuto: bool = False
+    # "2026-08-01" nebo None (bez omezení).
+    ooo_od: Optional[str] = None
+    ooo_do: Optional[str] = None
+    ooo_predmet: str = ""
+    ooo_text: str = ""
+    preposilani_zapnuto: bool = False
+    preposilani_komu: str = ""
+    preposilani_nechat_kopii: bool = True
