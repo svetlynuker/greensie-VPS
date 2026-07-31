@@ -7,9 +7,11 @@ import FiltrPanel from "../components/FiltrPanel";
 import KpiPas from "../components/KpiPas";
 import OdkazRaynet from "../components/OdkazRaynet";
 import ZakaznikFormular from "../components/ZakaznikFormular";
+import RychleAkce from "../components/RychleAkce";
 import { nactiMe, logout, crmVlastniPole, crmZakaznici } from "../api";
 import { POHLEDY_ZAKAZNIKU, fmtDatum } from "../crm";
 import usePouzitFiltr from "../pouzitFiltr";
+import "../styles/rychleAkce.css";
 import "../styles/crm.css";
 
 /**
@@ -26,6 +28,9 @@ export default function Zakaznici() {
   const [hledat, setHledat] = useState("");
   const [chyba, setChyba] = useState(null);
   const [zaklada, setZaklada] = useState(false);
+  // Kolečko „+" umí založit lead i klienta bez ohledu na to, který pohled je
+  // otevřený; `null` = vezme se typ podle pohledu (tak to dělá tlačítko nahoře).
+  const [zakladaTyp, setZakladaTyp] = useState(null);
   // Vlastní pole označená „v seznamu" se ukazují jako další sloupce tabulky.
   const [sloupce, setSloupce] = useState([]);
   const [importRaynet, setImportRaynet] = useState(false);
@@ -111,7 +116,7 @@ export default function Zakaznici() {
 
   return (
     <Layout uzivatel={me.uzivatel}>
-      <div className="crm-app">
+      <div className="crm-app ra-misto">
         <div className="crm-hlava">
           <div>
             <h1>Zákazníci</h1>
@@ -232,15 +237,53 @@ export default function Zakaznici() {
 
       {zaklada && (
         <ZakaznikFormular
-          vychoziTyp={pohled}
+          vychoziTyp={zakladaTyp || pohled}
           muzeMenitVlastnika={me.prava?.includes("crm_vse")}
-          onZavri={() => setZaklada(false)}
+          onZavri={() => {
+            setZaklada(false);
+            setZakladaTyp(null);
+          }}
           onHotovo={(novy) => {
             setZaklada(false);
+            setZakladaTyp(null);
             navigate(`/zakaznici/detail/${novy.id}`);
           }}
         />
       )}
+
+      {/* Rychlé akce – na přehledu zákazníků má smysl zakládat, ne posílat. */}
+      <RychleAkce
+        titulek="Rychlé akce"
+        akce={[
+          {
+            klic: "novy-lead",
+            znak: "🌱",
+            nazev: "Nový lead",
+            popis: "Firma, se kterou se teprve začíná",
+            onClick: () => {
+              setZakladaTyp("lead");
+              setZaklada(true);
+            },
+          },
+          {
+            klic: "novy-klient",
+            znak: "🏢",
+            nazev: "Nový klient",
+            popis: "Firma, se kterou už obchod běží",
+            onClick: () => {
+              setZakladaTyp("klient");
+              setZaklada(true);
+            },
+          },
+          me.prava?.includes("crm_nastaveni") && {
+            klic: "import",
+            znak: "⬇",
+            nazev: "Import z Raynetu",
+            popis: "Natáhnout firmy z Raynetu",
+            onClick: () => setImportRaynet(true),
+          },
+        ]}
+      />
     </Layout>
   );
 }

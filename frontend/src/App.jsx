@@ -27,6 +27,7 @@ import Nastaveni from "./pages/Nastaveni";
 import Kalendar from "./pages/Kalendar";
 import PrehledObchodu from "./pages/PrehledObchodu";
 import MujDen from "./pages/MujDen";
+import Emaily from "./pages/Emaily";
 
 // Mapa se načítá až při otevření (CRM-20). Leaflet váží ~180 kB a používá ho
 // jediná obrazovka — v hlavním balíku by zpomaloval start všem ostatním.
@@ -81,6 +82,14 @@ export default function App() {
           element={
             <VyzadujePrihlaseni>
               <Kalendar />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/emaily"
+          element={
+            <VyzadujePrihlaseni>
+              <Emaily />
             </VyzadujePrihlaseni>
           }
         />

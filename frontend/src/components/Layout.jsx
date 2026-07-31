@@ -24,6 +24,7 @@ const VSECHNA_PRAVA = [
   "editace",
   "logy",
   "konektor",
+  "emaily",
 ];
 
 function panelZPameti() {

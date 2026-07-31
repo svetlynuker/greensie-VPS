@@ -100,6 +100,10 @@ PRAVA = [
     {"klic": "obchodni_pripady", "nazev": "Otevřít Obchodní případy"},
     {"klic": "crm_vse", "nazev": "CRM – vidět všechny záznamy, ne jen svoje (vedení)"},
     {"klic": "crm_nastaveni", "nazev": "CRM – měnit stavy pipeline a číselné řady (vedení)"},
+    # E-mailový klient (CRM-33). Právo jen otevírá obrazovku – schránka patří
+    # člověku, takže do cizí pošty nevidí nikdo, ani `crm_vse` a supersprávce
+    # (viz app/crm/email_routes.py).
+    {"klic": "emaily", "nazev": "Otevřít E-mail (vlastní schránka v appce)"},
     {"klic": "projekty", "nazev": "Otevřít Přehled projektů"},
     {"klic": "finance", "nazev": "Otevřít Přehled financí"},
     {"klic": "zmeny", "nazev": "Otevřít Přehled změn"},

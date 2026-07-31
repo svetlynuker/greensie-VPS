@@ -44,6 +44,13 @@ systemctl daemon-reload
 systemctl enable greensie-backend >/dev/null 2>&1 || true
 systemctl restart greensie-backend
 
+# Stahování pošty (e-mailový klient) je vlastní služba – viz komentář v její
+# jednotce. Bez připojené schránky jen tiše čeká, takže ji lze zapnout vždy.
+cp "${PROJEKT}/deploy/greensie-email.service" /etc/systemd/system/greensie-email.service
+systemctl daemon-reload
+systemctl enable greensie-email >/dev/null 2>&1 || true
+systemctl restart greensie-email
+
 echo "==> 6/7  Nastavuji firewall (SSH + web)…"
 if command -v ufw >/dev/null 2>&1; then
 	ufw allow 22/tcp   >/dev/null

@@ -1,0 +1,33 @@
+[Unit]
+# Stahování pošty ze schránek (IMAP) běží jako VLASTNÍ proces, ne uvnitř
+# backendu — rozhodnutí Dana z 31. 7. 2026. Pomalé IMAP volání uvnitř web
+# procesu dokáže appku dotlačit k 502 (zkušenost s konektorem), a jeden FETCH
+# velké schránky trvá desítky sekund.
+#
+# Důsledek, se kterým se počítá: appka a pošta se restartují nezávisle. Když
+# tahle služba neběží, appka funguje dál — jen se pošta nestahuje sama a v UI
+# je vidět čas posledního stažení.
+Description=Greensie e-mail (stahování pošty z IMAP, CRM-33)
+After=network.target postgresql.service greensie-backend.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=dan
+Group=dan
+WorkingDirectory=/home/dan/projects/greensie-app/backend
+# .env se NEnačítá přes EnvironmentFile schválně: dělá to `app/database.py`
+# přes `load_dotenv` (stejně jako u backendu). Systemd navíc neumí hodnoty
+# s mezerami stejně jako dotenv, takže dva různé parsery jednoho souboru by
+# byly zdroj tichých rozdílů. Potřebuje DATABASE_URL a šifrovací klíč
+# (APP_ENC_KEY nebo KONEKTOR_ENC_KEY), kterým jsou zašifrovaná hesla schránek.
+ExecStart=/home/dan/projects/greensie-app/backend/venv/bin/python -m app.crm.email_worker
+Restart=always
+RestartSec=10
+# Worker reaguje na SIGTERM (dokončí rozdělaný cyklus a skončí), takže
+# `systemctl stop` nemusí nic zabíjet.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

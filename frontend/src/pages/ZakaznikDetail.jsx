@@ -10,6 +10,8 @@ import PripadFormular from "../components/PripadFormular";
 import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
 import VlastniPoleVypis from "../components/VlastniPoleVypis";
 import DiskSlozka from "../components/DiskSlozka";
+import EmailOkno from "../components/EmailOkno";
+import RychleAkce from "../components/RychleAkce";
 import Timeline from "../components/Timeline";
 import ZakaznikFormular from "../components/ZakaznikFormular";
 import {
@@ -23,6 +25,7 @@ import {
 } from "../api";
 import { fmtDatum, fmtKc, nazvyKategorii } from "../crm";
 import "../styles/crm.css";
+import "../styles/rychleAkce.css";
 
 const ZALOZKY = [
   { klic: "prehled", nazev: "Přehled" },
@@ -49,6 +52,11 @@ export default function ZakaznikDetail() {
   const [zalozka, setZalozka] = useState("prehled");
   const [upravuje, setUpravuje] = useState(false);
   const [novyPripad, setNovyPripad] = useState(false);
+  const [posilaEmail, setPosilaEmail] = useState(false);
+  // `Aktivity` si data načítají samy při mountu, takže po odeslání e-mailu je
+  // změnou klíče přemountujeme – jinak by se odeslaná zpráva v seznamu
+  // neobjevila, dokud člověk neodejde a nevrátí se.
+  const [aktivityKlic, setAktivityKlic] = useState(0);
   const [spravaPoli, setSpravaPoli] = useState(false);
   const [chyba, setChyba] = useState(null);
   // Kategorie jen na překlad klíče na název v seznamu případů (CRM-03).
@@ -119,7 +127,7 @@ export default function ZakaznikDetail() {
 
   return (
     <Layout uzivatel={me.uzivatel}>
-      <div className="crm-app">
+      <div className="crm-app ra-misto">
         <Link to={`/zakaznici/${z.typ}`} className="crm-zpet">
           ← Zpět na {z.typ === "lead" ? "Leady" : "Klienty"}
         </Link>
@@ -280,7 +288,9 @@ export default function ZakaznikDetail() {
           </div>
         )}
 
-        {zalozka === "aktivity" && <Aktivity entita="zakaznik" zaznamId={z.id} />}
+        {zalozka === "aktivity" && (
+          <Aktivity key={aktivityKlic} entita="zakaznik" zaznamId={z.id} />
+        )}
 
         {zalozka === "historie" && (
           <section className="fm-card crm-blok">
@@ -326,6 +336,65 @@ export default function ZakaznikDetail() {
           }}
         />
       )}
+
+      {posilaEmail && (
+        <EmailOkno
+          entita="zakaznik"
+          zaznamId={z.id}
+          komu={z.email || ""}
+          nazev={z.nazev}
+          onZavri={() => setPosilaEmail(false)}
+          // Po odeslání přepnout na Aktivity a znovu je načíst, ať je odeslaná
+          // zpráva hned vidět (odeslání se zapisuje jako aktivita).
+          onOdeslano={() => {
+            setZalozka("aktivity");
+            setAktivityKlic((k) => k + 1);
+          }}
+        />
+      )}
+
+      {/* Rychlé akce u zákazníka. Nabídka je jiná než na přehledu: tady už je
+          jasné, o kterou firmu jde, takže dává smysl psát a zakládat případ. */}
+      <RychleAkce
+        titulek={`Rychlé akce · ${z.nazev}`}
+        akce={[
+          {
+            klic: "pripad",
+            znak: "📁",
+            nazev: "Nový obchodní případ",
+            popis: "Zakázka pro tuhle firmu",
+            onClick: () => setNovyPripad(true),
+          },
+          me.novinky && {
+            klic: "email",
+            znak: "✉",
+            nazev: "Poslat e-mail",
+            popis: z.email ? `Na ${z.email}` : "Adresu doplníš v okně",
+            onClick: () => setPosilaEmail(true),
+          },
+          {
+            klic: "aktivita",
+            znak: "🗒",
+            nazev: "Aktivita nebo úkol",
+            popis: "Telefonát, schůzka, poznámka",
+            onClick: () => setZalozka("aktivity"),
+          },
+          {
+            klic: "kontakt",
+            znak: "👤",
+            nazev: "Kontaktní osoba",
+            popis: "Přidat člověka do adresáře",
+            onClick: () => setZalozka("prehled"),
+          },
+          {
+            klic: "upravit",
+            znak: "✎",
+            nazev: "Upravit zákazníka",
+            popis: "Údaje firmy, vlastník",
+            onClick: () => setUpravuje(true),
+          },
+        ]}
+      />
     </Layout>
   );
 }

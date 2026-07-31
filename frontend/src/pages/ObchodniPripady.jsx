@@ -10,6 +10,7 @@ import DuvodProhry from "../components/DuvodProhry";
 import HromadneAkce from "../components/HromadneAkce";
 import KpiPas from "../components/KpiPas";
 import OdkazRaynet from "../components/OdkazRaynet";
+import RychleAkce from "../components/RychleAkce";
 import {
   crmKategorie,
   crmPripadStav,
@@ -24,6 +25,7 @@ import {
 import { fmtDatum, fmtKc, fmtKcKratce, nazvyKategorii } from "../crm";
 import usePouzitFiltr from "../pouzitFiltr";
 import "../styles/crm.css";
+import "../styles/rychleAkce.css";
 
 /**
  * Sekce Obchodní případy – kanban (výchozí, kvůli posouvání stavů) a tabulka.
@@ -168,7 +170,7 @@ export default function ObchodniPripady() {
 
   return (
     <Layout uzivatel={me.uzivatel}>
-      <div className="crm-app siroky">
+      <div className="crm-app siroky ra-misto">
         <div className="crm-hlava">
           <div>
             <h1>Obchodní případy</h1>
@@ -346,6 +348,35 @@ export default function ObchodniPripady() {
       {prohra && (
         <DuvodProhry onZavri={() => setProhra(null)} onPotvrd={potvrdProhru} />
       )}
+
+      {/* Na přehledu případů je relevantní zakládat případ; e-mail ne — není
+          jasné, komu by se posílal. */}
+      <RychleAkce
+        titulek="Rychlé akce"
+        akce={[
+          {
+            klic: "novy-pripad",
+            znak: "📁",
+            nazev: "Nový obchodní případ",
+            popis: "Zakázka pro existující firmu",
+            onClick: () => setNovy(true),
+          },
+          {
+            klic: "novy-zakaznik",
+            znak: "🏢",
+            nazev: "Nový zákazník",
+            popis: "Firma v CRM ještě není",
+            onClick: () => navigate("/zakaznici/lead"),
+          },
+          me.prava?.includes("crm_nastaveni") && {
+            klic: "stavy",
+            znak: "⚙",
+            nazev: "Nastavení stavů",
+            popis: "Sloupce kanbanu",
+            onClick: () => setNastaveniStavu(true),
+          },
+        ]}
+      />
     </Layout>
   );
 }

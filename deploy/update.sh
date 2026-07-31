@@ -33,6 +33,17 @@ chown -R caddy:caddy "${WEB}"
 echo "==> Restartuji backend…"
 systemctl restart greensie-backend
 
+# Stahování pošty (e-mailový klient, CRM-33) běží jako VLASTNÍ služba, ne uvnitř
+# backendu — pomalé IMAP volání ve web procesu dokáže appku dotlačit k 502.
+# NEMAZAT: bez tohohle kroku by se po git pullu, který změní kód workeru,
+# restartoval jen backend a pošta by dál běžela ze staré verze. Kopie jednotky
+# je tu ze stejného důvodu jako u Caddyfile — aby platila verze z repa.
+echo "==> Nasazuji a restartuji službu e-mailu…"
+cp "${PROJEKT}/deploy/greensie-email.service" /etc/systemd/system/greensie-email.service
+systemctl daemon-reload
+systemctl enable greensie-email >/dev/null
+systemctl restart greensie-email
+
 # Konfiguraci Caddy je nutné nasadit ze repa, ne jen reloadovat. NEMAZAT:
 # `systemctl reload caddy` načte /etc/caddy/Caddyfile — kdyby se sem nová verze
 # nezkopírovala, reload by vrátil STAROU konfiguraci a změna vhostu z repa
@@ -45,3 +56,4 @@ cp "${PROJEKT}/deploy/Caddyfile" /etc/caddy/Caddyfile
 systemctl reload caddy
 
 echo "HOTOVO. Nová verze běží na https://app.greensie.cz"
+echo "     Stav stahování pošty:  systemctl status greensie-email"

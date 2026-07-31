@@ -1,0 +1,550 @@
+/* ============================================================
+   E-mailový klient (CRM-33)
+
+   Rozvržení je záměrně „klasický poštovní klient": složky | seznam | čtení.
+   Ne proto, že by to bylo jediné možné, ale protože to lidé znají z Outlooku
+   i z webu Seznamu — u nástroje, který se používá celý den, je zvyk cennější
+   než originalita.
+
+   Panely mají PEVNOU šířku a scrollují každý sám (`min-height: 0` na gridu,
+   jinak flex/grid potomek scrollbar nedostane a scrolluje celá stránka).
+   ============================================================ */
+
+.em-app {
+  display: grid;
+  /* složky | seznam | čtení. Prostřední panel je nejužší možný, který ještě
+     unese předmět na jeden řádek; čtení dostane všechno ostatní. */
+  grid-template-columns: 210px 380px minmax(0, 1fr);
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg, 12px);
+  overflow: hidden;
+  /* Výška na zbytek okna: klient se nescrolluje jako stránka, scrollují panely. */
+  height: calc(100vh - 150px);
+  min-height: 420px;
+}
+
+.em-panel {
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  /* Bez min-height: 0 potomek nescrolluje, ale roztáhne grid. */
+  min-height: 0;
+  overflow: hidden;
+}
+
+.em-panel-hlava {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+
+.em-panel-nazev {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.em-panel-telo {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.em-mezera { flex: 1 1 auto; }
+
+/* ---- složky ---------------------------------------------------------- */
+.em-slozka {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-2);
+  cursor: pointer;
+  text-align: left;
+}
+
+.em-slozka:hover { background: var(--surface-2); }
+
+.em-slozka[aria-current="true"] {
+  background: var(--brand-wash);
+  color: var(--brand-strong);
+  font-weight: 600;
+  /* Levý pruh, ne jen barva: aktivní složka musí být poznat i v režimu
+     vysokého kontrastu a pro barvoslepé. */
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+
+.em-slozka-nazev {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.em-slozka-pocet {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--brand);
+  color: #fff;
+}
+
+.em-slozka-vypnuta {
+  opacity: 0.55;
+  font-style: italic;
+}
+
+/* ---- seznam zpráv ---------------------------------------------------- */
+.em-hledat {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.em-zprava {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.em-zprava:hover { background: var(--surface-2); }
+
+.em-zprava[aria-current="true"] {
+  background: var(--brand-wash);
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+
+/* Nepřečtená zpráva: tučně A svislý pruh. Jen tučné písmo je pro část lidí
+   nerozpoznatelné a barva sama nesmí nést informaci. */
+.em-zprava-neprectena .em-zprava-od,
+.em-zprava-neprectena .em-zprava-predmet {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.em-zprava-radek {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.em-zprava-od {
+  flex: 1 1 auto;
+  font-size: 13px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.em-zprava-datum {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.em-zprava-predmet {
+  font-size: 13px;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+}
+
+.em-zprava-vypis {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+}
+
+.em-znacky {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.em-tecka-neprectena {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand);
+  flex: 0 0 auto;
+}
+
+.em-vlajka { color: var(--st-warn); }
+.em-sponka { color: var(--muted); }
+
+.em-firma {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  margin-top: 3px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- čtení ----------------------------------------------------------- */
+.em-cteni-hlava {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+
+.em-cteni-predmet {
+  margin: 0 0 6px;
+  font-size: 16px;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.em-cteni-radek {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-top: 2px;
+  word-break: break-word;
+}
+
+.em-cteni-nastroje {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  flex: 0 0 auto;
+}
+
+.em-telo {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 0;
+  padding: 16px;
+}
+
+.em-telo-text {
+  margin: 0;
+  font-family: inherit;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* HTML pošta jede v izolovaném rámu (sandbox bez skriptů). Rám je bílý vždycky:
+   maily jsou psané pro světlé pozadí a v tmavém režimu by černý text na černém
+   pozadí zmizel. */
+.em-telo-html {
+  width: 100%;
+  border: 0;
+  background: #fff;
+  border-radius: 8px;
+  display: block;
+  min-height: 200px;
+}
+
+.em-obrazky-lista {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  margin-bottom: 10px;
+  border: 1px solid var(--st-warn);
+  background: var(--st-warn-w);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.em-prilohy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+
+.em-priloha {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.em-priloha:hover { border-color: var(--brand); color: var(--brand-strong); }
+.em-priloha-velikost { color: var(--muted); }
+
+/* ---- prázdné stavy a hlášky ------------------------------------------ */
+.em-prazdno {
+  padding: 28px 20px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.em-chyba {
+  margin: 10px 16px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--st-crit-w);
+  color: color-mix(in srgb, var(--st-crit) 82%, var(--ink));
+  border: 1px solid color-mix(in srgb, var(--st-crit) 30%, transparent);
+  font-size: 13px;
+}
+
+.em-tise {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---- nastavení schránky ---------------------------------------------- */
+.em-nastaveni {
+  max-width: 620px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.em-pole {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.em-pole > label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fm-muted, var(--muted));
+}
+
+.em-pole input,
+.em-pole textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.em-pole-dva {
+  display: grid;
+  grid-template-columns: 1fr 110px;
+  gap: 10px;
+}
+
+.em-hlaska-ok {
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--st-good-w);
+  color: color-mix(in srgb, var(--st-good) 75%, var(--ink));
+  border: 1px solid color-mix(in srgb, var(--st-good) 30%, transparent);
+  font-size: 13px;
+}
+
+.em-stav-kolecko {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  background: var(--muted);
+}
+
+.em-stav-ok { background: var(--st-good); }
+.em-stav-chyba { background: var(--st-crit); }
+
+/* ---- úzká obrazovka -------------------------------------------------- */
+/* Na notebooku 13" se tři panely nevejdou čitelně. Složky se schovají do
+   rozbalovacího seznamu nad seznamem zpráv (řeší komponenta) a zbydou dva. */
+@media (max-width: 1100px) {
+  .em-app {
+    grid-template-columns: 300px minmax(0, 1fr);
+    height: calc(100vh - 140px);
+  }
+  .em-panel-slozky { display: none; }
+}
+
+@media (max-width: 760px) {
+  .em-app {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    min-height: 0;
+  }
+  /* Na mobilu se ukazuje jeden panel: seznam, nebo otevřená zpráva. */
+  .em-app[data-mobil="seznam"] .em-panel-cteni { display: none; }
+  .em-app[data-mobil="cteni"] .em-panel-seznam { display: none; }
+  .em-panel { max-height: none; }
+  .em-panel-telo { overflow-y: visible; }
+}
+
+/* ---- našeptávač adres (dávka E2) -------------------------------------- */
+/* Adresy jsou „žetony", ne text s čárkami: v textu nejde poznat rozepsanou
+   adresu od hotové a mazat jednu z pěti znamená trefovat se kurzorem. */
+.ns-obal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  min-height: 38px;
+}
+
+.ns-obal:focus-within { border-color: var(--brand); }
+
+.ns-zeton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 12px;
+  background: var(--brand-wash);
+  color: var(--brand-strong);
+  font-size: 12.5px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.ns-zeton-x {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 3px;
+  border-radius: 50%;
+}
+
+.ns-zeton-x:hover { background: rgba(0, 0, 0, 0.1); }
+
+.ns-vstup {
+  flex: 1 1 140px;
+  min-width: 120px;
+  border: 0;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  padding: 3px 2px;
+}
+
+.ns-navrhy {
+  position: relative;
+  z-index: 5;
+  margin-top: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--sh-2, 0 8px 24px rgba(16, 33, 24, 0.14));
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.ns-navrh {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.ns-navrh-aktivni { background: var(--brand-wash); }
+
+.ns-navrh-znak { flex: 0 0 18px; text-align: center; }
+
+.ns-navrh-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ns-navrh-jmeno { font-size: 13px; font-weight: 600; }
+
+.ns-navrh-popis {
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- okno psaní ------------------------------------------------------- */
+/* Širší než běžný dialog: do úzkého okna se e-mail píše špatně a citace
+   se láme na každém řádku. */
+.em-okno-psani { width: min(760px, 96vw); }
+
+.em-okno-psani .crm-okno-telo {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.em-okno-psani textarea {
+  resize: vertical;
+  min-height: 180px;
+  font-family: inherit;
+  line-height: 1.5;
+}
