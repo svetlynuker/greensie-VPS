@@ -70,7 +70,10 @@ function kritickaCesta(kroky) {
 
 export default function GanttProjektu({ projekt }) {
   const [otevreno, setOtevreno] = useState(false);
-  const kroky = useMemo(() => projekt?.kroky || [], [projekt]);
+  // POZOR na název: detail projektu vrací kroky v `kroky_seznam`, zatímco
+  // `kroku` je jejich počet. Čtení z `kroky` se tvářilo funkčně a Gantt se
+  // prostě nikdy nevykreslil.
+  const kroky = useMemo(() => projekt?.kroky_seznam || [], [projekt]);
 
   const model = useMemo(() => {
     const sTerminem = kroky.filter((k) => den(k.termin));
