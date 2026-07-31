@@ -64,3 +64,15 @@ def test_symboly_v_napovede_odpovidaji_tomu_co_umime_doplnit():
     # v klíči – dosazení hodnoty se pozná podle toho, že symbol zmizí).
     for klic in z_napovedy:
         assert sablony.doplnil("{{%s}}" % klic, {klic: "X"}) == "X"
+
+
+# ---- denní souhrn (CRM-10) ---------------------------------------------------
+def test_skolonovani_dnu_v_souhrnu():
+    """Notifikaci čte člověk – „1 dní" v ní vypadá jako chyba appky."""
+    from app.crm.notifikace_scheduler import _dny
+
+    assert _dny(1) == "1 den"
+    assert _dny(2) == "2 dny"
+    assert _dny(4) == "4 dny"
+    assert _dny(5) == "5 dní"
+    assert _dny(11) == "11 dní"

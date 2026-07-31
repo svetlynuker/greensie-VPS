@@ -44,6 +44,16 @@ _stop = threading.Event()
 _thread: threading.Thread | None = None
 
 
+def _dny(pocet: int) -> str:
+    """České skloňování — „1 den", „3 dny", „8 dní". Notifikace čte člověk,
+    takže „1 dní" v ní vypadá jako chyba appky."""
+    if pocet == 1:
+        return "1 den"
+    if 2 <= pocet <= 4:
+        return f"{pocet} dny"
+    return f"{pocet} dní"
+
+
 def _precti_posledni_beh(db) -> str:
     from app.nastaveni.models import UzivatelskeNastaveni
 
@@ -99,7 +109,7 @@ def posli_denni_souhrny(db) -> int:
                 "ukol_po_terminu",
                 f"{len(po_terminu)}× úkol po termínu",
                 f"Nejdéle čeká úkol „{po_terminu[0].nazev or 'bez názvu'}“ "
-                f"({nejstarsi} dní po termínu). Otevři si Můj den a projdi je.",
+                f"({_dny(nejstarsi)} po termínu). Otevři si Můj den a projdi je.",
                 "/muj-den",
             )
             posláno += 1
