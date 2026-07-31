@@ -18,6 +18,13 @@ import {
   katalogSloupecPridej,
   katalogSloupecUprav,
   katalogSloupecSmaz,
+  katalogKategorie,
+  katalogHromadne,
+  katalogNahrajPrilohy,
+  katalogPrilohaUprav,
+  katalogPrilohaSmaz,
+  katalogPrilohaBlobUrl,
+  katalogStahniPrilohu,
 } from "../api";
 import "../styles/nabidkovac.css";
 
@@ -28,6 +35,27 @@ const TYPY_TECH = [
   { klic: "jina", nazev: "Jiná" },
 ];
 const NAZEV_TYPU = Object.fromEntries(TYPY_TECH.map((t) => [t.klic, t.nazev]));
+
+// Odkud položka přišla – jen informace pro člověka a filtr (viz backend
+// `ZDROJE_POLOZKY`). Baterie z ceníku BESS jedou do simulace peak shavingu,
+// zbytek je běžný prodejní ceník.
+const NAZEV_ZDROJE = {
+  rucne: "ručně",
+  bess_cenik: "ceník BESS",
+  raynet_import: "import z Raynetu",
+};
+
+const DRUHY_PRILOH = [
+  { klic: "technicky_list", nazev: "Technický list" },
+  { klic: "foto", nazev: "Foto" },
+  { klic: "certifikat", nazev: "Certifikát" },
+  { klic: "jiny", nazev: "Jiný" },
+];
+
+// Formát ceny do tabulky – bez desetinných míst, ať se dají sloupce porovnat očima.
+function kc(v) {
+  return v == null ? "—" : `${Math.round(v).toLocaleString("cs-CZ")} Kč`;
+}
 
 // ---- Sazby distributorů (peak shaving) ----
 const DISTRIB = [
@@ -186,16 +214,153 @@ function shrnParametry(s) {
   return casti.join(" · ");
 }
 
-/* ---------- modal editoru technologie ---------- */
-function TechEditor({ tech, sloupce, onSave, onClose }) {
-  const [typ, setTyp] = useState(tech?.typ || "fve_panel");
+/* ---------- přílohy položky katalogu (technický list, foto, certifikát) ---------- */
+function Prilohy({ technologieId, prilohy, onZmena }) {
+  const [nahrava, setNahrava] = useState(false);
+  const [chyba, setChyba] = useState(null);
+  // Náhledy obrázků: id → blob URL. Načítají se přes fetch (endpoint chce
+  // token v hlavičce), takže je nutné je při zavření karty zase uvolnit.
+  const [nahledy, setNahledy] = useState({});
+
+  useEffect(() => {
+    let zive = true;
+    const vytvorene = [];
+    for (const p of prilohy || []) {
+      if (!p.je_obrazek) continue;
+      katalogPrilohaBlobUrl(p.id)
+        .then((url) => {
+          if (!zive) {
+            URL.revokeObjectURL(url);
+            return;
+          }
+          vytvorene.push(url);
+          setNahledy((n) => ({ ...n, [p.id]: url }));
+        })
+        .catch(() => {
+          // Nepovedený náhled není důvod rozbít kartu – zůstane ikonka.
+        });
+    }
+    return () => {
+      zive = false;
+      for (const url of vytvorene) URL.revokeObjectURL(url);
+    };
+  }, [prilohy]);
+
+  async function nahraj(soubory) {
+    if (!soubory?.length) return;
+    setNahrava(true);
+    setChyba(null);
+    try {
+      await katalogNahrajPrilohy(technologieId, soubory);
+      await onZmena();
+    } catch (e) {
+      setChyba(e.message);
+    }
+    setNahrava(false);
+  }
+
+  async function smaz(p) {
+    if (!window.confirm(`Smazat přílohu „${p.puvodni_nazev}“?`)) return;
+    await katalogPrilohaSmaz(p.id);
+    await onZmena();
+  }
+
+  async function zmenDruh(p, druh) {
+    await katalogPrilohaUprav(p.id, { druh });
+    await onZmena();
+  }
+
+  return (
+    <div>
+      <label className="nb-label">Přílohy (technický list, foto, certifikát)</label>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {(prilohy || []).map((p) => (
+          <div
+            key={p.id}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", border: "1px solid var(--line)", borderRadius: 8 }}
+          >
+            {nahledy[p.id] ? (
+              <img
+                src={nahledy[p.id]}
+                alt={p.puvodni_nazev}
+                style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, flexShrink: 0 }}
+              />
+            ) : (
+              <span style={{ width: 40, textAlign: "center", fontSize: 20, flexShrink: 0 }}>
+                {p.je_obrazek ? "🖼" : "📄"}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => katalogStahniPrilohu(p.id, p.puvodni_nazev)}
+              title="Stáhnout"
+              style={{ flex: 1, minWidth: 0, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit", color: "var(--brand-strong)", textDecoration: "underline", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+            >
+              {p.puvodni_nazev}
+            </button>
+            <span style={{ fontSize: 11, color: "var(--muted)", flexShrink: 0 }}>
+              {p.velikost_bajtu ? `${Math.round(p.velikost_bajtu / 1024)} kB` : ""}
+            </span>
+            <select
+              className="nb-pole"
+              value={p.druh}
+              onChange={(e) => zmenDruh(p, e.target.value)}
+              style={{ width: 130, flexShrink: 0, padding: "2px 6px", fontSize: 12 }}
+            >
+              {DRUHY_PRILOH.map((d) => (
+                <option key={d.klic} value={d.klic}>{d.nazev}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => smaz(p)}
+              title="Smazat přílohu"
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--st-crit)", fontWeight: 700, flexShrink: 0 }}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <input
+          type="file"
+          multiple
+          onChange={(e) => {
+            nahraj(Array.from(e.target.files || []));
+            e.target.value = ""; // ať jde nahrát tentýž soubor znovu
+          }}
+          disabled={nahrava}
+          style={{ fontSize: 12 }}
+        />
+        {nahrava && <span style={{ fontSize: 12, color: "var(--muted)" }}>Nahrávám…</span>}
+        {chyba && <span style={{ fontSize: 12, color: "var(--st-crit)" }}>{chyba}</span>}
+        {(prilohy || []).length === 0 && !nahrava && (
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>
+            Zatím žádné soubory. Vybrat jde i víc naráz (PDF, foto, výkres…).
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- karta položky katalogu ---------- */
+function TechEditor({ tech, sloupce, kategorie, onSave, onClose, onZmena }) {
+  const [typ, setTyp] = useState(tech?.typ || "jina");
   const [nazev, setNazev] = useState(tech?.nazev || "");
   const [model, setModel] = useState(tech?.model || "");
+  const [kod, setKod] = useState(tech?.kod || "");
+  const [kategorieHodnota, setKategorie] = useState(tech?.kategorie || "");
+  const [jednotka, setJednotka] = useState(tech?.jednotka || "ks");
+  const [popis, setPopis] = useState(tech?.popis || "");
   const [vykon, setVykon] = useState(str(tech?.vykon_kw));
   const [kapacita, setKapacita] = useState(str(tech?.kapacita_kwh));
   const [cena, setCena] = useState(str(tech?.cena_kc));
+  const [cenaNakup, setCenaNakup] = useState(str(tech?.cena_nakup_kc));
+  const [sazbaDph, setSazbaDph] = useState(tech?.sazba_dph != null ? String(tech.sazba_dph) : "0.21");
   const [ucinnost, setUcinnost] = useState(str(tech?.ucinnost));
-  const [dostupnost, setDostupnost] = useState(tech?.dostupnost ?? true);
+  const [platnostOd, setPlatnostOd] = useState((tech?.platnost_od || "").slice(0, 10));
+  const [platnostDo, setPlatnostDo] = useState((tech?.platnost_do || "").slice(0, 10));
+  const [aktivni, setAktivni] = useState(tech?.aktivni ?? true);
   // Hodnoty vlastních sloupců (mapa klíč→text pro input).
   const [extra, setExtra] = useState(() => {
     const e = tech?.extra || {};
@@ -207,6 +372,13 @@ function TechEditor({ tech, sloupce, onSave, onClose }) {
   function nastavExtra(klic, hodnota) {
     setExtra((e) => ({ ...e, [klic]: hodnota }));
   }
+
+  // Marže z prodejní a nákupní ceny – počítá se rovnou při psaní, ať je vidět,
+  // co která cena znamená, ještě před uložením.
+  const prodej = num(cena);
+  const nakup = num(cenaNakup);
+  const marze = prodej != null && nakup != null ? prodej - nakup : null;
+  const marzeProcent = marze != null && prodej ? (marze / prodej) * 100 : null;
 
   async function uloz() {
     if (!nazev.trim()) {
@@ -226,11 +398,20 @@ function TechEditor({ tech, sloupce, onSave, onClose }) {
         typ,
         nazev: nazev.trim(),
         model: model.trim(),
+        kod: kod.trim() || null,
+        kategorie: kategorieHodnota.trim(),
+        jednotka: jednotka.trim() || "ks",
+        popis: popis.trim(),
         vykon_kw: num(vykon),
         kapacita_kwh: num(kapacita),
         cena_kc: num(cena),
+        cena_nakup_kc: num(cenaNakup),
+        sazba_dph: num(sazbaDph),
         ucinnost: num(ucinnost),
-        dostupnost,
+        platnost_od: platnostOd || null,
+        platnost_do: platnostDo || null,
+        zdroj: tech?.zdroj,
+        aktivni,
         extra: extraOut,
       });
     } catch (e) {
@@ -244,25 +425,106 @@ function TechEditor({ tech, sloupce, onSave, onClose }) {
       onClick={onClose}
       style={{ position: "fixed", inset: 0, background: "rgba(31,41,51,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}
     >
-      <div className="fm-card" onClick={(e) => e.stopPropagation()} style={{ padding: 20, width: "min(480px, 100%)", maxHeight: "90vh", overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
-        <h3 style={{ margin: 0, fontSize: 15 }}>{tech ? "Upravit technologii" : "Nová technologie"}</h3>
-        <div>
-          <label className="nb-label">Typ</label>
-          <select className="nb-pole" value={typ} onChange={(e) => setTyp(e.target.value)}>
-            {TYPY_TECH.map((t) => (
-              <option key={t.klic} value={t.klic}>{t.nazev}</option>
-            ))}
-          </select>
+      <div className="fm-card" onClick={(e) => e.stopPropagation()} style={{ padding: 20, width: "min(680px, 100%)", maxHeight: "92vh", overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
+        <h3 style={{ margin: 0, fontSize: 15, display: "flex", alignItems: "center", gap: 8 }}>
+          {tech ? "Karta položky" : "Nová položka katalogu"}
+          {tech?.zdroj && <span className="gs-pill">{NAZEV_ZDROJE[tech.zdroj] || tech.zdroj}</span>}
+        </h3>
+
+        <div className="nb-form-grid">
+          <div>
+            <label className="nb-label">Kód</label>
+            <input className="nb-pole" value={kod} onChange={(e) => setKod(e.target.value)} placeholder="např. Administr17" />
+          </div>
+          <div>
+            <label className="nb-label">Kategorie</label>
+            <input
+              className="nb-pole"
+              list="katalog-kategorie"
+              value={kategorieHodnota}
+              onChange={(e) => setKategorie(e.target.value)}
+              placeholder="např. Střídače"
+            />
+            <datalist id="katalog-kategorie">
+              {(kategorie || []).map((k) => <option key={k} value={k} />)}
+            </datalist>
+          </div>
         </div>
+
         <div>
           <label className="nb-label">Název</label>
           <input className="nb-pole" value={nazev} onChange={(e) => setNazev(e.target.value)} />
         </div>
-        <div>
-          <label className="nb-label">Model</label>
-          <input className="nb-pole" value={model} onChange={(e) => setModel(e.target.value)} />
-        </div>
         <div className="nb-form-grid">
+          <div>
+            <label className="nb-label">Model</label>
+            <input className="nb-pole" value={model} onChange={(e) => setModel(e.target.value)} />
+          </div>
+          <div>
+            <label className="nb-label">Jednotka</label>
+            <input className="nb-pole" value={jednotka} onChange={(e) => setJednotka(e.target.value)} placeholder="ks" />
+          </div>
+        </div>
+        <div>
+          <label className="nb-label">Popis</label>
+          <textarea
+            className="nb-pole"
+            value={popis}
+            onChange={(e) => setPopis(e.target.value)}
+            rows={2}
+            style={{ resize: "vertical" }}
+          />
+        </div>
+
+        <div className="gs-sekce-t" style={{ fontSize: 13, marginTop: 4 }}>Ceny</div>
+        <div className="nb-form-grid">
+          <div>
+            <label className="nb-label">Prodejní cena bez DPH (Kč)</label>
+            <input className="nb-pole" value={cena} onChange={(e) => setCena(e.target.value)} inputMode="decimal" />
+          </div>
+          <div>
+            <label className="nb-label">Nákupní cena / náklad (Kč)</label>
+            <input className="nb-pole" value={cenaNakup} onChange={(e) => setCenaNakup(e.target.value)} inputMode="decimal" />
+          </div>
+          <div>
+            <label className="nb-label">Sazba DPH</label>
+            <select className="nb-pole" value={sazbaDph} onChange={(e) => setSazbaDph(e.target.value)}>
+              <option value="">— nezadáno —</option>
+              <option value="0.21">21 %</option>
+              <option value="0.12">12 %</option>
+              <option value="0">0 %</option>
+            </select>
+          </div>
+          <div>
+            <label className="nb-label">Marže</label>
+            <div className="nb-pole" style={{ display: "flex", alignItems: "center", background: "var(--bg-soft)" }}>
+              {marze == null
+                ? "—"
+                : `${Math.round(marze).toLocaleString("cs-CZ")} Kč${
+                    marzeProcent != null ? ` (${marzeProcent.toFixed(1)} %)` : ""
+                  }`}
+            </div>
+          </div>
+        </div>
+        <p style={{ fontSize: 11, color: "var(--muted)", margin: 0 }}>
+          Nákupní cenu a marži vidí jen ten, kdo smí do katalogu (vedení a admin).
+          Obchodníkovi se v nabídce ukáže jen prodejní cena.
+        </p>
+
+        <div className="gs-sekce-t" style={{ fontSize: 13, marginTop: 4 }}>Parametry a platnost</div>
+        <div className="nb-form-grid">
+          <div>
+            <label className="nb-label">Typ (pro výpočty)</label>
+            <select className="nb-pole" value={typ} onChange={(e) => setTyp(e.target.value)}>
+              {TYPY_TECH.map((t) => (
+                <option key={t.klic} value={t.klic}>{t.nazev}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="nb-label">Účinnost (0–1)</label>
+            <input className="nb-pole" value={ucinnost} onChange={(e) => setUcinnost(e.target.value)} inputMode="decimal" />
+          </div>
           <div>
             <label className="nb-label">Výkon (kW)</label>
             <input className="nb-pole" value={vykon} onChange={(e) => setVykon(e.target.value)} inputMode="decimal" />
@@ -272,37 +534,63 @@ function TechEditor({ tech, sloupce, onSave, onClose }) {
             <input className="nb-pole" value={kapacita} onChange={(e) => setKapacita(e.target.value)} inputMode="decimal" />
           </div>
           <div>
-            <label className="nb-label">Cena (Kč)</label>
-            <input className="nb-pole" value={cena} onChange={(e) => setCena(e.target.value)} inputMode="decimal" />
+            <label className="nb-label">Platnost od</label>
+            <input type="date" className="nb-pole" value={platnostOd} onChange={(e) => setPlatnostOd(e.target.value)} />
           </div>
           <div>
-            <label className="nb-label">Účinnost (0–1)</label>
-            <input className="nb-pole" value={ucinnost} onChange={(e) => setUcinnost(e.target.value)} inputMode="decimal" />
+            <label className="nb-label">Platnost do</label>
+            <input type="date" className="nb-pole" value={platnostDo} onChange={(e) => setPlatnostDo(e.target.value)} />
           </div>
         </div>
-        {(sloupce || []).length > 0 && (
-          <div className="nb-form-grid">
-            {sloupce.map((s) => (
-              <div key={s.klic}>
-                <label className="nb-label">{s.nazev}{s.typ === "cislo" ? " (číslo)" : ""}</label>
-                <input
-                  className="nb-pole"
-                  value={extra[s.klic] ?? ""}
-                  onChange={(e) => nastavExtra(s.klic, e.target.value)}
-                  inputMode={s.typ === "cislo" ? "decimal" : "text"}
-                />
-              </div>
-            ))}
-          </div>
+        {typ === "baterie" && tech?.zdroj === "bess_cenik" && (
+          <p style={{ fontSize: 11, color: "var(--muted)", margin: 0 }}>
+            Tahle baterie je z ceníku BESS a vstupuje do simulace peak shavingu —
+            výkon i kapacita jsou u ní povinné.
+          </p>
         )}
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-          <input type="checkbox" checked={dostupnost} onChange={(e) => setDostupnost(e.target.checked)} />
-          Dostupná v katalogu
+
+        {(sloupce || []).length > 0 && (
+          <>
+            <div className="gs-sekce-t" style={{ fontSize: 13, marginTop: 4 }}>Vlastní sloupce</div>
+            <div className="nb-form-grid">
+              {sloupce.map((s) => (
+                <div key={s.klic}>
+                  <label className="nb-label">{s.nazev}{s.typ === "cislo" ? " (číslo)" : ""}</label>
+                  <input
+                    className="nb-pole"
+                    value={extra[s.klic] ?? ""}
+                    onChange={(e) => nastavExtra(s.klic, e.target.value)}
+                    inputMode={s.typ === "cislo" ? "decimal" : "text"}
+                  />
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {tech ? (
+          <>
+            <div className="gs-sekce-t" style={{ fontSize: 13, marginTop: 4 }}>Soubory</div>
+            <Prilohy technologieId={tech.id} prilohy={tech.prilohy} onZmena={onZmena} />
+          </>
+        ) : (
+          <p style={{ fontSize: 12, color: "var(--muted)", margin: 0 }}>
+            Soubory (technický list, fotky) půjdou nahrát hned po uložení položky.
+          </p>
+        )}
+
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginTop: 4 }}>
+          <input type="checkbox" checked={aktivni} onChange={(e) => setAktivni(e.target.checked)} />
+          <span>
+            <b>Aktivní</b> — neaktivní položka zůstane na starých nabídkách, ale do nových se
+            už nenabídne.
+          </span>
         </label>
+
         {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
           <span style={{ flex: 1 }} />
-          <button className="fm-btn" onClick={onClose} disabled={uklada}>Zrušit</button>
+          <button className="fm-btn" onClick={onClose} disabled={uklada}>Zavřít</button>
           <button className="fm-btn fm-primary" onClick={uloz} disabled={uklada}>
             {uklada ? "Ukládám…" : "Uložit"}
           </button>
@@ -543,6 +831,14 @@ export default function NabidkovacKatalog() {
   const [zalozka, setZalozka] = useState("produkty");
   const [hledani, setHledani] = useState("");
   const [filtrTypu, setFiltrTypu] = useState("vse");
+  // Katalog má po importu z Raynetu 329 položek, takže filtr podle kategorie
+  // a přepínač aktivních jsou nutnost, ne ozdoba.
+  const [filtrKategorie, setFiltrKategorie] = useState("vse");
+  const [filtrStavu, setFiltrStavu] = useState("aktivni"); // aktivni | neaktivni | vse
+  const [kategorie, setKategorie] = useState([]);
+  // Označené řádky pro hromadné zapnutí/vypnutí a přeřazení.
+  const [oznacene, setOznacene] = useState(() => new Set());
+  const [hromadnaZprava, setHromadnaZprava] = useState(null);
   const [velikostOkna, setVelikostOkna] = useState(() => {
     try {
       const s = localStorage.getItem("gs-katalog-okno");
@@ -560,16 +856,18 @@ export default function NabidkovacKatalog() {
   }, [velikostOkna]);
 
   async function nactiVse() {
-    const [ts, ns, sz, sl] = await Promise.all([
+    const [ts, ns, sz, sl, kat] = await Promise.all([
       technologieSeznam(),
       vypoctovaNastaveniSeznam(),
       sazbySeznam(),
       katalogSloupceSeznam(),
+      katalogKategorie(),
     ]);
     setTech(ts);
     setNastaveni(ns);
     setSazby(sz);
     setSloupce(sl);
+    setKategorie(kat);
     const akt = ns[0];
     setKoef(str(akt?.koeficient_zisku));
     setMinRoky(str(akt?.min_delka_kontraktu_roky));
@@ -616,8 +914,46 @@ export default function NabidkovacKatalog() {
 
   async function smazTech(t) {
     if (!window.confirm(`Smazat "${t.nazev}"?`)) return;
-    await technologieSmaz(t.id);
+    try {
+      await technologieSmaz(t.id);
+    } catch (e) {
+      // Typicky 409: položka visí na nabídce nebo objednávce.
+      window.alert(e.message);
+      return;
+    }
     await nactiVse();
+  }
+
+  // Po uložení karty se musí načíst i přílohy – editace drží kopii položky,
+  // takže se po každé změně přenačte ze seznamu.
+  async function obnovKartu() {
+    const ts = await technologieSeznam();
+    setTech(ts);
+    setEditace((akt) => (akt ? ts.find((t) => t.id === akt.id) || akt : akt));
+  }
+
+  function prepniOznaceni(id) {
+    setOznacene((s) => {
+      const nova = new Set(s);
+      if (nova.has(id)) nova.delete(id);
+      else nova.add(id);
+      return nova;
+    });
+  }
+
+  async function hromadne(data) {
+    const ids = [...oznacene];
+    if (!ids.length) return;
+    const vysledek = await katalogHromadne({ ids, ...data });
+    setOznacene(new Set());
+    setHromadnaZprava(`Upraveno ${vysledek.upraveno} položek.`);
+    await nactiVse();
+  }
+
+  async function hromadnePrerad() {
+    const nova = window.prompt("Do jaké kategorie položky přeřadit?");
+    if (nova == null) return;
+    await hromadne({ kategorie: nova.trim() });
   }
 
   async function ulozSazbu(data) {
@@ -691,7 +1027,14 @@ export default function NabidkovacKatalog() {
   const videnaTech = tech.filter(
     (t) =>
       (filtrTypu === "vse" || t.typ === filtrTypu) &&
-      (dotaz === "" || `${t.nazev} ${t.model || ""}`.toLowerCase().includes(dotaz))
+      (filtrKategorie === "vse" || (t.kategorie || "") === filtrKategorie) &&
+      (filtrStavu === "vse" || (filtrStavu === "aktivni" ? t.aktivni : !t.aktivni)) &&
+      // Hledá se i v kódu a kategorii – lidé znají položky spíš podle kódu
+      // z Raynetu než podle celého názvu.
+      (dotaz === "" ||
+        `${t.nazev} ${t.model || ""} ${t.kod || ""} ${t.kategorie || ""}`
+          .toLowerCase()
+          .includes(dotaz))
   );
   const vyskaOkna = VELIKOSTI_OKNA.find((v) => v.klic === velikostOkna)?.vyska ?? null;
 
@@ -778,10 +1121,31 @@ export default function NabidkovacKatalog() {
                 className="gs-input"
                 value={hledani}
                 onChange={(e) => setHledani(e.target.value)}
-                placeholder="Hledat v názvu a modelu…"
+                placeholder="Hledat v kódu, názvu, modelu a kategorii…"
                 aria-label="Hledat produkt"
                 style={{ flex: "1 1 200px", maxWidth: 320 }}
               />
+              <select
+                className="gs-input"
+                value={filtrKategorie}
+                onChange={(e) => setFiltrKategorie(e.target.value)}
+                aria-label="Filtr kategorie"
+                style={{ maxWidth: 190 }}
+              >
+                <option value="vse">Všechny kategorie</option>
+                {kategorie.map((k) => <option key={k} value={k}>{k}</option>)}
+              </select>
+              <span className="gs-seg" role="group" aria-label="Filtr stavu položky">
+                <button type="button" aria-pressed={filtrStavu === "aktivni"} onClick={() => setFiltrStavu("aktivni")}>
+                  Aktivní
+                </button>
+                <button type="button" aria-pressed={filtrStavu === "neaktivni"} onClick={() => setFiltrStavu("neaktivni")}>
+                  Vyřazené
+                </button>
+                <button type="button" aria-pressed={filtrStavu === "vse"} onClick={() => setFiltrStavu("vse")}>
+                  Vše
+                </button>
+              </span>
               <span className="gs-seg" role="group" aria-label="Filtr typu produktu">
                 <button
                   type="button"
@@ -819,6 +1183,25 @@ export default function NabidkovacKatalog() {
               </span>
             </div>
 
+            {/* Hromadné akce nad označenými řádky – po importu 244 položek
+                by vyřazení celé kategorie bylo jinak desítky kliknutí. */}
+            {oznacene.size > 0 && (
+              <div
+                className="fm-card"
+                style={{ padding: "8px 12px", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}
+              >
+                <b style={{ fontSize: 13 }}>Označeno: {oznacene.size}</b>
+                <button className="fm-btn" onClick={() => hromadne({ aktivni: true })}>Zapnout</button>
+                <button className="fm-btn" onClick={() => hromadne({ aktivni: false })}>Vypnout</button>
+                <button className="fm-btn" onClick={hromadnePrerad}>Přeřadit do kategorie…</button>
+                <span className="gs-mezera" />
+                <button className="fm-btn" onClick={() => setOznacene(new Set())}>Zrušit výběr</button>
+              </div>
+            )}
+            {hromadnaZprava && (
+              <div style={{ fontSize: 13, color: "var(--brand-strong)", margin: "0 0 10px" }}>{hromadnaZprava}</div>
+            )}
+
             {sloupce.length > 0 && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", margin: "0 0 10px" }}>
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>Vlastní sloupce:</span>
@@ -850,24 +1233,63 @@ export default function NabidkovacKatalog() {
               <table className="gs-table">
                 <thead>
                   <tr>
-                    <th>Typ</th><th>Název</th><th>Model</th>
-                    <th className="n">Výkon (kW)</th><th className="n">Kapacita (kWh)</th><th className="n">Cena</th>
-                    <th>Dostupná</th>
+                    <th style={{ width: 28 }}>
+                      <input
+                        type="checkbox"
+                        aria-label="Označit vše zobrazené"
+                        checked={videnaTech.length > 0 && videnaTech.every((t) => oznacene.has(t.id))}
+                        onChange={(e) =>
+                          setOznacene(e.target.checked ? new Set(videnaTech.map((t) => t.id)) : new Set())
+                        }
+                      />
+                    </th>
+                    <th>Kód</th><th>Název</th><th>Kategorie</th><th>MJ</th>
+                    <th className="n">Prodejní</th><th className="n">Nákup</th><th className="n">Marže</th>
+                    <th className="n">DPH</th>
+                    <th>Soubory</th><th>Aktivní</th>
                     {sloupce.map((s) => <th key={s.klic} className={s.typ === "cislo" ? "n" : undefined}>{s.nazev}</th>)}
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {videnaTech.map((t) => (
-                    <tr key={t.id} onClick={() => setEditace(t)} title="Kliknutím otevřeš úpravu produktu">
-                      <td>{NAZEV_TYPU[t.typ] || t.typ}</td>
-                      <td style={{ fontWeight: 600 }}>{t.nazev}</td>
-                      <td>{t.model || "—"}</td>
-                      <td className="n">{t.vykon_kw != null ? t.vykon_kw.toLocaleString("cs-CZ") : "—"}</td>
-                      <td className="n">{t.kapacita_kwh != null ? t.kapacita_kwh.toLocaleString("cs-CZ") : "—"}</td>
-                      <td className="n">{t.cena_kc != null ? `${t.cena_kc.toLocaleString("cs-CZ")} Kč` : "—"}</td>
+                    <tr
+                      key={t.id}
+                      onClick={() => setEditace(t)}
+                      title="Kliknutím otevřeš kartu položky"
+                      style={t.aktivni ? undefined : { opacity: 0.55 }}
+                    >
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          aria-label={`Označit ${t.nazev}`}
+                          checked={oznacene.has(t.id)}
+                          onChange={() => prepniOznaceni(t.id)}
+                        />
+                      </td>
+                      <td style={{ fontFamily: "monospace", fontSize: 12 }}>{t.kod || "—"}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        {t.nazev}
+                        {t.model ? <span style={{ color: "var(--muted)", fontWeight: 400 }}> · {t.model}</span> : null}
+                        {!t.plati_dnes && (
+                          <span className="gs-pill" title="Ceník je mimo platnost"> mimo platnost</span>
+                        )}
+                      </td>
+                      <td>{t.kategorie || "—"}</td>
+                      <td>{t.jednotka || "ks"}</td>
+                      <td className="n">{kc(t.cena_kc)}</td>
+                      <td className="n">{kc(t.cena_nakup_kc)}</td>
+                      <td className="n">
+                        {t.marze_kc == null
+                          ? "—"
+                          : `${Math.round(t.marze_kc).toLocaleString("cs-CZ")}${
+                              t.marze_procent != null ? ` (${t.marze_procent} %)` : ""
+                            }`}
+                      </td>
+                      <td className="n">{t.sazba_dph == null ? "—" : `${Math.round(t.sazba_dph * 100)} %`}</td>
+                      <td>{t.prilohy?.length ? `📎 ${t.prilohy.length}` : "—"}</td>
                       <td>
-                        {t.dostupnost ? (
+                        {t.aktivni ? (
                           <span className="gs-pill dobre">ano</span>
                         ) : (
                           <span className="gs-pill">ne</span>
@@ -892,7 +1314,7 @@ export default function NabidkovacKatalog() {
                   ))}
                   {videnaTech.length === 0 && (
                     <tr className="staticky">
-                      <td colSpan={8 + sloupce.length} className="gs-empty">
+                      <td colSpan={12 + sloupce.length} className="gs-empty">
                         {tech.length === 0
                           ? "Katalog je zatím prázdný."
                           : "Hledání ani filtr nic nenašly."}
@@ -903,10 +1325,13 @@ export default function NabidkovacKatalog() {
               </table>
             </div>
             <div className="gs-pozn">
-              Zobrazeno <b>{videnaTech.length}</b> z {tech.length} produktů
+              Zobrazeno <b>{videnaTech.length}</b> z {tech.length} položek
               {filtrTypu !== "vse" && ` · typ ${NAZEV_TYPU[filtrTypu]}`}
-              {dotaz !== "" && ` · hledání „${hledani.trim()}"`}. Klik na řádek otevře úpravu.
-              Katalog se zatím plní ručně (napojení na Raynet přijde později).
+              {filtrKategorie !== "vse" && ` · kategorie ${filtrKategorie}`}
+              {filtrStavu !== "vse" && ` · ${filtrStavu === "aktivni" ? "jen aktivní" : "jen vyřazené"}`}
+              {dotaz !== "" && ` · hledání „${hledani.trim()}“`}. Klik na řádek otevře kartu položky
+              se všemi parametry a soubory. Ceník z Raynetu se dá znovu nahrát skriptem
+              <code> python -m scripts.import_produkty --zapsat</code>.
             </div>
           </div>
         )}
@@ -1066,7 +1491,14 @@ export default function NabidkovacKatalog() {
       </div>
 
       {editace !== undefined && (
-        <TechEditor tech={editace} sloupce={sloupce} onSave={ulozTech} onClose={() => setEditace(undefined)} />
+        <TechEditor
+          tech={editace}
+          sloupce={sloupce}
+          kategorie={kategorie}
+          onSave={ulozTech}
+          onClose={() => setEditace(undefined)}
+          onZmena={obnovKartu}
+        />
       )}
       {editaceSloupce !== undefined && (
         <SloupecEditor sloupec={editaceSloupce} onSave={ulozSloupec} onClose={() => setEditaceSloupce(undefined)} />

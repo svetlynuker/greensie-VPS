@@ -73,13 +73,40 @@ STRUKTURY_TARIFU = ("stara_2026", "nova_2027")
 # Datový typ vlastního (admin definovaného) sloupce katalogu technologií.
 TYPY_SLOUPCE = ("text", "cislo")
 
+# Odkud se položka katalogu vzala. Je to jen informace pro člověka a filtr
+# v katalogu – appka se podle zdroje nechová jinak. Existuje proto, že v jedné
+# tabulce žijí dvě různé věci: velké BESS sestavy pro výpočet peak shavingu
+# (`bess_cenik`) a běžný prodejní ceník z Raynetu (`raynet_import`).
+ZDROJE_POLOZKY = ("rucne", "bess_cenik", "raynet_import")
+VYCHOZI_ZDROJ = "rucne"
+
+# Druh přílohy u položky katalogu. Řídí jen ikonu a filtr, ne zpracování.
+DRUHY_PRILOHY = ("technicky_list", "foto", "certifikat", "jiny")
+VYCHOZI_DRUH_PRILOHY = "jiny"
+
+# Sazby DPH, se kterými se v ceníku pracuje (ceník z Raynetu má 21 / 12 / 0 %).
+SAZBY_DPH = (0.21, 0.12, 0.0)
+VYCHOZI_SAZBA_DPH = 0.21
+
 
 class Technologie(Base):
-    """Katalog technologií (FVE panely, invertory, baterie…).
+    """Katalog produktů – ceník všeho, co se prodává a montuje.
 
-    Zatím se plní ručně přes admin rozhraní (jen vedení/admin). Později
-    přibude synchronizace z Raynet API – pro tu je připravené pole
-    `raynet_id` + `synchronizovano_at` (obojí nullable, teď se nepoužívá).
+    Historicky to byl jen „katalog technologií“ pro výpočty (panel, invertor,
+    baterie). Od 31. 7. 2026 (CRM-08) je to plnohodnotný ceník: kromě
+    výpočtových parametrů drží i kód, kategorii, jednotku, nákupní cenu, DPH
+    a platnost – tedy to, co bylo dřív v Raynetu. Tabulka zůstala jedna
+    záměrně (rozhodl Dan): jinak by se při vkládání položky do nabídky
+    vybíralo ze dvou různých seznamů.
+
+    Dvě věci v jedné tabulce rozlišuje `zdroj`:
+    - `bess_cenik` – velké BESS sestavy, které pohání simulaci peak shavingu
+      (potřebují `vykon_kw` i `kapacita_kwh`, viz METODIKA kap. 3.2),
+    - `raynet_import` / `rucne` – běžný prodejní ceník (panely, střídače,
+      montážní práce, administrativa), který se vkládá do položek nabídek.
+
+    `raynet_id` + `synchronizovano_at` zůstávají pro případný pozdější sync;
+    dnes se neplní (import z Excelu si drží původní kód v `kod`).
     """
 
     __tablename__ = "technologie"
@@ -89,15 +116,41 @@ class Technologie(Base):
     nazev = Column(String, nullable=False)
     model = Column(String, nullable=False, default="", server_default="")
 
+    # Katalogový kód (v Raynetu „Kód“, např. „Administr17“). Unikátní, ale
+    # nullable – ručně založená položka kód mít nemusí. Prázdný řetězec se
+    # NEUKLÁDÁ (ukládá se NULL), jinak by unikátnost padla na druhé položce
+    # bez kódu.
+    kod = Column(String, nullable=True, unique=True, index=True)
+
+    # Kategorie ceníku („Střídače“, „Montážní práce“…). Volný text s
+    # našeptávačem z už použitých hodnot – ne číselník, aby kvůli nové
+    # kategorii nemusel nikdo chodit do další nastavovací obrazovky.
+    kategorie = Column(String, nullable=False, default="", server_default="", index=True)
+    jednotka = Column(String, nullable=False, default="ks", server_default="ks")
+    popis = Column(Text, nullable=False, default="", server_default="")
+
     # Podle typu se plní buď výkon (panel/invertor), nebo kapacita (baterie).
     # Necháváme obě nullable, ať katalog pobere všechny typy jednou tabulkou.
     vykon_kw = Column(Numeric(12, 3), nullable=True)
     kapacita_kwh = Column(Numeric(12, 3), nullable=True)
 
-    cena_kc = Column(Numeric(12, 2), nullable=True)  # CAPEX jednotky
+    cena_kc = Column(Numeric(12, 2), nullable=True)  # prodejní cena bez DPH
+    # Nákupní cena („Náklad“ v Raynetu). Vidí ji jen právo `nabidkovac_katalog`
+    # (rozhodl Dan 31. 7. 2026) – proto se v API pro ostatní vůbec neposílá,
+    # ne že by se jen skryla na frontendu.
+    cena_nakup_kc = Column(Numeric(12, 2), nullable=True)
+    sazba_dph = Column(Numeric(5, 4), nullable=True)  # 0.21 / 0.12 / 0
     ucinnost = Column(Numeric(6, 4), nullable=True)  # 0–1, volitelné dle typu
 
-    dostupnost = Column(Boolean, nullable=False, default=True, server_default="true")
+    platnost_od = Column(Date, nullable=True)
+    platnost_do = Column(Date, nullable=True)
+
+    zdroj = Column(String, nullable=False, default=VYCHOZI_ZDROJ, server_default=VYCHOZI_ZDROJ)
+
+    # Zaškrtávátko „Aktivní“ v katalogu. Neaktivní položka zůstává v datech
+    # (visí na starých nabídkách), ale nejde ji vložit do nové nabídky.
+    # Sloupec se dřív jmenoval `dostupnost` – přejmenovaný lehkou migrací.
+    aktivni = Column(Boolean, nullable=False, default=True, server_default="true")
 
     # Hodnoty vlastních (admin definovaných) sloupců katalogu – mapa
     # {klic_sloupce: hodnota}. Definice sloupců drží KatalogSloupec; tady jsou
@@ -116,6 +169,41 @@ class Technologie(Base):
     vytvoril_user_id = Column(
         Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True
     )
+
+    prilohy = relationship(
+        "TechnologiePriloha", back_populates="technologie", cascade="all, delete-orphan"
+    )
+
+
+class TechnologiePriloha(Base):
+    """Soubor u položky katalogu – technický list, foto, certifikát.
+
+    Ukládá se stejným způsobem jako dokumenty u nabídky (soubor na disk,
+    v DB jen cesta), ale do vlastního adresáře `katalog_soubory`, ať se
+    zálohuje odděleně od dat konkrétních zakázek. Smazání položky bere
+    přílohy s sebou (cascade) – soubory z disku maže route.
+    """
+
+    __tablename__ = "technologie_prilohy"
+
+    id = Column(Integer, primary_key=True, index=True)
+    technologie_id = Column(
+        Integer, ForeignKey("technologie.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    druh = Column(
+        String, nullable=False, default=VYCHOZI_DRUH_PRILOHY, server_default=VYCHOZI_DRUH_PRILOHY
+    )
+    puvodni_nazev = Column(String, nullable=False)
+    soubor_cesta = Column(String, nullable=False)  # relativní k UPLOAD_DIR katalogu
+    velikost_bajtu = Column(Integer, nullable=True)
+    popis = Column(String, nullable=False, default="", server_default="")
+
+    nahrano_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    nahral_user_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True
+    )
+
+    technologie = relationship("Technologie", back_populates="prilohy")
 
 
 class KatalogSloupec(Base):
@@ -179,7 +267,7 @@ class VypoctovaNastaveni(Base):
 class SpotovaCena(Base):
     """Spotová (day-ahead) cena elektřiny za jeden obchodní interval.
 
-    Vstup pro režimy „Kombinace" a „SPOT" peak shaving kalkulátoru. Ceny se
+    Vstup pro režimy „Kombinace“ a „SPOT“ peak shaving kalkulátoru. Ceny se
     ukládají **v granularitě, ve které je vydal trh** (`interval_min` = 60 do
     30. 9. 2025, pak 15 – přechod SDAC na čtvrthodinové intervaly); na
     čtvrthodiny je rozpadá až čtení (`spot_ceny.nacti_rok`).
@@ -271,6 +359,61 @@ class Nabidka(Base):
     reseni = relationship(
         "NavrhovaneReseni", back_populates="nabidka", cascade="all, delete-orphan"
     )
+    polozky = relationship(
+        "NabidkaPolozka",
+        back_populates="nabidka",
+        cascade="all, delete-orphan",
+        order_by="NabidkaPolozka.poradi, NabidkaPolozka.id",
+    )
+
+
+class NabidkaPolozka(Base):
+    """Řádek rozpisu nabídky (CRM-08) – panely, měnič, montáž, doprava.
+
+    Rozpis je vědomě NEZÁVISLÝ na výpočtu PPA / peak shavingu. Výpočet říká,
+    co se zákazníkovi vyplatí; rozpis říká, z čeho se skládá cena. Jedno
+    druhé nepřepisuje – kdyby rozpis vznikal z výpočtu automaticky, nešlo by
+    do nabídky přidat položku, kterou výpočet nezná (což je většina montáže
+    a administrativy).
+
+    Položka může, ale nemusí mít vazbu do katalogu (`technologie_id`).
+    Zadání Dana: „musí zvládnout i položku, která v katalogu není.“
+    Proto se název, kód, jednotka a ceny ukládají jako SNAPSHOT – když se
+    v katalogu zdraží panel, stará nabídka se tím měnit nesmí.
+    """
+
+    __tablename__ = "nabidka_polozky"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nabidka_id = Column(
+        Integer, ForeignKey("nabidky.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    poradi = Column(Integer, nullable=False, default=0, server_default="0")
+
+    # Odkud položka přišla. SET NULL: smazání položky z katalogu nesmí shodit
+    # nabídku – zůstane v ní snapshot názvu a ceny.
+    technologie_id = Column(
+        Integer, ForeignKey("technologie.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    kod = Column(String, nullable=False, default="", server_default="")
+    nazev = Column(String, nullable=False)
+    popis = Column(Text, nullable=False, default="", server_default="")
+    jednotka = Column(String, nullable=False, default="ks", server_default="ks")
+
+    mnozstvi = Column(Numeric(12, 3), nullable=False, default=1, server_default="1")
+    cena_jednotkova = Column(Numeric(12, 2), nullable=True)  # prodejní, bez DPH
+    # Snapshot nákupní ceny kvůli marži. Vidí ho jen právo `nabidkovac_katalog`.
+    nakup_jednotkovy = Column(Numeric(12, 2), nullable=True)
+    sleva_procent = Column(Numeric(5, 2), nullable=False, default=0, server_default="0")
+    sazba_dph = Column(Numeric(5, 4), nullable=True)
+
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    aktualizovano_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    nabidka = relationship("Nabidka", back_populates="polozky")
 
 
 class NabidkaDokument(Base):
@@ -466,7 +609,7 @@ class NavrhovaneReseni(Base):
 class NabidkaVystup(Base):
     """Uložená nabídková šablona konkrétní nabídky (per typ řešení).
 
-    Dan zvolil variantu „šablona zvlášť u každé nabídky" – žádný globální
+    Dan zvolil variantu „šablona zvlášť u každé nabídky“ – žádný globální
     master. Nová nabídka startuje z kódové výchozí předlohy
     (`sablona_katalog.vychozi_sablona`), a jakmile ji OZ v editoru uloží,
     uloží se sem override konkrétní nabídky. `konfigurace_json` drží seznam
@@ -503,7 +646,7 @@ class VystupSablona(Base):
 
     `NabidkaVystup` je šablona *jedné* nabídky. Tady jsou naopak rozvržení
     uložená napříč nabídkami: obchodník si vyladí vizuál, dá „Uložit jako
-    šablonu" a příště ho jen vybere. Ukládá se pouze rozvržení (bloky, texty,
+    šablonu“ a příště ho jen vybere. Ukládá se pouze rozvržení (bloky, texty,
     šířky) – žádná zákaznická čísla, ta se do nabídky vždy dopočítají z jejího
     vlastního řešení.
 

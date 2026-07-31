@@ -32,6 +32,12 @@ Shora dolů:
 4. **Tabulka (matice)** — první dva sloupce jsou **Projekt** a **Termín** (přilepené vlevo při
    vodorovném rolování), za nimi sloupce **Faktura 1 … Faktura N** a úplně vpravo sloupec **Přidat**
    (jen kdo smí editovat).
+5. **Tabulka „Objednávky z CRM"** — od 31. 7. 2026 (CRM-09). Zakázky založené v CRM mají faktury
+   ve stejné tabulce jako Freelo projekty, jen jiného rodiče, takže jsou vidět tady vedle sebe.
+   **Tahle tabulka je jen ke čtení** — faktury objednávek se upravují na kartě objednávky v CRM,
+   kde platí práva CRM. Klik na číslo objednávky tam rovnou skočí.
+   Objednávka se v seznamu objeví, teprve **až má rozepsané faktury** (prázdné se jí, na rozdíl
+   od Freelo projektů, nezakládají samy — splátkový kalendář se volí vědomě).
 
 ### Jak číst tabulku
 - **Řádek = projekt.** Vlevo název (proklik do Freela, pokud má projekt URL) a jeho termín.

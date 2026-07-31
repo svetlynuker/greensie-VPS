@@ -627,8 +627,18 @@ export default function PeakShavingPanel({ nabidka }) {
   useEffect(() => {
     sazbySeznam().then(setSazby).catch((e) => setChyba(e.message));
     peakShavingProfilSouhrn(nabidka.id).then(setSouhrn).catch(() => setSouhrn({ pocet: 0 }));
+    // Do simulace jdou jen baterie z ceníku BESS – u komponent z prodejního
+    // ceníku (BMS, racky, kabeláž) chybí výkon i kapacita a backend je stejně
+    // odfiltruje. Tady se schovají, aby se v nabídce ani neukazovaly.
     technologieSeznam()
-      .then((t) => setKatalogBaterii(t.filter((x) => x.typ === "baterie" && x.dostupnost)))
+      .then((t) =>
+        setKatalogBaterii(
+          t.filter(
+            (x) =>
+              x.typ === "baterie" && x.aktivni && x.vykon_kw != null && x.kapacita_kwh != null
+          )
+        )
+      )
       .catch(() => setKatalogBaterii([]));
   }, [nabidka.id]);
 

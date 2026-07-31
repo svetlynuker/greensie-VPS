@@ -206,6 +206,62 @@ Kdyby se nabídka pak přepočítala, objednávka se tím nezmění.
 Zrušení objednávky si vyžádá **důvod** — stejně jako prohra případu. Objednávku, ze které už
 vznikl projekt, **nelze smazat** (projekt by osiřel).
 
+### Rozpis položek: z čeho se skládá cena
+Nabídka i objednávka mají **rozpis položek** — panely, měnič, baterie, montáž, doprava,
+administrativa. Bez něj nejde doložit, z čeho cena vznikla, ani zakázku vyfakturovat.
+
+Na nabídce je rozpis pod výpočtem (rozbalovací blok **Rozpis položek**), na objednávce
+uprostřed karty. Ovládá se stejně:
+
+| Tlačítko | Co udělá |
+|---|---|
+| **+ Z katalogu** | Otevře výběr z ceníku (hledání podle kódu, filtr kategorie), zaškrtneš víc položek naráz |
+| **+ Vlastní položka** | Prázdný řádek pro to, co v ceníku není |
+| **↓ Z nabídky** | (jen na objednávce) Dotáhne rozpis z nabídky, ze které objednávka vznikla |
+| **↑ ↓ ×** | Přesun řádku nahoru/dolů a smazání |
+
+U každého řádku se zadává **množství, jednotková cena, sleva v %** a **sazba DPH**; sleva se
+počítá z jednotkové ceny („panel za 4 500 se slevou 10 %"), ne z celého řádku. Součet
+**bez DPH / DPH / s DPH** je pod tabulkou. Kdo má právo na katalog, vidí navíc sloupec
+**Nákup/MJ** a celkovou **marži**.
+
+Položka z katalogu si bere **snapshot** názvu a cen. Když se pak v ceníku zdraží panel,
+**odeslaná nabídka se nezmění** — to je záměr, ne opomenutí.
+
+**Při vzniku objednávky z nabídky se rozpis překlopí** (zkopíruje). Objednávka pak žije vlastním
+životem: přepočítaná nabídka jí obsah nezmění.
+
+**Cena objednávky se počítá ze součtu rozpisu.** Když ji přepíšeš ručně (dohodnutá sleva
+„za kulatých 2,4 mil."), appka to respektuje, přestane ji přepisovat a u pole ukáže, o kolik se
+od součtu liší — s tlačítkem **Vrátit na součet rozpisu**.
+
+### Fakturace objednávky: kolik je vyfakturováno a zaplaceno
+Na kartě objednávky je blok **Fakturace** — řetěz *objednávka → faktura → zaplaceno*.
+
+Splátky se rozepíšou tlačítkem podle předvolby:
+
+| Předvolba | Splátky |
+|---|---|
+| Jednou fakturou | 100 % |
+| Záloha + doplatek | 50 % + 50 % |
+| Záloha, průběžná, doplatek | 30 % + 40 % + 30 % |
+
+Vyplníš-li **termín první splátky**, další dostanou termín po měsíci. Částky se dělí tak, aby
+součet **seděl na haléř** — u třetin nezůstane chybějící desetikoruna.
+
+U každé faktury se dá měnit název, částka, termín, **variabilní symbol** (přes něj se páruje
+POHODA) a stav: *Potřeba vystavit → Vystaveno → Zaplaceno*, případně *Nefakturuje se*
+(nepočítá se do součtů). Faktura po termínu, která není zaplacená, se označí červeně —
+**i ta, kterou nikdo nevystavil**, protože právě to je problém.
+
+Souhrn pod tabulkou ukazuje **cenu objednávky, vyfakturováno, zaplaceno, zbývá rozepsat**
+a *po termínu*. Když se součet faktur rozejde s cenou objednávky (třeba se cena změnila),
+appka to napíše a nabídne **Přepočítat podle podílů** — sáhne jen na faktury, které ještě
+nejsou vystavené. Vystavená faktura je doklad, ten appka sama nemění.
+
+Objednávky s fakturami se objeví i v **Přehledu financí**, ve vlastní tabulce pod projekty
+z Freela. Tam jsou jen ke čtení — upravují se tady, kde platí práva CRM.
+
 ### Projekty: realizace s kroky a návaznostmi
 Sekce **Projekty**. Projekt **nelze založit samostatně** — vzniká z objednávky (tlačítko v jejím
 detailu) nebo z obchodního případu u zakázek, které objednávkou neprochází. Číslo kopíruje
@@ -599,7 +655,11 @@ Práva: **čtení definic** smí každý, kdo vidí CRM (z definic se kreslí fo
 | `crm_aktivity` | poznámky, telefonáty, schůzky a úkoly (generická pro všechny entity) |
 | *(nabídky)* | zůstávají v tabulce `nabidky` nabídkovače – CRM jim přidává jen `stav_obchodni` a pohled |
 | `crm_vlastni_pole` | definice admin přidaných polí; hodnoty jsou v `extra` daného záznamu |
-| `crm_objednavky` | potvrzené zakázky; `cena_kc` je snapshot, `nabidka_id` informativní |
+| `crm_objednavky` | potvrzené zakázky; `cena_kc` je snapshot, `cena_rucni` = ruční přepis má přednost před součtem rozpisu, `nabidka_id` informativní |
+| `nabidka_polozky`, `crm_objednavka_polozky` | rozpis položek; stejné sloupce schválně, protože se z nabídky do objednávky **kopírují**. `technologie_id` je nepovinné (položka mimo katalog), název a ceny jsou snapshot |
+| `faktury` *(modul finance)* | od CRM-09 má **dva možné rodiče**: `projekt_id` (Freelo projekt) nebo `crm_objednavka_id` (CRM objednávka). Právě jeden musí být vyplněný — hlídá `ck_faktura_prave_jeden_rodic` |
+| `technologie` *(nabídkovač)* | katalog produktů: kód, kategorie, jednotka, prodejní i nákupní cena, DPH, platnost, `zdroj` (`bess_cenik` / `raynet_import` / `rucne`), `aktivni` |
+| `technologie_prilohy` | soubory u položky katalogu (technický list, foto, certifikát); na disku v `katalog_soubory/` |
 | `crm_projekty` | realizace; `freelo_projekt_id` je most na Freelo projekt (koexistence) |
 | `crm_projekt_kroky` | kroky projektu; `zavisi_na_id` je skutečná návaznost mezi kroky |
 | `crm_projekt_sablony`, `crm_projekt_sablona_kroky` | šablony kroků; návaznost drží **pořadí** předchůdce, ne id |

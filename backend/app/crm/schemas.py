@@ -617,6 +617,11 @@ class ObjednavkaDetailOut(ObjednavkaRadekOut):
     projekt_id: Optional[int] = None
     projekt_cislo: str = ""
     muze_editovat: bool = True
+    # CRM-08: cena je součet rozpisu, dokud ji někdo nepřepíše ručně.
+    cena_rucni: bool = False
+    soucet_polozek_kc: Optional[float] = None
+    # CRM-09: kolik je z objednávky vyfakturováno a zaplaceno.
+    fakturace: Optional["FakturaceSouhrn"] = None
 
 
 class ObjednavkaVstup(BaseModel):
@@ -628,6 +633,9 @@ class ObjednavkaVstup(BaseModel):
     nazev: str = ""
     popis: str = ""
     cena_kc: Optional[float] = None
+    # True = cenu držím ručně, součet rozpisu ji nepřepíše. Když přijde
+    # `cena_kc` a tohle je None, backend to bere jako ruční zásah.
+    cena_rucni: Optional[bool] = None
     datum_podpisu: Optional[str] = None
     datum_dodani: Optional[str] = None
     vlastnik_user_id: Optional[int] = None
@@ -638,6 +646,78 @@ class ObjednavkaVstup(BaseModel):
 class ObjednavkaZmenaStavuVstup(BaseModel):
     stav: str
     duvod_zruseni: str = ""
+
+
+# ---- fakturace objednávky (CRM-09) -------------------------------------------
+class FakturaOut(BaseModel):
+    id: int
+    poradi: int
+    nazev: str = ""
+    stav: str
+    castka: Optional[float] = None
+    podil_procent: Optional[float] = None
+    termin: Optional[str] = None
+    variabilni_symbol: Optional[str] = None
+    poznamka: str = ""
+    pohoda_potvrzeno: bool = False
+    pohoda_datum_vystaveni: Optional[str] = None
+    pohoda_datum_zaplaceni: Optional[str] = None
+    # Je faktura po splatnosti a stále nezaplacená? Počítá backend, ať se
+    # „po termínu" nedopočítává na třech místech ve frontendu jinak.
+    po_terminu: bool = False
+
+
+class FakturaVstup(BaseModel):
+    nazev: str = ""
+    stav: Optional[str] = None
+    castka: Optional[float] = None
+    podil_procent: Optional[float] = None
+    termin: Optional[str] = None
+    variabilni_symbol: Optional[str] = None
+    poznamka: str = ""
+
+
+class FakturaceSouhrn(BaseModel):
+    """Řetěz objednávka → faktura → zaplaceno v číslech."""
+
+    pocet: int = 0
+    vyfakturovano_kc: float = 0  # vystaveno + zaplaceno
+    zaplaceno_kc: float = 0
+    zbyva_fakturovat_kc: Optional[float] = None  # cena objednávky − rozepsané faktury
+    po_terminu_kc: float = 0
+    # True, když se součet faktur liší od ceny objednávky (o víc než korunu).
+    nesedi_soucet: bool = False
+
+
+class FakturaceOut(BaseModel):
+    faktury: list[FakturaOut] = []
+    souhrn: FakturaceSouhrn
+    cena_objednavky_kc: Optional[float] = None
+
+
+class SplatkovaSablonaOut(BaseModel):
+    klic: str
+    nazev: str
+    splatky: list[dict] = []
+
+
+class SplatkyZeSablonyVstup(BaseModel):
+    """Rozepsání ceny objednávky do splátek podle předvolby.
+
+    `prvni_termin` je nepovinný – když se vyplní, splátky dostanou termíny
+    po měsíci od něj. Bez něj se termíny nechají prázdné a doplní se ručně.
+    """
+
+    sablona: str
+    prvni_termin: Optional[str] = None
+    # Co s fakturami, které už na objednávce jsou. `false` = přidat za ně,
+    # `true` = zahodit rozepsané (nikdy ne vystavené či zaplacené).
+    nahradit: bool = False
+
+
+# `ObjednavkaDetailOut` odkazuje na `FakturaceSouhrn`, který je definovaný až
+# tady – dopočítání vazby se proto musí vyvolat ručně.
+ObjednavkaDetailOut.model_rebuild()
 
 
 # ---- projekty ----------------------------------------------------------------

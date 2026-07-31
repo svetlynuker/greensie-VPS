@@ -8,7 +8,7 @@ daly měnit bez zásahu do evidence a naopak.
 KOEXISTENCE S RAYNETEM (rozhodnutí Dana, 30. 7. 2026): appka Raynet postupně
 nahradí, ale zatím běží obojí. Proto každá entita, která má v Raynetu
 protějšek, nese `raynet_id` a případy navíc `raynet_code`. Důvod není
-„pro pořádek": na Raynetí čísle obchodního případu (`code`, např. OP-26-0223)
+„pro pořádek“: na Raynetí čísle obchodního případu (`code`, např. OP-26-0223)
 stojí dva existující mechanismy – konektor podle něj pojmenovává složky na
 Google Disku a `matice/disk_parovani.py` podle něj páruje Freelo projekty
 s jejich složkou dokumentů. Kdyby appka Raynetí číslo zahodila a nahradila
@@ -19,7 +19,7 @@ Raynetí, dokud Raynet nezmizí.
 PRÁVA NA ZÁZNAMY: každá entita má `vlastnik_user_id` + `spoluvlastnici`.
 Kdo nemá právo `crm_vse`, vidí jen záznamy, kde je vlastníkem nebo
 spoluvlastníkem (viz `crm/pristup.py`). Žádná hierarchie rolí se nezavádí –
-„vedení vidí vše" = skupina s právem `crm_vse`.
+„vedení vidí vše“ = skupina s právem `crm_vse`.
 """
 
 from sqlalchemy import (
@@ -75,7 +75,7 @@ KATEGORIE_OP = ("prodej", "ppa", "peak_shaving")
 #
 # Dva rozdíly proti té předloze, oba schválně:
 #   * `poznamka` zůstává navíc – je to záznam do historie BEZ plánování
-#     („volal, chce to po dovolené"), který se do kalendáře nekreslí. Log práce
+#     („volal, chce to po dovolené“), který se do kalendáře nekreslí. Log práce
 #     na kartě zákazníka na něm stojí.
 #   * `email` zůstává vedle `dopis`: dopis je fyzická pošta (a v CRM se hlídá
 #     kvůli doporučeným zásilkám), e-mail je něco jiného.
@@ -98,8 +98,8 @@ ROZSAHY_SERIE = ("jen_tuhle", "tuto_a_dalsi", "celou_serii")
 
 # Stav aktivity. Nahradil boolean `hotovo`, protože ten neumí rozlišit schůzku,
 # která proběhla, od schůzky, kterou zákazník zrušil — a obojí pod jedním
-# „hotovo" by znehodnotilo každou statistiku aktivity OZ.
-#   naplanovano  → čeká, počítá se do „moje úkoly"
+# „hotovo“ by znehodnotilo každou statistiku aktivity OZ.
+#   naplanovano  → čeká, počítá se do „moje úkoly“
 #   realizovano  → proběhlo, `vysledek` říká s jakým výsledkem
 #   nekonalo_se  → nekonalo se, `vysledek` říká proč
 STAVY_AKTIVITY = ("naplanovano", "realizovano", "nekonalo_se")
@@ -111,7 +111,7 @@ STAVY_UZAVRENE = ("realizovano", "nekonalo_se")
 # mít sloupec `extra`).
 ENTITY_VLASTNICH_POLI = ("zakaznik", "op", "obj", "pro")
 
-# Datový typ vlastního pole. Dan chtěl „textová pole"; typy navíc stojí skoro
+# Datový typ vlastního pole. Dan chtěl „textová pole“; typy navíc stojí skoro
 # nic a ušetří pozdější práci (datum se dá řadit, ano/ne filtrovat, výběr
 # nepustí do dat překlepy).
 TYPY_VLASTNIHO_POLE = ("text", "dlouhy_text", "cislo", "datum", "ano_ne", "vyber")
@@ -153,7 +153,7 @@ class CiselnaRada(Base):
 class CrmNastaveni(Base):
     """Firemní nastavení CRM — jeden řádek (id=1).
 
-    Zatím drží jen naši adresu pro tlačítko „U nás" u místa konání schůzky.
+    Zatím drží jen naši adresu pro tlačítko „U nás“ u místa konání schůzky.
     Vlastní tabulka, a ne konstanta v kódu: adresa se mění (přestěhování) a je
     to údaj firmy, ne uživatele, takže nepatří do `uzivatelska_nastaveni`.
 
@@ -171,7 +171,7 @@ class CrmNastaveni(Base):
 
 
 class CrmSerieAktivit(Base):
-    """Pravidlo opakování pro sérii aktivit („porada každý čtvrtek").
+    """Pravidlo opakování pro sérii aktivit („porada každý čtvrtek“).
 
     ---- Proč se instance MATERIALIZUJÍ -------------------------------------
     Série se při založení rozepíše do skutečných řádků `crm_aktivity`, místo aby
@@ -182,13 +182,13 @@ class CrmSerieAktivit(Base):
         čtení kalendáře,
       * aktivita ze série se má chovat jako každá jiná: dá se u ní zapsat
         výsledek, navěsit na klienta, přetáhnout myší. Virtuální instance by
-        musela nejdřív „zhmotnět", což je krok, který nikdo nechce vysvětlovat.
+        musela nejdřív „zhmotnět“, což je krok, který nikdo nechce vysvětlovat.
 
     Cena je počet řádků, a proto má opakování POVINNÝ konec (`do_data` nebo
     `pocet`) a strop `MAX_INSTANCI` v `opakovani.py`.
 
     `frekvence` je jedna z `FREKVENCE_OPAKOVANI`; `interval_dni` má význam jen
-    u „vlastni" (každých N dní).
+    u „vlastni“ (každých N dní).
     """
 
     __tablename__ = "crm_serie_aktivit"
@@ -207,11 +207,11 @@ class CrmSerieAktivit(Base):
 
 
 class CrmKategorieAktivity(Base):
-    """Barevný štítek aktivity („Porada", „Servis", „Reklamace").
+    """Barevný štítek aktivity („Porada“, „Servis“, „Reklamace“).
 
     POZOR na jméno: tohle NENÍ `CrmKategorie` (ta říká, do kterého výpočtu míří
     obchodní případ). Tady jde o barevné škatulky v kalendáři, kterými si firma
-    tříditelně označuje aktivity — v předloze je to sekce „KATEGORIE" v panelu
+    tříditelně označuje aktivity — v předloze je to sekce „KATEGORIE“ v panelu
     filtrů a barevné tečky ve výběru u nové aktivity.
 
     Proč vlastní tabulka a ne výčet v kódu: stejný důvod jako u stavů pipeline —
@@ -240,11 +240,11 @@ class CrmKategorie(Base):
 
     Do 30. 7. 2026 to byla trojice v konstantě (`prodej`/`ppa`/`peak_shaving`)
     na dvou místech (backend + frontend), zatímco stavy pipeline i vlastní pole
-    si vedení spravovalo samo. Tahle tabulka tu nekonzistenci ruší: „Servis"
-    nebo „Dotace" přidá vedení v nastavení, bez programátora.
+    si vedení spravovalo samo. Tahle tabulka tu nekonzistenci ruší: „Servis“
+    nebo „Dotace“ přidá vedení v nastavení, bez programátora.
 
     `typ_nabidky` je to podstatné pole. Kategorie totiž řídí, do kterého
-    VÝPOČTU nabídkovače případ míří (tlačítko „+ PPA" na kartě případu zakládá
+    VÝPOČTU nabídkovače případ míří (tlačítko „+ PPA“ na kartě případu zakládá
     nabídku typu `ppa`). Kategorie, ke které žádný výpočet neexistuje, má tohle
     pole prázdné a tlačítko se u ní nenabídne – jinak by appka slibovala
     výpočet, který neumí. Hodnota musí být jedna z `TYPY_NABIDKY`.
@@ -292,7 +292,7 @@ class CrmStav(Base):
     druh = Column(String, nullable=False, default="otevreny", server_default="otevreny")
     # Klíče polí, které musí být vyplněné, aby se záznam do tohoto stavu dostal
     # (CRM-30). Prázdné = bez podmínek. Seznam, ne pevné sloupce, protože jde
-    # o „jakékoli pole včetně budoucích" — viz `povinna_pole.py`.
+    # o „jakékoli pole včetně budoucích“ — viz `povinna_pole.py`.
     povinna_pole = Column(ARRAY(String), nullable=False, default=list, server_default="{}")
 
     vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -324,7 +324,7 @@ class CrmVlastniPole(Base):
     """Vlastní (admin definované) pole na obrazovce – bez zásahu do kódu.
 
     Vzniklo z reálné potřeby: „rozhodneme se sledovat parametr, který dnes
-    nepotřebuju". Přidání sloupce do schématu by znamenalo migraci a nasazení,
+    nepotřebuju“. Přidání sloupce do schématu by znamenalo migraci a nasazení,
     takže se to řeší stejně jako vlastní sloupce katalogu technologií
     (`KatalogSloupec`): DEFINICE pole žije tady, HODNOTY v JSONB `extra` daného
     záznamu pod klíčem `klic`.
@@ -451,7 +451,7 @@ class ObchodniPripad(Base):
     složek na Disku, takže se nesmí zahodit (viz docstring modulu).
 
     `kategorie` je seznam: případ může být PPA i peak shaving současně.
-    Podle kategorie tlačítko „Vytvořit nabídku" pozná, do kterého výpočtu
+    Podle kategorie tlačítko „Vytvořit nabídku“ pozná, do kterého výpočtu
     poslat OZ; při víc kategoriích nebo prázdné se zeptá.
     """
 
@@ -473,7 +473,7 @@ class ObchodniPripad(Base):
     hodnota_kc = Column(Numeric(14, 2), nullable=True)
     pravdepodobnost = Column(Integer, nullable=True)  # 0–100 %, pro forecast
     predpokladane_uzavreni = Column(Date, nullable=True)
-    # Vyplňuje se při přesunu do stavu druhu „prohra" – bez důvodu prohry
+    # Vyplňuje se při přesunu do stavu druhu „prohra“ – bez důvodu prohry
     # nemá statistika pipeline smysl.
     duvod_prohry = Column(String, nullable=False, default="", server_default="")
     uzavreno_at = Column(DateTime(timezone=True), nullable=True)
@@ -511,13 +511,13 @@ class CrmAktivita(Base):
     Rozdělení, na kterém stojí kalendář, a snadno se poplete:
 
       * `termin` (datum) je **den**, na který aktivita patří. Vyplněný termín
-        dělá z aktivity úkol a stojí na něm výpis „moje úkoly" i Rozcestník.
+        dělá z aktivity úkol a stojí na něm výpis „moje úkoly“ i Rozcestník.
       * `zacatek` (datum + čas) je **konkrétní hodina** pro kalendářní mřížku.
-        Nepovinný: úkol „zavolat ve čtvrtek" hodinu mít nemusí.
+        Nepovinný: úkol „zavolat ve čtvrtek“ hodinu mít nemusí.
 
     PRAVIDLO, které drží obojí pohromadě: když je vyplněný `zacatek`, `termin`
     se z něj vždy dopočítá (viz `kalendar.srovnej_termin`). Díky tomu zůstává
-    `termin` jediným zdrojem pravdy pro „kterého dne se to má stát" a nic, co
+    `termin` jediným zdrojem pravdy pro „kterého dne se to má stát“ a nic, co
     filtruje podle termínu, se kalendářem nerozbije.
 
     Aktivita bez `zacatek`, ale s `termin`, je v kalendáři **celodenní** pruh.
@@ -527,7 +527,7 @@ class CrmAktivita(Base):
     `stav` je jedna z `STAVY_AKTIVITY`: naplánováno → realizováno / nekonalo se.
     Nahradil boolean `hotovo`, protože ten neumí rozlišit schůzku, která
     proběhla, od schůzky, kterou zákazník zrušil – a obojí schované pod
-    „hotovo" by rozbilo každou statistiku aktivity. `vysledek` říká, co z
+    „hotovo“ by rozbilo každou statistiku aktivity. `vysledek` říká, co z
     aktivity vyšlo (nebo proč se nekonala).
 
     ---- Soukromá událost ---------------------------------------------------
@@ -551,7 +551,7 @@ class CrmAktivita(Base):
 
     termin = Column(Date, nullable=True)  # den (vyplněno = je to úkol)
     # Hodina pro kalendářní mřížku. ZÁMĚRNĚ **bez časové zóny**, na rozdíl od
-    # ostatních časů v appce: je to „místní čas firmy", ne okamžik na časové
+    # ostatních časů v appce: je to „místní čas firmy“, ne okamžik na časové
     # ose. Firma pracuje v jedné zóně a tohle zjednodušení odstraňuje dvě chyby,
     # které by jinak vznikly – server i DB běží v UTC, takže:
     #   * TIMESTAMPTZ by čas 9:00 poslal prohlížeči jako 9:00 UTC a ten by
@@ -562,9 +562,9 @@ class CrmAktivita(Base):
     zacatek = Column(DateTime, nullable=True)
     delka_min = Column(Integer, nullable=True)  # jak dlouho trvá
     # Poslední den vícedenní aktivity (školení, dovolená přes týden). Prázdné =
-    # jednodenní. V kalendáři se z toho kreslí pruh v řádku „vícedenní";
+    # jednodenní. V kalendáři se z toho kreslí pruh v řádku „vícedenní“;
     # ukládá se jako DEN, ne konec s hodinou, protože vícedenní věci se plánují
-    # „od pondělí do středy", ne „do středy 17:30".
+    # „od pondělí do středy“, ne „do středy 17:30“.
     konec = Column(Date, nullable=True)
 
     # Priorita z předlohy (nízká / střední / vysoká). Řídí jen zobrazení —
@@ -572,7 +572,7 @@ class CrmAktivita(Base):
     priorita = Column(
         String, nullable=False, default="stredni", server_default="stredni"
     )
-    # Místo konání jako volný text (adresa nebo „u nás“, „online"). Ne cizí klíč
+    # Místo konání jako volný text (adresa nebo „u nás“, „online“). Ne cizí klíč
     # na adresu zákazníka: schůzka bývá i jinde než na jeho sídle.
     misto = Column(String, nullable=False, default="", server_default="")
     kategorie_id = Column(
@@ -648,6 +648,10 @@ class Objednavka(Base):
     nazev = Column(String, nullable=False, default="", server_default="")
     popis = Column(Text, nullable=False, default="", server_default="")
     cena_kc = Column(Numeric(14, 2), nullable=True)
+    # True = cenu někdo přepsal ručně (dohodnutá sleva „za kulatých 2,4 mil.“)
+    # a součet položek ji už nepřepíše. Appka pak jen ukazuje, o kolik se liší.
+    # Rozhodl Dan 31. 7. 2026: součet položek, ale ruční přepis má přednost.
+    cena_rucni = Column(Boolean, nullable=False, default=False, server_default="false")
     datum_podpisu = Column(Date, nullable=True)
     datum_dodani = Column(Date, nullable=True)
 
@@ -669,6 +673,59 @@ class Objednavka(Base):
 
     pripad = relationship("ObchodniPripad")
     vlastnik = relationship("User", foreign_keys=[vlastnik_user_id])
+    polozky = relationship(
+        "ObjednavkaPolozka",
+        back_populates="objednavka",
+        cascade="all, delete-orphan",
+        order_by="ObjednavkaPolozka.poradi, ObjednavkaPolozka.id",
+    )
+    faktury = relationship(
+        "Faktura",
+        back_populates="objednavka",
+        cascade="all, delete-orphan",
+        order_by="Faktura.poradi, Faktura.id",
+    )
+
+
+class ObjednavkaPolozka(Base):
+    """Řádek rozpisu objednávky (CRM-08).
+
+    Sloupce jsou schválně stejné jako u `NabidkaPolozka` – při potvrzení
+    nabídky se rozpis PŘEKLOPÍ (zkopíruje), ne naváže. Objednávka je obchodní
+    dokument: kdyby ukazovala živý rozpis nabídky, změnil by se jí obsah pod
+    rukama, kdykoli někdo přepočítá nabídku. Stejná úvaha stojí za snapshotem
+    `Objednavka.cena_kc`.
+    """
+
+    __tablename__ = "crm_objednavka_polozky"
+
+    id = Column(Integer, primary_key=True, index=True)
+    objednavka_id = Column(
+        Integer, ForeignKey("crm_objednavky.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    poradi = Column(Integer, nullable=False, default=0, server_default="0")
+
+    technologie_id = Column(
+        Integer, ForeignKey("technologie.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    kod = Column(String, nullable=False, default="", server_default="")
+    nazev = Column(String, nullable=False)
+    popis = Column(Text, nullable=False, default="", server_default="")
+    jednotka = Column(String, nullable=False, default="ks", server_default="ks")
+
+    mnozstvi = Column(Numeric(12, 3), nullable=False, default=1, server_default="1")
+    cena_jednotkova = Column(Numeric(12, 2), nullable=True)
+    nakup_jednotkovy = Column(Numeric(12, 2), nullable=True)
+    sleva_procent = Column(Numeric(5, 2), nullable=False, default=0, server_default="0")
+    sazba_dph = Column(Numeric(5, 4), nullable=True)
+
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    aktualizovano_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    objednavka = relationship("Objednavka", back_populates="polozky")
 
 
 class CrmProjekt(Base):
@@ -678,7 +735,7 @@ class CrmProjekt(Base):
     povinný. Číslo kopíruje případ (`PRO-26-0301` k `OP-26-0301`), aby je lidé
     párovali očima; druhý projekt téhož případu má suffix `-2`.
 
-    POZOR na dvojí význam slova „projekt": tabulka `projekty` (modul matice) je
+    POZOR na dvojí význam slova „projekt“: tabulka `projekty` (modul matice) je
     projekt z **Freela** s maticí úkolů. Tenhle je CRM záznam realizace.
     `freelo_projekt_id` je most mezi nimi – appka má Freelo postupně nahradit,
     do té doby žijí vedle sebe a párují se přes číslo OP.
@@ -729,7 +786,7 @@ class CrmProjekt(Base):
 
 
 class ProjektSablona(Base):
-    """Šablona projektových kroků – „takhle u nás vypadá FVE realizace".
+    """Šablona projektových kroků – „takhle u nás vypadá FVE realizace“.
 
     Vedení si nachystá posloupnost kroků s odstupy a návaznostmi; na projektu
     se pak jedním kliknutím rozbalí do konkrétních úkolů s termíny. Bez šablon
@@ -788,7 +845,7 @@ class ProjektKrok(Base):
 
     `zavisi_na_id` je skutečný cizí klíč mezi kroky jednoho projektu – tady už
     id existují, takže návaznost může být přesná. Dokud předchůdce není hotový,
-    krok se drží ve stavu „čeká" a jeho termín se dopočítává od data, kdy
+    krok se drží ve stavu „čeká“ a jeho termín se dopočítává od data, kdy
     předchůdce doopravdy skončí (viz `projekty_kroky.prepocitej_terminy`).
     """
 
@@ -822,7 +879,7 @@ class ProjektKrok(Base):
 
 
 # Entity, nad kterými jdou stavět uživatelské filtry (seznamy i kanbany).
-# „kalendar" je tu navíc proti seznamům: kalendář ukládá stav svého panelu
+# „kalendar“ je tu navíc proti seznamům: kalendář ukládá stav svého panelu
 # (uživatelé, typy, kategorie, přepínače) do TÉŽE tabulky, takže sdílení filtru
 # a výchozí pohled fungují bez druhého mechanismu. Podmínky u něj nemají formát
 # pole/operátor/hodnota — je to jedna položka s JSON stavem, viz Kalendar.jsx.
@@ -848,13 +905,13 @@ class CrmUlozenyFiltr(Base):
     """Uživatelský filtr nad seznamem/kanbanem – víc podmínek a víceúrovňové řazení.
 
     Proč vlastní tabulka a ne jen stav v prohlížeči: filtr typu „moje otevřené
-    PPA případy nad milion, řazené podle termínu" si člověk staví jednou a chce
+    PPA případy nad milion, řazené podle termínu“ si člověk staví jednou a chce
     ho mít i zítra a na jiném počítači. A vedení potřebuje umět takový pohled
     **nasdílet** ostatním (`sdileny`).
 
     `podminky` = [{pole, operator, hodnota}], vyhodnocuje se jako AND. Víc
     podmínek nad stejným polem se tím chová jako zúžení (rozsah), což je přesně
-    to, co lidé od „víceúrovňového" filtru čekají.
+    to, co lidé od „víceúrovňového“ filtru čekají.
 
     `razeni` = [{pole, smer}] v pořadí priority: první je hlavní klíč, další
     rozhodují při shodě.
@@ -875,7 +932,7 @@ class CrmUlozenyFiltr(Base):
     podminky = Column(JSONB, nullable=False, default=list, server_default="[]")
     razeni = Column(JSONB, nullable=False, default=list, server_default="[]")
 
-    # Autor filtru. NULL by znamenalo „nikoho", což nechceme – filtr vždy někomu
+    # Autor filtru. NULL by znamenalo „nikoho“, což nechceme – filtr vždy někomu
     # patří a jen sdílený je vidět i ostatním.
     vlastnik_user_id = Column(
         Integer, ForeignKey("uzivatele.id", ondelete="CASCADE"), nullable=False, index=True

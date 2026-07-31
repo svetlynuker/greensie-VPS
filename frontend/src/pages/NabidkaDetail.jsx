@@ -5,7 +5,17 @@ import DokumentUpload from "../components/DokumentUpload";
 import PeakShavingPanel from "../components/PeakShavingPanel";
 import PpaPanel from "../components/PpaPanel";
 import ProdejPanel from "../components/ProdejPanel";
-import { nactiMe, logout, nabidkaDetail, nabidkaUprav, nabidkaSmaz } from "../api";
+import RozpisPolozek from "../components/RozpisPolozek";
+import {
+  nactiMe,
+  logout,
+  nabidkaDetail,
+  nabidkaUprav,
+  nabidkaSmaz,
+  nabidkaPolozky,
+  nabidkaUlozPolozky,
+  nabidkaPridejZKatalogu,
+} from "../api";
 import { PODSEKCE, STAV_NABIDKY, fmtDatum } from "../nabidkovac";
 import "../styles/nabidkovac.css";
 
@@ -22,6 +32,9 @@ export default function NabidkaDetail() {
   // otevřou samy (viz useEffect níž), protože tam se teprve vyplňují.
   const [upravaZakaznika, setUpravaZakaznika] = useState(false);
   const [podkladyOtevrene, setPodkladyOtevrene] = useState(false);
+  // Rozpis se načítá až po rozbalení – katalog má stovky položek a u nabídky,
+  // kde se jen počítá, by se tahal zbytečně.
+  const [rozpisOtevreny, setRozpisOtevreny] = useState(false);
 
   // editovatelná pole zákazníka
   const [nazev, setNazev] = useState("");
@@ -228,6 +241,34 @@ export default function NabidkaDetail() {
         ) : (
           <ProdejPanel nabidka={nabidka} />
         )}
+
+        {/* Rozpis položek (CRM-08). Je pod výpočtem schválně a je na něm
+            nezávislý: výpočet říká, co se zákazníkovi vyplatí, rozpis z čeho
+            se skládá cena. Při vzniku objednávky se rozpis překlopí do ní. */}
+        <details
+          className="nb-sbal"
+          open={rozpisOtevreny}
+          onToggle={(e) => setRozpisOtevreny(e.currentTarget.open)}
+          style={{ marginTop: 16 }}
+        >
+          <summary>
+            Rozpis položek
+            <span className="nb-mezera" />
+            <span style={{ fontSize: 12, fontWeight: 400, color: "var(--fm-muted)" }}>
+              panely, měnič, montáž, doprava — z katalogu i vlastní text
+            </span>
+          </summary>
+          <div className="nb-sbal-in">
+            {rozpisOtevreny && (
+              <RozpisPolozek
+                nadpis="Rozpis nabídky"
+                nacti={() => nabidkaPolozky(nabidka.id)}
+                uloz={(polozky) => nabidkaUlozPolozky(nabidka.id, polozky)}
+                pridejZKatalogu={(ids) => nabidkaPridejZKatalogu(nabidka.id, ids)}
+              />
+            )}
+          </div>
+        </details>
       </div>
     </Layout>
   );

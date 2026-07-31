@@ -1,8 +1,14 @@
 import { useEffect, useState } from "react";
 import VlastniPoleVstupy from "./VlastniPoleVstupy";
+import RozpisPolozek from "./RozpisPolozek";
+import FakturacePanel from "./FakturacePanel";
 import {
   crmObjednavkaDetail,
+  crmObjednavkaPolozky,
+  crmObjednavkaPrekloopZNabidky,
+  crmObjednavkaPridejZKatalogu,
   crmObjednavkaSmaz,
+  crmObjednavkaUlozPolozky,
   crmObjednavkaUprav,
   crmObjednavkaZaloz,
   crmProjektZaloz,
@@ -180,13 +186,43 @@ export default function ObjednavkaFormular({
               />
             </div>
             <div>
-              <label className="crm-label">Cena (Kč)</label>
+              <label className="crm-label">
+                Cena bez DPH (Kč)
+                {o?.soucet_polozek_kc != null && (
+                  <span className="crm-tise" style={{ fontWeight: 400 }}>
+                    {" "}· rozpis: {Math.round(o.soucet_polozek_kc).toLocaleString("cs-CZ")}
+                  </span>
+                )}
+              </label>
               <input
                 className="crm-pole"
                 value={form.cena_kc}
                 onChange={(e) => zmen("cena_kc", e.target.value)}
                 inputMode="decimal"
               />
+              {/* Cena jde ze součtu rozpisu, dokud ji někdo nepřepíše ručně.
+                  Pak má přednost ruční hodnota a appka jen ukáže rozdíl. */}
+              {o?.cena_rucni && o?.soucet_polozek_kc != null && (
+                <p className="crm-tise" style={{ margin: "4px 0 0" }}>
+                  Cena je zadaná ručně
+                  {Math.abs((o.cena_kc || 0) - o.soucet_polozek_kc) > 0.5
+                    ? ` (o ${Math.round(
+                        (o.cena_kc || 0) - o.soucet_polozek_kc
+                      ).toLocaleString("cs-CZ")} Kč jinak než součet rozpisu)`
+                    : ""}
+                  .{" "}
+                  <button
+                    type="button"
+                    className="fm-btn crm-btn-maly"
+                    onClick={() => {
+                      zmen("cena_kc", String(o.soucet_polozek_kc));
+                      setForm((f) => ({ ...f, cena_rucni: false }));
+                    }}
+                  >
+                    Vrátit na součet rozpisu
+                  </button>
+                </p>
+              )}
             </div>
             <div>
               <label className="crm-label">Datum podpisu</label>
@@ -241,6 +277,23 @@ export default function ObjednavkaFormular({
               onZmena={(extra) => zmen("extra", extra)}
             />
           </div>
+
+          {/* Rozpis položek (CRM-08) a fakturace (CRM-09). Obojí dává smysl až
+              u existující objednávky – nová se nejdřív musí založit, aby měla id. */}
+          {jeUprava && o && (
+            <div className="crm-oddelovac" style={{ marginTop: 16, paddingTop: 14 }}>
+              <RozpisPolozek
+                nadpis="Rozpis položek objednávky"
+                nacti={() => crmObjednavkaPolozky(o.id)}
+                uloz={(polozky) => crmObjednavkaUlozPolozky(o.id, polozky)}
+                pridejZKatalogu={(ids) => crmObjednavkaPridejZKatalogu(o.id, ids)}
+                prekloopZNabidky={o.nabidka_id ? () => crmObjednavkaPrekloopZNabidky(o.id) : null}
+                onZmena={onZmena}
+              />
+            </div>
+          )}
+
+          {jeUprava && o && <FakturacePanel objednavkaId={o.id} onZmena={onZmena} />}
 
           {/* Projekt vzniká z objednávky – proto je tlačítko tady. */}
           {jeUprava && o && (

@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 TypNabidky = Literal["ppa", "prodej", "peak_shaving", "kombinace"]
 StavNabidky = Literal["koncept", "data_nahrana", "zkontrolovano_oz", "spocitano", "hotovo"]
 TypTechnologie = Literal["fve_panel", "invertor", "baterie", "jina"]
+ZdrojPolozky = Literal["rucne", "bess_cenik", "raynet_import"]
+DruhPrilohy = Literal["technicky_list", "foto", "certifikat", "jiny"]
 TypDokumentu = Literal["faktura_pdf", "spotreba_csv", "jiny"]
 StavZpracovani = Literal["nahrano", "extrahovano", "chyba_extrakce", "rucne_doplneno"]
 Distributor = Literal["cez", "egd", "pre"]
@@ -78,32 +80,88 @@ class NabidkaUprava(BaseModel):
     stav: Optional[StavNabidky] = None
 
 
-# ---- Katalog technologií ----
+# ---- Katalog produktů (dřív „katalog technologií“, CRM-08) ----
+class PrilohaOut(BaseModel):
+    """Soubor u položky katalogu – technický list, foto, certifikát."""
+
+    id: int
+    druh: DruhPrilohy
+    puvodni_nazev: str
+    popis: str = ""
+    velikost_bajtu: Optional[int] = None
+    nahrano_at: Optional[str] = None
+    # True u obrázků – frontend z nich dělá náhledy místo odkazu ke stažení.
+    je_obrazek: bool = False
+
+
+class PrilohaUprava(BaseModel):
+    druh: Optional[DruhPrilohy] = None
+    popis: Optional[str] = None
+
+
 class TechnologieOut(BaseModel):
     id: int
     typ: TypTechnologie
     nazev: str
     model: str = ""
+    kod: Optional[str] = None
+    kategorie: str = ""
+    jednotka: str = "ks"
+    popis: str = ""
     vykon_kw: Optional[float] = None
     kapacita_kwh: Optional[float] = None
     cena_kc: Optional[float] = None
+    sazba_dph: Optional[float] = None
     ucinnost: Optional[float] = None
-    dostupnost: bool = True
+    platnost_od: Optional[str] = None
+    platnost_do: Optional[str] = None
+    zdroj: ZdrojPolozky = "rucne"
+    aktivni: bool = True
+    # Platí ceník k dnešku? Dopočítává backend z platnosti, ať se to nemusí
+    # počítat na třech místech ve frontendu.
+    plati_dnes: bool = True
     raynet_id: Optional[str] = None
     # Hodnoty vlastních sloupců katalogu ({klic_sloupce: hodnota}).
     extra: dict = {}
+    prilohy: list[PrilohaOut] = []
+    # Nákupní cena a marže jen pro právo `nabidkovac_katalog`; ostatním se
+    # neposílají vůbec (zůstávají None), ne že by se jen skryly ve frontendu.
+    cena_nakup_kc: Optional[float] = None
+    marze_kc: Optional[float] = None
+    marze_procent: Optional[float] = None
 
 
 class TechnologieVstup(BaseModel):
     typ: TypTechnologie
     nazev: str
     model: str = ""
+    kod: Optional[str] = None
+    kategorie: str = ""
+    jednotka: str = "ks"
+    popis: str = ""
     vykon_kw: Optional[float] = None
     kapacita_kwh: Optional[float] = None
     cena_kc: Optional[float] = None
+    cena_nakup_kc: Optional[float] = None
+    sazba_dph: Optional[float] = None
     ucinnost: Optional[float] = None
-    dostupnost: bool = True
+    platnost_od: Optional[str] = None
+    platnost_do: Optional[str] = None
+    zdroj: Optional[ZdrojPolozky] = None
+    aktivni: bool = True
     extra: dict = {}
+
+
+class HromadnaUpravaKatalogu(BaseModel):
+    """Zapnout/vypnout nebo přeřadit víc položek najednou.
+
+    Vzniklo kvůli importu 244 položek: bez toho by vyřazení celé kategorie
+    z ceníku znamenalo 40 kliknutí.
+    """
+
+    ids: list[int]
+    aktivni: Optional[bool] = None
+    kategorie: Optional[str] = None
 
 
 # ---- Vlastní sloupce katalogu ----
@@ -320,7 +378,7 @@ class VystupSablonaOut(BaseModel):
 
 
 class VystupSablonaZNabidky(BaseModel):
-    """Rozvržení převzaté z jiné nabídky – „udělej to jako tehdy"."""
+    """Rozvržení převzaté z jiné nabídky – „udělej to jako tehdy“."""
 
     nabidka_id: int
     nazev: str
@@ -349,3 +407,55 @@ class VystupOut(BaseModel):
     hodnoty: dict[str, Any] = {}  # {klic: {nazev, format, hodnota, hodnota_text}}
     tabulka: dict = {}  # {sloupce, radky}
     graf: Optional[dict] = None  # surová data grafu (dle typ_reseni)
+
+
+# ---- Rozpis položek nabídky / objednávky (CRM-08) ----
+class PolozkaVstup(BaseModel):
+    """Jeden řádek rozpisu při ukládání.
+
+    `id` je vyplněné u řádku, který už v DB existuje (aktualizuje se), prázdné
+    u nového. Ukládá se celý rozpis najednou, ne řádek po řádku – editor je
+    tabulka a člověk v ní přeskládá víc věcí naráz.
+
+    `technologie_id` je jen odkaz do katalogu; název a ceny se ukládají tak,
+    jak přijdou z formuláře (snapshot), takže položka mimo katalog projde
+    stejnou cestou.
+    """
+
+    id: Optional[int] = None
+    technologie_id: Optional[int] = None
+    kod: str = ""
+    nazev: str
+    popis: str = ""
+    jednotka: str = "ks"
+    mnozstvi: float = 1
+    cena_jednotkova: Optional[float] = None
+    nakup_jednotkovy: Optional[float] = None
+    sleva_procent: float = 0
+    sazba_dph: Optional[float] = None
+
+
+class PolozkyVstup(BaseModel):
+    """Celý rozpis. Pořadí řádků = pořadí v seznamu."""
+
+    polozky: list[PolozkaVstup] = []
+
+
+class PolozkySouhrn(BaseModel):
+    pocet: int = 0
+    bez_dph: float = 0
+    dph: float = 0
+    s_dph: float = 0
+    nakup_celkem: Optional[float] = None
+    marze_kc: Optional[float] = None
+    marze_procent: Optional[float] = None
+
+
+class PolozkyOut(BaseModel):
+    """Rozpis + spočítaný souhrn. Souhrn počítá backend, ať se čísla v appce
+    a na tiskové nabídce nemůžou rozejít zaokrouhlením v JavaScriptu."""
+
+    polozky: list[dict] = []
+    souhrn: PolozkySouhrn
+    # True, jen když volající smí vidět nákupní ceny (právo katalogu).
+    vidi_nakup: bool = False

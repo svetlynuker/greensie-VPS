@@ -4,10 +4,10 @@ Zdroj: docs/importy/pricelist-Simulační matice-2026-07-17.xlsx (list Pricelist
 – simulační matice jedné produktové řady: 84 konfigurací výkon × kapacita.
 
 Mapování sloupců ceníku:
-- „kW / Nominální výkon"            → Technologie.vykon_kw
-- „kWh / nominální kapacita"        → Technologie.kapacita_kwh
-- „efficiency / efektivita cyklu"   → Technologie.ucinnost (round-trip, 0–1)
-- „dealer price / prodejní cena reálná" → Technologie.cena_kc; u konfigurací
+- „kW / Nominální výkon“            → Technologie.vykon_kw
+- „kWh / nominální kapacita“        → Technologie.kapacita_kwh
+- „efficiency / efektivita cyklu“   → Technologie.ucinnost (round-trip, 0–1)
+- „dealer price / prodejní cena reálná“ → Technologie.cena_kc; u konfigurací
   2 MW a víc ceník reálnou cenu neuvádí → použije se doporučená prodejní cena
 - ostatní sloupce → Technologie.extra (vlastní sloupce katalogu, viz _SLOUPCE)
 
@@ -176,7 +176,12 @@ def seed_baterie(db: Session) -> int:
                 # nemají → doporučená prodejní cena.
                 cena_kc=(real_cena if real_cena is not None else dop_cena),
                 ucinnost=ucinnost,
-                dostupnost=True,
+                aktivni=True,
+                # Ceník BESS, ne prodejní ceník z Raynetu – podle zdroje se
+                # v katalogu filtruje a validace kW/kWh platí jen pro něj.
+                zdroj="bess_cenik",
+                jednotka="ks",
+                kategorie="BESS sestavy",
                 extra=extra,
             )
         )

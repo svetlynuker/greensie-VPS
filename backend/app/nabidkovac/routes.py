@@ -14,13 +14,17 @@ from typing import Optional
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.auth.models import User
+from app.crm.models import ObjednavkaPolozka
 from app.database import get_db
 from app.nabidkovac import (
+    katalog_soubory,
     peak_shaving,
+    polozky as polozky_modul,
     ppa_fve,
     ppa_v2,
     profil_import,
@@ -37,21 +41,25 @@ from app.nabidkovac.models import (
     TYPY_DOKUMENTU,
     TYPY_NABIDKY,
     TYPY_SLOUPCE,
+    VYCHOZI_ZDROJ,
     KatalogSloupec,
     Nabidka,
     NabidkaDokument,
+    NabidkaPolozka,
     NabidkaVystup,
     NavrhovaneReseni,
     SazbaDistributoru,
     SpotrebaProfil,
     Technologie,
+    TechnologiePriloha,
     VypoctovaNastaveni,
     VystupSablona,
 )
-from app.nabidkovac.permissions import vyzaduj_katalog, vyzaduj_nabidkovac
+from app.nabidkovac.permissions import muze_katalog, vyzaduj_katalog, vyzaduj_nabidkovac
 from app.nabidkovac.schemas import (
     DokumentOut,
     DokumentUprava,
+    HromadnaUpravaKatalogu,
     KatalogSloupecOut,
     KatalogSloupecVstup,
     NabidkaDetailOut,
@@ -59,7 +67,12 @@ from app.nabidkovac.schemas import (
     NabidkaUprava,
     NabidkaVstup,
     PeakShavingVstup,
+    PolozkyOut,
+    PolozkySouhrn,
+    PolozkyVstup,
     PpaVstup,
+    PrilohaOut,
+    PrilohaUprava,
     ReseniOut,
     SazbaOut,
     SazbaVstup,
@@ -343,21 +356,67 @@ def smaz_dokument(
     return {"smazano": dokument_id}
 
 
-# ================= Katalog technologií =================
-def _technologie_out(t: Technologie) -> TechnologieOut:
-    return TechnologieOut(
+# ================= Katalog produktů =================
+def _priloha_out(p: TechnologiePriloha) -> PrilohaOut:
+    return PrilohaOut(
+        id=p.id,
+        druh=p.druh,
+        puvodni_nazev=p.puvodni_nazev,
+        popis=p.popis or "",
+        velikost_bajtu=p.velikost_bajtu,
+        nahrano_at=_iso(p.nahrano_at),
+        je_obrazek=katalog_soubory.mime_typ(p.puvodni_nazev).startswith("image/"),
+    )
+
+
+def _plati_dnes(t: Technologie, dnes: date | None = None) -> bool:
+    """Je položka v platnosti k dnešku? Prázdná mez = neomezeno."""
+    dnes = dnes or date.today()
+    if t.platnost_od and t.platnost_od > dnes:
+        return False
+    if t.platnost_do and t.platnost_do < dnes:
+        return False
+    return True
+
+
+def _technologie_out(t: Technologie, s_nakupem: bool = False) -> TechnologieOut:
+    """Položka katalogu pro API.
+
+    `s_nakupem=False` (bez práva `nabidkovac_katalog`) znamená, že se nákupní
+    cena ani marže do odpovědi nedostanou vůbec – rozhodnutí Dana z 31. 7. 2026.
+    """
+    out = TechnologieOut(
         id=t.id,
         typ=t.typ,
         nazev=t.nazev,
         model=t.model or "",
+        kod=t.kod,
+        kategorie=t.kategorie or "",
+        jednotka=t.jednotka or "ks",
+        popis=t.popis or "",
         vykon_kw=_num(t.vykon_kw),
         kapacita_kwh=_num(t.kapacita_kwh),
         cena_kc=_num(t.cena_kc),
+        sazba_dph=_num(t.sazba_dph),
         ucinnost=_num(t.ucinnost),
-        dostupnost=t.dostupnost,
+        platnost_od=_iso(t.platnost_od),
+        platnost_do=_iso(t.platnost_do),
+        zdroj=t.zdroj or VYCHOZI_ZDROJ,
+        aktivni=t.aktivni,
+        plati_dnes=_plati_dnes(t),
         raynet_id=t.raynet_id,
         extra=t.extra or {},
+        prilohy=[_priloha_out(p) for p in sorted(t.prilohy, key=lambda x: x.id)],
     )
+    if s_nakupem:
+        out.cena_nakup_kc = _num(t.cena_nakup_kc)
+        if t.cena_kc is not None and t.cena_nakup_kc is not None:
+            out.marze_kc = float(t.cena_kc - t.cena_nakup_kc)
+            if t.cena_kc:
+                out.marze_procent = round(
+                    float((t.cena_kc - t.cena_nakup_kc) / t.cena_kc * 100), 1
+                )
+    return out
 
 
 def _zpracuj_extra(db: Session, extra_vstup: dict | None) -> dict:
@@ -391,30 +450,109 @@ def _over_technologii(vstup: TechnologieVstup) -> str:
     Kap. 3.2 METODIKY: pro `typ = baterie` musí být vyplněná OBĚ pole zároveň –
     `vykon_kw` (okamžitý výkon) i `kapacita_kwh` (energie) – ne jen jedno z nich.
     Peak shaving bez obou čísel počítat nejde (simulace potřebuje výkon i kapacitu).
+
+    Výjimka pro ceníkové položky (CRM-08): baterie z prodejního ceníku
+    (`zdroj != bess_cenik`) jsou komponenty typu „BMS Growatt“, ke kterým výkon
+    ani kapacita neexistují a do simulace nikdy nevstoupí. Kdyby se u nich obojí
+    vynucovalo, nešly by naimportovat – a lidé by je začali psát jako „jiná“.
     """
     nazev = vstup.nazev.strip()
     if not nazev:
         raise HTTPException(status_code=422, detail="Název je povinný")
-    if vstup.typ == "baterie":
+    if vstup.typ == "baterie" and (vstup.zdroj or VYCHOZI_ZDROJ) == "bess_cenik":
         if not vstup.vykon_kw or vstup.vykon_kw <= 0 or not vstup.kapacita_kwh or vstup.kapacita_kwh <= 0:
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    "U baterie musí být vyplněný výkon (kW) i kapacita (kWh) – "
-                    "obojí kladné (METODIKA kap. 3.2)."
+                    "U baterie z ceníku BESS musí být vyplněný výkon (kW) i kapacita "
+                    "(kWh) – obojí kladné (METODIKA kap. 3.2). Bez nich by nešel "
+                    "spočítat peak shaving."
                 ),
             )
+    if vstup.platnost_od and vstup.platnost_do and vstup.platnost_od > vstup.platnost_do:
+        raise HTTPException(
+            status_code=422, detail="Platnost „do“ nesmí být dřív než platnost „od“."
+        )
     return nazev
+
+
+def _cistY_kod(kod: Optional[str]) -> Optional[str]:
+    """Prázdný kód se ukládá jako NULL – jinak by unikátní index spadl na
+    druhé položce bez kódu."""
+    ocisteny = (kod or "").strip()
+    return ocisteny or None
+
+
+def _datum(hodnota: Optional[str]) -> date | None:
+    """ISO datum z frontendu na `date`. Prázdno = None."""
+    if not hodnota:
+        return None
+    try:
+        return date.fromisoformat(hodnota[:10])
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Neplatné datum: {hodnota}")
+
+
+def _naplni_technologii(t: Technologie, vstup: TechnologieVstup, db: Session, nazev: str) -> None:
+    """Přepíše položku katalogu daty z formuláře (sdílí přidání i úprava)."""
+    t.typ = vstup.typ
+    t.nazev = nazev
+    t.model = (vstup.model or "").strip()
+    t.kod = _cistY_kod(vstup.kod)
+    t.kategorie = (vstup.kategorie or "").strip()
+    t.jednotka = (vstup.jednotka or "ks").strip() or "ks"
+    t.popis = (vstup.popis or "").strip()
+    t.vykon_kw = vstup.vykon_kw
+    t.kapacita_kwh = vstup.kapacita_kwh
+    t.cena_kc = vstup.cena_kc
+    t.cena_nakup_kc = vstup.cena_nakup_kc
+    t.sazba_dph = vstup.sazba_dph
+    t.ucinnost = vstup.ucinnost
+    t.platnost_od = _datum(vstup.platnost_od)
+    t.platnost_do = _datum(vstup.platnost_do)
+    t.aktivni = vstup.aktivni
+    t.extra = _zpracuj_extra(db, vstup.extra)
 
 
 @router.get("/technologie", response_model=list[TechnologieOut])
 def seznam_technologii(
+    jen_aktivni: bool = Query(False, description="Vrátit jen aktivní a platné položky"),
     user: User = Depends(vyzaduj_nabidkovac),
     db: Session = Depends(get_db),
 ):
-    """Katalog vidí každý s právem na Nabídkovač; editovat smí jen katalogové právo."""
-    ts = db.query(Technologie).order_by(Technologie.typ, Technologie.nazev, Technologie.id).all()
-    return [_technologie_out(t) for t in ts]
+    """Katalog vidí každý s právem na Nabídkovač; editovat smí jen katalogové právo.
+
+    `jen_aktivni=true` používá výběr položky do nabídky – tam nemá smysl nabízet
+    vyřazené zboží ani ceník, který ještě neplatí.
+    """
+    dotaz = db.query(Technologie).options(selectinload(Technologie.prilohy))
+    if jen_aktivni:
+        dotaz = dotaz.filter(Technologie.aktivni.is_(True))
+    ts = dotaz.order_by(Technologie.kategorie, Technologie.nazev, Technologie.id).all()
+    if jen_aktivni:
+        ts = [t for t in ts if _plati_dnes(t)]
+    s_nakupem = muze_katalog(user)
+    return [_technologie_out(t, s_nakupem) for t in ts]
+
+
+@router.get("/technologie/kategorie", response_model=list[str])
+def seznam_kategorii(
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Kategorie, které se v katalogu skutečně používají – pro filtr a našeptávač.
+
+    Není to číselník: kategorie je volný text na položce, tenhle endpoint jen
+    ukáže, co už někdo napsal, aby nevznikly „Střídače“ a „stridace“ vedle sebe.
+    """
+    radky = (
+        db.query(Technologie.kategorie)
+        .filter(Technologie.kategorie != "")
+        .distinct()
+        .order_by(Technologie.kategorie)
+        .all()
+    )
+    return [k for (k,) in radky]
 
 
 @router.post("/technologie", response_model=TechnologieOut)
@@ -424,22 +562,19 @@ def pridej_technologii(
     db: Session = Depends(get_db),
 ):
     nazev = _over_technologii(vstup)
-    t = Technologie(
-        typ=vstup.typ,
-        nazev=nazev,
-        model=(vstup.model or "").strip(),
-        vykon_kw=vstup.vykon_kw,
-        kapacita_kwh=vstup.kapacita_kwh,
-        cena_kc=vstup.cena_kc,
-        ucinnost=vstup.ucinnost,
-        dostupnost=vstup.dostupnost,
-        extra=_zpracuj_extra(db, vstup.extra),
-        vytvoril_user_id=user.id,
-    )
+    t = Technologie(typ=vstup.typ, nazev=nazev, zdroj=vstup.zdroj or VYCHOZI_ZDROJ)
+    _naplni_technologii(t, vstup, db, nazev)
+    t.vytvoril_user_id = user.id
     db.add(t)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409, detail=f"Kód „{vstup.kod}“ už v katalogu existuje."
+        )
     db.refresh(t)
-    return _technologie_out(t)
+    return _technologie_out(t, True)
 
 
 @router.put("/technologie/{technologie_id}", response_model=TechnologieOut)
@@ -451,20 +586,45 @@ def uprav_technologii(
 ):
     t = db.get(Technologie, technologie_id)
     if t is None:
-        raise HTTPException(status_code=404, detail="Technologie neexistuje")
+        raise HTTPException(status_code=404, detail="Položka katalogu neexistuje")
     nazev = _over_technologii(vstup)
-    t.typ = vstup.typ
-    t.nazev = nazev
-    t.model = (vstup.model or "").strip()
-    t.vykon_kw = vstup.vykon_kw
-    t.kapacita_kwh = vstup.kapacita_kwh
-    t.cena_kc = vstup.cena_kc
-    t.ucinnost = vstup.ucinnost
-    t.dostupnost = vstup.dostupnost
-    t.extra = _zpracuj_extra(db, vstup.extra)
-    db.commit()
+    _naplni_technologii(t, vstup, db, nazev)
+    # `zdroj` se úpravou nemění – je to informace o původu záznamu, ne pole
+    # k vyplnění. Přepnutím by baterie z ceníku BESS tiše vypadla ze simulace.
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409, detail=f"Kód „{vstup.kod}“ už v katalogu existuje."
+        )
     db.refresh(t)
-    return _technologie_out(t)
+    return _technologie_out(t, True)
+
+
+@router.post("/technologie/hromadne")
+def hromadna_uprava_katalogu(
+    vstup: HromadnaUpravaKatalogu,
+    user: User = Depends(vyzaduj_katalog),
+    db: Session = Depends(get_db),
+):
+    """Zapnout/vypnout nebo přeřadit označené položky (CRM-08).
+
+    Vzniklo kvůli 244 naimportovaným položkám – vyřadit celou kategorii
+    z ceníku by jinak byla desítka kliknutí.
+    """
+    if not vstup.ids:
+        return {"upraveno": 0}
+    if vstup.aktivni is None and vstup.kategorie is None:
+        raise HTTPException(status_code=422, detail="Není co změnit.")
+    ts = db.query(Technologie).filter(Technologie.id.in_(vstup.ids)).all()
+    for t in ts:
+        if vstup.aktivni is not None:
+            t.aktivni = vstup.aktivni
+        if vstup.kategorie is not None:
+            t.kategorie = vstup.kategorie.strip()
+    db.commit()
+    return {"upraveno": len(ts)}
 
 
 @router.delete("/technologie/{technologie_id}")
@@ -473,12 +633,238 @@ def smaz_technologii(
     user: User = Depends(vyzaduj_katalog),
     db: Session = Depends(get_db),
 ):
+    """Smaže položku i s přílohami.
+
+    Položku, která visí na nějaké nabídce nebo objednávce, smazat nejde –
+    rozpis by přišel o vazbu do katalogu (snapshot názvu a ceny by sice
+    zůstal, ale ztratil by se technický list a historie). Místo mazání se
+    taková položka vypíná zaškrtávátkem „Aktivní“.
+    """
     t = db.get(Technologie, technologie_id)
     if t is None:
-        raise HTTPException(status_code=404, detail="Technologie neexistuje")
+        raise HTTPException(status_code=404, detail="Položka katalogu neexistuje")
+
+    pouziti = (
+        db.query(NabidkaPolozka).filter(NabidkaPolozka.technologie_id == technologie_id).count()
+        + db.query(ObjednavkaPolozka)
+        .filter(ObjednavkaPolozka.technologie_id == technologie_id)
+        .count()
+    )
+    if pouziti:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Položka je použitá v {pouziti} rozpisech nabídek/objednávek. "
+                "Smazat ji nejde – odškrtni „Aktivní“, ať se dál nenabízí."
+            ),
+        )
+
+    for p in list(t.prilohy):
+        katalog_soubory.smaz_soubor(p.soubor_cesta)
     db.delete(t)
     db.commit()
     return {"smazano": technologie_id}
+
+
+# ---- Přílohy položky katalogu (technický list, foto, certifikát) ----
+@router.post("/technologie/{technologie_id}/prilohy", response_model=list[PrilohaOut])
+async def nahraj_prilohy(
+    technologie_id: int,
+    soubory_vstup: list[UploadFile] = File(..., alias="soubory"),
+    user: User = Depends(vyzaduj_katalog),
+    db: Session = Depends(get_db),
+):
+    """Nahraje k položce jeden nebo víc souborů najednou.
+
+    Víc souborů schválně: k jedné baterii patří datasheet, prohlášení o shodě
+    a pár fotek, a nikdo je nebude nahrávat po jednom.
+    """
+    t = db.get(Technologie, technologie_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail="Položka katalogu neexistuje")
+
+    vytvorene: list[TechnologiePriloha] = []
+    for soubor in soubory_vstup:
+        nazev = soubor.filename or "soubor"
+        if not katalog_soubory.je_povolena(nazev):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Soubor „{nazev}“ má nepodporovanou příponu. Povolené: "
+                    + ", ".join(sorted(katalog_soubory.POVOLENE_PRIPONY))
+                ),
+            )
+        obsah = await soubor.read()
+        if len(obsah) > katalog_soubory.MAX_BAJTU:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Soubor „{nazev}“ je větší než 25 MB.",
+            )
+        cesta = katalog_soubory.uloz_soubor(technologie_id, nazev, obsah)
+        p = TechnologiePriloha(
+            technologie_id=technologie_id,
+            druh=katalog_soubory.odvod_druh(nazev),
+            puvodni_nazev=nazev,
+            soubor_cesta=cesta,
+            velikost_bajtu=len(obsah),
+            nahral_user_id=user.id,
+        )
+        db.add(p)
+        vytvorene.append(p)
+
+    db.commit()
+    for p in vytvorene:
+        db.refresh(p)
+    return [_priloha_out(p) for p in vytvorene]
+
+
+@router.get("/prilohy/{priloha_id}/soubor")
+def stahni_prilohu(
+    priloha_id: int,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Vydá soubor přílohy. Obrázky a PDF inline (náhled), zbytek ke stažení."""
+    p = db.get(TechnologiePriloha, priloha_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Příloha neexistuje")
+    try:
+        cesta = katalog_soubory.cesta_k_souboru(p.soubor_cesta)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Soubor přílohy nenalezen")
+    if not cesta.exists():
+        raise HTTPException(status_code=404, detail="Soubor přílohy nenalezen")
+
+    mime = katalog_soubory.mime_typ(p.puvodni_nazev)
+    inline = mime.startswith("image/") or mime == "application/pdf"
+    return FileResponse(
+        path=str(cesta),
+        media_type=mime,
+        filename=p.puvodni_nazev,
+        content_disposition_type="inline" if inline else "attachment",
+    )
+
+
+@router.patch("/prilohy/{priloha_id}", response_model=PrilohaOut)
+def uprav_prilohu(
+    priloha_id: int,
+    vstup: PrilohaUprava,
+    user: User = Depends(vyzaduj_katalog),
+    db: Session = Depends(get_db),
+):
+    """Přepnutí druhu (automat podle přípony minul) nebo doplnění popisku."""
+    p = db.get(TechnologiePriloha, priloha_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Příloha neexistuje")
+    if vstup.druh is not None:
+        p.druh = vstup.druh
+    if vstup.popis is not None:
+        p.popis = vstup.popis.strip()
+    db.commit()
+    db.refresh(p)
+    return _priloha_out(p)
+
+
+@router.delete("/prilohy/{priloha_id}")
+def smaz_prilohu(
+    priloha_id: int,
+    user: User = Depends(vyzaduj_katalog),
+    db: Session = Depends(get_db),
+):
+    p = db.get(TechnologiePriloha, priloha_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Příloha neexistuje")
+    katalog_soubory.smaz_soubor(p.soubor_cesta)
+    db.delete(p)
+    db.commit()
+    return {"smazano": priloha_id}
+
+
+# ================= Rozpis položek nabídky (CRM-08) =================
+def _polozky_out(polozky: list, s_nakupem: bool) -> PolozkyOut:
+    """Rozpis + souhrn v jednom. Souhrn počítá backend – viz `polozky.py`."""
+    return PolozkyOut(
+        polozky=[polozky_modul.polozka_out(p, s_nakupem) for p in polozky],
+        souhrn=PolozkySouhrn(**polozky_modul.souhrn(polozky)),
+        vidi_nakup=s_nakupem,
+    )
+
+
+@router.get("/nabidky/{nabidka_id}/polozky", response_model=PolozkyOut)
+def rozpis_nabidky(
+    nabidka_id: int,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    n = db.get(Nabidka, nabidka_id)
+    if n is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    return _polozky_out(list(n.polozky), muze_katalog(user))
+
+
+@router.put("/nabidky/{nabidka_id}/polozky", response_model=PolozkyOut)
+def uloz_rozpis_nabidky(
+    nabidka_id: int,
+    vstup: PolozkyVstup,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Uloží celý rozpis nabídky (CRM-08).
+
+    Rozpis smí upravit každý, kdo smí na nabídku – je to obchodní práce OZ,
+    ne správa ceníku. Nákupní ceny přitom mění jen ten, kdo je vidí.
+    """
+    n = db.get(Nabidka, nabidka_id)
+    if n is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    if not muze_katalog(user):
+        # Bez práva na katalog se nákupní ceny ignorují, ať je nejde přepsat
+        # podvrženým požadavkem (v UI je stejně nikdo takový nevidí).
+        for radek in vstup.polozky:
+            radek.nakup_jednotkovy = None
+
+    polozky_modul.uloz_rozpis(
+        db,
+        vstup,
+        list(n.polozky),
+        lambda: NabidkaPolozka(nabidka_id=nabidka_id, nazev=""),
+    )
+    db.commit()
+    db.refresh(n)
+    return _polozky_out(list(n.polozky), muze_katalog(user))
+
+
+@router.post("/nabidky/{nabidka_id}/polozky/z-katalogu", response_model=PolozkyOut)
+def pridej_polozky_z_katalogu(
+    nabidka_id: int,
+    ids: list[int],
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Přidá na konec rozpisu položky vybrané z katalogu (množství 1).
+
+    Ceny a název se přeberou jako snapshot – pozdější změna ceníku nabídkou
+    nehne (viz `polozky.napln_z_katalogu`).
+    """
+    n = db.get(Nabidka, nabidka_id)
+    if n is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    if not ids:
+        return _polozky_out(list(n.polozky), muze_katalog(user))
+
+    nalezene = {t.id: t for t in db.query(Technologie).filter(Technologie.id.in_(ids)).all()}
+    dalsi_poradi = max((p.poradi for p in n.polozky), default=-1) + 1
+    for i, tid in enumerate(ids):
+        t = nalezene.get(tid)
+        if t is None:
+            continue
+        p = NabidkaPolozka(nabidka_id=nabidka_id, nazev=t.nazev, poradi=dalsi_poradi + i, mnozstvi=1)
+        polozky_modul.napln_z_katalogu(p, t)
+        db.add(p)
+
+    db.commit()
+    db.refresh(n)
+    return _polozky_out(list(n.polozky), muze_katalog(user))
 
 
 # ================= Vlastní sloupce katalogu =================
@@ -835,7 +1221,7 @@ def zpracuj_profil(
 
     body, pocet_duplicit = profil_import.deduplikuj_casy(body)
 
-    # „Poslední vyhrává" – zahoď celý předchozí profil nabídky a vlož nový
+    # „Poslední vyhrává“ – zahoď celý předchozí profil nabídky a vlož nový
     # (bulk kvůli objemu ~35 tis. řádků).
     db.query(SpotrebaProfil).filter(
         SpotrebaProfil.nabidka_id == d.nabidka_id,
@@ -1313,12 +1699,15 @@ def spocti_peak_shaving(
             parametry_2027 = sazba_2027.parametry
             je_modelovy_2027 = bool(sazba_2027.je_modelovy_odhad)
 
-    # 3) katalog baterií (typ=baterie, dostupné, s výkonem i kapacitou – kap. 3.2).
+    # 3) katalog baterií (typ=baterie, aktivní, s výkonem i kapacitou – kap. 3.2).
     # `baterie_ids` ve vstupu = OZ si ručně vybral, které produkty počítat
     # (prázdné/None = celý katalog).
+    # Filtr na kW/kWh je zároveň to, co ze simulace drží stranou bateriové
+    # KOMPONENTY z prodejního ceníku (BMS, kabeláž, racky) – ty tahle čísla
+    # nemají, takže se do výběru nikdy nedostanou.
     dotaz_baterie = db.query(Technologie).filter(
         Technologie.typ == "baterie",
-        Technologie.dostupnost.is_(True),
+        Technologie.aktivni.is_(True),
         Technologie.vykon_kw.isnot(None),
         Technologie.kapacita_kwh.isnot(None),
     )
@@ -2198,7 +2587,7 @@ def _vystup_out(db: Session, n: Nabidka, typ_reseni: str, vychozi: bool = False)
     výchozí) + katalog dostupných polí + resolvnuté zákaznické hodnoty.
 
     `vychozi=True` vynutí kódovou předlohu i tehdy, když je něco uloženo
-    (tlačítko „Obnovit výchozí" – uloží se až na explicitní Uložit)."""
+    (tlačítko „Obnovit výchozí“ – uloží se až na explicitní Uložit)."""
     ulozeny = (
         db.query(NabidkaVystup)
         .filter(NabidkaVystup.nabidka_id == n.id, NabidkaVystup.typ_reseni == typ_reseni)
@@ -2234,7 +2623,7 @@ def _vystup_out(db: Session, n: Nabidka, typ_reseni: str, vychozi: bool = False)
 
 
 def _over_konfiguraci(typ_reseni: str, konfigurace: VystupKonfigurace) -> None:
-    """POJISTKA „jen zákaznická data": každé pole/sloupec/dlaždice musí být
+    """POJISTKA „jen zákaznická data“: každé pole/sloupec/dlaždice musí být
     v katalogu daného typu, jinak 422. Platí pro uloženou šablonu nabídky i pro
     pojmenovanou šablonu – obojí končí ve stejném vykreslení."""
     povolena_pole = sablona_katalog.platne_klice(typ_reseni)
@@ -2305,7 +2694,7 @@ def uloz_vystup(
     user: User = Depends(vyzaduj_nabidkovac),
     db: Session = Depends(get_db),
 ):
-    """Uloží šablonu výstupu nabídky. POJISTKA „jen zákaznická data": každé
+    """Uloží šablonu výstupu nabídky. POJISTKA „jen zákaznická data“: každé
     pole/sloupec musí být v katalogu daného typu, jinak 422 – interní klíč
     (CAPEX, NPV, marže…) se do konfigurace nedostane."""
     _over_typ_reseni(typ_reseni)
