@@ -231,27 +231,30 @@ def text_hodnoty(pole: CrmVlastniPole, hodnota) -> str:
     return str(hodnota)
 
 
+def jedno_pro_frontend(p: CrmVlastniPole) -> dict:
+    """Tvar jednoho pole pro UI. Jediné místo, kde se skládá — endpointy si ho
+    nesmí stavět ručně, jinak se při přidání sloupce rozejdou."""
+    return {
+        "id": p.id,
+        "entita": p.entita,
+        "klic": p.klic,
+        "nazev": p.nazev,
+        "typ": p.typ,
+        "volby": list(p.volby or []),
+        "napoveda": p.napoveda or "",
+        "povinne": bool(p.povinne),
+        "v_seznamu": bool(p.v_seznamu),
+        "poradi": p.poradi,
+        "skupina": p.skupina or "",
+        "zavislost_pole": p.zavislost_pole or "",
+        "zavislost_hodnota": p.zavislost_hodnota or "",
+        "vzorec": p.vzorec or "",
+    }
+
+
 def pro_frontend(db: Session, entita: str) -> list[dict]:
     """Definice polí pro UI (formulář, sloupce seznamu)."""
-    return [
-        {
-            "id": p.id,
-            "entita": p.entita,
-            "klic": p.klic,
-            "nazev": p.nazev,
-            "typ": p.typ,
-            "volby": list(p.volby or []),
-            "napoveda": p.napoveda or "",
-            "povinne": bool(p.povinne),
-            "v_seznamu": bool(p.v_seznamu),
-            "poradi": p.poradi,
-            "skupina": p.skupina or "",
-            "zavislost_pole": p.zavislost_pole or "",
-            "zavislost_hodnota": p.zavislost_hodnota or "",
-            "vzorec": p.vzorec or "",
-        }
-        for p in seznam(db, entita)
-    ]
+    return [jedno_pro_frontend(p) for p in seznam(db, entita)]
 
 
 def hodnoty_pro_seznam(db: Session, entita: str, zaznamy: list) -> dict[int, dict]:

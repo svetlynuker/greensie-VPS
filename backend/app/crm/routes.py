@@ -2519,18 +2519,13 @@ def smaz_kategorii(
 
 # ---- nastavení: vlastní pole na obrazovkách ---------------------------------
 def _pole_out(pole: CrmVlastniPole) -> VlastniPoleOut:
-    return VlastniPoleOut(
-        id=pole.id,
-        entita=pole.entita,
-        klic=pole.klic,
-        nazev=pole.nazev,
-        typ=pole.typ,
-        volby=list(pole.volby or []),
-        napoveda=pole.napoveda or "",
-        povinne=bool(pole.povinne),
-        v_seznamu=bool(pole.v_seznamu),
-        poradi=pole.poradi,
-    )
+    """Jedno pole do odpovědi.
+
+    Skládá se přes `pro_frontend`, ne ručně: dvě místa, která staví tentýž tvar,
+    se rozejdou při prvním novém sloupci — přesně to se stalo u skupin a vzorců
+    (CRM-33/34), kdy se uložily, ale POST je vracel prázdné.
+    """
+    return VlastniPoleOut(**pole_modul.jedno_pro_frontend(pole))
 
 
 # „Rozhodneme se sledovat parametr, který dnes nepotřebuju" – admin si pole

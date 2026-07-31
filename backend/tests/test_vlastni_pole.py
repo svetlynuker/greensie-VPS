@@ -107,3 +107,27 @@ def test_viditelnost_nad_seznamem_hodnot():
     pole = _Pole("kategorie", "ppa")
     assert viditelne(pole, {"kategorie": ["prodej", "PPA"]}) is True
     assert viditelne(pole, {"kategorie": ["prodej"]}) is False
+
+
+def test_pole_se_sklada_na_jednom_miste():
+    """Regrese z 31. 7. 2026: POST skládal odpověď ručně, takže nové sloupce
+    (skupina, vzorec, podmínka) se uložily, ale vracely se prázdné."""
+    import inspect
+
+    from app.crm import routes, vlastni_pole
+
+    # `_pole_out` musí delegovat, ne stavět VlastniPoleOut po položkách.
+    zdroj = inspect.getsource(routes._pole_out)
+    assert "jedno_pro_frontend" in zdroj
+
+    # A tvar musí obsahovat všechny sloupce, které model má.
+    klice = set(vlastni_pole.jedno_pro_frontend.__doc__ and {} or {})  # jen pro čitelnost
+    from app.crm.schemas import VlastniPoleOut
+
+    ocekavane = set(VlastniPoleOut.model_fields)
+    class _P:
+        id = 1; entita = "op"; klic = "k"; nazev = "N"; typ = "text"; volby = []
+        napoveda = ""; povinne = False; v_seznamu = False; poradi = 0
+        skupina = ""; zavislost_pole = ""; zavislost_hodnota = ""; vzorec = ""
+    klice = set(vlastni_pole.jedno_pro_frontend(_P()))
+    assert ocekavane <= klice, f"chybí ve výstupu: {ocekavane - klice}"
