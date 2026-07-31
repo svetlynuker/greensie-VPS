@@ -7,12 +7,14 @@ import Kanban from "../components/Kanban";
 import PripadFormular from "../components/PripadFormular";
 import StavyNastaveni from "../components/StavyNastaveni";
 import DuvodProhry from "../components/DuvodProhry";
+import HromadneAkce from "../components/HromadneAkce";
 import {
   crmKategorie,
   crmPripadStav,
   crmPripady,
   crmPripadyKanban,
   crmStavy,
+  crmUzivatele,
   crmVlastniPole,
   logout,
   nactiMe,
@@ -35,6 +37,8 @@ export default function ObchodniPripady() {
   const [radky, setRadky] = useState([]);
   const [stavy, setStavy] = useState([]);
   const [kategorie, setKategorie] = useState([]);
+  const [vybrane, setVybrane] = useState([]);
+  const [lide, setLide] = useState([]);
   const [hledat, setHledat] = useState("");
   const [novy, setNovy] = useState(false);
   const [nastaveniStavu, setNastaveniStavu] = useState(false);
@@ -69,6 +73,9 @@ export default function ObchodniPripady() {
       // překládají klíč na název.
       crmKategorie().catch(() => []),
     ]);
+    crmUzivatele()
+      .then(setLide)
+      .catch(() => setLide([]));
     setKanban(k);
     setRadky(r);
     setStavy(s);
@@ -245,6 +252,18 @@ export default function ObchodniPripady() {
           </div>
         )}
 
+        <HromadneAkce
+          entita="op"
+          vybrane={vybrane}
+          lide={lide}
+          stavy={stavy}
+          onZrus={() => setVybrane([])}
+          onHotovo={async () => {
+            setVybrane([]);
+            await nacti(hledat);
+          }}
+        />
+
         {zobrazeni === "kanban" ? (
           <Kanban
             sloupce={f.filtrujKanban(kanban.sloupce)}
@@ -262,6 +281,8 @@ export default function ObchodniPripady() {
             podminky={f.podminky}
             onPodminky={f.setPodminky}
             exportNazev="obchodni-pripady"
+            vybrane={vybrane}
+            onVybrane={setVybrane}
             onOtevri={(p) => navigate(`/pripady/detail/${p.id}`)}
             vykresli={(p, sl) => {
               if (sl.klic === "cislo") return <span className="crm-silne">{p.cislo}</span>;

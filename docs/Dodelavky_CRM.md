@@ -248,7 +248,13 @@ jinak přidělení nic neudělá.
   Všechno chronologicky na jedné ose (aktivity, nabídky, objednávky, projekty, změny stavů).
   Dnes je to rozdělené do záložek a člověk si musí děj skládat v hlavě.
 
-- [ ] **CRM-19 · Hromadné akce nad seznamem** — Velikost **M** · Dopad **★★**
+- [x] **CRM-19 · Hromadné akce nad seznamem** — **hotovo 31. 7. 2026** (dávka C)
+  Zaškrtávátka v tabulce případů; lišta nabídne změnu vlastníka, změnu stavu a **plánování
+  aktivit za sebe** (Danovo rozšíření: 10 klientů → telefonát → start 8:00 → 15 min na
+  každou → appka je naskládá 8:00, 8:15, 8:30…). Mazání záměrně není — Dan ho nevybral.
+  *Pojistky:* práva se ověřují u každého záznamu zvlášť (cizí se přeskočí, ne aby dávka
+  spadla), u prohry se vynucuje důvod i hromadně, řada aktivit nepřeteče do noci
+  (pokračuje dalším dnem) a před založením se ukáže plán, kdo dostane jaký čas.
   Označit víc řádků a hromadně: změnit vlastníka, změnit stav, přidat aktivitu, exportovat.
 
 - [ ] **CRM-20 · Mapa zákazníků a projektů** — Velikost **M** · Dopad **★★**

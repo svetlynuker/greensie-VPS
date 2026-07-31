@@ -23,6 +23,7 @@ from app.auth.permissions import get_current_user, muze_otevrit
 from app.crm import ares as ares_modul
 from app.crm import (
     ciselne_rady,
+    hromadne as hromadne_modul,
     nastaveni_crm,
     statistiky as statistiky_modul,
     kalendar,
@@ -85,6 +86,9 @@ from app.crm.schemas import (
     PripadRadekOut,
     PripadUprava,
     PripadVstup,
+    HromadnaAktivitaVstup,
+    HromadnyStavVstup,
+    HromadnyVlastnikVstup,
     KalendarOut,
     KalendarUdalostOut,
     KategorieAktivityOut,
@@ -1582,6 +1586,78 @@ def smaz_stav(
     db.delete(s)
     db.commit()
     return {"ok": True}
+
+
+# ---- hromadné akce nad seznamem (CRM-19) ------------------------------------
+# Práva se kontrolují u KAŽDÉHO záznamu zvlášť (seznam ID jde z prohlížeče),
+# cizí se přeskočí a vrátí v `preskoceno` — ne aby celá dávka spadla.
+
+@router.post("/hromadne/vlastnik")
+def hromadne_vlastnik(
+    vstup: HromadnyVlastnikVstup,
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Přehodí vybrané záznamy na jiného člověka (odchod, dovolená)."""
+    try:
+        return hromadne_modul.zmen_vlastnika(
+            db, vstup.entita, vstup.ids, user, vstup.vlastnik_user_id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/hromadne/stav")
+def hromadne_stav(
+    vstup: HromadnyStavVstup,
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    """Posune vybrané případy do stejné fáze. U prohry vyžaduje důvod — jinak by
+    tohle byla zadní vrátka pro prohry bez důvodu a rozpad důvodů proher
+    v Přehledu obchodu by přestal mít smysl."""
+    try:
+        return hromadne_modul.zmen_stav(
+            db, vstup.ids, user, vstup.stav, vstup.duvod_prohry
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/hromadne/aktivita")
+def hromadne_aktivita(
+    vstup: HromadnaAktivitaVstup,
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Založí aktivitu každému vybranému záznamu; `retez` je naskládá za sebe.
+
+    Vrací `plan` — kdo dostal jaký čas. UI ho ukáže jako potvrzení, protože deset
+    omylem naplánovaných telefonátů se maže po jednom.
+    """
+    den = _parse_datum(vstup.termin, "termín")
+    if den is None:
+        raise HTTPException(status_code=422, detail="Datum je povinné.")
+    if not (vstup.nazev or "").strip():
+        raise HTTPException(status_code=422, detail="Název aktivity je povinný.")
+    if not vstup.ids:
+        raise HTTPException(status_code=422, detail="Nevybral jsi žádný záznam.")
+    try:
+        return hromadne_modul.naplanuj_aktivity(
+            db,
+            vstup.entita,
+            vstup.ids,
+            user,
+            vstup.druh,
+            vstup.nazev.strip(),
+            den,
+            vstup.cas,
+            vstup.delka_min,
+            vstup.retez,
+            vstup.vlastnik_user_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 # ---- dokumenty na Disku (CRM-05) --------------------------------------------
