@@ -60,6 +60,15 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.get(User, int(user_id))
     if user is None:
         raise chyba_prihlaseni
+    # Audit log (CRM-12) potřebuje vědět, kdo změnu udělal, ale sbírá se
+    # v události SQLAlchemy, kde už request není. Contextvar to přenese —
+    # a protože je per úloha, dva souběžné requesty si ji nepřepíšou.
+    try:
+        from app.crm.audit import aktualni_uzivatel_id
+
+        aktualni_uzivatel_id.set(user.id)
+    except Exception:  # noqa: BLE001 - audit nesmí bránit přihlášení
+        pass
     return user
 
 

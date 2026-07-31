@@ -21,6 +21,8 @@ from sqlalchemy.orm import Session
 from app.auth.models import User
 from app.auth.permissions import get_current_user, muze_otevrit
 from app.crm import ares as ares_modul
+from app.crm import audit as audit_modul
+from app.crm import mapa as mapa_modul
 from app.crm import (
     ciselne_rady,
     hledani as hledani_modul,
@@ -82,6 +84,8 @@ from app.crm.pristup import (
 )
 from app.crm.schemas import (
     AktivitaOut,
+    AuditOut,
+    MapaBodOut,
     AktivitaUprava,
     AktivitaVstup,
     AresOut,
@@ -1183,6 +1187,15 @@ def _over_pristup_k_zaznamu(db: Session, entita: str, zaznam_id: int, user: User
     # Nabídka se importuje lokálně stejně jako na dalších místech tohoto modulu
     # (nabídkovač a CRM se navzájem neimportují na úrovni modulu).
     from app.nabidkovac.models import Nabidka
+
+    # Odběrné místo nemá aktivity, ale audit ano — a práva dědí ze zákazníka
+    # (kdo vidí firmu, vidí i její provozovny, viz CRM-46).
+    if entita == "om":
+        misto = db.get(OdberneMisto, zaznam_id)
+        if misto is None:
+            raise HTTPException(status_code=404, detail="Odběrné místo neexistuje")
+        vyzaduj_zaznam(db.get(Zakaznik, misto.zakaznik_id), user, "Zákazník")
+        return
 
     if entita not in ENTITY_AKTIVIT:
         raise HTTPException(status_code=422, detail=f"Neznámá entita: {entita}")
@@ -3498,3 +3511,42 @@ def zaznamenej_otevreni(
         db.rollback()
         return {"ok": False}
     return {"ok": True}
+
+
+# ---- audit log (CRM-12) ------------------------------------------------------
+@router.get("/audit/{entita}/{zaznam_id}", response_model=list[AuditOut])
+def historie_zmen(
+    entita: str,
+    zaznam_id: int,
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Kdo co kdy u záznamu změnil.
+
+    Přístup se ověřuje přes `_over_pristup_k_zaznamu` — log ukazuje hodnoty
+    záznamu, takže kdo na záznam nevidí, nesmí vidět ani jeho historii.
+    """
+    _over_pristup_k_zaznamu(db, entita, zaznam_id, user)
+    return [
+        AuditOut(
+            id=a.id,
+            druh=a.druh,
+            pole=a.pole or "",
+            pole_nazev=audit_modul.nazev_pole(a.pole) if a.pole else "",
+            stara=a.stara or "",
+            nova=a.nova or "",
+            kdo=_jmeno(a.zmenil),
+            kdy=_iso(a.kdy),
+        )
+        for a in audit_modul.zaznamy(db, entita, zaznam_id)
+    ]
+
+
+# ---- mapa zákazníků a projektů (CRM-20) -------------------------------------
+@router.get("/mapa", response_model=list[MapaBodOut])
+def body_na_mapu(
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Zákazníci se souřadnicemi. Kdo nemá `crm_vse`, vidí jen svoje."""
+    return [MapaBodOut(**b) for b in mapa_modul.body(db, user)]

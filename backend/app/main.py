@@ -640,6 +640,14 @@ def _zastav_konektor_worker():
 
 
 @app.on_event("startup")
+def _zapni_audit():
+    # Audit log CRM (CRM-12) – sbírá se událostí SQLAlchemy, ne v endpointech.
+    from app.crm.audit import zapni
+
+    zapni()
+
+
+@app.on_event("startup")
 def _spust_notifikace():
     # denní souhrn úkolů (CRM-10) – lehké vlákno, jeden dotaz za den
     from app.crm.notifikace_scheduler import spust_planovac

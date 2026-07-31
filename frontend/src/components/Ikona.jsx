@@ -161,6 +161,12 @@ const CESTY = {
       <path d="M8 11V7a4 4 0 0 1 8 0v4" />
     </>
   ),
+  mapa: (
+    <>
+      <path d="M9 3 3 5.5v15L9 18l6 3 6-2.5v-15L15 6z" />
+      <path d="M9 3v15M15 6v15" />
+    </>
+  ),
   zvonecek: (
     <>
       <path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6" />

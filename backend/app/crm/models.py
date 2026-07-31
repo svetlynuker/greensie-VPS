@@ -1191,3 +1191,40 @@ class CrmOblibene(Base):
     otevreno_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class CrmAudit(Base):
+    """Kdo co kdy změnil (CRM-12).
+
+    Historie stavů (`crm_stav_historie`) odpovídá „jak se to hýbalo v pipeline",
+    tohle odpovídá na „kdo změnil cenu z 2,5 na 1,9 milionu". Jeden řádek na
+    **jedno pole**, ne na uložení formuláře — jinak by v zápisu bylo „změněno 9
+    polí" a nikdo by nepoznal které.
+
+    ---- Proč se to sbírá automaticky, ne voláním v endpointech ----
+    Zápis obstarává SQLAlchemy událost (`crm/audit.py`), takže se zaloguje
+    i změna z místa, na které se při psaní auditu zapomnělo. Ruční volání
+    v každém endpointu je přesně ta věc, která se u desátého endpointu vynechá
+    a nikdo si toho nevšimne, dokud něco nechybí.
+
+    `stara`/`nova` jsou TEXT, ne původní typ: log se jen čte a zobrazuje, takže
+    společný tvar je cennější než přesný typ. `None` a prázdno se ukládá jako
+    prázdný řetězec, aby se v UI nemuselo řešit obojí.
+    """
+
+    __tablename__ = "crm_audit"
+
+    id = Column(Integer, primary_key=True, index=True)
+    entita = Column(String, nullable=False, index=True)
+    zaznam_id = Column(Integer, nullable=False, index=True)
+    # "zmena" | "vznik" | "smazani" – vznik a smazání nemají pole ani hodnoty.
+    druh = Column(String, nullable=False, default="zmena", server_default="zmena")
+    pole = Column(String, nullable=False, default="", server_default="")
+    stara = Column(Text, nullable=False, default="", server_default="")
+    nova = Column(Text, nullable=False, default="", server_default="")
+    zmenil_user_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    kdy = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+
+    zmenil = relationship("User")

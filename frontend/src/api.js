@@ -1455,3 +1455,13 @@ export function crmPrepniOblibeny(entita, zaznamId, oblibene) {
 export function crmZaznamenejOtevreni(entita, zaznamId) {
   return zavolej(`/crm/oblibene/${entita}/${zaznamId}/otevreno`, { method: "POST" });
 }
+
+// ---- CRM: audit log změn (CRM-12) ----
+export function crmAudit(entita, zaznamId) {
+  return zavolej(`/crm/audit/${entita}/${zaznamId}`);
+}
+
+// ---- CRM: mapa zákazníků (CRM-20) ----
+export function crmMapa() {
+  return zavolej("/crm/mapa");
+}

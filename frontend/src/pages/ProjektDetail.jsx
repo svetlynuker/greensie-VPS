@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
+import GanttProjektu from "../components/GanttProjektu";
+import HistorieZmen from "../components/HistorieZmen";
 import Spendlik from "../components/Spendlik";
 import Aktivity from "../components/Aktivity";
 import ProjektKroky from "../components/ProjektKroky";
@@ -186,6 +188,13 @@ export default function ProjektDetail() {
         {chyba && <div className="crm-chyba">{chyba}</div>}
 
         {zalozka === "kroky" && (
+          <>
+            {/* Gantt (CRM-21) nad seznamem: nejdřív „kdy to bude", pak detaily. */}
+            <GanttProjektu projekt={p} />
+          </>
+        )}
+
+        {zalozka === "kroky" && (
           <ProjektKroky
             projekt={p}
             sablony={sablony}
@@ -246,6 +255,8 @@ export default function ProjektDetail() {
               muzeSpravovat={me.prava?.includes("crm_nastaveni")}
               onSprava={() => setSpravaPoli(true)}
             />
+            {/* CRM-12: sbalené, načítá se až po rozbalení. */}
+            <HistorieZmen entita="pro" zaznamId={p.id} />
           </div>
         )}
 

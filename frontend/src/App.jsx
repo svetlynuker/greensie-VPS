@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Login from "./pages/Login";
 import Rozcestnik from "./pages/Rozcestnik";
@@ -26,6 +27,10 @@ import Nastaveni from "./pages/Nastaveni";
 import Kalendar from "./pages/Kalendar";
 import PrehledObchodu from "./pages/PrehledObchodu";
 import MujDen from "./pages/MujDen";
+
+// Mapa se načítá až při otevření (CRM-20). Leaflet váží ~180 kB a používá ho
+// jediná obrazovka — v hlavním balíku by zpomaloval start všem ostatním.
+const Mapa = lazy(() => import("./pages/Mapa"));
 import { getToken } from "./api";
 
 function VyzadujePrihlaseni({ children }) {
@@ -50,6 +55,16 @@ export default function App() {
           element={
             <VyzadujePrihlaseni>
               <MujDen />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/mapa"
+          element={
+            <VyzadujePrihlaseni>
+              <Suspense fallback={null}>
+                <Mapa />
+              </Suspense>
             </VyzadujePrihlaseni>
           }
         />

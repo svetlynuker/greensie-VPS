@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
+import HistorieZmen from "../components/HistorieZmen";
 import Spendlik from "../components/Spendlik";
 import Aktivity from "../components/Aktivity";
 import DuvodProhry from "../components/DuvodProhry";
@@ -293,6 +294,8 @@ export default function ObchodniPripadDetail() {
                 muzeSpravovat={me.prava?.includes("crm_nastaveni")}
                 onSprava={() => setSpravaPoli(true)}
               />
+              {/* CRM-12: sbalené, načítá se až po rozbalení. */}
+              <HistorieZmen entita="op" zaznamId={p.id} />
               <OdbernaMistaPanel
                 entita="op"
                 zaznamId={p.id}
