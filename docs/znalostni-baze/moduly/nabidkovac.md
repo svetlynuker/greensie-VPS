@@ -177,7 +177,7 @@ Obrazovka je rozdělená do **pěti záložek**, jedna na každou spravovanou v�
 
 | Záložka | Co v ní je |
 |---|---|
-| **Produkty** (s počtem) | katalog technologií — hledání, filtr typu, přepínač výšky okna, vlastní sloupce |
+| **Produkty** (s počtem) | katalog produktů — celý ceník firmy (ceny, kategorie, přílohy), hledání, filtry, vlastní sloupce |
 | **Sazby distributorů** (s počtem) | ceny pro peak shaving po distributorech a hladinách |
 | **Peak shaving** | výchozí hodnoty výpočtu baterie (práh doporučení, NPV, O&M, degradace) |
 | **PPA pro FVE** | marže, délky kontraktu a výchozí hodnoty PPA výpočtu |
@@ -185,15 +185,25 @@ Obrazovka je rozdělená do **pěti záložek**, jedna na každou spravovanou v�
 
 Dřív bylo všechno na jedné stránce pod sebou a katalog produktů ji roztáhl na několik obrazovek.
 
-**Záložka Produkty** má tři ovládací prvky nad tabulkou:
+**Záložka Produkty** je celý ceník firmy — od 31. 7. 2026 je v něm **329 položek**:
+244 naimportovaných z Raynetu (panely, střídače, baterie, montážní práce, administrativa)
+a 85 sestav z ceníku BESS, které pohánějí výpočet peak shavingu.
+
+Ovládací prvky nad tabulkou:
 
 | Prvek | Co dělá |
 |---|---|
-| **Hledání** | filtruje podle názvu a modelu |
-| **Filtr typu** | Vše / FVE panel / Invertor / Baterie / Jiná |
+| **Hledání** | filtruje podle kódu, názvu, modelu i kategorie |
+| **Filtr kategorie** | Střídače, Baterie, Panely, Montážní práce, Administrativa… (co je v datech) |
+| **Aktivní / Vyřazené / Vše** | výchozí je *Aktivní* — vyřazené zboží nepřekáží |
+| **Filtr typu** | Vše / FVE panel / Invertor / Baterie / Jiná (typ řídí **výpočty**, kategorie jen zobrazení) |
 | **Okno: nízké / vysoké / celé** | jak vysoký je výřez seznamu; *celé* limit zruší a tabulka roste, jak potřebuje. Volba se pamatuje v prohlížeči. |
 
-Pod tabulkou je vidět, **kolik z kolika** produktů je zobrazeno, takže filtr nejde přehlédnout.
+Pod tabulkou je vidět, **kolik z kolika** položek je zobrazeno, takže filtr nejde přehlédnout.
+
+**Hromadné akce:** zaškrtávátka v prvním sloupci. Jakmile něco označíš, objeví se lišta
+s **Zapnout**, **Vypnout** a **Přeřadit do kategorie…** — po importu 244 položek by jinak
+vyřazení celé kategorie znamenalo desítky kliknutí.
 
 | Prvek | Co dělá | Kdo vidí |
 |---|---|---|
@@ -204,10 +214,30 @@ Pod tabulkou je vidět, **kolik z kolika** produktů je zobrazeno, takže filtr 
 | **Vlastní sloupec (štítek)** | Klik na název upraví sloupec, × ho smaže (uložené hodnoty osiřejí, neškodí) | katalog |
 | **Uložit jako novou verzi** | V záložkách *Peak shaving* a *PPA* — uloží **obě** sady parametrů jako novou verzi (drží se ve stavu, přepnutím záložky se nic neztratí) | katalog |
 
-**Dialog produktu** obsahuje: *Typ* (FVE panel / Invertor / Baterie / Jiná), *Název*, *Model*,
-*Výkon (kW)*, *Kapacita (kWh)*, *Cena (Kč)*, *Účinnost (0–1)*, přepínač *Dostupná v katalogu* a
-vstupy pro případné vlastní sloupce. **U typu Baterie musí být vyplněný výkon i kapacita** (obojí
-kladné) – bez nich nelze počítat peak shaving.
+**Karta položky** (klik na řádek) má všechno na jednom místě:
+
+| Sekce | Pole |
+|---|---|
+| Hlavička | *Kód*, *Kategorie* (s našeptávačem už použitých), *Název*, *Model*, *Jednotka*, *Popis* |
+| Ceny | *Prodejní cena bez DPH*, *Nákupní cena / náklad*, *Sazba DPH* (21 / 12 / 0 %) a dopočítaná **Marže** v Kč i % |
+| Parametry a platnost | *Typ* (pro výpočty), *Účinnost*, *Výkon (kW)*, *Kapacita (kWh)*, *Platnost od / do* |
+| Vlastní sloupce | co si vedení nadefinovalo (Záruka, Cyklů životnosti…) |
+| **Soubory** | technický list, foto, certifikát — dá se nahrát **víc souborů naráz**, u obrázků se ukáže náhled, druh přílohy jde přepnout |
+| **Aktivní** | zaškrtávátko dole; neaktivní položka zůstane na starých nabídkách, ale do nových se už nenabídne |
+
+**Nákupní cenu a marži vidí jen ten, kdo má právo `nabidkovac_katalog`** (vedení a admin).
+Není to jen skryté v obrazovce — obchodníkovi je API vůbec nepošle.
+
+**U baterií z ceníku BESS musí být vyplněný výkon i kapacita** (obojí kladné) – bez nich nelze
+počítat peak shaving. U bateriových *komponent* z prodejního ceníku (BMS, racky, kabeláž) se
+tyhle údaje nevynucují; do simulace se nedostanou právě proto, že je nemají.
+
+**Smazat položku, která už je v nějakém rozpisu, nejde** — appka to odmítne a nabídne odškrtnutí
+*Aktivní*. Rozpis by jinak přišel o vazbu na technický list a historii.
+
+> **Znovunahrání ceníku z Raynetu:** `python -m scripts.import_produkty` (náhled nasucho)
+> a `--zapsat` (provede). Idempotentní podle kódu: existující položce srovná ceny, platnost
+> a popis, nesahá na *Aktivní* ani na typ. Baterie z ceníku BESS nikdy nepřepíše.
 
 > Výpočtová nastavení (verze, PPA/PS defaulty) a Sazby distributorů slouží kalkulátorům a jsou
 > popsané v návodech [nabidkovac-ppa-fve.md](nabidkovac-ppa-fve.md) a

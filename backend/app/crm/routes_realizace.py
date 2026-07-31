@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import User
 from app.crm import ciselne_rady
+from app.crm import fakturace as fakturace_modul
 from app.crm import kategorie as kategorie_modul
 from app.crm import projekty_kroky as kroky_modul
 from app.crm import stavy as stavy_modul
@@ -33,6 +34,7 @@ from app.crm.models import (
     CrmStav,
     CrmStavHistorie,
     Objednavka,
+    ObjednavkaPolozka,
     ObchodniPripad,
     ProjektKrok,
     ProjektSablona,
@@ -43,7 +45,15 @@ from app.crm.pristup import (
     vyzaduj_nastaveni,
     vyzaduj_pripady,
 )
+from app.finance.models import STAVY_FAKTURY, VYCHOZI_STAV as VYCHOZI_STAV_FAKTURY, Faktura
+from app.nabidkovac import polozky as polozky_modul
+from app.nabidkovac.permissions import muze_katalog
+from app.nabidkovac.schemas import PolozkyVstup
 from app.crm.schemas import (
+    FakturaOut,
+    FakturaVstup,
+    FakturaceOut,
+    FakturaceSouhrn,
     KrokOut,
     KrokUprava,
     KrokVstup,
@@ -51,6 +61,8 @@ from app.crm.schemas import (
     ObjednavkaRadekOut,
     ObjednavkaVstup,
     ObjednavkaZmenaStavuVstup,
+    SplatkovaSablonaOut,
+    SplatkyZeSablonyVstup,
     ProjektDetailOut,
     ProjektRadekOut,
     ProjektUprava,
@@ -185,6 +197,7 @@ def _objednavka_detail(db: Session, o: Objednavka, user: User) -> ObjednavkaDeta
     zaklad = _objednavka_radek(db, o, _mapa_stavu(db, "obj")).model_dump()
     zaklad.pop("extra_text", None)
     projekt = db.query(CrmProjekt).filter(CrmProjekt.objednavka_id == o.id).first()
+    soucet = polozky_modul.souhrn(list(o.polozky))
     return ObjednavkaDetailOut(
         **zaklad,
         extra_text={},
@@ -197,7 +210,22 @@ def _objednavka_detail(db: Session, o: Objednavka, user: User) -> ObjednavkaDeta
         projekt_id=projekt.id if projekt is not None else None,
         projekt_cislo=projekt.cislo if projekt is not None else "",
         muze_editovat=True,
+        cena_rucni=bool(o.cena_rucni),
+        soucet_polozek_kc=soucet["bez_dph"] if o.polozky else None,
+        fakturace=FakturaceSouhrn(**fakturace_modul.souhrn(list(o.faktury), o.cena_kc)),
     )
+
+
+def _srovnej_cenu_objednavky(o: Objednavka) -> None:
+    """Po změně rozpisu přepíše cenu objednávky součtem – pokud není ruční.
+
+    Rozhodnutí Dana z 31. 7. 2026: cena se počítá ze součtu položek, ale ruční
+    přepis (dohodnutá sleva „za kulatých 2,4 mil.“) má přednost a appka pak
+    jen ukáže, o kolik se od součtu liší.
+    """
+    if o.cena_rucni:
+        return
+    o.cena_kc = polozky_modul.souhrn(list(o.polozky))["bez_dph"] if o.polozky else None
 
 
 def _cena_z_nabidky(db: Session, nabidka_id: int | None) -> float | None:
@@ -331,6 +359,27 @@ def zaloz_objednavku(
     )
     db.add(o)
     db.flush()
+
+    # CRM-08: rozpis z nabídky se PŘEKLOPÍ (zkopíruje), ne naváže – objednávka
+    # je obchodní dokument a nesmí se měnit, když někdo přepočítá nabídku.
+    if nabidka is not None and nabidka.polozky:
+        for p in nabidka.polozky:
+            db.add(polozky_modul.kopiruj(p, ObjednavkaPolozka, objednavka_id=o.id))
+        db.flush()
+        db.refresh(o)
+        # Cena ze součtu rozpisu; ruční zůstane jen tehdy, když ji obchodník
+        # při zakládání vyplnil jinou.
+        soucet = polozky_modul.souhrn(list(o.polozky))["bez_dph"]
+        if vstup.cena_kc is None:
+            o.cena_kc = soucet
+            o.cena_rucni = False
+        else:
+            o.cena_rucni = abs(float(vstup.cena_kc) - soucet) > 0.5
+    else:
+        # Bez rozpisu je cena vždycky ruční (opsaná z výpočtu nebo od člověka) –
+        # jinak by ji první uložení prázdného rozpisu přepsalo na nic.
+        o.cena_rucni = o.cena_kc is not None
+
     db.add(
         CrmStavHistorie(
             entita="obj", zaznam_id=o.id, ze_stavu=None, do_stavu=stav, zmenil_user_id=user.id
@@ -369,7 +418,14 @@ def uprav_objednavku(
     vlastnik, spolu = _vlastnictvi(db, vstup, user, zaznam=o)
     o.nazev = (vstup.nazev or "").strip()
     o.popis = vstup.popis or ""
+    # Cena z formuláře je ruční zásah – kromě případu, kdy se rovná součtu
+    # rozpisu (uživatel ji nesahal, jen odeslal formulář, kde byla předvyplněná).
+    soucet = polozky_modul.souhrn(list(o.polozky))["bez_dph"] if o.polozky else None
     o.cena_kc = vstup.cena_kc
+    if vstup.cena_rucni is not None:
+        o.cena_rucni = vstup.cena_rucni
+    elif o.polozky:
+        o.cena_rucni = vstup.cena_kc is not None and abs((vstup.cena_kc or 0) - (soucet or 0)) > 0.5
     o.datum_podpisu = _datum(vstup.datum_podpisu, "datum podpisu")
     o.datum_dodani = _datum(vstup.datum_dodani, "datum dodání")
     o.vlastnik_user_id = vlastnik
@@ -443,6 +499,306 @@ def smaz_objednavku(
     db.delete(o)
     db.commit()
     return {"ok": True}
+
+
+# ==================== ROZPIS POLOŽEK OBJEDNÁVKY (CRM-08) ====================
+def _objednavka_pro_polozky(db: Session, objednavka_id: int, user: User) -> Objednavka:
+    o = db.get(Objednavka, objednavka_id)
+    if o is None:
+        raise HTTPException(status_code=404, detail="Objednávka neexistuje")
+    _vidi_pripad(db, o.obchodni_pripad_id, user)
+    return o
+
+
+def _rozpis_out(o: Objednavka, user: User) -> dict:
+    s_nakupem = muze_katalog(user)
+    return {
+        "polozky": [polozky_modul.polozka_out(p, s_nakupem) for p in o.polozky],
+        "souhrn": polozky_modul.souhrn(list(o.polozky)),
+        "vidi_nakup": s_nakupem,
+        # Frontend podle toho pozná, jestli smí přepsat cenu objednávky.
+        "cena_kc": _num(o.cena_kc),
+        "cena_rucni": bool(o.cena_rucni),
+    }
+
+
+@router.get("/objednavky/{objednavka_id}/polozky")
+def rozpis_objednavky(
+    objednavka_id: int,
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    return _rozpis_out(_objednavka_pro_polozky(db, objednavka_id, user), user)
+
+
+@router.put("/objednavky/{objednavka_id}/polozky")
+def uloz_rozpis_objednavky(
+    objednavka_id: int,
+    vstup: PolozkyVstup,
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    """Uloží celý rozpis objednávky a srovná cenu (pokud není ruční)."""
+    o = _objednavka_pro_polozky(db, objednavka_id, user)
+    if not muze_katalog(user):
+        for radek in vstup.polozky:
+            radek.nakup_jednotkovy = None
+
+    polozky_modul.uloz_rozpis(
+        db,
+        vstup,
+        list(o.polozky),
+        lambda: ObjednavkaPolozka(objednavka_id=objednavka_id, nazev=""),
+    )
+    db.flush()
+    db.refresh(o)
+    _srovnej_cenu_objednavky(o)
+    db.commit()
+    db.refresh(o)
+    return _rozpis_out(o, user)
+
+
+@router.post("/objednavky/{objednavka_id}/polozky/z-katalogu")
+def pridej_polozky_objednavky(
+    objednavka_id: int,
+    ids: list[int],
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    """Přidá na konec rozpisu položky vybrané z katalogu (množství 1)."""
+    from app.nabidkovac.models import Technologie
+
+    o = _objednavka_pro_polozky(db, objednavka_id, user)
+    if not ids:
+        return _rozpis_out(o, user)
+
+    nalezene = {t.id: t for t in db.query(Technologie).filter(Technologie.id.in_(ids)).all()}
+    dalsi = max((p.poradi for p in o.polozky), default=-1) + 1
+    for i, tid in enumerate(ids):
+        t = nalezene.get(tid)
+        if t is None:
+            continue
+        p = ObjednavkaPolozka(
+            objednavka_id=objednavka_id, nazev=t.nazev, poradi=dalsi + i, mnozstvi=1
+        )
+        polozky_modul.napln_z_katalogu(p, t)
+        db.add(p)
+
+    db.flush()
+    db.refresh(o)
+    _srovnej_cenu_objednavky(o)
+    db.commit()
+    db.refresh(o)
+    return _rozpis_out(o, user)
+
+
+@router.post("/objednavky/{objednavka_id}/polozky/z-nabidky")
+def prekloop_rozpis_z_nabidky(
+    objednavka_id: int,
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    """Dotáhne rozpis z nabídky, ze které objednávka vznikla.
+
+    Existuje pro případ, kdy rozpis vznikl na nabídce až PO založení
+    objednávky. Ke stávajícímu rozpisu se položky přidají za, nic se nemaže –
+    zahodit cizí práci bez zeptání by bylo horší než duplicitní řádek.
+    """
+    o = _objednavka_pro_polozky(db, objednavka_id, user)
+    if not o.nabidka_id:
+        raise HTTPException(
+            status_code=422, detail="Objednávka nevznikla z nabídky – není odkud rozpis vzít."
+        )
+    from app.nabidkovac.models import Nabidka
+
+    nabidka = db.get(Nabidka, o.nabidka_id)
+    if nabidka is None or not nabidka.polozky:
+        raise HTTPException(status_code=422, detail="Nabídka žádný rozpis položek nemá.")
+
+    dalsi = max((p.poradi for p in o.polozky), default=-1) + 1
+    for i, p in enumerate(nabidka.polozky):
+        kopie = polozky_modul.kopiruj(p, ObjednavkaPolozka, objednavka_id=o.id)
+        kopie.poradi = dalsi + i
+        db.add(kopie)
+
+    db.flush()
+    db.refresh(o)
+    _srovnej_cenu_objednavky(o)
+    db.commit()
+    db.refresh(o)
+    return _rozpis_out(o, user)
+
+
+# ==================== FAKTURACE OBJEDNÁVKY (CRM-09) =========================
+def _faktura_out(f: Faktura) -> FakturaOut:
+    return FakturaOut(
+        id=f.id,
+        poradi=f.poradi,
+        nazev=f.nazev or "",
+        stav=f.stav,
+        castka=_num(f.castka),
+        podil_procent=_num(f.podil_procent),
+        termin=_iso(f.termin),
+        variabilni_symbol=f.variabilni_symbol,
+        poznamka=f.poznamka or "",
+        pohoda_potvrzeno=bool(f.pohoda_potvrzeno),
+        pohoda_datum_vystaveni=_iso(f.pohoda_datum_vystaveni),
+        pohoda_datum_zaplaceni=_iso(f.pohoda_datum_zaplaceni),
+        po_terminu=fakturace_modul.po_terminu(f),
+    )
+
+
+def _fakturace_out(o: Objednavka) -> FakturaceOut:
+    faktury = sorted(o.faktury, key=lambda f: (f.poradi, f.id))
+    return FakturaceOut(
+        faktury=[_faktura_out(f) for f in faktury],
+        souhrn=FakturaceSouhrn(**fakturace_modul.souhrn(faktury, o.cena_kc)),
+        cena_objednavky_kc=_num(o.cena_kc),
+    )
+
+
+@router.get("/splatkove-sablony", response_model=list[SplatkovaSablonaOut])
+def splatkove_sablony(user: User = Depends(vyzaduj_pripady)):
+    """Předvolby splátkových kalendářů (100 % / 50-50 / 30-40-30)."""
+    return [SplatkovaSablonaOut(**s) for s in fakturace_modul.sablony_pro_frontend()]
+
+
+@router.get("/objednavky/{objednavka_id}/faktury", response_model=FakturaceOut)
+def faktury_objednavky(
+    objednavka_id: int,
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    return _fakturace_out(_objednavka_pro_polozky(db, objednavka_id, user))
+
+
+@router.post("/objednavky/{objednavka_id}/faktury", response_model=FakturaceOut)
+def pridej_fakturu(
+    objednavka_id: int,
+    vstup: FakturaVstup,
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    """Přidá jednu fakturu ručně (bez šablony)."""
+    o = _objednavka_pro_polozky(db, objednavka_id, user)
+    stav = vstup.stav or VYCHOZI_STAV_FAKTURY
+    if stav not in STAVY_FAKTURY:
+        raise HTTPException(status_code=422, detail=f"Neznámý stav faktury: {stav}")
+
+    f = Faktura(
+        crm_objednavka_id=o.id,
+        poradi=max((x.poradi for x in o.faktury), default=0) + 1,
+        nazev=(vstup.nazev or "").strip(),
+        stav=stav,
+        castka=vstup.castka,
+        podil_procent=vstup.podil_procent,
+        termin=_datum(vstup.termin, "termín faktury"),
+        variabilni_symbol=(vstup.variabilni_symbol or "").strip() or None,
+        poznamka=vstup.poznamka or "",
+    )
+    db.add(f)
+    db.commit()
+    db.refresh(o)
+    return _fakturace_out(o)
+
+
+@router.post("/objednavky/{objednavka_id}/faktury/ze-sablony", response_model=FakturaceOut)
+def rozepis_splatky(
+    objednavka_id: int,
+    vstup: SplatkyZeSablonyVstup,
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    """Rozepíše cenu objednávky do splátek podle předvolby (CRM-09).
+
+    Bez ceny to nemá co dělit – objednávka bez ceny dostane splátky s prázdnými
+    částkami, což je horší než jasná chyba.
+    """
+    o = _objednavka_pro_polozky(db, objednavka_id, user)
+    if o.cena_kc is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Objednávka nemá cenu – splátky není z čeho spočítat. Doplň cenu nebo rozpis položek.",
+        )
+    try:
+        fakturace_modul.zaloz_ze_sablony(
+            db, o, vstup.sablona, _datum(vstup.prvni_termin, "první termín"), vstup.nahradit
+        )
+    except ValueError as chyba:
+        raise HTTPException(status_code=422, detail=str(chyba))
+    db.commit()
+    db.refresh(o)
+    return _fakturace_out(o)
+
+
+@router.post("/objednavky/{objednavka_id}/faktury/prepocitat", response_model=FakturaceOut)
+def prepocitej_faktury(
+    objednavka_id: int,
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    """Srovná částky nevystavených faktur s aktuální cenou objednávky.
+
+    Nikdy neběží samo – vystavená faktura je doklad a měnit ji za zády by byla
+    ta nejhorší možná „chytrost“.
+    """
+    o = _objednavka_pro_polozky(db, objednavka_id, user)
+    upraveno = fakturace_modul.prepocti_podle_podilu(list(o.faktury), o.cena_kc)
+    if upraveno:
+        db.commit()
+        db.refresh(o)
+    return _fakturace_out(o)
+
+
+@router.put("/faktury/{faktura_id}", response_model=FakturaceOut)
+def uprav_fakturu(
+    faktura_id: int,
+    vstup: FakturaVstup,
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    f = db.get(Faktura, faktura_id)
+    if f is None or f.crm_objednavka_id is None:
+        raise HTTPException(status_code=404, detail="Faktura objednávky neexistuje")
+    o = _objednavka_pro_polozky(db, f.crm_objednavka_id, user)
+
+    if vstup.stav is not None:
+        if vstup.stav not in STAVY_FAKTURY:
+            raise HTTPException(status_code=422, detail=f"Neznámý stav faktury: {vstup.stav}")
+        f.stav = vstup.stav
+    f.nazev = (vstup.nazev or "").strip()
+    f.castka = vstup.castka
+    f.podil_procent = vstup.podil_procent
+    f.termin = _datum(vstup.termin, "termín faktury")
+    f.variabilni_symbol = (vstup.variabilni_symbol or "").strip() or None
+    f.poznamka = vstup.poznamka or ""
+    # Ruční zásah má přednost před automatikou z Freela/Pohody – stejné
+    # pravidlo jako u faktur Freelo projektů (viz finance/routes.py).
+    f.upraveno_rucne = True
+    db.commit()
+    db.refresh(o)
+    return _fakturace_out(o)
+
+
+@router.delete("/faktury/{faktura_id}", response_model=FakturaceOut)
+def smaz_fakturu(
+    faktura_id: int,
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    f = db.get(Faktura, faktura_id)
+    if f is None or f.crm_objednavka_id is None:
+        raise HTTPException(status_code=404, detail="Faktura objednávky neexistuje")
+    o = _objednavka_pro_polozky(db, f.crm_objednavka_id, user)
+    if f.stav in ("vystaveno", "zaplaceno"):
+        raise HTTPException(
+            status_code=409,
+            detail="Vystavenou ani zaplacenou fakturu smazat nejde – přepni ji na „nefakturuje“.",
+        )
+    db.delete(f)
+    db.commit()
+    db.refresh(o)
+    return _fakturace_out(o)
 
 
 # ============================== PROJEKTY ====================================

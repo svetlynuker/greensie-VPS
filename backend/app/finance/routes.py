@@ -12,6 +12,7 @@ from app.finance.schemas import (
     FakturaOut,
     FakturaVstup,
     FinanceOut,
+    ObjednavkaFinanceOut,
     PohodaVysledek,
     ProjektFinanceOut,
 )
@@ -63,9 +64,15 @@ def nacti_finance(user: User = Depends(vyzaduj_finance), db: Session = Depends(g
 
     # Projektům, které ještě žádnou fakturu nemají, doplň výchozí 3 (lazy –
     # stejný princip jako u řádku barev v Pohledu 1).
-    faktury_dle_projektu: dict[int, list[Faktura]] = {}
-    for f in db.query(Faktura).all():
-        faktury_dle_projektu.setdefault(f.projekt_id, []).append(f)
+    # Filtr na `projekt_id` je podstatný: od CRM-09 žijí v téže tabulce i
+    # faktury CRM objednávek a ty do matice Freelo projektů nepatří.
+    def _nacti_faktury_projektu() -> dict[int, list[Faktura]]:
+        mapa: dict[int, list[Faktura]] = {}
+        for f in db.query(Faktura).filter(Faktura.projekt_id.isnot(None)).all():
+            mapa.setdefault(f.projekt_id, []).append(f)
+        return mapa
+
+    faktury_dle_projektu = _nacti_faktury_projektu()
 
     zmena = False
     for p in projekty:
@@ -74,9 +81,7 @@ def nacti_finance(user: User = Depends(vyzaduj_finance), db: Session = Depends(g
             zmena = True
     if zmena:
         db.commit()
-        faktury_dle_projektu = {}
-        for f in db.query(Faktura).all():
-            faktury_dle_projektu.setdefault(f.projekt_id, []).append(f)
+        faktury_dle_projektu = _nacti_faktury_projektu()
 
     projekty_out = []
     max_faktur = 0
@@ -93,11 +98,66 @@ def nacti_finance(user: User = Depends(vyzaduj_finance), db: Session = Depends(g
             )
         )
 
+    objednavky_out, max_faktur_obj = _objednavky_s_fakturami(db)
+
     return FinanceOut(
         muze_editovat=muze_finance(user),
         max_faktur=max_faktur,
         projekty=projekty_out,
+        objednavky=objednavky_out,
+        max_faktur_objednavek=max_faktur_obj,
     )
+
+
+def _objednavky_s_fakturami(db: Session) -> tuple[list[ObjednavkaFinanceOut], int]:
+    """CRM objednávky, které už mají rozepsané faktury (CRM-09).
+
+    Objednávky BEZ faktur se sem záměrně nedávají – Přehled financí je o
+    penězích, ne o seznamu zakázek. Prázdné faktury se objednávkám ani
+    nezakládají automaticky (na rozdíl od Freelo projektů): splátkový kalendář
+    se u nové zakázky rozepisuje vědomě, tlačítkem na kartě objednávky.
+
+    Právo: kdo má `finance`, vidí čísla všech objednávek. Je to obrazovka pro
+    vedení a účtárnu, kde je smyslem vidět firmu celou; osmičlenná firma tu
+    nemá co skrývat před tím, kdo dělá fakturaci.
+    """
+    from app.crm.models import Objednavka
+    from app.crm.stavy import seznam as seznam_stavu
+
+    faktury_dle_objednavky: dict[int, list[Faktura]] = {}
+    for f in db.query(Faktura).filter(Faktura.crm_objednavka_id.isnot(None)).all():
+        faktury_dle_objednavky.setdefault(f.crm_objednavka_id, []).append(f)
+    if not faktury_dle_objednavky:
+        return [], 0
+
+    nazvy_stavu = {s.klic: s.nazev for s in seznam_stavu(db, "obj")}
+    objednavky = (
+        db.query(Objednavka)
+        .filter(Objednavka.id.in_(faktury_dle_objednavky.keys()))
+        .order_by(Objednavka.cislo.desc())
+        .all()
+    )
+
+    out: list[ObjednavkaFinanceOut] = []
+    max_faktur = 0
+    for o in objednavky:
+        fakt = sorted(faktury_dle_objednavky.get(o.id, []), key=lambda x: x.poradi)
+        max_faktur = max(max_faktur, len(fakt))
+        zakaznik = ""
+        if o.pripad is not None and o.pripad.zakaznik is not None:
+            zakaznik = o.pripad.zakaznik.nazev
+        out.append(
+            ObjednavkaFinanceOut(
+                id=o.id,
+                cislo=o.cislo,
+                nazev=o.nazev or "",
+                zakaznik_nazev=zakaznik,
+                cena_kc=float(o.cena_kc) if o.cena_kc is not None else None,
+                stav_nazev=nazvy_stavu.get(o.stav, o.stav),
+                faktury=[_faktura_out(f) for f in fakt],
+            )
+        )
+    return out, max_faktur
 
 
 # ---- editace faktury ----
@@ -111,6 +171,14 @@ def uloz_fakturu(
     f = db.get(Faktura, faktura_id)
     if f is None:
         raise HTTPException(status_code=404, detail="Faktura neexistuje")
+    if f.crm_objednavka_id is not None:
+        # Faktura CRM objednávky se edituje na kartě objednávky, kde platí
+        # práva CRM. Přes Přehled financí by ji mohl měnit i ten, kdo na
+        # zakázku nevidí – proto sem nepatří.
+        raise HTTPException(
+            status_code=409,
+            detail="Tahle faktura patří CRM objednávce – uprav ji na kartě objednávky.",
+        )
 
     f.stav = vstup.stav
     f.castka = vstup.castka
@@ -158,6 +226,11 @@ def smaz_fakturu(
     f = db.get(Faktura, faktura_id)
     if f is None:
         raise HTTPException(status_code=404, detail="Faktura neexistuje")
+    if f.crm_objednavka_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Tahle faktura patří CRM objednávce – smaž ji na kartě objednávky.",
+        )
     db.delete(f)
     db.commit()
     return {"stav": "smazano"}

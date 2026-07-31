@@ -5,3 +5,5 @@ __pycache__/
 *.pyc
 # nahrané dokumenty k nabídkám (Nabídkovač) – nepatří do gitu
 nabidka_soubory/
+# přílohy položek katalogu produktů (technické listy, fotky) – taky ne
+katalog_soubory/

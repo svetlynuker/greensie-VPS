@@ -134,7 +134,7 @@ def _lehka_migrace():
             text("ALTER TABLE konektor_entity_folder ADD COLUMN IF NOT EXISTS kontejnery JSONB")
         )
 
-        # Proklik z Přehledu projektů na složku dokumentů („6. projekty" pod OP).
+        # Proklik z Přehledu projektů na složku dokumentů („6. projekty“ pod OP).
         # create_all nové sloupce do existující tabulky `projekty` nepřidá.
         conn.execute(
             text("ALTER TABLE projekty ADD COLUMN IF NOT EXISTS disk_url "
@@ -236,7 +236,7 @@ def _lehka_migrace():
         # nepřidá, proto ručně.
         for sloupec, definice in (
             ("nazev", "VARCHAR NOT NULL DEFAULT ''"),
-            # BEZ časové zóny – „místní čas firmy", viz docstring `CrmAktivita`.
+            # BEZ časové zóny – „místní čas firmy“, viz docstring `CrmAktivita`.
             # Server i DB běží v UTC, takže TIMESTAMPTZ by uživateli ukázal čas
             # posunutý o dvě hodiny proti tomu, co zadal.
             ("zacatek", "TIMESTAMP"),
@@ -299,7 +299,7 @@ def _lehka_migrace():
         )
         # Boolean `hotovo` nahradil `stav`. Hodnotu je nutné PŘENÉST, ne jen
         # sloupec zahodit – jinak by se z hotových úkolů staly nedokončené
-        # a vyskočily lidem v „moje úkoly". Teprve pak se sloupec ruší, aby
+        # a vyskočily lidem v „moje úkoly“. Teprve pak se sloupec ruší, aby
         # nezůstaly dva zdroje pravdy, které se rozejdou. Obojí v jednom SQL
         # bloku, aby nemohlo dojít k dropnutí bez přenesení.
         conn.execute(
@@ -310,6 +310,113 @@ def _lehka_migrace():
                 "UPDATE crm_aktivity SET stav = "
                 "CASE WHEN hotovo THEN 'realizovano' ELSE 'naplanovano' END; "
                 "ALTER TABLE crm_aktivity DROP COLUMN hotovo; "
+                "END IF; END $$;"
+            )
+        )
+
+        # ---- CRM-08: katalog technologií → katalog produktů (31. 7. 2026) ----
+        # Sloupec `dostupnost` se přejmenoval na `aktivni` (zaškrtávátko
+        # „Aktivní“ v katalogu). Přejmenování, ne nový sloupec – jinak by
+        # vznikly dvě pravdy o tomtéž a 85 seedovaných baterií by se muselo
+        # kopírovat. Idempotentní: běží jen dokud starý sloupec existuje.
+        conn.execute(
+            text(
+                "DO $$ BEGIN "
+                "IF EXISTS (SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'technologie' AND column_name = 'dostupnost') "
+                "AND NOT EXISTS (SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'technologie' AND column_name = 'aktivni') THEN "
+                "ALTER TABLE technologie RENAME COLUMN dostupnost TO aktivni; "
+                "END IF; END $$;"
+            )
+        )
+        for definice in (
+            "kod VARCHAR",
+            "kategorie VARCHAR NOT NULL DEFAULT ''",
+            "jednotka VARCHAR NOT NULL DEFAULT 'ks'",
+            "popis TEXT NOT NULL DEFAULT ''",
+            "cena_nakup_kc NUMERIC(12, 2)",
+            "sazba_dph NUMERIC(5, 4)",
+            "platnost_od DATE",
+            "platnost_do DATE",
+            "zdroj VARCHAR NOT NULL DEFAULT 'rucne'",
+        ):
+            conn.execute(text(f"ALTER TABLE technologie ADD COLUMN IF NOT EXISTS {definice}"))
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_technologie_kod "
+                "ON technologie (kod) WHERE kod IS NOT NULL"
+            )
+        )
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_technologie_kategorie ON technologie (kategorie)")
+        )
+        # 85 baterií z ceníku BESS pozná katalog podle zdroje – bez toho by
+        # v jednom seznamu splynuly s ceníkem z Raynetu a nešly odfiltrovat.
+        conn.execute(
+            text("UPDATE technologie SET zdroj = 'bess_cenik' WHERE typ = 'baterie' AND zdroj = 'rucne'")
+        )
+
+        # ---- CRM-08: ruční přepis ceny objednávky má přednost před součtem ----
+        conn.execute(
+            text(
+                "ALTER TABLE crm_objednavky ADD COLUMN IF NOT EXISTS cena_rucni "
+                "BOOLEAN NOT NULL DEFAULT false"
+            )
+        )
+        # Objednávky, které vznikly před rozpisem položek, mají cenu opsanou
+        # z nabídky. Není to součet položek (žádné nemají), takže se musí brát
+        # jako ruční – jinak by je první uložení rozpisu tiše přepsalo na 0.
+        conn.execute(
+            text("UPDATE crm_objednavky SET cena_rucni = true WHERE cena_kc IS NOT NULL")
+        )
+
+        # ---- CRM-09: faktura visí buď na Freelo projektu, nebo na objednávce ----
+        conn.execute(
+            text(
+                "ALTER TABLE faktury ADD COLUMN IF NOT EXISTS crm_objednavka_id INTEGER "
+                "REFERENCES crm_objednavky(id) ON DELETE CASCADE"
+            )
+        )
+        conn.execute(
+            text("ALTER TABLE faktury ADD COLUMN IF NOT EXISTS nazev VARCHAR NOT NULL DEFAULT ''")
+        )
+        conn.execute(
+            text("ALTER TABLE faktury ADD COLUMN IF NOT EXISTS podil_procent NUMERIC(5, 2)")
+        )
+        conn.execute(text("ALTER TABLE faktury ALTER COLUMN projekt_id DROP NOT NULL"))
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_faktury_crm_objednavka_id "
+                "ON faktury (crm_objednavka_id)"
+            )
+        )
+        # Původní UNIQUE(projekt_id, poradi) by s nullable rodičem nehlídal nic
+        # (NULL se v UNIQUE neporovnává) → nahrazují ho dva částečné indexy.
+        conn.execute(
+            text("ALTER TABLE faktury DROP CONSTRAINT IF EXISTS uq_faktura_projekt_poradi")
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_faktura_projekt_poradi "
+                "ON faktury (projekt_id, poradi) WHERE projekt_id IS NOT NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_faktura_objednavka_poradi "
+                "ON faktury (crm_objednavka_id, poradi) WHERE crm_objednavka_id IS NOT NULL"
+            )
+        )
+        # Právě jeden rodič. NOT VALID by starý řádek bez rodiče protlačil –
+        # takové řádky ale neexistují (projekt_id byl doteď NOT NULL).
+        conn.execute(
+            text(
+                "DO $$ BEGIN "
+                "IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+                "WHERE conname = 'ck_faktura_prave_jeden_rodic') THEN "
+                "ALTER TABLE faktury ADD CONSTRAINT ck_faktura_prave_jeden_rodic "
+                "CHECK ((projekt_id IS NULL) <> (crm_objednavka_id IS NULL)); "
                 "END IF; END $$;"
             )
         )

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import CrmTabulka from "../components/CrmTabulka";
 import FiltrPanel from "../components/FiltrPanel";
@@ -30,6 +30,8 @@ import "../styles/crm.css";
  */
 export default function Objednavky() {
   const navigate = useNavigate();
+  // Proklik z Přehledu financí (?otevrit=<id>) rovnou otevře kartu objednávky.
+  const [hledaneParametry, setHledaneParametry] = useSearchParams();
   const [me, setMe] = useState(null);
   const [zobrazeni, setZobrazeni] = useState("kanban");
   const [kanban, setKanban] = useState(null);
@@ -70,6 +72,13 @@ export default function Objednavky() {
         }
         setMe(m);
         await nacti();
+        const otevrit = hledaneParametry.get("otevrit");
+        if (otevrit) {
+          setDetail(Number(otevrit));
+          // Parametr se z adresy odstraní, ať se karta znovu neotevře
+          // po zavření a obnovení stránky.
+          setHledaneParametry({}, { replace: true });
+        }
       })
       .catch((e) => {
         const msg = String(e.message);

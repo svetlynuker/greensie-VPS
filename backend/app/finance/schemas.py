@@ -28,10 +28,32 @@ class ProjektFinanceOut(BaseModel):
     faktury: list[FakturaOut]
 
 
+class ObjednavkaFinanceOut(BaseModel):
+    """Řádek Přehledu financí za CRM objednávku (CRM-09).
+
+    Vedle Freelo projektů, ne místo nich: staré zakázky dojíždějí ve Freelu
+    a nové vznikají v CRM, takže obojí musí být na jedné obrazovce vidět
+    zároveň (jinak by finance vypadaly jako propad, viz CRM-45).
+    """
+
+    id: int
+    cislo: str
+    nazev: str = ""
+    zakaznik_nazev: str = ""
+    cena_kc: Optional[float] = None
+    stav_nazev: str = ""
+    faktury: list[FakturaOut]
+
+
 class FinanceOut(BaseModel):
     muze_editovat: bool  # smí editovat finance (= má právo "finance")
     max_faktur: int  # nejvyšší počet faktur napříč projekty (šířka tabulky)
     projekty: list[ProjektFinanceOut]
+    # CRM objednávky se svými fakturami. Editují se na kartě objednávky
+    # v CRM, tady jsou jen ke čtení – jinak by tatáž faktura šla měnit na dvou
+    # místech s jinými právy.
+    objednavky: list[ObjednavkaFinanceOut] = []
+    max_faktur_objednavek: int = 0
 
 
 class FakturaVstup(BaseModel):

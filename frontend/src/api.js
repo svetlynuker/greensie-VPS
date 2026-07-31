@@ -233,8 +233,9 @@ export function nabidkaZmenTypDokumentu(id, typ) {
   return zavolej(`/nabidkovac/dokumenty/${id}`, { method: "PATCH", body: JSON.stringify({ typ }) });
 }
 
-export function technologieSeznam() {
-  return zavolej("/nabidkovac/technologie");
+// ---- Katalog produktů (dřív katalog technologií, CRM-08) ----
+export function technologieSeznam(jenAktivni = false) {
+  return zavolej(`/nabidkovac/technologie${jenAktivni ? "?jen_aktivni=true" : ""}`);
 }
 
 export function technologiePridej(data) {
@@ -247,6 +248,93 @@ export function technologieUprav(id, data) {
 
 export function technologieSmaz(id) {
   return zavolej(`/nabidkovac/technologie/${id}`, { method: "DELETE" });
+}
+
+export function katalogKategorie() {
+  return zavolej("/nabidkovac/technologie/kategorie");
+}
+
+export function katalogHromadne(data) {
+  return zavolej("/nabidkovac/technologie/hromadne", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// Přílohy položky katalogu – technický list, foto, certifikát. Nahrává se
+// víc souborů najednou (multipart, proto bez JSON hlaviček).
+export async function katalogNahrajPrilohy(technologieId, files) {
+  const token = getToken();
+  const form = new FormData();
+  for (const f of files) form.append("soubory", f);
+  const res = await fetch(`${API_BASE}/nabidkovac/technologie/${technologieId}/prilohy`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!res.ok) {
+    let detail = `Chyba ${res.status}`;
+    try {
+      const chyba = await res.json();
+      if (chyba.detail) detail = chyba.detail;
+    } catch {
+      // ponech výchozí hlášku
+    }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export function katalogPrilohaUprav(id, data) {
+  return zavolej(`/nabidkovac/prilohy/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export function katalogPrilohaSmaz(id) {
+  return zavolej(`/nabidkovac/prilohy/${id}`, { method: "DELETE" });
+}
+
+// Stáhne soubor přílohy a vrátí blob URL. Přes fetch, ne přímý odkaz –
+// endpoint chce token v hlavičce a ten <img src> ani <a href> poslat neumí.
+// Volající je zodpovědný za URL.revokeObjectURL, až náhled zmizí.
+export async function katalogPrilohaBlobUrl(id) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/nabidkovac/prilohy/${id}/soubor`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Přílohu se nepodařilo načíst (chyba ${res.status})`);
+  return URL.createObjectURL(await res.blob());
+}
+
+// Stažení přílohy do počítače pod původním názvem.
+export async function katalogStahniPrilohu(id, nazev) {
+  const url = await katalogPrilohaBlobUrl(id);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nazev || "priloha";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Uvolnit až po kliknutí, jinak si prohlížeč nestihne soubor vyzvednout.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+// ---- Rozpis položek nabídky (CRM-08) ----
+export function nabidkaPolozky(nabidkaId) {
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/polozky`);
+}
+
+export function nabidkaUlozPolozky(nabidkaId, polozky) {
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/polozky`, {
+    method: "PUT",
+    body: JSON.stringify({ polozky }),
+  });
+}
+
+export function nabidkaPridejZKatalogu(nabidkaId, ids) {
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/polozky/z-katalogu`, {
+    method: "POST",
+    body: JSON.stringify(ids),
+  });
 }
 
 export function katalogSloupceSeznam() {
@@ -947,6 +1035,64 @@ export function crmObjednavkaStav(id, stav, duvodZruseni = "") {
 
 export function crmObjednavkaSmaz(id) {
   return zavolej(`/crm/objednavky/${id}`, { method: "DELETE" });
+}
+
+// ---- CRM: rozpis položek objednávky (CRM-08) ----
+export function crmObjednavkaPolozky(id) {
+  return zavolej(`/crm/objednavky/${id}/polozky`);
+}
+
+export function crmObjednavkaUlozPolozky(id, polozky) {
+  return zavolej(`/crm/objednavky/${id}/polozky`, {
+    method: "PUT",
+    body: JSON.stringify({ polozky }),
+  });
+}
+
+export function crmObjednavkaPridejZKatalogu(id, ids) {
+  return zavolej(`/crm/objednavky/${id}/polozky/z-katalogu`, {
+    method: "POST",
+    body: JSON.stringify(ids),
+  });
+}
+
+export function crmObjednavkaPrekloopZNabidky(id) {
+  return zavolej(`/crm/objednavky/${id}/polozky/z-nabidky`, { method: "POST" });
+}
+
+// ---- CRM: fakturace objednávky (CRM-09) ----
+export function crmSplatkoveSablony() {
+  return zavolej("/crm/splatkove-sablony");
+}
+
+export function crmObjednavkaFaktury(id) {
+  return zavolej(`/crm/objednavky/${id}/faktury`);
+}
+
+export function crmFakturaPridej(objednavkaId, data) {
+  return zavolej(`/crm/objednavky/${objednavkaId}/faktury`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function crmFakturyZeSablony(objednavkaId, data) {
+  return zavolej(`/crm/objednavky/${objednavkaId}/faktury/ze-sablony`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function crmFakturyPrepocitat(objednavkaId) {
+  return zavolej(`/crm/objednavky/${objednavkaId}/faktury/prepocitat`, { method: "POST" });
+}
+
+export function crmFakturaUprav(id, data) {
+  return zavolej(`/crm/faktury/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function crmFakturaSmaz(id) {
+  return zavolej(`/crm/faktury/${id}`, { method: "DELETE" });
 }
 
 // ---- CRM: projekty, kroky a šablony ----

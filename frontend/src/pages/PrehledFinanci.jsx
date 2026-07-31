@@ -91,7 +91,13 @@ export default function PrehledFinanci() {
   }
   if (!data) return null;
 
-  const { projekty, max_faktur, muze_editovat } = data;
+  const {
+    projekty,
+    max_faktur,
+    muze_editovat,
+    objednavky = [],
+    max_faktur_objednavek = 0,
+  } = data;
   const sloupceFaktur = Math.max(max_faktur, 1);
 
   async function ulozEditaci(hodnoty) {
@@ -282,6 +288,83 @@ export default function PrehledFinanci() {
             </tbody>
           </table>
         </div>
+
+        {/* CRM objednávky (CRM-09). Nové zakázky vznikají v CRM, staré dojíždějí
+            ve Freelu – proto obojí na jedné obrazovce, ať finance nevypadají
+            jako propad (viz CRM-45). Editace patří na kartu objednávky, kde
+            platí práva CRM, takže tady je tabulka jen ke čtení. */}
+        {objednavky.length > 0 && (
+          <>
+            <div className="fm-topbar" style={{ marginTop: 22 }}>
+              <span style={{ fontSize: 15, fontWeight: 700 }}>Objednávky z CRM</span>
+              <span className="fm-spacer" />
+              <span className="fm-status"><b>{objednavky.length}</b> objednávek</span>
+            </div>
+            <div className="fm-scroll">
+              <table className="fm-matrix">
+                <thead>
+                  <tr>
+                    <th className="fm-col-proj" style={{ left: 0 }}>Objednávka</th>
+                    <th className="fm-col-term" style={{ left: "var(--fm-w-proj)" }}>Cena</th>
+                    {Array.from({ length: Math.max(max_faktur_objednavek, 1) }, (_, i) => (
+                      <th key={i} className="fm-th-task">
+                        <span className="fm-th-name">Faktura {i + 1}</span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {objednavky.map((o) => {
+                    const fakt = [...o.faktury].sort((a, b) => a.poradi - b.poradi);
+                    return (
+                      <tr key={o.id}>
+                        <td className="fm-col-proj" style={{ left: 0 }}>
+                          <span className="fm-proj-name">
+                            <Link to={`/objednavky?otevrit=${o.id}`}>{o.cislo}</Link>
+                            {o.zakaznik_nazev ? ` · ${o.zakaznik_nazev}` : ""}
+                          </span>
+                        </td>
+                        <td className="fm-col-term" style={{ left: "var(--fm-w-proj)" }}>
+                          <span className="fm-term">
+                            {o.cena_kc != null ? fmtCastka(o.cena_kc) : <span className="fm-none">bez ceny</span>}
+                          </span>
+                        </td>
+                        {Array.from({ length: Math.max(max_faktur_objednavek, 1) }, (_, i) => {
+                          const f = fakt[i];
+                          if (!f) {
+                            return (
+                              <td key={i} className="fm-fa fm-empty">
+                                <span className="fm-cell-empty-hint">·</span>
+                              </td>
+                            );
+                          }
+                          const meta = STAV_META[f.stav] || STAV_META.potreba_vystavit;
+                          return (
+                            <td key={i} className={`fm-fa fm-st-${f.stav}`} style={{ cursor: "default" }}>
+                              <span className="fm-cell-status">
+                                <span className="fm-pin" />
+                                <span className="fm-cell-icon">{meta.ikona}</span>
+                                {meta.text}
+                              </span>
+                              {f.castka != null && <div className="fm-fa-castka">{fmtCastka(f.castka)}</div>}
+                              {f.termin && <div className="fm-cell-term">Termín: {fmtDate(f.termin)}</div>}
+                              {f.variabilni_symbol && <div className="fm-fa-vs">VS: {f.variabilni_symbol}</div>}
+                              {f.pohoda_potvrzeno && <div className="fm-fa-pohoda">✓ Pohoda</div>}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <p style={{ fontSize: 12, color: "var(--fm-muted)", margin: "8px 2px 0" }}>
+              Faktury objednávek se upravují na kartě objednávky v CRM. Synchronizace
+              s POHODOU je pro obě tabulky společná — páruje se přes variabilní symbol.
+            </p>
+          </>
+        )}
       </div>
 
       {editace && (

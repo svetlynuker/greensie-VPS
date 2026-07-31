@@ -113,7 +113,7 @@ zakázky, je zbytek seznamu odhad — ne zkušenost. Proto se nejdřív zapíná
 | **A · Základ** ✅ | ~~CRM-01, CRM-03, CRM-25, CRM-13~~ — **hotovo 30. 7. 2026** | — | Hotové a otestované. Práva se **záměrně nepřidělují** (rozhodl Dan 30. 7. 2026: appku zatím staví a testuje jen s Claudem, CRM vidí pouze admini). |
 | **B · Ať vedení vidí čísla** ✅ | ~~CRM-39, CRM-40, CRM-43, CRM-45, CRM-22, CRM-16~~ — **hotovo 30. 7. 2026** | — | Grafové komponenty už v appce jsou, data se v nich sečtou sama. Jediná věc, po které vedení pozná, že přechod z Raynetu má smysl. **CRM-41 a CRM-42 sem nepatří** — bez uzavřených obchodů v appce nemají co ukázat. |
 | **C · Denní práce se zakázkou** ✅ | ~~CRM-05, CRM-19, CRM-30, CRM-24, CRM-27, CRM-18~~ — **hotovo 31. 7. 2026** | — | Odpracováno podle seznamu. Rezerva na to, „co vyleze z provozu", tím padla — až se appka začne používat naostro, přijdou věci, které v seznamu nejsou. |
-| **D · Peníze** | CRM-08, CRM-09 | ~5 dní | Největší přínos pro vedení a teď má na čem běžet: nové zakázky projdou celým řetězcem až k faktuře v appce. |
+| **D · Peníze** ✅ | ~~CRM-08, CRM-09~~ — **hotovo 31. 7. 2026** | — | Zakázka projde celým řetězcem až k faktuře v appce. Katalog technologií se přitom stal katalogem produktů (244 položek z Raynetu, přílohy, zaškrtávátko Aktivní). |
 | **E · Komunikace** | CRM-36 → CRM-10 → CRM-32 | ~4 dny | V tomhle pořadí. Notifikace bez volby, co chci dostávat, je obtěžování. |
 | **F · Druhý životní cyklus** | CRM-11, CRM-31 | ~1 týden+ | Až budou v appce první předané projekty, ke kterým se dá servis navěsit. |
 | **Odloženo s podmínkou** | CRM-02 + CRM-38 (~300 řádků v seznamu), CRM-29 (desetitisíce), CRM-06 (jen když se objeví osoba u dvou firem), CRM-41 + CRM-42 (až bude ~20 uzavřených obchodů) | — | Spouštěč je napsaný, ať se to nedělá dřív, než to začne bolet. |
@@ -164,17 +164,42 @@ jinak přidělení nic neudělá.
   *Bez importu klesla priorita:* duplicity teď mohou vzniknout jen ručně a ARES na ně
   upozorní dřív, než se založí.
 
-- [ ] **CRM-08 · Položky nabídek a objednávek** — Velikost **XL** · Dopad **★★★**
-  Objednávka má jen `cena_kc`. Bez rozpisu (panely, měnič, baterie, montáž, doprava) nejde
-  vyfakturovat ani doložit, z čeho cena vznikla. **Katalog technologií už existuje**
-  (`nabidkovac.Technologie`) a není s objednávkou nijak propojený.
-  *Návrh:* tabulka `crm_objednavka_polozky` (technologie_id nebo volný text, počet, jednotková
-  cena, sleva) + přenos z nabídky. Musí zvládnout i položku, která v katalogu není.
+- [x] **CRM-08 · Katalog produktů a položky nabídek a objednávek** — **hotovo 31. 7. 2026** (dávka D)
+  Rozpis položek je na **nabídce i objednávce** (`nabidka_polozky`,
+  `crm_objednavka_polozky`) a při vzniku objednávky z nabídky se **překlopí**
+  (zkopíruje, ne naváže) — objednávka je obchodní dokument a nesmí se měnit,
+  když někdo přepočítá nabídku. Položka může, ale nemusí být z katalogu; název,
+  kód a ceny jsou vždy snapshot.
+  *Cena objednávky* = součet rozpisu, dokud ji někdo nepřepíše ručně (`cena_rucni`);
+  pak má přednost ruční hodnota a appka jen ukáže rozdíl (rozhodl Dan).
+  *Katalog technologií se stal katalogem produktů:* tabulka `technologie` má
+  navíc kód, kategorii, jednotku, popis, nákupní cenu, DPH, platnost, zdroj,
+  přejmenované `dostupnost` → `aktivni` a novou tabulku příloh
+  `technologie_prilohy` (technický list, foto, certifikát; víc souborů naráz).
+  **Naimportováno 244 položek** z Raynetu (`docs/moduly/produkty/Produkty_výběr.xlsx`)
+  skriptem `backend/scripts/import_produkty.py` — idempotentní podle kódu, s náhledem
+  nasucho. 85 baterií z ceníku BESS zůstalo nedotčených (poznají se podle
+  `zdroj='bess_cenik'`) a dál pohánějí simulaci peak shavingu.
+  *Nákupní cena a marže:* posílají se jen s právem `nabidkovac_katalog` — ne skryté
+  na frontendu, ale vůbec ne v odpovědi API.
+  *Pozor při dalších úpravách:* validace „baterie musí mít kW i kWh“ platí jen pro
+  `zdroj='bess_cenik'` — bateriové komponenty z ceníku (BMS, racky) ta čísla nemají
+  a do simulace se stejně nedostanou (filtr na NOT NULL).
 
-- [ ] **CRM-09 · Napojení na fakturaci a Přehled financí** — Velikost **L** · Dopad **★★★**
-  Appka má Přehled financí s párováním na POHODU, ale objednávka o fakturách nic neví.
-  Chybí řetěz **objednávka → faktura → zaplaceno**, což je přesně to, co vedení u zakázky
-  zajímá nejvíc. Navázat na `backend/app/finance/`.
+- [x] **CRM-09 · Napojení na fakturaci a Přehled financí** — **hotovo 31. 7. 2026** (dávka D)
+  Řetěz **objednávka → faktura → zaplaceno** na kartě objednávky: splátkový kalendář
+  z předvolby (100 % / 50-50 / 30-40-30), termíny po měsíci, souhrn
+  vyfakturováno / zaplaceno / zbývá rozepsat / po termínu.
+  *Jedna tabulka, dva rodiče (rozhodl Dan):* faktura visí buď na Freelo projektu
+  (`projekt_id`, starý svět), nebo na CRM objednávce (`crm_objednavka_id`).
+  Hlídá to `ck_faktura_prave_jeden_rodic`. Díky tomu je párování s POHODOU přes
+  variabilní symbol napsané jednou a Přehled financí zůstal jedna obrazovka —
+  CRM objednávky v něm mají vlastní tabulku pod projekty.
+  *Editace jen z CRM:* `/finance/faktura/{id}` na fakturu objednávky vrací 409.
+  Jinak by ji mohl měnit i ten, kdo na zakázku podle práv CRM nevidí.
+  *Přepočet po změně ceny je vždy na tlačítko* a sáhne jen na nevystavené faktury —
+  vystavená faktura je doklad, ne plán. Rozdělení na haléř hlídá test
+  (3× 33,33 % z milionu musí dát přesně milion).
 
 - [ ] **CRM-10 · E-mail z appky a notifikace** — Velikost **L** · Dopad **★★★**
   V appce je `backend/app/mailer.py` (`posli_email`), CRM ho nepoužívá. Chybí:
@@ -451,7 +476,9 @@ Pro srovnání a aby bylo jasné, na čem se staví. **14 tabulek, 49 API cest, 
 | Zákazníci | leady i klienti v jedné tabulce, ARES podle IČO, kontrola duplicit, kontaktní osoby, GPS |
 | Případy | kanban i tabulka, kategorie jako seznam, vynucený důvod prohry, historie přesunů |
 | Nabídky | vlastní sekce, obchodní stav odděleně od stavu výpočtu, podklady i výpočet na kartě případu |
-| Objednávky | z přijaté nabídky s převzetím ceny, snapshot ceny, kanban |
+| Objednávky | z přijaté nabídky s převzetím ceny, snapshot ceny, kanban, **rozpis položek a fakturace** |
+| Katalog produktů | 329 položek (244 z Raynetu + 85 BESS), kód, kategorie, jednotka, nákupní cena a marže jen pro vedení, DPH, platnost, přílohy (technický list, foto), zaškrtávátko Aktivní, hromadné zapnutí/vypnutí |
+| Peníze | rozpis položek na nabídce i objednávce, splátkové kalendáře, řetěz objednávka → faktura → zaplaceno, objednávky v Přehledu financí |
 | Projekty | číslo po případu, kroky s trváním a **návaznostmi termínů**, šablony kroků, kanban s postupem |
 | Kombinace opatření | spojení PPA + peak shaving do jedné nabídky se souhrnem a oběma grafy |
 | Práva | vlastník + spoluvlastníci na záznamu, právo `crm_vse`, cizí záznam vrací 404 |
