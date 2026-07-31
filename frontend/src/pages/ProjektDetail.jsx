@@ -141,7 +141,7 @@ export default function ProjektDetail() {
         <div className="crm-karta-hlava">
           <div style={{ minWidth: 0 }}>
             <h1>
-              <Spendlik entita="pro" zaznamId={p.id} />
+              {me.novinky && <Spendlik entita="pro" zaznamId={p.id} />}
               {p.cislo}
               {p.nazev ? ` · ${p.nazev}` : ""}
             </h1>
@@ -190,7 +190,7 @@ export default function ProjektDetail() {
         {zalozka === "kroky" && (
           <>
             {/* Gantt (CRM-21) nad seznamem: nejdřív „kdy to bude", pak detaily. */}
-            <GanttProjektu projekt={p} />
+            {me.novinky && <GanttProjektu projekt={p} />}
           </>
         )}
 
@@ -256,7 +256,7 @@ export default function ProjektDetail() {
               onSprava={() => setSpravaPoli(true)}
             />
             {/* CRM-12: sbalené, načítá se až po rozbalení. */}
-            <HistorieZmen entita="pro" zaznamId={p.id} />
+            {me.novinky && <HistorieZmen entita="pro" zaznamId={p.id} />}
           </div>
         )}
 

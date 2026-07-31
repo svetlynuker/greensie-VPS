@@ -71,7 +71,12 @@ export default function Layout({ uzivatel, children }) {
 
   return (
     <div className="gs-app" data-panel={panel}>
-      <Sidebar prava={prava} mini={panel === "mini"} onPrepnoutPanel={prepnoutPanel} />
+      <Sidebar
+        prava={prava}
+        novinky={Boolean(me?.novinky)}
+        mini={panel === "mini"}
+        onPrepnoutPanel={prepnoutPanel}
+      />
 
       <div className="gs-main">
         <header className="gs-tb">
@@ -93,8 +98,9 @@ export default function Layout({ uzivatel, children }) {
           {kdo && (
             <>
               <GlobalniHledani />
-              {/* Zvoneček (CRM-10) — vedle hledání, před uživatelským menu. */}
-              <Zvonecek />
+              {/* Zvoneček (CRM-10) — vedle hledání, před uživatelským menu.
+                  Zatím jen pro ty, komu se ukazují novinky (crm/novinky.py). */}
+              {me?.novinky && <Zvonecek />}
               <UserMenu uzivatel={kdo} prava={prava} />
             </>
           )}

@@ -173,9 +173,11 @@ export default function NabidkaDetail() {
           <button className="fm-btn" onClick={() => setUpravaZakaznika((s) => !s)}>
             {upravaZakaznika ? "Zavřít údaje" : "Upravit zákazníka"}
           </button>
-          <button className="fm-btn" onClick={() => setPosilaEmail(true)}>
-            ✉ Poslat e-mail
-          </button>
+          {me.novinky && (
+            <button className="fm-btn" onClick={() => setPosilaEmail(true)}>
+              ✉ Poslat e-mail
+            </button>
+          )}
           {/* Nabídka pro zákazníka (PDF) – jen tam, kde už je výpočet. */}
           {(nabidka.typ === "ppa" || nabidka.typ === "peak_shaving") && (
             <button

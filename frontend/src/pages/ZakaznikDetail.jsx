@@ -127,7 +127,7 @@ export default function ZakaznikDetail() {
         <div className="crm-karta-hlava">
           <div style={{ minWidth: 0 }}>
             <h1>
-              <Spendlik entita="zakaznik" zaznamId={z.id} />
+              {me.novinky && <Spendlik entita="zakaznik" zaznamId={z.id} />}
               {z.nazev}
             </h1>
             <div className="crm-karta-radek">
@@ -228,7 +228,7 @@ export default function ZakaznikDetail() {
                 onSprava={() => setSpravaPoli(true)}
               />
               {/* CRM-12: sbalené, načítá se až po rozbalení. */}
-              <HistorieZmen entita="zakaznik" zaznamId={z.id} />
+              {me.novinky && <HistorieZmen entita="zakaznik" zaznamId={z.id} />}
               <KontaktyPanel zakaznik={z} onZmena={setZ} />
               <OdbernaMistaPanel
                 entita="zakaznik"

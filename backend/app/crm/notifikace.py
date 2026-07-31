@@ -178,6 +178,12 @@ def posli(
     try:
         if prijemce is None or udalost not in MAPA_UDALOSTI:
             return
+        # Notifikace se zatím zkoušejí interně (Dan 31. 7. 2026) – komu se
+        # novinky neukazují, tomu nemá co chodit ani do zvonečku.
+        from app.crm.novinky import ma_novinky
+
+        if not ma_novinky(prijemce):
+            return
         # Co si udělám sám, mi appka hlásit nemusí.
         if puvodce is not None and puvodce.id == prijemce.id:
             return
