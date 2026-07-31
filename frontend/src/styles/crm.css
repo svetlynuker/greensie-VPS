@@ -1484,3 +1484,27 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* ---- volba notifikací (CRM-36) ---- */
+/* Zaškrtávátka jsou úzké sloupce vpravo, popis události má zbytek šířky. */
+.nt-nastaveni .nt-sloupec-volba {
+  width: 96px;
+  text-align: center;
+}
+.nt-nastaveni td {
+  vertical-align: top;
+}
+.nt-nastaveni input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* ---- řádek formuláře v okně (jeden údaj pod druhým) ---- */
+/* Používá EmailOkno a správa šablon: pole na celou šířku, pod ním nápověda. */
+.crm-pole-radek {
+  margin-bottom: 14px;
+}
+.crm-pole-radek:last-child {
+  margin-bottom: 0;
+}

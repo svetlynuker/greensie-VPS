@@ -120,7 +120,7 @@ zakázky, je zbytek seznamu odhad — ne zkušenost. Proto se nejdřív zapíná
 | **B · Ať vedení vidí čísla** ✅ | ~~CRM-39, CRM-40, CRM-43, CRM-16~~ — **hotovo 30. 7. 2026**; ~~CRM-22, CRM-45~~ — **doklepnuto 31. 7. 2026** | — | Grafové komponenty už v appce jsou, data se v nich sečtou sama. Jediná věc, po které vedení pozná, že přechod z Raynetu má smysl. **CRM-41 a CRM-42 sem nepatří** — bez uzavřených obchodů v appce nemají co ukázat. *Poučení: 31. 7. se ukázalo, že tabulka hlásila „hotovo" u dvou položek, které hotové nebyly — odškrtávat až po kontrole v kódu.* |
 | **C · Denní práce se zakázkou** ✅ | ~~CRM-05, CRM-19, CRM-30, CRM-24, CRM-27, CRM-18~~ — **hotovo 31. 7. 2026** | — | Odpracováno podle seznamu. Rezerva na to, „co vyleze z provozu", tím padla — až se appka začne používat naostro, přijdou věci, které v seznamu nejsou. |
 | **D · Peníze** ✅ | ~~CRM-08, CRM-09~~ — **hotovo 31. 7. 2026** | — | Zakázka projde celým řetězcem až k faktuře v appce. Katalog technologií se přitom stal katalogem produktů (244 položek z Raynetu, přílohy, zaškrtávátko Aktivní). |
-| **E · Komunikace** | CRM-36 → CRM-10 → CRM-32 | ~4 dny | V tomhle pořadí. Notifikace bez volby, co chci dostávat, je obtěžování. |
+| **E · Komunikace** ✅ | ~~CRM-36, CRM-10, CRM-32~~ — **hotovo 31. 7. 2026** | — | Uděláno v tomhle pořadí schválně: volba notifikací vznikla dřív než notifikace samotné, aby si je nikdo nemusel „vytrpět". |
 | **F · Druhý životní cyklus** | CRM-11, CRM-31 | ~1 týden+ | Až budou v appce první předané projekty, ke kterým se dá servis navěsit. |
 | **Odloženo s podmínkou** | CRM-02 + CRM-38 (~300 řádků v seznamu), CRM-29 (desetitisíce), CRM-06 (jen když se objeví osoba u dvou firem), CRM-41 + CRM-42 (až bude ~20 uzavřených obchodů) | — | Spouštěč je napsaný, ať se to nedělá dřív, než to začne bolet. |
 
@@ -207,10 +207,23 @@ jinak přidělení nic neudělá.
   vystavená faktura je doklad, ne plán. Rozdělení na haléř hlídá test
   (3× 33,33 % z milionu musí dát přesně milion).
 
-- [ ] **CRM-10 · E-mail z appky a notifikace** — Velikost **L** · Dopad **★★★**
-  V appce je `backend/app/mailer.py` (`posli_email`), CRM ho nepoužívá. Chybí:
-  odeslat nabídku zákazníkovi z appky a mít to v logu komunikace; upozornit na úkol po
-  termínu; dát vědět, že mi někdo přiřadil případ. Potřebuje k tomu i CRM-36 (co komu posílat), jinak je to obtěžování.
+- [x] **CRM-10 · E-mail z appky a notifikace** — **hotovo 31. 7. 2026** (dávka E)
+  **Zvoneček** v horní liště (`Zvonecek.jsx`, tabulka `crm_notifikace`) a **odeslání
+  e-mailu** z karty případu i nabídky (`EmailOkno.jsx`, `POST /crm/email`).
+  Události: přiřazení záznamu, změna stavu, denní souhrn úkolů, odeslaná nabídka.
+
+  *Věci, které se z kódu nepoznají:*
+  - **Selhání notifikace nesmí shodit akci, která ji vyvolala** — `notifikace.posli()` je
+    celé v try/except. Výpadek SMTP nesmí zablokovat uložení případu.
+  - **Odeslaný e-mail se zapisuje jako aktivita** — to je vlastní důvod, proč se posílá
+    z appky. Aktivita vzniká **až po úspěšném odeslání**: záznam „odesláno" u něčeho, co
+    neodešlo, je horší než žádný.
+  - **Notifikace o přiřazení chodí jen nově přibylým** vlastníkům (routes porovnávají stav
+    před uložením), jinak by chodila po každé změně čárky v popisu.
+  - **Denní souhrn** běží ve vlákně (`notifikace_scheduler.py`, vzor `matice.scheduler`)
+    a hlídá se datem posledního běhu, ne hodinou — restart backendu v 7:00 by jinak poslal
+    souhrn dvakrát.
+  - Chodí **souhrnem, ne po úkolu**: pět e-mailů za ráno = vypnuté notifikace navždy.
 
 - [ ] **CRM-11 · Servis, revize a reklamace** — Velikost **XL** · Dopad **★★★**
   Projekt skončí předáním, ale zákazník žije dál: servisní smlouvy, revize po 4 letech,
@@ -426,8 +439,13 @@ Co běžná CRM mají navíc:
   *Pozor:* automatika, která něco zakládá sama, musí být viditelná a vypnutelná, jinak lidé
   přestanou appce věřit.
 
-- [ ] **CRM-32 · Šablony e-mailů a poznámek** — Velikost **M** · Dopad **★★**
-  Navazuje na CRM-10.
+- [x] **CRM-32 · Šablony e-mailů a poznámek** — **hotovo 31. 7. 2026** (dávka E)
+  Tabulka `crm_sablony` + `crm/sablony.py`, spravuje je `crm_nastaveni` (Nastavení →
+  Šablony), vkládají se v okně e-mailu. Zástupné symboly `{{zakaznik}}`, `{{cislo}}`,
+  `{{moje_jmeno}}`…
+  *Rozhodnutí, které vypadá jako chyba, ale není:* **neznámý nebo prázdný symbol zůstane
+  v textu**. Tiché smazání by zákazníkovi poslalo větu s dírou („nabídka pro ,"), zatímco
+  viditelné `{{zakaznik}}` je vidět na první pohled.
 
 - [ ] **CRM-33 · Skupiny a podmíněná viditelnost vlastních polí** — Velikost **M** · Dopad **★**
   Dnes jsou vlastní pole jeden seznam pod sebou. Chybí sekce a „ukaž jen když kategorie = PPA".
@@ -446,8 +464,13 @@ Co běžná CRM mají navíc:
   `uzivatelska_nastaveni`, takže to platí i na jiném počítači.
   **Zbývá:** podpis do e-mailů (souvisí s CRM-10), telefon, fotka místo iniciál.
 
-- [ ] **CRM-36 · Volba notifikací** — Velikost **M** · Dopad **★★**
-  Co chci dostávat e-mailem a co jen v appce. Bez toho je CRM-10 obtěžování.
+- [x] **CRM-36 · Volba notifikací** — **hotovo 31. 7. 2026** (dávka E)
+  Katalog událostí je v `crm/notifikace.py` (`UDALOSTI`), volba se ukládá do
+  `uzivatelska_nastaveni` pod klíč `crm_notifikace`, obrazovka je sekce v Nastavení.
+  *Dvě věci, na které pozor:* uloženým volbám se **dopočítávají výchozí hodnoty**, takže
+  nová událost lidem nezmizí jen proto, že ji nemají v uloženém JSONu — a **klíč události
+  je neměnný**, protože ho nese uložená volba (přejmenování by lidem tiše zaplo, co si
+  vypnuli).
 
 - [ ] **CRM-37 · Oblíbené a naposledy otevřené** — Velikost **S** · Dopad **★**
   Rychlý návrat k záznamu, se kterým člověk zrovna pracuje.

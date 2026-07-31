@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import Ikona from "../components/Ikona";
+import NotifikaceNastaveni from "../components/NotifikaceNastaveni";
+import SablonyTextuNastaveni from "../components/SablonyTextuNastaveni";
 import { logout, nactiMe, nactiNastaveni, ulozNastaveni } from "../api";
 import { getCvd, getTheme, setCvd, setTheme } from "../theme";
 import { getVelikost, setVelikost } from "../velikost";
@@ -42,6 +44,8 @@ export default function Nastaveni() {
   const [barvy, setBarvy] = useState(() => vychoziBarvy());
   const [ulozeno, setUlozeno] = useState(null); // co se naposled uložilo
   const [chyba, setChyba] = useState(null);
+  // Šablony (CRM-32) jsou firemní, ne osobní – proto jen pro `crm_nastaveni`.
+  const [sablony, setSablony] = useState(false);
 
   useEffect(() => {
     nactiMe()
@@ -228,6 +232,27 @@ export default function Nastaveni() {
           </div>
         </section>
 
+        {/* ---- notifikace (CRM-36) ---- */}
+        <NotifikaceNastaveni />
+
+        {/* ---- šablony textů (CRM-32), jen pro správce nastavení ---- */}
+        {me.prava?.includes("crm_nastaveni") && (
+          <section className="fm-card">
+            <div className="gs-karta-hlava">
+              <span className="gs-karta-titulek">Šablony e-mailů a poznámek</span>
+              <span className="gs-tb-spacer" />
+              <button className="fm-btn crm-btn-maly" onClick={() => setSablony(true)}>
+                Spravovat
+              </button>
+            </div>
+            <p className="gs-karta-popis">
+              Předpřipravené texty, které si každý vloží při psaní e-mailu nebo poznámky.
+              Na rozdíl od ostatních voleb na téhle stránce jsou <b>společné pro celou
+              firmu</b> — proto je spravuje jen správce nastavení.
+            </p>
+          </section>
+        )}
+
         {/* ---- účet ---- */}
         <section className="fm-card">
           <div className="gs-karta-hlava">
@@ -252,6 +277,8 @@ export default function Nastaveni() {
           </div>
         </section>
       </div>
+
+      {sablony && <SablonyTextuNastaveni onZavri={() => setSablony(false)} />}
     </Layout>
   );
 }

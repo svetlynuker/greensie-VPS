@@ -630,6 +630,21 @@ def _zastav_konektor_worker():
     zastav_worker()
 
 
+@app.on_event("startup")
+def _spust_notifikace():
+    # denní souhrn úkolů (CRM-10) – lehké vlákno, jeden dotaz za den
+    from app.crm.notifikace_scheduler import spust_planovac
+
+    spust_planovac()
+
+
+@app.on_event("shutdown")
+def _zastav_notifikace():
+    from app.crm.notifikace_scheduler import zastav_planovac
+
+    zastav_planovac()
+
+
 @app.get("/health")
 def health():
     return {"stav": "ok"}

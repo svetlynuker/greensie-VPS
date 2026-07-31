@@ -1362,3 +1362,78 @@ export function crmPouzijDiagramProNabidku(nabidkaId, diagramId) {
 export function crmOdbernaMistaNabidky(nabidkaId) {
   return zavolej(`/crm/nabidky/${nabidkaId}/odberna-mista`);
 }
+
+// ---- CRM: notifikace (CRM-10) a jejich volba (CRM-36) ----
+// Zvoneček se ptá pravidelně, takže tohle volání musí zůstat levné — vrací
+// posledních pár zpráv, ne celou historii.
+export function crmNotifikace() {
+  return zavolej("/crm/notifikace");
+}
+
+// Bez `ids` označí za přečtené všechny nepřečtené.
+export function crmNotifikacePrecteno(ids) {
+  return zavolej("/crm/notifikace/precteno", {
+    method: "POST",
+    body: JSON.stringify({ ids: ids || null }),
+  });
+}
+
+export function crmNastaveniNotifikaci() {
+  return zavolej("/crm/notifikace/nastaveni");
+}
+
+export function crmUlozNastaveniNotifikaci(volby) {
+  return zavolej("/crm/notifikace/nastaveni", {
+    method: "PUT",
+    body: JSON.stringify({ volby }),
+  });
+}
+
+// ---- CRM: šablony e-mailů a poznámek (CRM-32) ----
+// Pozor na názvy: `crmSablony`/`crmSablonaPridej` už patří ŠABLONÁM
+// PROJEKTOVÝCH KROKŮ (jiná věc, starší). Tyhle mají proto `...Textu`.
+// `vse=true` vrací i vypnuté šablony — to je pro obrazovku správy, ne pro výběr.
+export function crmSablonyTextu({ druh, entita, vse } = {}) {
+  const q = new URLSearchParams();
+  if (druh) q.set("druh", druh);
+  if (entita) q.set("entita", entita);
+  if (vse) q.set("vse", "true");
+  const dotaz = q.toString();
+  return zavolej(`/crm/sablony${dotaz ? `?${dotaz}` : ""}`);
+}
+
+// Vrátí text šablony s doplněnými symboly pro konkrétní záznam.
+export function crmSablonaTextuPouzij(id, { entita, zaznamId } = {}) {
+  const q = new URLSearchParams();
+  if (entita) q.set("entita", entita);
+  if (zaznamId) q.set("zaznam_id", String(zaznamId));
+  const dotaz = q.toString();
+  return zavolej(`/crm/sablony/${id}/pouzit${dotaz ? `?${dotaz}` : ""}`);
+}
+
+export function crmSablonaTextuPridej(data) {
+  return zavolej("/crm/sablony", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function crmSablonaTextuUprav(id, data) {
+  return zavolej(`/crm/sablony/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function crmSablonaTextuSmaz(id) {
+  return zavolej(`/crm/sablony/${id}`, { method: "DELETE" });
+}
+
+// ---- CRM: odeslání e-mailu z appky (CRM-10) ----
+// `entita` + `zaznamId` zapíšou odeslání jako aktivitu k záznamu (log komunikace).
+export function crmPosliEmail({ komu, predmet, telo, entita, zaznamId }) {
+  return zavolej("/crm/email", {
+    method: "POST",
+    body: JSON.stringify({
+      komu,
+      predmet,
+      telo,
+      entita: entita || "",
+      zaznam_id: zaznamId || null,
+    }),
+  });
+}

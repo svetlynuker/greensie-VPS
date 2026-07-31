@@ -161,6 +161,18 @@ const CESTY = {
       <path d="M8 11V7a4 4 0 0 1 8 0v4" />
     </>
   ),
+  zvonecek: (
+    <>
+      <path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6" />
+      <path d="M10.3 20a2 2 0 0 0 3.4 0" />
+    </>
+  ),
+  obalka: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3.5 7 8.5 6 8.5-6" />
+    </>
+  ),
   slunce: (
     <>
       <circle cx="12" cy="12" r="4" />

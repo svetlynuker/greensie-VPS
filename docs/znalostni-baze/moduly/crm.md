@@ -419,13 +419,52 @@ V nabídce u svého jména vpravo nahoře je **Nastavení**. Je to jedno místo 
 každý nastavuje sám:
 
 - **režim zobrazení** (světlý / tmavý), **velikost textu**, **režim pro barvoslepé**,
-- **barvy druhů aktivit v kalendáři** — podle barvy poznáš na první pohled, co tě čeká.
+- **barvy druhů aktivit v kalendáři** — podle barvy poznáš na první pohled, co tě čeká,
+- **notifikace** — co chceš vědět a jak (viz níž).
 
 Všechno je uložené u tvého účtu, ne v prohlížeči, takže to platí i na jiném počítači. A je to
 **jen tvoje** — kolegům se kalendář nepřebarví.
 
 > Nastavení firmy (stavy pipeline, kategorie, práva, uživatelé) je jinde — v **Admin
 > nastavení**. Sem patří jen to, co je osobní.
+
+### Notifikace: zvoneček a e-maily
+Vpravo nahoře v liště je **zvoneček**. Číslo u něj říká, kolik máš nepřečtených zpráv;
+kliknutím se rozbalí seznam a klik na zprávu tě rovnou přenese k záznamu, kterého se týká.
+Zprávy zůstávají i po přečtení, takže se dá dohledat, co ti appka kdy hlásila.
+
+**Co appka hlásí:**
+
+| Událost | Kdy přijde |
+|---|---|
+| Někdo mi přiřadil záznam | Když tě kolega nastaví vlastníkem nebo spoluvlastníkem případu, objednávky či projektu. |
+| Úkol mě čeká dnes | Ráno, souhrnem za všechny dnešní úkoly. |
+| Úkol je po termínu | Ráno, souhrnem — kolik jich je a který čeká nejdéle. |
+| Změnil se stav mého záznamu | Když někdo jiný posune tvůj případ, nabídku, objednávku nebo projekt. |
+| Nabídka odešla zákazníkovi | Potvrzení, že e-mail s nabídkou opravdu odešel. |
+
+U každé události si v **Nastavení → Notifikace** zvlášť zapneš **v appce** (zvoneček)
+a **e-mailem**. Dvě věci, které stojí za zapamatování:
+
+- **Co si uděláš sám, ti appka nehlásí.** Když si případ přiřadíš sobě, zpráva nechodí.
+- **Úkoly chodí souhrnem, ne po jednom.** Pět úkolů = jedna zpráva, ne pět.
+
+### Poslat e-mail zákazníkovi z appky
+Na kartě obchodního případu i v detailu nabídky je tlačítko **✉ Poslat e-mail**. Proč to
+dělat odsud a ne z Outlooku: **odeslaný e-mail se zapíše k záznamu jako aktivita**, takže
+je pak v historii vidět, co už zákazníkovi odešlo — i pro kolegu, který zakázku přebírá.
+
+V okně je nahoře výběr **šablony**. Vložený text se dá dál normálně upravovat a údaje jako
+název firmy nebo číslo případu se doplní samy. Podpis se přidá automaticky; e-mail odchází
+z firemní schránky, ne z tvojí osobní.
+
+> Když je někde v odeslaném textu vidět něco jako `{{zakaznik}}`, znamená to, že se ten
+> údaj nedoplnil — obvykle proto, že u záznamu chybí. Je to schválně vidět: prázdné místo
+> uprostřed věty by si nikdo nevšiml.
+
+**Šablony** (Nastavení → Šablony e-mailů a poznámek) spravuje správce nastavení a jsou
+**společné pro celou firmu** — smysl je, aby všichni psali zákazníkům podobně a nikdo
+nezačínal od prázdné stránky.
 
 ### Vlastní pole: když chcete sledovat něco dalšího
 Rozhodne se, že u obchodního případu chcete vést třeba **číslo odběrného místa** nebo
