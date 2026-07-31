@@ -8,6 +8,8 @@ import PripadFormular from "../components/PripadFormular";
 import StavyNastaveni from "../components/StavyNastaveni";
 import DuvodProhry from "../components/DuvodProhry";
 import HromadneAkce from "../components/HromadneAkce";
+import KpiPas from "../components/KpiPas";
+import OdkazRaynet from "../components/OdkazRaynet";
 import {
   crmKategorie,
   crmPripadStav,
@@ -230,29 +232,25 @@ export default function ObchodniPripady() {
         {chyba && <div className="crm-chyba">{chyba}</div>}
 
         {/* KPI nad seznamem (CRM-22). Reaguje na filtr — proto „z vyfiltrovaných". */}
-        {kpi.pocet > 0 && (
-          <div className="crm-kpi-pas">
-            <span>
-              <b>{kpi.pocet}</b> případů
-              {f.podminky.length ? " (po filtru)" : ""}
-            </span>
-            <span>
-              celkem <b>{fmtKcKratce(kpi.soucet)}</b>
-            </span>
-            <span>
-              průměr <b>{fmtKcKratce(kpi.prumer)}</b>
-            </span>
-            {kpi.bezHodnoty > 0 && (
-              <span className="crm-tise" title="Případy bez hodnoty se do součtu nepočítají">
-                {kpi.bezHodnoty}× bez hodnoty
-              </span>
-            )}
-            <span className="crm-mezera" />
-            <a className="crm-odkaz" href="/prehled-obchodu">
-              Přehled obchodu →
-            </a>
-          </div>
-        )}
+        <KpiPas
+          zobrazit={kpi.pocet > 0}
+          filtrovano={f.podminky.length > 0}
+          odkaz={{ cesta: "/prehled-obchodu", text: "Přehled obchodu" }}
+          polozky={[
+            { klic: "pocet", hodnota: kpi.pocet, label: "případů" },
+            { klic: "soucet", pred: "celkem", hodnota: fmtKcKratce(kpi.soucet) },
+            { klic: "prumer", pred: "průměr", hodnota: fmtKcKratce(kpi.prumer) },
+            kpi.bezHodnoty > 0 && {
+              klic: "bez",
+              hodnota: `${kpi.bezHodnoty}×`,
+              label: "bez hodnoty",
+              tise: true,
+              title: "Případy bez hodnoty se do součtu nepočítají",
+            },
+          ].filter(Boolean)}
+        />
+        {/* CRM-45: appka nemá historii — bez téhle věty vypadá součet jako propad. */}
+        <OdkazRaynet />
 
         <HromadneAkce
           entita="op"

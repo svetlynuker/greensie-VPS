@@ -15,6 +15,26 @@ jen zavolá.
 
 ## 🧑 Pro uživatele
 
+### ⚠️ Jedno pravidlo nade všemi: nová věc = vždycky appka
+
+**Cokoli nového — firma, obchodní případ, nabídka — se zakládá tady v appce. Do Raynetu se
+už nezakládá nic.**
+
+Proč to takhle je: stávající zakázky se do appky **nepřenášejí** (rozhodnuto 30. 7. 2026,
+import se dělat nebude). Dojedou tam, kde vznikly, tedy v Raynetu. Appka tím pádem zná jen
+to, co v ní vzniklo — a to je správně, dokud platí tohle pravidlo. Kdyby někdo založil novou
+zakázku v Raynetu „ze zvyku", vznikla by třetí pravda a nikdo by nevěděl, kde se co eviduje.
+
+Co z toho plyne pro každodenní práci:
+
+- **Starší zakázky hledej v Raynetu** — v seznamech Zákazníci, Obchodní případy i u grafů je
+  na to odkaz „Otevřít Raynet".
+- **Čísla a součty v appce nejsou celý byznys firmy.** Pipeline, forecast i KPI nad seznamy
+  počítají jen z toho, co je tady. Rostou tak, jak se sem zakládají nové zakázky — takže
+  nízké číslo na začátku není propad obchodu.
+- **Raynet se časem vypne sám**, až v něm dojedou poslední staré případy. Není potřeba nic
+  migrovat ani dohánět.
+
 ### Zákazníci: leady a klienti
 Jedna evidence, dva pohledy přepínané záložkami:
 
