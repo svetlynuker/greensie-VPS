@@ -1313,7 +1313,7 @@ export async function crmDiagramNahraj(mistoId, file, { popis = "", pripadId = n
   fd.append("soubor", file);
   if (popis) fd.append("popis", popis);
   if (pripadId) fd.append("obchodni_pripad_id", String(pripadId));
-  const res = await fetch(`${API_BASE}/crm/odberna-mista/${mistoId}/diagramy`, {
+  const res = await fetch(`${API_BASE}/crm/diagramy/misto/${mistoId}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
     body: fd,

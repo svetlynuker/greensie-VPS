@@ -2964,7 +2964,12 @@ def nastav_odberne_misto_pripadu(
 # výpočet (viz `crm/diagramy.py`).
 
 
-@router.post("/odberna-mista/{misto_id}/diagramy", response_model=DiagramOut)
+# POZOR na tvar cesty: `/odberna-mista/{misto_id}/diagramy` by kolidovalo
+# s `/odberna-mista/{entita}/{zaznam_id}` výš (obě mají dva segmenty, `entita`
+# je text). FastAPI by upload namapoval na zakládání místa a vrátil nesmyslnou
+# validační chybu — na náhledu se to projevilo jako 500 při nahrání souboru.
+# Proto nahrávání jde přes `/diagramy/misto/{misto_id}`, kde je literál první.
+@router.post("/diagramy/misto/{misto_id}", response_model=DiagramOut)
 async def nahraj_diagram(
     misto_id: int,
     soubor: UploadFile = File(...),
