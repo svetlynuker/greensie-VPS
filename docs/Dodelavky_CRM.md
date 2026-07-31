@@ -136,7 +136,15 @@ jinak přidělení nic neudělá.
 
 ## 3. Moduly
 
-- [ ] **CRM-05 · Dokumenty u zákazníka a případu** — Velikost **M** · Dopad **★★★**
+- [x] **CRM-05 · Dokumenty u zákazníka a případu** — **hotovo 31. 7. 2026** (dávka C)
+  Karta zákazníka i případu má blok **Dokumenty na Disku**: odkaz na složku, výpis obsahu
+  a tlačítko **Založit složku na Disku**. Zakládá se tlačítkem, ne automaticky (rozhodl
+  Dan) — u případu, který za dva dny skončí jako nezajímavý, by automat nechal na Disku
+  prázdnou složku.
+  *Jak:* nový `konektor/crm_slozky.py` bere data z CRM, ale strukturu na Disku vytváří
+  tímtéž kódem jako konektor pro Raynet, takže na Disku zůstane jedna struktura. Vlastní
+  klíče entit (`crm_op`, `crm_zakaznik`), aby naše ID nekolidovala s Raynetími.
+  *Bylo:* dokumenty jen u nabídek; chybělo místo pro smlouvy a revizní zprávy.
   Soubory se dnes nahrávají **jen k nabídce**. Chybí místo pro smlouvy, revizní zprávy, fotky
   z realizace. Konektor už mapuje složky obchodních případů na Google Disku
   (`konektor_entity_folder`), takže nejlevnější varianta je **proklik na složku**, jako to má

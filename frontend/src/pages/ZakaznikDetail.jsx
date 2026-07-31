@@ -6,6 +6,7 @@ import KontaktyPanel from "../components/KontaktyPanel";
 import PripadFormular from "../components/PripadFormular";
 import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
 import VlastniPoleVypis from "../components/VlastniPoleVypis";
+import DiskSlozka from "../components/DiskSlozka";
 import ZakaznikFormular from "../components/ZakaznikFormular";
 import {
   crmKategorie,
@@ -217,6 +218,9 @@ export default function ZakaznikDetail() {
                 onSprava={() => setSpravaPoli(true)}
               />
               <KontaktyPanel zakaznik={z} onZmena={setZ} />
+              <div className="fm-card crm-blok">
+                <DiskSlozka entita="zakaznik" zaznamId={z.id} popisZaznamu="klientovi" />
+              </div>
             </div>
           </div>
         )}
