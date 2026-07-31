@@ -457,6 +457,44 @@ Všechno je uložené u tvého účtu, ne v prohlížeči, takže to platí i na
 > Nastavení firmy (stavy pipeline, kategorie, práva, uživatelé) je jinde — v **Admin
 > nastavení**. Sem patří jen to, co je osobní.
 
+### Historie změn: kdo co kdy upravil
+Na kartě zákazníka, obchodního případu i projektu je dole sbalený panel **Historie změn**.
+Po rozbalení ukáže řádek na každou změněnou položku: kdy, co, **z čeho na co** a kdo to
+udělal. Původní hodnota je přeškrtnutá, nová tučně.
+
+Co v historii **není** a proč:
+
+- **posuny stavů** — ty mají vlastní, bohatší záznam v timeline zákazníka,
+- **technické údaje** (kdy se záznam naposled uložil) — měnily by se pokaždé a nešlo by
+  v logu nic najít,
+- **cokoli staršího než zapnutí funkce** — sbírá se od 31. 7. 2026, zpětně to dohledat nejde.
+
+> Vlastní pole se zapisují po jednotlivých údajích, takže je vidět „Číslo smlouvy ČEZ:
+> A1 → A2", ne nesrozumitelná změna celého bloku.
+
+### Mapa
+Sekce **Mapa** ukáže zákazníky se souřadnicemi. Zelený špendlík je klient, oranžový lead;
+po kliknutí se ukáže, kolik u firmy běží případů a projektů, a odkaz na kartu. Zaškrtávátko
+**Jen s otevřeným případem** schová firmy, kde se zrovna nic neděje.
+
+**Odkud jsou souřadnice:** přednostně z **provozovny** (odběrného místa), a když ji firma
+nemá vyplněnou, z adresy firmy. U každého bodu je to napsané — fakturační adresa v rejstříku
+totiž bývá jinde než místo, kam se opravdu jede.
+
+> Mapa je zatím prázdná: **žádný záznam nemá vyplněné GPS**. Doplní se u odběrného místa na
+> kartě zákazníka a body se objeví samy.
+
+### Časová osa projektu (Gantt)
+V projektu v záložce **Kroky realizace** je nahoře sbalená **Časová osa**. Každý krok je
+pruh podle svého trvání, svislá čára ukazuje dnešek.
+
+- **červené pruhy = kritická cesta** — řetěz kroků, který určuje datum předání. Když se
+  zpozdí kterýkoli z nich, posune se konec projektu. Kroky mimo cestu mají rezervu.
+- **zelené = hotové**, šrafované = po termínu.
+
+Kroky bez termínu se nekreslí a je pod osou napsáno, kolik jich je. Termín se dopočítá ze
+zahájení projektu a délky kroků — když osa nic neukazuje, chybí obvykle **zahájení**.
+
 ### Oblíbené a naposledy otevřené
 V poli hledání (**Ctrl+K**) se hned po otevření — ještě než začneš psát — ukáže, s čím jsi
 naposledy pracoval, a nahoře **★ Oblíbené**. Je to nejrychlejší cesta zpátky k rozdělané
