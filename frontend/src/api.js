@@ -1399,7 +1399,7 @@ export function crmSablonyTextu({ druh, entita, vse } = {}) {
   if (entita) q.set("entita", entita);
   if (vse) q.set("vse", "true");
   const dotaz = q.toString();
-  return zavolej(`/crm/sablony${dotaz ? `?${dotaz}` : ""}`);
+  return zavolej(`/crm/sablony-textu${dotaz ? `?${dotaz}` : ""}`);
 }
 
 // Vrátí text šablony s doplněnými symboly pro konkrétní záznam.
@@ -1408,19 +1408,19 @@ export function crmSablonaTextuPouzij(id, { entita, zaznamId } = {}) {
   if (entita) q.set("entita", entita);
   if (zaznamId) q.set("zaznam_id", String(zaznamId));
   const dotaz = q.toString();
-  return zavolej(`/crm/sablony/${id}/pouzit${dotaz ? `?${dotaz}` : ""}`);
+  return zavolej(`/crm/sablony-textu/${id}/pouzit${dotaz ? `?${dotaz}` : ""}`);
 }
 
 export function crmSablonaTextuPridej(data) {
-  return zavolej("/crm/sablony", { method: "POST", body: JSON.stringify(data) });
+  return zavolej("/crm/sablony-textu", { method: "POST", body: JSON.stringify(data) });
 }
 
 export function crmSablonaTextuUprav(id, data) {
-  return zavolej(`/crm/sablony/${id}`, { method: "PUT", body: JSON.stringify(data) });
+  return zavolej(`/crm/sablony-textu/${id}`, { method: "PUT", body: JSON.stringify(data) });
 }
 
 export function crmSablonaTextuSmaz(id) {
-  return zavolej(`/crm/sablony/${id}`, { method: "DELETE" });
+  return zavolej(`/crm/sablony-textu/${id}`, { method: "DELETE" });
 }
 
 // ---- CRM: odeslání e-mailu z appky (CRM-10) ----

@@ -3251,6 +3251,10 @@ def uloz_nastaveni_notifikaci(
 
 
 # ---- šablony e-mailů a poznámek (CRM-32) ------------------------------------
+# Cesta je `/crm/sablony-textu`, NE `/crm/sablony` — tu už zabraly ŠABLONY
+# PROJEKTOVÝCH KROKŮ v routes_realizace.py. Obě jsou pod stejným routerem, takže
+# stejná cesta by tiše přebila tu, která se registruje později (pořadí
+# include_router v main.py), a rozbila by projektové šablony.
 def _sablona_out(s) -> SablonaOut:
     return SablonaOut(
         id=s.id,
@@ -3264,7 +3268,7 @@ def _sablona_out(s) -> SablonaOut:
     )
 
 
-@router.get("/sablony", response_model=SablonyOut)
+@router.get("/sablony-textu", response_model=SablonyOut)
 def seznam_sablon(
     druh: str | None = Query(default=None),
     entita: str | None = Query(default=None),
@@ -3286,7 +3290,7 @@ def seznam_sablon(
     )
 
 
-@router.get("/sablony/{sablona_id}/pouzit", response_model=SablonaPouzitiOut)
+@router.get("/sablony-textu/{sablona_id}/pouzit", response_model=SablonaPouzitiOut)
 def pouzij_sablonu(
     sablona_id: int,
     entita: str = Query(default=""),
@@ -3305,7 +3309,7 @@ def pouzij_sablonu(
     )
 
 
-@router.post("/sablony", response_model=SablonaOut)
+@router.post("/sablony-textu", response_model=SablonaOut)
 def pridej_sablonu(
     vstup: SablonaVstup,
     user: User = Depends(vyzaduj_nastaveni),
@@ -3331,7 +3335,7 @@ def pridej_sablonu(
     return _sablona_out(s)
 
 
-@router.put("/sablony/{sablona_id}", response_model=SablonaOut)
+@router.put("/sablony-textu/{sablona_id}", response_model=SablonaOut)
 def uprav_sablonu(
     sablona_id: int,
     vstup: SablonaVstup,
@@ -3355,7 +3359,7 @@ def uprav_sablonu(
     return _sablona_out(s)
 
 
-@router.delete("/sablony/{sablona_id}")
+@router.delete("/sablony-textu/{sablona_id}")
 def smaz_sablonu(
     sablona_id: int,
     user: User = Depends(vyzaduj_nastaveni),
