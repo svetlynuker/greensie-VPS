@@ -5,6 +5,8 @@
  * spravovat, aby věděl, že tahle možnost existuje. Běžnému uživateli se prázdná
  * karta nepletla do cesty, tak se mu vůbec nezobrazí.
  */
+import { doSkupin, poleViditelne } from "./VlastniPoleVstupy";
+
 function formatuj(pole, hodnota) {
   if (hodnota === null || hodnota === undefined || hodnota === "") return "—";
   if (pole.typ === "ano_ne") return hodnota ? "Ano" : "Ne";
@@ -25,8 +27,11 @@ export default function VlastniPoleVypis({
   muzeSpravovat = false,
   onSprava,
   nadpis = "Doplňující údaje",
+  // Běžná pole záznamu pro podmíněnou viditelnost (CRM-33).
+  zaznam = null,
 }) {
-  const seznam = pole || [];
+  const zdroj = { ...(zaznam || {}), ...(hodnoty || {}) };
+  const seznam = (pole || []).filter((p) => poleViditelne(p, zdroj));
   if (seznam.length === 0 && !muzeSpravovat) return null;
 
   return (
@@ -51,14 +56,24 @@ export default function VlastniPoleVypis({
           chceš u těchto záznamů sledovat — bez zásahu do kódu.
         </p>
       ) : (
-        <dl className="crm-udaje">
-          {seznam.map((p) => (
-            <div key={p.klic} style={{ display: "contents" }}>
-              <dt title={p.napoveda || undefined}>{p.nazev}</dt>
-              <dd>{formatuj(p, (hodnoty || {})[p.klic])}</dd>
-            </div>
-          ))}
-        </dl>
+        doSkupin(seznam).map((skupina) => (
+          <div key={skupina.nazev || "_zakladni"}>
+            {/* Nadpis skupiny (CRM-33) jen tam, kde skupina opravdu je —
+                jinak by nad každým výpisem visel prázdný mezinadpis. */}
+            {skupina.nazev && <h4 className="crm-podnadpis">{skupina.nazev}</h4>}
+            <dl className="crm-udaje">
+              {skupina.pole.map((p) => (
+                <div key={p.klic} style={{ display: "contents" }}>
+                  <dt title={p.vzorec ? `Počítá se: ${p.vzorec}` : p.napoveda || undefined}>
+                    {p.nazev}
+                    {p.vzorec ? " ∑" : ""}
+                  </dt>
+                  <dd>{formatuj(p, (hodnoty || {})[p.klic])}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ))
       )}
     </div>
   );

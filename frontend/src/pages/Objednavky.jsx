@@ -18,7 +18,7 @@ import {
   nactiMe,
 } from "../api";
 import { fmtDatum, fmtKc, fmtKcKratce } from "../crm";
-import pouzitFiltr from "../pouzitFiltr";
+import usePouzitFiltr from "../pouzitFiltr";
 import "../styles/crm.css";
 
 /**
@@ -45,7 +45,7 @@ export default function Objednavky() {
   const [zruseni, setZruseni] = useState(null);
   const [chyba, setChyba] = useState(null);
 
-  const f = pouzitFiltr("obj", radky, sloupce);
+  const f = usePouzitFiltr("obj", radky, sloupce);
 
   // KPI nad seznamem (CRM-22). Objednávka JE peníze, takže tady součet dává
   // smysl; „bez projektu" je fronta práce, která se ještě nerozjela.

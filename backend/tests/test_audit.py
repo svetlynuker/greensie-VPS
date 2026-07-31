@@ -164,3 +164,29 @@ def test_novinky_zatim_jen_pro_adminy():
 
     assert ma_novinky(SimpleNamespace(je_admin=True)) is True
     assert ma_novinky(SimpleNamespace(je_admin=False)) is False
+
+
+# ---- dny ve fázi (CRM-44) ----------------------------------------------------
+def test_dny_ve_fazi_pocita_od_posledni_zmeny(monkeypatch):
+    """Případ bez historie se počítá od založení — jinak by čerstvě vzniklý
+    případ hlásil 0 dní i po měsíci."""
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+
+    from app.crm import routes
+
+    pred_mesicem = datetime.now() - timedelta(days=30)
+    zaznam = SimpleNamespace(id=1, vytvoreno_at=pred_mesicem)
+
+    class FalesnyDotaz:
+        def filter(self, *a, **k):
+            return self
+
+        def order_by(self, *a, **k):
+            return self
+
+        def all(self):
+            return []  # žádná historie
+
+    db = SimpleNamespace(query=lambda *a, **k: FalesnyDotaz())
+    assert routes.dny_ve_fazi(db, "op", [zaznam])[1] == 30

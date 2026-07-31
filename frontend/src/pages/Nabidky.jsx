@@ -17,7 +17,7 @@ import {
   nactiMe,
 } from "../api";
 import { fmtDatum } from "../crm";
-import pouzitFiltr from "../pouzitFiltr";
+import usePouzitFiltr from "../pouzitFiltr";
 import "../styles/crm.css";
 
 const TYPY = { ppa: "PPA", prodej: "Prodej", peak_shaving: "Peak shaving" };
@@ -44,7 +44,7 @@ export default function Nabidky() {
   const [chyba, setChyba] = useState(null);
 
   // Jeden filtr pro tabulku i kanban.
-  const f = pouzitFiltr("nab", radky, sloupce);
+  const f = usePouzitFiltr("nab", radky, sloupce);
 
   // KPI nad seznamem (CRM-22). U nabídek nejde o součet — cena je až
   // v objednávce; jde o to, co brzdí: nespočítaná nabídka se nedá poslat

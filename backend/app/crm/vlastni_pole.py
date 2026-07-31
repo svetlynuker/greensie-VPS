@@ -161,6 +161,10 @@ def zpracuj(db: Session, entita: str, vstup: dict | None) -> dict:
         pole = definice.get(klic)
         if pole is None:
             continue
+        # Výpočtové pole (CRM-34) se do `extra` neukládá — počítá se při
+        # zobrazení. Uložená kopie by zastarala, jakmile se změní vstupy.
+        if (pole.vzorec or "").strip():
+            continue
         je_prazdna = hodnota is None or (isinstance(hodnota, str) and hodnota.strip() == "")
         if je_prazdna:
             continue
@@ -182,7 +186,13 @@ def zpracuj(db: Session, entita: str, vstup: dict | None) -> dict:
         for p in definice.values()
         # U ano/ne je „ne" plnohodnotná odpověď, takže povinnost nekontrolujeme
         # (jinak by povinné ano/ne znamenalo „musíš zaškrtnout").
-        if p.povinne and p.typ != "ano_ne" and klic_chybi(out, p.klic)
+        if p.povinne
+        and p.typ != "ano_ne"
+        and not (p.vzorec or "").strip()  # výpočtové se nevyplňuje
+        # Skryté pole (CRM-33) nelze vyžadovat: uživatel ho na obrazovce nemá,
+        # takže by formulář nešel uložit a nebylo by vidět proč.
+        and viditelne(p, out)
+        and klic_chybi(out, p.klic)
     ]
     if chybi:
         raise HTTPException(
@@ -235,6 +245,10 @@ def pro_frontend(db: Session, entita: str) -> list[dict]:
             "povinne": bool(p.povinne),
             "v_seznamu": bool(p.v_seznamu),
             "poradi": p.poradi,
+            "skupina": p.skupina or "",
+            "zavislost_pole": p.zavislost_pole or "",
+            "zavislost_hodnota": p.zavislost_hodnota or "",
+            "vzorec": p.vzorec or "",
         }
         for p in seznam(db, entita)
     ]
@@ -248,8 +262,131 @@ def hodnoty_pro_seznam(db: Session, entita: str, zaznamy: list) -> dict[int, dic
     pole_v_seznamu = [p for p in seznam(db, entita) if p.v_seznamu]
     if not pole_v_seznamu:
         return {}
+    # Výpočtová pole (CRM-34) v `extra` uložená nejsou — dopočítají se i tady,
+    # jinak by sloupec v tabulce zůstal prázdný, zatímco v detailu číslo je.
+    ma_vypocty = any((p.vzorec or "").strip() for p in pole_v_seznamu)
     out: dict[int, dict] = {}
     for z in zaznamy:
-        extra = z.extra or {}
+        extra = s_vypocty(db, entita, z, z.extra) if ma_vypocty else (z.extra or {})
         out[z.id] = {p.klic: text_hodnoty(p, extra.get(p.klic)) for p in pole_v_seznamu}
     return out
+
+
+# ---- výpočtová pole (CRM-34) -------------------------------------------------
+# Povolené znaky ve vzorci. Vědomě VELMI úzké: čísla, jména polí, čtyři operace
+# a závorky. Cokoli dalšího (volání funkcí, tečky, podtržítka mimo klíče) se
+# odmítne dřív, než se to dostane k vyhodnocení.
+_VZOREC_POVOLENE = re.compile(r"^[a-z0-9_+\-*/(). ]+$")
+_VZOREC_TOKEN = re.compile(r"[a-z_][a-z0-9_]*")
+
+
+def zdroje_vzorce(model=None) -> dict:
+    """Číselná pole záznamu, se kterými smí vzorec počítat.
+
+    Jen vlastní pole typu číslo a pár pevných sloupců — ne cokoli z modelu.
+    Kdyby se pustilo všechno, vzorec by uměl číst i to, co uživatel na
+    obrazovce vidět nemá.
+    """
+    return {"hodnota_kc", "cena_kc", "pravdepodobnost", "delka_dni"}
+
+
+def over_vzorec(vzorec: str, klice_cisel: set[str]) -> str:
+    """Zkontroluje vzorec při ukládání definice pole. Vrací ho očištěný.
+
+    Chybu hlásíme adminovi hned tady, ne až při zobrazení: špatný vzorec
+    schovaný v definici by se projevil pomlčkou u záznamu a nikdo by nevěděl proč.
+    """
+    text = (vzorec or "").strip().lower()
+    if not text:
+        return ""
+    if not _VZOREC_POVOLENE.match(text):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Ve vzorci smí být jen čísla, názvy polí, + - * / a závorky. "
+                "Funkce ani jiné znaky ne."
+            ),
+        )
+    nezname = sorted(set(_VZOREC_TOKEN.findall(text)) - klice_cisel)
+    if nezname:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Vzorec zmiňuje pole, které neznám nebo není číselné: {', '.join(nezname)}. "
+                f"Použít jde: {', '.join(sorted(klice_cisel)) or '(žádné číselné pole)'}."
+            ),
+        )
+    return text
+
+
+def spocitej(vzorec: str, hodnoty: dict) -> float | None:
+    """Vyhodnotí vzorec nad hodnotami záznamu. Chyba = None (v UI pomlčka).
+
+    Používá `eval` nad výrazem, který **prošel `over_vzorec`** a jehož jména
+    se nahradila čísly — takže se vyhodnocuje čistá aritmetika bez jediného
+    identifikátoru. Globals i locals jsou prázdné, takže i kdyby se do výrazu
+    něco dostalo, nemá to na co sáhnout.
+    """
+    text = (vzorec or "").strip().lower()
+    if not text or not _VZOREC_POVOLENE.match(text):
+        return None
+
+    def nahrad(m: re.Match) -> str:
+        hodnota = hodnoty.get(m.group(0))
+        try:
+            return repr(float(hodnota))
+        except (TypeError, ValueError):
+            return "0"
+
+    vyraz = _VZOREC_TOKEN.sub(nahrad, text)
+    if not re.fullmatch(r"[0-9eE+\-*/(). ]+", vyraz):
+        return None
+    try:
+        vysledek = eval(vyraz, {"__builtins__": {}}, {})  # noqa: S307 - viz docstring
+    except Exception:  # noqa: BLE001 - dělení nulou i překlep končí pomlčkou
+        return None
+    return float(vysledek) if isinstance(vysledek, (int, float)) else None
+
+
+def viditelne(pole: CrmVlastniPole, hodnoty: dict) -> bool:
+    """Splňuje záznam podmínku viditelnosti pole? (CRM-33)
+
+    Porovnává se jako text bez ohledu na velikost písmen — hodnota přichází
+    jednou z formuláře, jindy z JSONB, a rozdíl „PPA" vs. „ppa" by pole
+    schoval, aniž by bylo poznat proč.
+    """
+    klic = (pole.zavislost_pole or "").strip()
+    if not klic:
+        return True
+    ocekavana = (pole.zavislost_hodnota or "").strip().lower()
+    skutecna = hodnoty.get(klic)
+    if isinstance(skutecna, (list, tuple)):
+        return any(str(x).strip().lower() == ocekavana for x in skutecna)
+    return str(skutecna or "").strip().lower() == ocekavana
+
+
+def s_vypocty(db: Session, entita: str, zaznam, extra: dict | None = None) -> dict:
+    """`extra` doplněné o výsledky výpočtových polí (CRM-34).
+
+    Počítá se **při čtení**, ne při ukládání: uložený výsledek by zastaral,
+    jakmile se změní vstup (typicky cena), a nikdo by nepoznal, že číslo na
+    obrazovce už neplatí.
+
+    Do vzorce jdou jednak vlastní číselná pole, jednak pár sloupců záznamu
+    (`zdroje_vzorce`) — proto se sem předává celý `zaznam`.
+    """
+    hodnoty = dict(extra or {})
+    pocitane = [p for p in seznam(db, entita) if (p.vzorec or "").strip()]
+    if not pocitane:
+        return hodnoty
+
+    vstupy = dict(hodnoty)
+    for klic in zdroje_vzorce():
+        if hasattr(zaznam, klic):
+            vstupy.setdefault(klic, getattr(zaznam, klic))
+
+    for p in pocitane:
+        vysledek = spocitej(p.vzorec, vstupy)
+        if vysledek is not None:
+            hodnoty[p.klic] = vysledek
+    return hodnoty

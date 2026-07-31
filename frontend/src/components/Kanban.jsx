@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { fmtKcKratce, fmtDatum, nazvyKategorii, tridaBarvy } from "../crm";
+import Iniciraly from "./Iniciraly";
+import { fmtKcKratce, fmtDatum, jePoTerminu, nazvyKategorii, tridaBarvy } from "../crm";
 
 /**
  * Kanban se sloupci podle stavů pipeline a přetahováním dlaždic.
@@ -92,11 +93,35 @@ export default function Kanban({
                     {z.nazev && <div className="crm-dlazdice-nazev">{z.nazev}</div>}
                     <div className="crm-dlazdice-pata">
                       {nazvyKategorii(z.kategorie, kategorie) || "bez kategorie"}
-                      {z.predpokladane_uzavreni ? ` · ${fmtDatum(z.predpokladane_uzavreni)}` : ""}
+                      {z.predpokladane_uzavreni ? (
+                        <span
+                          className={
+                            jePoTerminu(z.predpokladane_uzavreni) ? "crm-dlazdice-pozde" : undefined
+                          }
+                        >
+                          {" · "}
+                          {fmtDatum(z.predpokladane_uzavreni)}
+                        </span>
+                      ) : (
+                        ""
+                      )}
                     </div>
-                    {z.vlastnik_jmeno && (
-                      <div className="crm-dlazdice-vlastnik">{z.vlastnik_jmeno}</div>
-                    )}
+                    {/* Iniciály + jak dlouho případ visí v téhle fázi (CRM-44).
+                        Dny ve fázi jsou to, co v kanbanu chybělo nejvíc: jinak
+                        se nepozná ležák od čerstvého případu. */}
+                    <div className="crm-dlazdice-vlastnik">
+                      {z.vlastnik_jmeno && <Iniciraly jmeno={z.vlastnik_jmeno} velikost={20} />}
+                      <span>{z.vlastnik_jmeno || "bez vlastníka"}</span>
+                      <span className="crm-mezera" />
+                      {z.dni_ve_fazi > 0 && (
+                        <span
+                          className={`crm-dni-ve-fazi${z.dni_ve_fazi >= 30 ? " dlouho" : ""}`}
+                          title={`V tomhle stavu ${z.dni_ve_fazi} dní`}
+                        >
+                          {z.dni_ve_fazi} d
+                        </span>
+                      )}
+                    </div>
                   </>
                 )}
 

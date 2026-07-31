@@ -315,7 +315,7 @@ def _zakaznik_detail(z: Zakaznik, user: User, db: Session) -> ZakaznikDetailOut:
             # Hlavní kontakt první, pak podle jména – ať OZ nemusí hledat.
             for k in sorted(z.kontakty, key=lambda k: (not k.hlavni, k.jmeno or ""))
         ],
-        extra=z.extra or {},
+        extra=pole_modul.s_vypocty(db, "zakaznik", z, z.extra),
         vlastni_pole=[VlastniPoleOut(**p) for p in pole_modul.pro_frontend(db, "zakaznik")],
         muze_editovat=smi_menit(z, user),
     )
@@ -584,8 +584,44 @@ def _mapa_stavu(db: Session, entita: str) -> dict[str, CrmStav]:
     return {s.klic: s for s in stavy_modul.seznam(db, entita)}
 
 
+def dny_ve_fazi(db: Session, entita: str, zaznamy: list) -> dict[int, int]:
+    """{id: kolik dní záznam visí v aktuálním stavu} — jedním dotazem (CRM-44).
+
+    Bere se poslední zápis v `crm_stav_historie`; případ, který stav nikdy
+    neměnil, se počítá od založení. Bez fallbacku na založení by čerstvě
+    vzniklé případy hlásily 0 dní i po měsíci, což je horší než nic.
+    """
+    if not zaznamy:
+        return {}
+    ids = [z.id for z in zaznamy]
+    posledni: dict[int, object] = {}
+    for h in (
+        db.query(CrmStavHistorie)
+        .filter(CrmStavHistorie.entita == entita, CrmStavHistorie.zaznam_id.in_(ids))
+        .order_by(CrmStavHistorie.id)
+        .all()
+    ):
+        posledni[h.zaznam_id] = h.zmeneno_at
+
+    dnes = datetime.now()
+    out: dict[int, int] = {}
+    for z in zaznamy:
+        od = posledni.get(z.id) or getattr(z, "vytvoreno_at", None)
+        if od is None:
+            out[z.id] = 0
+            continue
+        # Časy z DB můžou mít časovou zónu, `datetime.now()` ne — porovnáváme
+        # holá data, jinak Python vyhodí „can't subtract offset-naive…".
+        od_bez_zony = od.replace(tzinfo=None) if getattr(od, "tzinfo", None) else od
+        out[z.id] = max(0, (dnes - od_bez_zony).days)
+    return out
+
+
 def _pripad_radek(
-    p: ObchodniPripad, stav_nazvy: dict[str, CrmStav], extra_text: dict | None = None
+    p: ObchodniPripad,
+    stav_nazvy: dict[str, CrmStav],
+    extra_text: dict | None = None,
+    dni: int = 0,
 ) -> PripadRadekOut:
     stav = stav_nazvy.get(p.stav)
     return PripadRadekOut(
@@ -605,6 +641,7 @@ def _pripad_radek(
         raynet_code=p.raynet_code or "",
         vytvoreno_at=_iso(p.vytvoreno_at),
         extra_text=extra_text or {},
+        dni_ve_fazi=dni,
     )
 
 
@@ -648,7 +685,7 @@ def _pripad_detail(db: Session, p: ObchodniPripad, user: User) -> PripadDetailOu
         odberne_misto_nazev=misto.nazev if misto is not None else "",
         nabidky=_nabidky_pripadu(db, p.id),
         extra_text={},
-        extra=p.extra or {},
+        extra=pole_modul.s_vypocty(db, "op", p, p.extra),
         vlastni_pole=[VlastniPoleOut(**vp) for vp in pole_modul.pro_frontend(db, "op")],
         muze_editovat=smi_menit(p, user),
     )
@@ -696,7 +733,8 @@ def seznam_pripadu(
     pripady = q.order_by(ObchodniPripad.cislo.desc()).all()
     mapa = _mapa_stavu(db, "op")
     extra_texty = pole_modul.hodnoty_pro_seznam(db, "op", pripady)
-    return [_pripad_radek(p, mapa, extra_texty.get(p.id)) for p in pripady]
+    dni = dny_ve_fazi(db, "op", pripady)
+    return [_pripad_radek(p, mapa, extra_texty.get(p.id), dni.get(p.id, 0)) for p in pripady]
 
 
 @router.get("/pripady/kanban", response_model=KanbanOut)
@@ -714,6 +752,7 @@ def kanban_pripadu(
     seznam_stavu = stavy_modul.seznam(db, "op")
     mapa = {s.klic: s for s in seznam_stavu}
     extra_texty = pole_modul.hodnoty_pro_seznam(db, "op", pripady)
+    dni = dny_ve_fazi(db, "op", pripady)
 
     koše: dict[str, list[ObchodniPripad]] = {s.klic: [] for s in seznam_stavu}
     for p in pripady:
@@ -737,7 +776,10 @@ def kanban_pripadu(
                     barva=s.barva or "",
                     druh=s.druh,
                 ),
-                zaznamy=[_pripad_radek(p, mapa, extra_texty.get(p.id)) for p in v_koši],
+                zaznamy=[
+                    _pripad_radek(p, mapa, extra_texty.get(p.id), dni.get(p.id, 0))
+                    for p in v_koši
+                ],
                 pocet=len(v_koši),
                 soucet_kc=soucet if soucet else None,
             )
@@ -2508,6 +2550,19 @@ def seznam_vlastnich_poli(
     return [VlastniPoleOut(**p) for p in pole_modul.pro_frontend(db, entita)]
 
 
+def _klice_pro_vzorec(db: Session, entita: str, kromě_id: int | None = None) -> set[str]:
+    """Co smí vzorec (CRM-34) použít: číselná vlastní pole + pár pevných sloupců.
+
+    Sebe sama do vzorce nepustíme (`kromě_id`) — pole odkazující na vlastní
+    výsledek by se počítalo donekonečna.
+    """
+    klice = set(pole_modul.zdroje_vzorce())
+    for p in pole_modul.seznam(db, entita):
+        if p.typ == "cislo" and p.id != kromě_id and not (p.vzorec or "").strip():
+            klice.add(p.klic)
+    return klice
+
+
 @router.post("/vlastni-pole/{entita}", response_model=VlastniPoleOut)
 def pridej_vlastni_pole(
     entita: str,
@@ -2544,6 +2599,10 @@ def pridej_vlastni_pole(
         typ=vstup.typ,
         volby=volby,
         napoveda=(vstup.napoveda or "").strip(),
+        skupina=(vstup.skupina or "").strip(),
+        zavislost_pole=(vstup.zavislost_pole or "").strip(),
+        zavislost_hodnota=(vstup.zavislost_hodnota or "").strip(),
+        vzorec=pole_modul.over_vzorec(vstup.vzorec, _klice_pro_vzorec(db, entita)),
         povinne=bool(vstup.povinne),
         v_seznamu=bool(vstup.v_seznamu),
         poradi=poradi,
@@ -2589,6 +2648,16 @@ def uprav_vlastni_pole(
         pole.povinne = bool(vstup.povinne)
     if vstup.v_seznamu is not None:
         pole.v_seznamu = bool(vstup.v_seznamu)
+    if vstup.skupina is not None:
+        pole.skupina = vstup.skupina.strip()
+    if vstup.zavislost_pole is not None:
+        pole.zavislost_pole = vstup.zavislost_pole.strip()
+    if vstup.zavislost_hodnota is not None:
+        pole.zavislost_hodnota = vstup.zavislost_hodnota.strip()
+    if vstup.vzorec is not None:
+        pole.vzorec = pole_modul.over_vzorec(
+            vstup.vzorec, _klice_pro_vzorec(db, pole.entita, kromě_id=pole.id)
+        )
     if vstup.poradi is not None:
         pole.poradi = vstup.poradi
 
@@ -2837,7 +2906,7 @@ def _misto_out(
         ),
         poznamka=m.poznamka or "",
         aktivni=bool(m.aktivni),
-        extra=m.extra or {},
+        extra=pole_modul.s_vypocty(db, "om", m, m.extra),
         diagramu=len(diagramy),
         diagramy=[_diagram_out(db, d) for d in diagramy],
         vybrane_pro_pripad=(vybrane_id is not None and m.id == vybrane_id),

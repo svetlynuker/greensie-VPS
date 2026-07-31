@@ -1777,3 +1777,52 @@
     padding-left: 120px;
   }
 }
+
+/* ---- drobnosti v UI (CRM-44) ---- */
+.crm-iniciraly {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  flex: 0 0 auto;
+}
+/* Pata dlaždice s vlastníkem: iniciály | jméno | dny ve fázi vpravo. */
+.crm-dlazdice-vlastnik {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Dny ve fázi. Nad 30 dní zvýrazněno — „ležák" se má poznat bez počítání. */
+.crm-dni-ve-fazi {
+  font-variant-numeric: tabular-nums;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 10.5px;
+}
+.crm-dni-ve-fazi.dlouho {
+  background: color-mix(in srgb, var(--st-warn, #b7791f) 18%, transparent);
+  color: var(--st-warn, #b7791f);
+  font-weight: 600;
+}
+/* Termín, který propadl. Vedle barvy i tučně kvůli barvosleposti. */
+.crm-dlazdice-pozde {
+  color: var(--st-crit, #c0392b);
+  font-weight: 600;
+}
+
+/* ---- výpočtové pole (CRM-34) ---- */
+/* Vypadá jako pole, ale nejde do něj psát — proto tlumené pozadí a kurzor
+   „default". Kdyby vypadalo jako vstup, lidé by do něj zkoušeli psát. */
+.crm-pole-vypocet {
+  padding: 8px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
