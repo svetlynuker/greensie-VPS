@@ -39,6 +39,8 @@ START_PRODLEVA_S = 60
 HODINA_OD = 7
 # Klíč, pod kterým si pamatujeme datum posledního rozeslání.
 KLIC_POSLEDNI_BEH = "crm_notifikace_posledni_souhrn"
+# Právo, které odemyká CRM. Bez něj souhrn nedává smysl (viz níž).
+PRAVO_CRM = "zakaznici"
 
 _stop = threading.Event()
 _thread: threading.Thread | None = None
@@ -88,12 +90,19 @@ def _zapis_posledni_beh(db, den: str) -> None:
 def posli_denni_souhrny(db) -> int:
     """Rozešle souhrn úkolů. Vrací počet lidí, kterým něco odešlo."""
     from app.auth.models import User
+    from app.auth.permissions import prava_uzivatele
     from app.crm import notifikace as notifikace_modul
     from app.crm import ukoly as ukoly_modul
 
     dnes = date.today()
     posláno = 0
     for u in db.query(User).order_by(User.id).all():
+        # Jen lidem, kteří na CRM vidí. Úkoly jsou CRM aktivity, takže bez
+        # práva `zakaznici` by člověk dostal zprávu o záznamu, který si nemůže
+        # otevřít — odkaz ve zprávě by ho poslal na obrazovku, kam nesmí.
+        # (Stalo se to 31. 7. 2026 při prvním ostrém běhu.)
+        if PRAVO_CRM not in prava_uzivatele(u):
+            continue
         ukoly = ukoly_modul.moje_ukoly(db, u)
         if not ukoly:
             continue

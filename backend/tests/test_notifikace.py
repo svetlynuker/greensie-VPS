@@ -76,3 +76,17 @@ def test_skolonovani_dnu_v_souhrnu():
     assert _dny(4) == "4 dny"
     assert _dny(5) == "5 dní"
     assert _dny(11) == "11 dní"
+
+
+def test_souhrn_ma_filtr_na_pravo_crm():
+    """Souhrn nesmí chodit lidem, kteří CRM nevidí.
+
+    Regrese z 31. 7. 2026: první ostrý běh poslal notifikaci i uživateli bez
+    práva `zakaznici`, takže by ho odkaz ve zprávě poslal na obrazovku, kam
+    nesmí. Právo je konstanta, ať se filtr nedá omylem vypnout překlepem.
+    """
+    from app.crm import notifikace_scheduler as ns
+
+    assert ns.PRAVO_CRM == "zakaznici"
+    zdroj = __import__("inspect").getsource(ns.posli_denni_souhrny)
+    assert "PRAVO_CRM not in prava_uzivatele(u)" in zdroj
