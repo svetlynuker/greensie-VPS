@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { hodnotaRadku, moznostiSloupce } from "../crmFiltry";
 import { stahniCsv } from "../crmExport";
+import { nactiNaStranku, ulozNaStranku, VELIKOSTI_STRANKY } from "../nastaveniTabulky";
 
 /**
  * Tabulka CRM s řazením kliknutím na hlavičku a filtrem u každého sloupce.
@@ -32,8 +33,18 @@ export default function CrmTabulka({
   // by jen mátl.
   vybrane = null,
   onVybrane = null,
+  // Rozvržení sloupců (CRM-28). Bez `onRozvrzeni` se tlačítko nekreslí —
+  // tabulka pak funguje přesně jako dřív.
+  vsechnySloupce = null,
+  rozvrzeni = null,
+  onRozvrzeni = null,
 }) {
   const [filtryOtevrene, setFiltryOtevrene] = useState(false);
+  const [sloupceOtevrene, setSloupceOtevrene] = useState(false);
+  // Kolik řádků ukázat (CRM-38). Stránkuje se AŽ PO FILTRU — jinak by se
+  // filtrovalo jen v první stránce a seznam by lhal.
+  const [naStranku, setNaStranku] = useState(() => nactiNaStranku());
+  const [stranka, setStranka] = useState(0);
 
   /** Klik na hlavičku: bez shiftu nastaví jediný klíč, se shiftem přidá další
    *  úroveň – tím se dá řadit „podle stavu, pak podle čísla" bez editoru. */
@@ -70,6 +81,45 @@ export default function CrmTabulka({
     onVybrane(radky.filter((r) => set.has(r.id)).map((r) => r.id));
   }
 
+  // Když filtr zúží seznam, je nutné se vrátit na první stránku – jinak by
+  // člověk koukal na prázdnou pátou stránku a myslel si, že nic nenašel.
+  useEffect(() => {
+    setStranka(0);
+  }, [radky.length, naStranku]);
+
+  const pocetStranek = naStranku > 0 ? Math.ceil(radky.length / naStranku) : 1;
+  const aktualniStranka = Math.min(stranka, Math.max(0, pocetStranek - 1));
+  const videt =
+    naStranku > 0
+      ? radky.slice(aktualniStranka * naStranku, (aktualniStranka + 1) * naStranku)
+      : radky;
+
+  function zmenNaStranku(hodnota) {
+    setNaStranku(hodnota);
+    ulozNaStranku(hodnota);
+  }
+
+  function prepniSloupec(klic) {
+    const skryte = new Set(rozvrzeni?.skryte || []);
+    if (skryte.has(klic)) skryte.delete(klic);
+    else skryte.add(klic);
+    onRozvrzeni({ ...(rozvrzeni || {}), skryte: [...skryte] });
+  }
+
+  /** Posun sloupce o jednu pozici. Pořadí se ukládá jako úplný seznam klíčů,
+   *  aby nezáleželo na tom, co se mezitím přidalo do definic. */
+  function presunSloupec(klic, smer) {
+    const poradi = (vsechnySloupce || []).map((x) => x.klic);
+    const ulozene = rozvrzeni?.poradi?.length ? [...rozvrzeni.poradi] : poradi;
+    // Doplnit klíče, které v uloženém pořadí ještě nejsou (nové vlastní pole).
+    for (const k of poradi) if (!ulozene.includes(k)) ulozene.push(k);
+    const i = ulozene.indexOf(klic);
+    const j = i + smer;
+    if (i < 0 || j < 0 || j >= ulozene.length) return;
+    [ulozene[i], ulozene[j]] = [ulozene[j], ulozene[i]];
+    onRozvrzeni({ ...(rozvrzeni || {}), poradi: ulozene });
+  }
+
   const filtrSloupce = (klic) =>
     (podminky || []).find((p) => p.pole === klic && p.zdroj === "sloupec");
 
@@ -91,6 +141,18 @@ export default function CrmTabulka({
             onClick={() => onPodminky((podminky || []).filter((p) => p.zdroj !== "sloupec"))}
           >
             Zrušit filtry sloupců
+          </button>
+        )}
+        {onRozvrzeni && vsechnySloupce && (
+          <button
+            className={`fm-btn crm-btn-maly ${sloupceOtevrene ? "fm-primary" : ""}`}
+            onClick={() => setSloupceOtevrene((x) => !x)}
+            title="Které sloupce vidíš a v jakém pořadí"
+          >
+            ⋮⋮ Sloupce
+            {(rozvrzeni?.skryte || []).length > 0
+              ? ` (${vsechnySloupce.length - (rozvrzeni.skryte || []).length}/${vsechnySloupce.length})`
+              : ""}
           </button>
         )}
         {exportNazev && (
@@ -124,6 +186,60 @@ export default function CrmTabulka({
           </span>
         )}
       </div>
+
+      {sloupceOtevrene && onRozvrzeni && vsechnySloupce && (
+        <div className="crm-sloupce-panel">
+          <div className="crm-sloupce-hlava">
+            <b>Sloupce tabulky</b>
+            <span className="crm-tise">
+              Zaškrtnuté jsou vidět. Šipky mění pořadí. Ukládá se to k tvému účtu.
+            </span>
+            <span className="crm-mezera" />
+            <button
+              className="fm-btn crm-btn-maly"
+              onClick={() => onRozvrzeni({ skryte: [], poradi: [] })}
+            >
+              Vrátit výchozí
+            </button>
+          </div>
+          <ul className="crm-sloupce-seznam">
+            {sloupce.concat(
+              // Skryté sloupce v `sloupce` nejsou — musí se dobrat z úplného
+              // seznamu, jinak by je nešlo zapnout zpátky.
+              vsechnySloupce.filter((v) => !sloupce.some((x) => x.klic === v.klic))
+            ).map((sl) => {
+              const skryty = (rozvrzeni?.skryte || []).includes(sl.klic);
+              return (
+                <li key={sl.klic} className={skryty ? "skryty" : undefined}>
+                  <label className="crm-zaskrtavaci">
+                    <input
+                      type="checkbox"
+                      checked={!skryty}
+                      onChange={() => prepniSloupec(sl.klic)}
+                    />
+                    {sl.nazev}
+                  </label>
+                  <span className="crm-mezera" />
+                  <button
+                    className="fm-btn crm-btn-maly"
+                    onClick={() => presunSloupec(sl.klic, -1)}
+                    title="Posunout doleva"
+                  >
+                    ←
+                  </button>
+                  <button
+                    className="fm-btn crm-btn-maly"
+                    onClick={() => presunSloupec(sl.klic, 1)}
+                    title="Posunout doprava"
+                  >
+                    →
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       <div className="crm-scroll">
         <table className="crm-tabulka">
@@ -184,7 +300,7 @@ export default function CrmTabulka({
             )}
           </thead>
           <tbody>
-            {radky.map((radek) => (
+            {videt.map((radek) => (
               <tr
                 key={radek.id}
                 className={vybrane?.includes(radek.id) ? "crm-radek-vybrany" : undefined}
@@ -224,6 +340,48 @@ export default function CrmTabulka({
           </tbody>
         </table>
       </div>
+
+      {/* Stránkování (CRM-38). Ukazuje se, jen když je co stránkovat — u pěti
+          řádků by lišta byla jen šum. */}
+      {(radky.length > VELIKOSTI_STRANKY[0] || naStranku > 0) && radky.length > 0 && (
+        <div className="crm-strankovani">
+          <span className="crm-tise">Řádků na stránku:</span>
+          <span className="gs-seg">
+            {VELIKOSTI_STRANKY.map((v) => (
+              <button
+                key={v}
+                onClick={() => zmenNaStranku(v)}
+                aria-pressed={naStranku === v}
+              >
+                {v === 0 ? "vše" : v}
+              </button>
+            ))}
+          </span>
+          <span className="crm-mezera" />
+          {pocetStranek > 1 && (
+            <>
+              <button
+                className="fm-btn crm-btn-maly"
+                onClick={() => setStranka(aktualniStranka - 1)}
+                disabled={aktualniStranka === 0}
+              >
+                ← Předchozí
+              </button>
+              <span className="crm-tise">
+                {aktualniStranka * naStranku + 1}–
+                {Math.min((aktualniStranka + 1) * naStranku, radky.length)} z {radky.length}
+              </span>
+              <button
+                className="fm-btn crm-btn-maly"
+                onClick={() => setStranka(aktualniStranka + 1)}
+                disabled={aktualniStranka >= pocetStranek - 1}
+              >
+                Další →
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </>
   );
 }

@@ -1749,6 +1749,23 @@ def seznam_filtru(
     return [_filtr_out(f, user) for f in filtry]
 
 
+def _ciste_sloupce(vstup: dict | None) -> dict:
+    """Rozvržení tabulky uložené s filtrem (CRM-28).
+
+    Pouštíme jen `skryte` a `poradi` jako seznamy klíčů — jsou to data z UI,
+    a ukládat, co přijde, by z JSONB udělalo skládku. Klíče se NEOVĚŘUJÍ proti
+    sloupcům: vlastní pole se mažou a přidávají, takže platnost klíče se
+    posuzuje až při vykreslení (neznámý se prostě ignoruje).
+    """
+    vstup = vstup or {}
+    out: dict = {}
+    for klic in ("skryte", "poradi"):
+        hodnota = vstup.get(klic)
+        if isinstance(hodnota, list):
+            out[klic] = [str(x) for x in hodnota if isinstance(x, (str, int))]
+    return out
+
+
 def _filtr_out(f: CrmUlozenyFiltr, user: User) -> UlozenyFiltrOut:
     return UlozenyFiltrOut(
         id=f.id,
@@ -1756,6 +1773,7 @@ def _filtr_out(f: CrmUlozenyFiltr, user: User) -> UlozenyFiltrOut:
         nazev=f.nazev,
         podminky=f.podminky or [],
         razeni=f.razeni or [],
+        sloupce=f.sloupce or {},
         sdileny=bool(f.sdileny),
         vychozi=bool(f.vychozi),
         poradi=f.poradi,
@@ -1814,6 +1832,7 @@ def uloz_filtr(
         nazev=nazev,
         podminky=[p.model_dump() for p in vstup.podminky],
         razeni=[r.model_dump() for r in vstup.razeni],
+        sloupce=_ciste_sloupce(vstup.sloupce),
         sdileny=bool(vstup.sdileny),
         vychozi=bool(vstup.vychozi),
         vlastnik_user_id=user.id,
@@ -1849,6 +1868,7 @@ def uprav_filtr(
     f.nazev = nazev
     f.podminky = [p.model_dump() for p in vstup.podminky]
     f.razeni = [r.model_dump() for r in vstup.razeni]
+    f.sloupce = _ciste_sloupce(vstup.sloupce)
     f.sdileny = bool(vstup.sdileny)
     f.vychozi = bool(vstup.vychozi)
     db.commit()

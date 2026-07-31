@@ -1508,3 +1508,92 @@
 .crm-pole-radek:last-child {
   margin-bottom: 0;
 }
+
+/* ---- spojka A / NEBO mezi podmínkami filtru (CRM-26) ---- */
+/* První podmínka spojku nemá, ale místo si drží — bez toho by se sloupce
+   podmínek posunuly a editor by „skákal" při přidání druhé podmínky. */
+.crm-spojka,
+.crm-spojka-misto {
+  min-width: 74px;
+  display: inline-flex;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.crm-spojka button {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+/* ---- výběr a pořadí sloupců (CRM-28) ---- */
+.crm-sloupce-panel {
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.crm-sloupce-hlava {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+/* Sloupce vedle sebe ve sloupcích – u dvaceti položek by svislý seznam
+   zabral celou obrazovku a člověk by ztratil kontext tabulky pod ním. */
+.crm-sloupce-seznam {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 4px 14px;
+}
+.crm-sloupce-seznam li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+/* Vypnutý sloupec zůstává v seznamu vidět (jinak by nešel zapnout zpět),
+   jen ztlumený. */
+.crm-sloupce-seznam li.skryty {
+  opacity: 0.55;
+}
+.crm-sloupce-seznam .crm-zaskrtavaci {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- stránkování tabulky (CRM-38) ---- */
+.crm-strankovani {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 2px 0;
+  font-size: 13px;
+}
+
+/* ---- špendlík oblíbeného záznamu (CRM-37) ---- */
+/* Sedí v nadpisu karty, takže nesmí nést vlastní pozadí ani rámeček — jinak
+   by vypadal jako tlačítko navíc a rozbil řádek s číslem záznamu. */
+.crm-spendlik {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 0 8px 0 0;
+  font-size: 0.9em;
+  line-height: 1;
+  color: var(--muted);
+  transition: color 0.15s;
+}
+.crm-spendlik:hover {
+  color: var(--brand-strong, var(--brand));
+}
+.crm-spendlik.aktivni {
+  color: #e2a600;
+}

@@ -1437,3 +1437,21 @@ export function crmPosliEmail({ komu, predmet, telo, entita, zaznamId }) {
     }),
   });
 }
+
+// ---- CRM: oblíbené a naposledy otevřené (CRM-37) ----
+export function crmOblibene() {
+  return zavolej("/crm/oblibene");
+}
+
+export function crmPrepniOblibeny(entita, zaznamId, oblibene) {
+  return zavolej(`/crm/oblibene/${entita}/${zaznamId}`, {
+    method: "POST",
+    body: JSON.stringify({ oblibene }),
+  });
+}
+
+// Zápis do historie „naposledy otevřené". Volá se z detailu; chyba se ignoruje,
+// je to vedlejší efekt prohlížení.
+export function crmZaznamenejOtevreni(entita, zaznamId) {
+  return zavolej(`/crm/oblibene/${entita}/${zaznamId}/otevreno`, { method: "POST" });
+}

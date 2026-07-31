@@ -191,10 +191,15 @@ export default function Zakaznici() {
           razeni={f.razeni}
           onPodminky={f.setPodminky}
           onRazeni={f.setRazeni}
+          rozvrzeni={f.rozvrzeni}
+          onRozvrzeni={f.ulozRozvrzeni}
         />
 
         <CrmTabulka
-          sloupce={f.sloupce}
+          sloupce={f.sloupceTabulky}
+            vsechnySloupce={f.sloupce}
+            rozvrzeni={f.rozvrzeni}
+            onRozvrzeni={f.ulozRozvrzeni}
           radky={f.radky}
           vsechnyRadky={zakaznici}
           razeni={f.razeni}

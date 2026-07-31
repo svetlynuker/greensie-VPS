@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { crmHledat } from "../api";
+import { crmHledat, crmOblibene } from "../api";
 
 /**
  * Globální hledání v horní liště (CRM-24).
@@ -26,6 +26,10 @@ export default function GlobalniHledani() {
   const [otevreno, setOtevreno] = useState(false);
   const [aktivni, setAktivni] = useState(0);
   const [hleda, setHleda] = useState(false);
+  // Oblíbené a naposledy otevřené (CRM-37). Ukazují se v prázdném poli —
+  // je to místo, kam už dnes lidé chodí hledat záznam, takže návrat k tomu,
+  // s čím zrovna pracují, patří sem, ne na další novou obrazovku.
+  const [zkratky, setZkratky] = useState(null);
   const pole = useRef(null);
   const obal = useRef(null);
   const navigate = useNavigate();
@@ -53,6 +57,15 @@ export default function GlobalniHledani() {
     document.addEventListener("mousedown", klik);
     return () => document.removeEventListener("mousedown", klik);
   }, [otevreno]);
+
+  // Zkratky se načtou při každém otevření prázdného pole — po návratu z karty
+  // má být nahoře to, co člověk právě zavřel.
+  useEffect(() => {
+    if (!otevreno || dotaz.trim().length >= 2) return;
+    crmOblibene()
+      .then(setZkratky)
+      .catch(() => setZkratky(null));
+  }, [otevreno, dotaz]);
 
   // Zpožděný dotaz. `zruseno` brání tomu, aby pomalejší starší odpověď
   // přepsala novější — jinak výsledky poskakují.
@@ -117,6 +130,40 @@ export default function GlobalniHledani() {
         placeholder="Hledat… (Ctrl+K)"
         aria-label="Globální hledání"
       />
+
+      {/* Prázdné pole: oblíbené a naposledy otevřené (CRM-37). */}
+      {otevreno && dotaz.trim().length < 2 && (zkratky?.oblibene?.length || zkratky?.nedavne?.length) ? (
+        <div className="gh-vysledky">
+          {zkratky.oblibene.length > 0 && (
+            <div>
+              <div className="gh-sekce">★ Oblíbené</div>
+              {zkratky.oblibene.map((z) => (
+                <button
+                  key={`o-${z.entita}-${z.zaznam_id}`}
+                  className="gh-radek"
+                  onClick={() => otevri(z)}
+                >
+                  <span className="gh-titulek">{z.nazev}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {zkratky.nedavne.length > 0 && (
+            <div>
+              <div className="gh-sekce">Naposledy otevřené</div>
+              {zkratky.nedavne.map((z) => (
+                <button
+                  key={`n-${z.entita}-${z.zaznam_id}`}
+                  className="gh-radek"
+                  onClick={() => otevri(z)}
+                >
+                  <span className="gh-titulek">{z.nazev}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
 
       {otevreno && dotaz.trim().length >= 2 && (
         <div className="gh-vysledky">

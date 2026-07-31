@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
+import Spendlik from "../components/Spendlik";
 import Aktivity from "../components/Aktivity";
 import ProjektKroky from "../components/ProjektKroky";
 import VlastniPoleVypis from "../components/VlastniPoleVypis";
@@ -138,6 +139,7 @@ export default function ProjektDetail() {
         <div className="crm-karta-hlava">
           <div style={{ minWidth: 0 }}>
             <h1>
+              <Spendlik entita="pro" zaznamId={p.id} />
               {p.cislo}
               {p.nazev ? ` · ${p.nazev}` : ""}
             </h1>

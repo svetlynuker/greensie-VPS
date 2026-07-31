@@ -35,6 +35,7 @@ from app.crm import (
     kategorie as kategorie_modul,
     nabidky_pipeline,
     notifikace as notifikace_modul,
+    oblibene as oblibene_modul,
     odberna_mista as om_modul,
     sablony as sablony_modul,
     stavy as stavy_modul,
@@ -109,6 +110,8 @@ from app.crm.schemas import (
     NotifikaceOut,
     NotifikacePrectenoVstup,
     NotifikaceSouhrnOut,
+    OblibeneOut,
+    OblibeneVstup,
     OdbernaMistaOut,
     OdberneMistoOut,
     OdberneMistoPripaduVstup,
@@ -3446,3 +3449,52 @@ def posli_email_z_appky(
         db.commit()
 
     return EmailOut(ok=True, aktivita_id=aktivita_id)
+
+
+# ---- oblíbené a naposledy otevřené (CRM-37) ---------------------------------
+@router.get("/oblibene", response_model=OblibeneOut)
+def seznam_oblibenych(
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Přišpendlené a naposledy otevřené záznamy pro nabídku v hledání."""
+    return OblibeneOut(**oblibene_modul.seznam(db, user))
+
+
+@router.post("/oblibene/{entita}/{zaznam_id}")
+def prepni_oblibeny(
+    entita: str,
+    zaznam_id: int,
+    vstup: OblibeneVstup,
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Přišpendlí nebo odšpendlí záznam.
+
+    Přístup se tu neověřuje přes `vyzaduj_zaznam`: špendlík je jen ukazatel do
+    seznamu, sám nic neodemyká. Kdyby si někdo přišpendlil cizí záznam, po
+    kliknutí ho stejně nepustí dovnitř detail.
+    """
+    stav = oblibene_modul.prepni_oblibene(db, user, entita, zaznam_id, vstup.oblibene)
+    return {"ok": True, "oblibene": stav}
+
+
+@router.post("/oblibene/{entita}/{zaznam_id}/otevreno")
+def zaznamenej_otevreni(
+    entita: str,
+    zaznam_id: int,
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Zápis do historie „naposledy otevřené".
+
+    Volá se z detailu při načtení. Chyba se schválně polyká — je to vedlejší
+    efekt prohlížení a nesmí kvůli němu spadnout otevření karty.
+    """
+    try:
+        oblibene_modul.zaznamenej(db, user, entita, zaznam_id)
+        db.commit()
+    except Exception:  # noqa: BLE001 - historie je doplněk, ne součást detailu
+        db.rollback()
+        return {"ok": False}
+    return {"ok": True}

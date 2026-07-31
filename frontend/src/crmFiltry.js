@@ -385,11 +385,67 @@ export function splnujePodminku(radek, podminka, sloupce) {
   return true;
 }
 
-/** Všechny podmínky se vyhodnocují jako AND (postupné zúžení). */
+/**
+ * Filtr s podporou NEBO (CRM-26).
+ *
+ * Model, který uživateli stačí a nepotřebuje závorky: podmínky se stejným
+ * číslem `skupina` se spojují přes **NEBO**, skupiny navzájem přes **A**.
+ * „Stav je Nabídka nebo Vyjednávání, a zároveň hodnota nad milion" = dvě
+ * skupiny. Vyjádří se tím všechno, co jde napsat jako součin součtů — a to
+ * pokrývá, co lidé od filtru chtějí, bez editoru se závorkami.
+ *
+ * Podmínka BEZ `skupina` stojí sama (= vlastní skupina), takže starší uložené
+ * filtry i rychlé předvolby (CRM-27) se chovají přesně jako dřív. Proto je
+ * klíč osamocené podmínky odvozený od jejího pořadí, ne od `null` — jinak by
+ * všechny bezskupinové spadly do jedné a začaly se OR-ovat.
+ */
 export function aplikujFiltr(radky, podminky, sloupce) {
   const aktivni = (podminky || []).filter((p) => p && p.pole && p.operator);
   if (aktivni.length === 0) return radky;
-  return radky.filter((r) => aktivni.every((p) => splnujePodminku(r, p, sloupce)));
+
+  const skupiny = new Map();
+  aktivni.forEach((p, i) => {
+    const klic = p.skupina === null || p.skupina === undefined ? `sam-${i}` : `sk-${p.skupina}`;
+    if (!skupiny.has(klic)) skupiny.set(klic, []);
+    skupiny.get(klic).push(p);
+  });
+
+  const bloky = [...skupiny.values()];
+  return radky.filter((r) =>
+    bloky.every((blok) => blok.some((p) => splnujePodminku(r, p, sloupce)))
+  );
+}
+
+/**
+ * Přečíslování skupin po smazání nebo přesunu podmínky.
+ *
+ * UI pracuje se spojkami mezi sousedy („tahle podmínka je s předchozí spojená
+ * NEBO"), ale ukládá se číslo skupiny. Tahle funkce z pořadí a spojek udělá
+ * čísla — a je jediné místo, kde ta konverze žije, aby se pohled UI a uložený
+ * tvar nemohly rozejít.
+ *
+ * `spojky[i]` platí pro podmínku `i` a říká, jak se váže k předchozí.
+ */
+export function poskupinuj(podminky, spojky) {
+  let cislo = 0;
+  return (podminky || []).map((p, i) => {
+    if (i > 0 && spojky?.[i] === "nebo") return { ...p, skupina: cislo };
+    cislo = i === 0 ? 0 : cislo + 1;
+    return { ...p, skupina: cislo };
+  });
+}
+
+/** Zpětně: z čísel skupin odvodí spojky pro UI (`["a", "nebo", …]`). */
+export function spojkyZPodminek(podminky) {
+  return (podminky || []).map((p, i) => {
+    if (i === 0) return "a";
+    const predchozi = podminky[i - 1];
+    const stejna =
+      p?.skupina !== null &&
+      p?.skupina !== undefined &&
+      p.skupina === predchozi?.skupina;
+    return stejna ? "nebo" : "a";
+  });
 }
 
 /** Víceúrovňové řazení: první klíč hlavní, další rozhodují při shodě. */

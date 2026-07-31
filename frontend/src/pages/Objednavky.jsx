@@ -211,6 +211,8 @@ export default function Objednavky() {
           razeni={f.razeni}
           onPodminky={f.setPodminky}
           onRazeni={f.setRazeni}
+          rozvrzeni={f.rozvrzeni}
+          onRozvrzeni={f.ulozRozvrzeni}
         />
 
         {chyba && <div className="crm-chyba">{chyba}</div>}
@@ -265,7 +267,10 @@ export default function Objednavky() {
           />
         ) : (
           <CrmTabulka
-            sloupce={f.sloupce}
+            sloupce={f.sloupceTabulky}
+            vsechnySloupce={f.sloupce}
+            rozvrzeni={f.rozvrzeni}
+            onRozvrzeni={f.ulozRozvrzeni}
             radky={f.radky}
             vsechnyRadky={radky}
             razeni={f.razeni}
