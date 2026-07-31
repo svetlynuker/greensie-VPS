@@ -695,6 +695,40 @@ export function crmSlozkuZaloz(entita, zaznamId) {
   return zavolej(`/crm/slozka/${entita}/${zaznamId}`, { method: "POST" });
 }
 
+// Obsah složky (nebo podsložky) na Disku + cesta pro navigaci.
+export function crmSlozkaObsah(entita, zaznamId, folderId = null) {
+  const q = folderId ? `?folder_id=${encodeURIComponent(folderId)}` : "";
+  return zavolej(`/crm/slozka/${entita}/${zaznamId}/obsah${q}`);
+}
+
+// Nahrání souboru na Disk. Jde přes appku, ale neukládá se u nás — v CRM
+// zůstane jen odkaz, aby neexistovaly dvě kopie téhož dokumentu.
+//
+// Vlastní fetch, ne `zavolej`: ten posílá Content-Type application/json, což by
+// multipart rozbilo. Stejný vzor jako `nabidkaNahrajDokument` níž.
+export async function crmSlozkaNahraj(entita, zaznamId, soubor, folderId = null) {
+  const token = getToken();
+  const form = new FormData();
+  form.append("soubor", soubor);
+  if (folderId) form.append("folder_id", folderId);
+  const res = await fetch(`${API_BASE}/crm/slozka/${entita}/${zaznamId}/soubor`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!res.ok) {
+    let detail = `Chyba ${res.status}`;
+    try {
+      const chyba = await res.json();
+      if (chyba.detail) detail = chyba.detail;
+    } catch {
+      // ponech výchozí hlášku
+    }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 export function crmMujDen() {
   return zavolej("/crm/muj-den");
 }
