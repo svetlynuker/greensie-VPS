@@ -538,6 +538,7 @@ def _seed_crm():
     či smazané stavy se nevracejí, jinak by se změny vedení po každém restartu
     přepisovaly zpátky.
     """
+    from app.crm.automatizace import seed_pravidla
     from app.crm.ciselne_rady import seed_rady
     from app.crm.kategorie import seed_kategorie, seed_kategorie_aktivit
     from app.crm.projekty_kroky import seed_sablony
@@ -556,6 +557,10 @@ def _seed_crm():
         # Šablony projektových kroků – bez nich by si každý projekt psal kroky
         # ručně a pokaždé jinak.
         seed_sablony(db)
+        # Pravidla automatizace (CRM-31). Seedují se VYPNUTÁ – automatika, která
+        # po nasazení začne sama zakládat záznamy, aniž o ní kdokoli ví, je
+        # přesně to, co lidem vezme důvěru v appku. Zapíná je vedení ručně.
+        seed_pravidla(db)
     finally:
         db.close()
 

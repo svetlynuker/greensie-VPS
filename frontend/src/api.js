@@ -1465,3 +1465,31 @@ export function crmAudit(entita, zaznamId) {
 export function crmMapa() {
   return zavolej("/crm/mapa");
 }
+
+// ---- CRM: automatizace (CRM-31) ----
+// Katalog akcí i nabídku stavů dodává backend, ne konstanta tady: stavy jsou
+// konfigurovatelné (`crm_stavy`), takže seznam ve frontendu by po přeskládání
+// kanbanu nabízel neexistující fáze.
+export function crmAutomatizaceAkce() {
+  return zavolej("/crm/automatizace/akce");
+}
+
+export function crmPravidla() {
+  return zavolej("/crm/automatizace");
+}
+
+export function crmPravidloPridej(data) {
+  return zavolej("/crm/automatizace", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function crmPravidloUprav(id, data) {
+  return zavolej(`/crm/automatizace/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function crmPravidloPrepni(id) {
+  return zavolej(`/crm/automatizace/${id}/prepni`, { method: "POST" });
+}
+
+export function crmPravidloSmaz(id) {
+  return zavolej(`/crm/automatizace/${id}`, { method: "DELETE" });
+}

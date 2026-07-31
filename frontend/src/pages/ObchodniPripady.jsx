@@ -47,6 +47,8 @@ export default function ObchodniPripady() {
   const [prohra, setProhra] = useState(null); // {pripadId, stav}
   const [sloupce, setSloupce] = useState([]);
   const [chyba, setChyba] = useState(null);
+  // Co udělala automatizace (CRM-31) při poslední hromadné změně stavu.
+  const [automatika, setAutomatika] = useState([]);
 
   // Filtr a řazení platí zároveň pro tabulku i kanban (jeden stav pro obojí).
   const f = usePouzitFiltr("op", radky, sloupce);
@@ -233,6 +235,15 @@ export default function ObchodniPripady() {
 
         {chyba && <div className="crm-chyba">{chyba}</div>}
 
+        {/* CRM-31: co při hromadné změně stavu udělala automatika. Bez téhle
+            hlášky by objednávky vznikaly tiše a člověk by nevěděl, že už je
+            nemá zakládat sám. */}
+        {automatika.length > 0 && (
+          <div className="crm-hlaska-automatika">
+            <b>Automatizace:</b> {automatika.join(" · ")}
+          </div>
+        )}
+
         {/* KPI nad seznamem (CRM-22). Reaguje na filtr — proto „z vyfiltrovaných". */}
         <KpiPas
           zobrazit={kpi.pocet > 0}
@@ -260,8 +271,9 @@ export default function ObchodniPripady() {
           lide={lide}
           stavy={stavy}
           onZrus={() => setVybrane([])}
-          onHotovo={async () => {
+          onHotovo={async (out) => {
             setVybrane([]);
+            setAutomatika(out?.automatika || []);
             await nacti(hledat);
           }}
         />

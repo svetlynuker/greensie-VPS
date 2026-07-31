@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
+import AutomatizaceNastaveni from "../components/AutomatizaceNastaveni";
 import Ikona from "../components/Ikona";
 import NotifikaceNastaveni from "../components/NotifikaceNastaveni";
 import SablonyTextuNastaveni from "../components/SablonyTextuNastaveni";
@@ -46,6 +47,8 @@ export default function Nastaveni() {
   const [chyba, setChyba] = useState(null);
   // Šablony (CRM-32) jsou firemní, ne osobní – proto jen pro `crm_nastaveni`.
   const [sablony, setSablony] = useState(false);
+  // Automatizace (CRM-31) taky: pravidlo zakládá záznamy celé firmě.
+  const [automatizace, setAutomatizace] = useState(false);
 
   useEffect(() => {
     nactiMe()
@@ -253,6 +256,25 @@ export default function Nastaveni() {
           </section>
         )}
 
+        {/* ---- automatizace (CRM-31), jen pro správce nastavení ---- */}
+        {me.novinky && me.prava?.includes("crm_nastaveni") && (
+          <section className="fm-card">
+            <div className="gs-karta-hlava">
+              <span className="gs-karta-titulek">Automatizace</span>
+              <span className="gs-tb-spacer" />
+              <button className="fm-btn crm-btn-maly" onClick={() => setAutomatizace(true)}>
+                Spravovat
+              </button>
+            </div>
+            <p className="gs-karta-popis">
+              Kroky, které se dneska dělají ručně pokaždé stejně: <b>případ vyhrán →
+              objednávka</b>, <b>objednávka podepsaná → projekt ze šablony</b>, <b>nabídka
+              odeslána → za týden zavolat</b>. Appka je udělá sama a napíše to do poznámek
+              u záznamu. Pravidla se zakládají vypnutá a kdykoli se dají vypnout zpátky.
+            </p>
+          </section>
+        )}
+
         {/* ---- účet ---- */}
         <section className="fm-card">
           <div className="gs-karta-hlava">
@@ -279,6 +301,7 @@ export default function Nastaveni() {
       </div>
 
       {sablony && <SablonyTextuNastaveni onZavri={() => setSablony(false)} />}
+      {automatizace && <AutomatizaceNastaveni onZavri={() => setAutomatizace(false)} />}
     </Layout>
   );
 }
