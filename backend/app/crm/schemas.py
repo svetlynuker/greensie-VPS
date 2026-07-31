@@ -1049,8 +1049,12 @@ class NastaveniNotifikaciVstup(BaseModel):
     volby: dict = {}
 
 
-# ---- šablony (CRM-32) --------------------------------------------------------
-class SablonaOut(BaseModel):
+# ---- šablony textů (CRM-32) ---
+# Názvy nesou `Textu` schválně: `SablonaOut` a `SablonaVstup` už výš v tomhle
+# souboru patří ŠABLONÁM PROJEKTOVÝCH KROKŮ. Stejný název třídy by tu starší
+# definici tiše přepsal a endpointy projektových šablon by padaly na 500.
+# ---- (původní hlavička) --------------------------------------------------------
+class SablonaTextuOut(BaseModel):
     id: int
     druh: str
     nazev: str
@@ -1061,7 +1065,7 @@ class SablonaOut(BaseModel):
     poradi: int = 0
 
 
-class SablonaVstup(BaseModel):
+class SablonaTextuVstup(BaseModel):
     druh: str = "email"
     nazev: str
     predmet: str = ""
@@ -1077,7 +1081,7 @@ class SymbolOut(BaseModel):
 
 
 class SablonyOut(BaseModel):
-    sablony: list[SablonaOut] = []
+    sablony: list[SablonaTextuOut] = []
     symboly: list[SymbolOut] = []
 
 

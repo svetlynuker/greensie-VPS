@@ -120,6 +120,8 @@ from app.crm.schemas import (
     RadaOut,
     RadaVstup,
     SablonaOut,
+    SablonaTextuOut,
+    SablonaTextuVstup,
     SablonaPouzitiOut,
     SablonaVstup,
     SablonyOut,
@@ -3255,8 +3257,8 @@ def uloz_nastaveni_notifikaci(
 # PROJEKTOVÝCH KROKŮ v routes_realizace.py. Obě jsou pod stejným routerem, takže
 # stejná cesta by tiše přebila tu, která se registruje později (pořadí
 # include_router v main.py), a rozbila by projektové šablony.
-def _sablona_out(s) -> SablonaOut:
-    return SablonaOut(
+def _sablona_textu_out(s) -> SablonaTextuOut:
+    return SablonaTextuOut(
         id=s.id,
         druh=s.druh,
         nazev=s.nazev,
@@ -3285,7 +3287,7 @@ def seznam_sablon(
     else:
         polozky = sablony_modul.seznam(db, druh, entita)
     return SablonyOut(
-        sablony=[_sablona_out(s) for s in polozky],
+        sablony=[_sablona_textu_out(s) for s in polozky],
         symboly=[SymbolOut(klic=k, popis=p) for k, p in sablony_modul.SYMBOLY],
     )
 
@@ -3309,9 +3311,9 @@ def pouzij_sablonu(
     )
 
 
-@router.post("/sablony-textu", response_model=SablonaOut)
+@router.post("/sablony-textu", response_model=SablonaTextuOut)
 def pridej_sablonu(
-    vstup: SablonaVstup,
+    vstup: SablonaTextuVstup,
     user: User = Depends(vyzaduj_nastaveni),
     db: Session = Depends(get_db),
 ):
@@ -3332,13 +3334,13 @@ def pridej_sablonu(
     db.add(s)
     db.commit()
     db.refresh(s)
-    return _sablona_out(s)
+    return _sablona_textu_out(s)
 
 
-@router.put("/sablony-textu/{sablona_id}", response_model=SablonaOut)
+@router.put("/sablony-textu/{sablona_id}", response_model=SablonaTextuOut)
 def uprav_sablonu(
     sablona_id: int,
-    vstup: SablonaVstup,
+    vstup: SablonaTextuVstup,
     user: User = Depends(vyzaduj_nastaveni),
     db: Session = Depends(get_db),
 ):
@@ -3356,7 +3358,7 @@ def uprav_sablonu(
     s.poradi = vstup.poradi
     db.commit()
     db.refresh(s)
-    return _sablona_out(s)
+    return _sablona_textu_out(s)
 
 
 @router.delete("/sablony-textu/{sablona_id}")
