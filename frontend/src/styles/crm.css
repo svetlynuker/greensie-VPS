@@ -1080,15 +1080,54 @@
 .ds-hlava {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin-bottom: 8px;
 }
-.ds-cesta {
-  margin: 0 0 8px;
-  font-family: ui-monospace, monospace;
-  font-size: 11px;
-  word-break: break-all;
+/* Zvýraznění při přetahování souboru nad kartou — jinak není poznat, že se
+   sem dá pustit. */
+.ds.nad-sebou {
+  outline: 2px dashed var(--fm-brand, #2f9e44);
+  outline-offset: 4px;
+  border-radius: 8px;
 }
+
+/* Drobečková navigace ve stromu složek. */
+.ds-cesta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.ds-krok {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fm-brand-dk, #1c7ed6);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 5px;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-krok:hover {
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+}
+.ds-krok.aktivni {
+  color: var(--text);
+  font-weight: 600;
+  cursor: default;
+}
+.ds-sipka {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .ds-seznam {
   list-style: none;
   margin: 0 0 10px;
@@ -1096,24 +1135,36 @@
   display: grid;
   gap: 1px;
   /* Dlouhý seznam se scrolluje uvnitř karty, ať kartu nenafoukne. */
-  max-height: 230px;
+  max-height: 260px;
   overflow: auto;
 }
-.ds-seznam a {
+/* Složka i soubor mají stejný řádek — jeden je button, druhý odkaz, ale
+   vizuálně se nemají lišit. */
+.ds-radek {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 7px;
+  width: 100%;
+  padding: 6px 7px;
+  border: 0;
   border-radius: 6px;
+  background: transparent;
+  font: inherit;
   font-size: 13px;
   color: var(--text);
   text-decoration: none;
+  text-align: left;
+  cursor: pointer;
+}
+.ds-radek:hover {
+  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 8%, transparent);
+}
+.ds-nazev {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.ds-seznam a:hover {
-  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 8%, transparent);
 }
 .ds-ikona {
   flex: 0 0 auto;

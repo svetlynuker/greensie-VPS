@@ -14,7 +14,7 @@ Dvě věci, které se prolínají všemi endpointy:
 import re
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -1637,6 +1637,77 @@ def slozka_zaznamu(
         "soubory": soubory,
         "chyba": chyba,
     }
+
+
+@router.get("/slozka/{entita}/{zaznam_id}/obsah")
+def obsah_slozky_zaznamu(
+    entita: str,
+    zaznam_id: int,
+    folder_id: str | None = Query(default=None, description="Podsložka; prázdné = koren"),
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Obsah složky nebo její podsložky + cesta pro drobečkovou navigaci.
+
+    `folder_id` prochází z prohlížeče, takže se vždy ověří, že požadovaná složka
+    patří pod záznam. Bez toho by si kdokoli mohl vyžádat obsah libovolné složky
+    na firemním Disku — třeba mezd (viz `crm_slozky.je_pod_slozkou`).
+    """
+    from app.konektor import crm_slozky
+
+    klic, _, _ = _slozka_zaznam(db, entita, zaznam_id, user)
+    ef = crm_slozky.najdi_slozku(db, klic, zaznam_id)
+    if ef is None:
+        raise HTTPException(status_code=404, detail="Záznam ještě nemá složku na Disku.")
+    try:
+        return crm_slozky.obsah_slozky(db, ef, folder_id)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Disk neodpověděl: {e}")
+
+
+@router.post("/slozka/{entita}/{zaznam_id}/soubor")
+async def nahraj_do_slozky(
+    entita: str,
+    zaznam_id: int,
+    soubor: UploadFile = File(...),
+    folder_id: str | None = Form(default=None),
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Nahraje soubor na Disk do složky záznamu (nebo její podsložky).
+
+    Soubor NEUKLÁDÁME u sebe ani po cestě — projde do Disku a v appce zůstane
+    jen odkaz. Dvě kopie téhož dokumentu by znamenaly, že nikdo neví, která je
+    ta platná.
+    """
+    from app.konektor import crm_slozky
+
+    klic, _, _ = _slozka_zaznam(db, entita, zaznam_id, user)
+    ef = crm_slozky.najdi_slozku(db, klic, zaznam_id)
+    if ef is None:
+        raise HTTPException(status_code=404, detail="Záznam ještě nemá složku na Disku.")
+
+    data = await soubor.read()
+    if not data:
+        raise HTTPException(status_code=422, detail="Soubor je prázdný.")
+    # Strop kvůli tomu, že se soubor drží celý v paměti procesu. Větší věci
+    # (fotodokumentace z realizace) patří na Disk přímo — appka není přenosová
+    # trubka a při 502 z Hetzneru by se stejně nedonesly.
+    if len(data) > 25 * 1024 * 1024:
+        raise HTTPException(
+            status_code=413,
+            detail="Soubor je větší než 25 MB — nahraj ho prosím přímo na Disk.",
+        )
+    try:
+        return crm_slozky.nahraj(
+            db, ef, folder_id, soubor.filename or "soubor", data, soubor.content_type or ""
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Disk soubor nepřijal: {e}")
 
 
 @router.post("/slozka/{entita}/{zaznam_id}")

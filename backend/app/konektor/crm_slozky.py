@@ -214,3 +214,116 @@ def soubory(db: Session, ef: KonektorEntityFolder, limit: int = 40) -> list[dict
     ]
     out.sort(key=lambda x: (not x["je_slozka"], x["nazev"].lower()))
     return out[:limit]
+
+
+# ---- procházení a nahrávání (na přání Dana: „ať nemusím na Disk") ----------
+
+# Kolik úrovní se leze nahoru při kontrole, že složka patří pod záznam.
+# Struktura vzoru má 3–4 úrovně; deset je rezerva a zároveň strop, aby se
+# z kontroly nestalo lezení celým Diskem.
+MAX_HLOUBKA_KONTROLY = 10
+
+
+def je_pod_slozkou(drive: DriveClient, folder_id: str, koren_id: str) -> bool:
+    """Leží `folder_id` uvnitř `koren_id` (nebo je to on sám)?
+
+    BEZPEČNOSTNÍ KONTROLA, ne pohodlí. ID složky přichází z prohlížeče, takže
+    bez ní by si kdokoli mohl vyžádat obsah libovolné složky na firemním Disku —
+    včetně mezd nebo smluv, ke kterým v CRM nemá co dělat. Ověřuje se řetěz
+    rodičů, protože jiný způsob Drive API nenabízí.
+    """
+    if not folder_id or not koren_id:
+        return False
+    if folder_id == koren_id:
+        return True
+    aktualni = folder_id
+    for _ in range(MAX_HLOUBKA_KONTROLY):
+        try:
+            f = drive.get_file(aktualni)
+        except Exception:  # noqa: BLE001 – neexistující ID = nemá přístup
+            return False
+        rodice = f.get("parents") or []
+        if not rodice:
+            return False
+        if koren_id in rodice:
+            return True
+        aktualni = rodice[0]
+    return False
+
+
+def obsah_slozky(
+    db: Session, ef: KonektorEntityFolder, folder_id: str | None = None, limit: int = 60
+) -> dict:
+    """Obsah složky záznamu nebo její podsložky, včetně cesty pro navigaci.
+
+    `folder_id` prázdné = koren záznamu. Jinak se nejdřív ověří, že požadovaná
+    složka pod záznam patří (viz `je_pod_slozkou`).
+    """
+    n = _nastaveni(db)
+    drive = _drive_klient(n)
+    cil = folder_id or ef.drive_folder_id
+    if folder_id and not je_pod_slozkou(drive, folder_id, ef.drive_folder_id):
+        raise PermissionError("Tato složka nepatří k tomuto záznamu.")
+
+    polozky = [
+        {
+            "id": f.get("id"),
+            "nazev": f.get("name") or "",
+            "je_slozka": f.get("mimeType") == logika.FOLDER_MIME,
+            "url": f.get("webViewLink") or "",
+            "velikost": int(f.get("size") or 0) if f.get("size") else None,
+        }
+        for f in drive.list_children(cil)
+        if not f.get("trashed")
+    ]
+    polozky.sort(key=lambda x: (not x["je_slozka"], x["nazev"].lower()))
+
+    # Cesta od záznamu k aktuální složce (pro drobečkovou navigaci). Skládá se
+    # odzadu přes rodiče a končí u složky záznamu.
+    cesta = []
+    if cil != ef.drive_folder_id:
+        aktualni = cil
+        for _ in range(MAX_HLOUBKA_KONTROLY):
+            try:
+                f = drive.get_file(aktualni)
+            except Exception:  # noqa: BLE001
+                break
+            cesta.insert(0, {"id": f.get("id"), "nazev": f.get("name") or ""})
+            rodice = f.get("parents") or []
+            if not rodice or ef.drive_folder_id in rodice:
+                break
+            aktualni = rodice[0]
+
+    return {
+        "folder_id": cil,
+        "je_koren": cil == ef.drive_folder_id,
+        "cesta": cesta,
+        "polozky": polozky[:limit],
+        "zkraceno": len(polozky) > limit,
+    }
+
+
+def nahraj(
+    db: Session, ef: KonektorEntityFolder, folder_id: str | None, nazev: str, data: bytes, mime: str
+) -> dict:
+    """Nahraje soubor do složky záznamu (nebo do její podsložky).
+
+    Stejná kontrola jako u čtení — cílová složka musí patřit pod záznam, jinak
+    by šlo appkou zapisovat kamkoli na Disk.
+    """
+    n = _nastaveni(db)
+    drive = _drive_klient(n)
+    cil = folder_id or ef.drive_folder_id
+    if folder_id and not je_pod_slozkou(drive, folder_id, ef.drive_folder_id):
+        raise PermissionError("Tato složka nepatří k tomuto záznamu.")
+    f = drive.upload_file(
+        logika._bezpecny_nazev(nazev), cil, data, mime or "application/octet-stream"
+    )
+    zaloguj(
+        db,
+        "info",
+        "crm_slozka",
+        f"Nahrán soubor '{nazev}' z appky.",
+        {"entity": ef.entity, "entity_id": ef.entity_id, "file_id": f.get("id")},
+    )
+    return {"id": f.get("id"), "nazev": f.get("name"), "url": f.get("webViewLink") or ""}
