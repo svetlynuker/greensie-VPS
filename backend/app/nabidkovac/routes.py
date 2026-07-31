@@ -33,6 +33,8 @@ from app.nabidkovac import (
     soubory,
     spot_arbitraz,
     spot_ceny,
+    vystup_html,
+    vystup_obrazky,
 )
 from app.nabidkovac.models import (
     DISTRIBUTORI,
@@ -83,6 +85,7 @@ from app.nabidkovac.schemas import (
     VypoctovaNastaveniVstup,
     VystupKonfigurace,
     VystupOut,
+    VystupPrvek,
     VystupSablonaOut,
     VystupSablonaVstup,
     VystupSablonaZNabidky,
@@ -2594,10 +2597,12 @@ def _vystup_out(db: Session, n: Nabidka, typ_reseni: str, vychozi: bool = False)
         .first()
     )
     if not vychozi and ulozeny is not None and ulozeny.konfigurace_json:
-        # Bloky, které předloha zná a uložená konfigurace ještě ne, se doplní –
-        # jinak by starší nabídky nikdy neukázaly nově přidané výsledky.
-        konfigurace = sablona_katalog.doplnene_bloky(typ_reseni, ulozeny.konfigurace_json)
-        je_vychozi = False
+        # Uložené rozvržení se bere, jen když je v modelu v2 (stránky + prvky
+        # v mm). Cokoli staršího dostane výchozí předlohu – původní záznam
+        # v DB zůstává, dokud ho obchodník nepřepíše tlačítkem Uložit.
+        konfigurace, je_vychozi = sablona_katalog.nacti_konfiguraci(
+            typ_reseni, ulozeny.konfigurace_json
+        )
     else:
         konfigurace = sablona_katalog.vychozi_sablona(typ_reseni)
         je_vychozi = True
@@ -2628,29 +2633,19 @@ def _over_konfiguraci(typ_reseni: str, konfigurace: VystupKonfigurace) -> None:
     pojmenovanou šablonu – obojí končí ve stejném vykreslení."""
     povolena_pole = sablona_katalog.platne_klice(typ_reseni)
     povolene_sloupce = sablona_katalog.platne_sloupce(typ_reseni)
-    for blok in konfigurace.bloky:
-        if blok.druh == "udaje":
-            for klic in blok.pole:
-                if klic not in povolena_pole:
-                    raise HTTPException(
-                        status_code=422,
-                        detail=(
-                            f"Pole '{klic}' není mezi povolenými zákaznickými údaji "
-                            f"pro {typ_reseni} – do nabídky ho vložit nelze."
-                        ),
-                    )
-        elif blok.druh == "udaj":
-            # Jedna dlaždice = jedno pole; whitelist platí stejně jako u bloku.
-            if blok.klic not in povolena_pole:
+
+    def over_prvek(prvek) -> None:
+        if prvek.druh == "udaj":
+            if prvek.klic not in povolena_pole:
                 raise HTTPException(
                     status_code=422,
                     detail=(
-                        f"Údaj '{blok.klic}' není mezi povolenými zákaznickými údaji "
+                        f"Údaj '{prvek.klic}' není mezi povolenými zákaznickými údaji "
                         f"pro {typ_reseni} – do nabídky ho vložit nelze."
                     ),
                 )
-        elif blok.druh == "tabulka":
-            for klic in blok.pole:
+        elif prvek.druh == "tabulka":
+            for klic in prvek.pole:
                 if klic not in povolene_sloupce:
                     raise HTTPException(
                         status_code=422,
@@ -2659,6 +2654,39 @@ def _over_konfiguraci(typ_reseni: str, konfigurace: VystupKonfigurace) -> None:
                             f"pro {typ_reseni}."
                         ),
                     )
+        for dite in prvek.deti:
+            over_prvek(dite)
+
+    for stranka in konfigurace.stranky:
+        for prvek in stranka.prvky:
+            over_prvek(prvek)
+
+
+def _sanituj_konfiguraci(konfigurace: VystupKonfigurace) -> VystupKonfigurace:
+    """Pročistí formátovaný text ve všech prvcích.
+
+    Editor píše text přímo na papíře, takže do `html` teče, co uživatel
+    naformátoval nebo vložil odjinud. Whitelist tagů a stylů drží
+    `vystup_html` – tady se jen projde strom. Vrací novou konfiguraci,
+    vstupní model zůstává nedotčený.
+    """
+
+    def vycisti(prvek: VystupPrvek) -> VystupPrvek:
+        return prvek.model_copy(
+            update={
+                "html": vystup_html.vycisti_html(prvek.html),
+                "deti": [vycisti(d) for d in prvek.deti],
+            }
+        )
+
+    return konfigurace.model_copy(
+        update={
+            "stranky": [
+                s.model_copy(update={"prvky": [vycisti(p) for p in s.prvky]})
+                for s in konfigurace.stranky
+            ]
+        }
+    )
 
 
 def _over_typ_reseni(typ_reseni: str) -> None:
@@ -2696,7 +2724,8 @@ def uloz_vystup(
 ):
     """Uloží šablonu výstupu nabídky. POJISTKA „jen zákaznická data“: každé
     pole/sloupec musí být v katalogu daného typu, jinak 422 – interní klíč
-    (CAPEX, NPV, marže…) se do konfigurace nedostane."""
+    (CAPEX, NPV, marže…) se do konfigurace nedostane. Formátovaný text projde
+    whitelistem značek, ať se do PDF nedostane nic než formátování."""
     _over_typ_reseni(typ_reseni)
     n = db.get(Nabidka, nabidka_id)
     if n is None:
@@ -2704,7 +2733,7 @@ def uloz_vystup(
 
     _over_konfiguraci(typ_reseni, vstup)
 
-    konfigurace = vstup.model_dump()
+    konfigurace = _sanituj_konfiguraci(vstup).model_dump()
     zaznam = (
         db.query(NabidkaVystup)
         .filter(NabidkaVystup.nabidka_id == n.id, NabidkaVystup.typ_reseni == typ_reseni)
@@ -2724,6 +2753,61 @@ def uloz_vystup(
     return _vystup_out(db, n, typ_reseni)
 
 
+# ---------------- obrázky vložené do výstupu ----------------
+# Obrázek se nahraje zvlášť a do konfigurace se uloží jen jeho cesta. Tím se
+# rozvržení drží malé (JSON v DB) a stejný obrázek může být na papíře vícekrát.
+
+
+@router.post("/nabidky/{nabidka_id}/vystup-obrazky")
+async def nahraj_obrazek_vystupu(
+    nabidka_id: int,
+    soubor: UploadFile = File(...),
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Nahraje obrázek pro vložení do nabídky. Vrací cestu do konfigurace."""
+    n = db.get(Nabidka, nabidka_id)
+    if n is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+
+    nazev = soubor.filename or "obrazek"
+    if not vystup_obrazky.je_povolena(nazev):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Soubor „{nazev}“ není obrázek. Povolené: "
+                + ", ".join(sorted(vystup_obrazky.POVOLENE_PRIPONY))
+            ),
+        )
+    obsah = await soubor.read()
+    if len(obsah) > vystup_obrazky.MAX_BAJTU:
+        raise HTTPException(status_code=413, detail=f"Obrázek „{nazev}“ je větší než 10 MB.")
+    if not obsah:
+        raise HTTPException(status_code=422, detail="Soubor je prázdný.")
+
+    cesta = vystup_obrazky.uloz(nabidka_id, nazev, obsah)
+    return {"cesta": cesta, "nazev": nazev, "velikost_bajtu": len(obsah)}
+
+
+@router.get("/vystup-obrazky/{cesta:path}")
+def vydej_obrazek_vystupu(
+    cesta: str,
+    user: User = Depends(vyzaduj_nabidkovac),
+):
+    """Vydá nahraný obrázek. Cesta chodí od klienta, proto ta kontrola tvaru."""
+    try:
+        soubor = vystup_obrazky.cesta_k_obrazku(cesta)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Obrázek nenalezen")
+    if not soubor.exists():
+        raise HTTPException(status_code=404, detail="Obrázek nenalezen")
+    return FileResponse(
+        path=str(soubor),
+        media_type=vystup_obrazky.mime_typ(cesta),
+        content_disposition_type="inline",
+    )
+
+
 # ---------------- pojmenované šablony rozvržení nabídky ----------------
 # `NabidkaVystup` je rozvržení jedné nabídky. Tady jsou šablony napříč
 # nabídkami: obchodník si vyladí vizuál, uloží ho pod názvem a příště jen
@@ -2733,13 +2817,16 @@ POCET_SABLON_Z_NABIDEK = 20
 
 
 def _sablona_out(s: VystupSablona, typ_reseni: str) -> VystupSablonaOut:
+    pouzitelna = sablona_katalog.je_verze2(s.konfigurace_json)
     return VystupSablonaOut(
         id=s.id,
         nazev=s.nazev,
-        # Doplníme bloky, které předloha zná a šablona ne – jinak by starší
-        # šablona neukázala později přidané výsledky.
-        konfigurace=sablona_katalog.doplnene_bloky(typ_reseni, s.konfigurace_json or {}),
+        # Konfigurace ze starého modelu se do schématu v2 nevejde a vyjde
+        # z ní prázdný dokument. Nevadí – u nepoužitelné šablony ji nikdo
+        # nepoužije, jde jen o to, aby šablona šla vypsat a smazat.
+        konfigurace=s.konfigurace_json if pouzitelna else {},
         aktualizovano_at=_iso(s.aktualizovano_at),
+        pouzitelna=pouzitelna,
     )
 
 
@@ -2751,7 +2838,16 @@ def seznam_vystup_sablon(
     db: Session = Depends(get_db),
 ):
     """Co si jde vybrat jako šablonu: pojmenované šablony + rozvržení už
-    hotových nabídek stejného typu řešení (nejnovější první)."""
+    hotových nabídek stejného typu řešení (nejnovější první).
+
+    Rozvržení z jiných nabídek se nabízí jen v modelu v2 – starší (plochý
+    seznam bloků v mřížce 12 sloupců) by nový editor neuměl otevřít a
+    obchodníkovi by vyprázdnil papír.
+
+    Pojmenované šablony se vracejí všechny, ale ty staré mají
+    `pouzitelna=False`. Editor je nenabídne k použití, jen k smazání –
+    kdyby se odfiltrovaly úplně, uvízly by v databázi bez cesty ven.
+    """
     _over_typ_reseni(typ_reseni)
     sablony = (
         db.query(VystupSablona)
@@ -2769,15 +2865,15 @@ def seznam_vystup_sablon(
         dotaz = dotaz.filter(NabidkaVystup.nabidka_id != krome_nabidky)
     z_nabidek = []
     for vystup, nabidka in dotaz.limit(POCET_SABLON_Z_NABIDEK).all():
+        if not sablona_katalog.je_verze2(vystup.konfigurace_json):
+            continue
         datum = _iso(vystup.aktualizovano_at) or ""
         popis = nabidka.zakaznik_nazev or f"Nabídka #{nabidka.id}"
         z_nabidek.append(
             VystupSablonaZNabidky(
                 nabidka_id=nabidka.id,
                 nazev=f"{popis} ({datum[:10]})" if datum else popis,
-                konfigurace=sablona_katalog.doplnene_bloky(
-                    typ_reseni, vystup.konfigurace_json or {}
-                ),
+                konfigurace=vystup.konfigurace_json,
             )
         )
     return VystupSablonySeznam(
@@ -2803,6 +2899,7 @@ def uloz_vystup_sablonu(
     if len(nazev) > 120:
         raise HTTPException(status_code=422, detail="Název šablony je moc dlouhý (max 120 znaků).")
     _over_konfiguraci(typ_reseni, vstup.konfigurace)
+    konfigurace = _sanituj_konfiguraci(vstup.konfigurace).model_dump()
 
     zaznam = (
         db.query(VystupSablona)
@@ -2813,12 +2910,12 @@ def uloz_vystup_sablonu(
         zaznam = VystupSablona(
             nazev=nazev,
             typ_reseni=typ_reseni,
-            konfigurace_json=vstup.konfigurace.model_dump(),
+            konfigurace_json=konfigurace,
             vytvoril_user_id=user.id,
         )
         db.add(zaznam)
     else:
-        zaznam.konfigurace_json = vstup.konfigurace.model_dump()
+        zaznam.konfigurace_json = konfigurace
     db.commit()
     db.refresh(zaznam)
     return _sablona_out(zaznam, typ_reseni)

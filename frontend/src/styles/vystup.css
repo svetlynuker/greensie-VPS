@@ -1,477 +1,1052 @@
-/* Nabídkový výstup (PDF pro zákazníka) – layout stránky editor+náhled a
- * tiskové A4. Tisk do PDF řešíme přes window.print() (žádná knihovna navíc):
- * v @media print schováme všechno s třídou .np (no-print) a vytiskneme jen
- * A4 list .vystup-sheet. Barvy jdou přes stejné tokeny jako zbytek appky. */
+/* Nabídkový výstup – editor a tisková A4.
+ *
+ * Papír je natvrdo A4 na výšku (210 × 297 mm) a stránek je tolik, kolik si
+ * obchodník založí. Prvky na něm leží na milimetrových souřadnicích, takže
+ * co je vidět na obrazovce, to vyjede i v PDF – jedna sada rozměrů pro obojí.
+ *
+ * Tisk jde přes window.print() (žádná knihovna navíc): v @media print se
+ * schová celý editor a vytiskne se skrytá kopie papíru bez ovládání.
+ */
 
+/* ---------------------------------------------------------------------------
+   1. Rámec stránky
+   ------------------------------------------------------------------------ */
 .vystup-page {
-  min-height: 100vh;
-  background: var(--fm-bg, #f4f6f5);
-  color: var(--fm-text, #1c2321);
-}
-
-/* Horní lišta stránky (netiskne se) */
-.vystup-bar {
-  position: sticky;
-  top: 0;
-  z-index: 5;
+  height: 100vh;
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  background: var(--surface, #fff);
-  border-bottom: 1px solid var(--fm-line, #dfe4e2);
-}
-.vystup-bar h1 { font-size: 15px; margin: 0; flex: 0 0 auto; }
-.vystup-bar .sp { flex: 1; }
-
-/* Rozložení: vlevo editor, vpravo náhled */
-.vystup-layout {
-  display: grid;
-  grid-template-columns: 340px 1fr;
-  gap: 20px;
-  align-items: start;
-  padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
-}
-@media (max-width: 860px) {
-  .vystup-layout { grid-template-columns: 1fr; }
-}
-
-.vystup-editor {
-  position: sticky;
-  top: 64px;
-  max-height: calc(100vh - 84px);
-  overflow: auto;
-  background: var(--surface, #fff);
-  border: 1px solid var(--fm-line, #dfe4e2);
-  border-radius: 12px;
-  padding: 14px;
-}
-.vystup-nahled-wrap { display: flex; justify-content: center; }
-
-/* ---- Tisková A4 stránka ----
- * Okraje listu drží jedno místo: --vy-okraj (do stran) a --vy-okraj-sv
- * (svisle). V tisku je stejné hodnoty dostane @page, aby zápatí ukotvené
- * k okraji stránky sedělo na sloupec textu. */
-.vystup-sheet {
-  --vy-okraj: 16mm;
-  --vy-okraj-sv: 14mm;
-  /* Kolik místa se pod obsahem drží pro zápatí (viz .vy-zapati-mezera). */
-  --vy-zapati-misto: 24mm;
-  width: 210mm;
-  max-width: 100%;
-  min-height: 297mm;
-  box-sizing: border-box;
-  padding: var(--vy-okraj-sv) var(--vy-okraj);
-  background: #fff;
-  color: #1c2321;
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
-  font-size: 12.5px;
-  line-height: 1.5;
-  /* kotva pro vodoznak a zápatí */
-  position: relative;
+  flex-direction: column;
+  background: var(--fm-bg, #eceeed);
+  color: var(--fm-text, #1c2321);
   overflow: hidden;
 }
 
-/* Nosná tabulka listu. Není to vizuální tabulka, jen nástroj na stránkování
- * tisku (opakované <thead> a místo držené <tfoot>) – proto všechno resetujeme.
- * Selektory jsou přímé potomky, aby nezasáhly .vy-tabulka uvnitř obsahu. */
-.vy-list { width: 100%; border-collapse: collapse; }
-.vy-list > thead > tr > td,
-.vy-list > tbody > tr > td,
-.vy-list > tfoot > tr > td {
-  padding: 0;
-  border: 0;
-  text-align: left;
-  vertical-align: top;
+/* ---- Horní lišta ---- */
+.vy-lista-horni {
+  flex: 0 0 auto;
+  background: var(--surface, #fff);
+  border-bottom: 1px solid var(--fm-line, #dfe4e2);
+  z-index: 20;
 }
-.vy-zapati-mezera { height: var(--vy-zapati-misto); }
+.vy-lista-radek {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  flex-wrap: wrap;
+}
+.vy-lista-radek.druhy {
+  padding-top: 0;
+  padding-bottom: 8px;
+  border-top: 1px solid var(--fm-line, #dfe4e2);
+  padding-top: 8px;
+}
+.vy-lista-radek h1 {
+  font-size: 15px;
+  margin: 0;
+  white-space: nowrap;
+}
+.vy-lista-radek .sp {
+  flex: 1;
+}
+.vy-skupina {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.vy-skupina .fm-btn {
+  min-width: 30px;
+}
+.vy-zoom,
+.vy-sablona-vyber {
+  height: 30px;
+  border: 1px solid var(--fm-line, #dfe4e2);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: inherit;
+  font-size: 13px;
+  padding: 0 6px;
+}
+.vy-sablona-vyber {
+  max-width: 190px;
+}
+.vy-sablony {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
 
-/* ---- Pás se značkou = záhlaví na každé stránce ---- */
+.vy-zprava {
+  color: var(--fm-brand-dk, #237a35);
+  font-size: 13px;
+}
+.vy-chyba {
+  color: var(--st-crit, #c92a2a);
+  font-size: 13px;
+}
+.vy-neulozeno {
+  color: var(--fm-muted, #6a7570);
+  font-size: 13px;
+}
+
+/* Miniatury stránek v liště */
+.vy-stranky-popis {
+  font-size: 12px;
+  color: var(--fm-muted, #6a7570);
+}
+.vy-stranky {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  max-width: 40vw;
+  overflow-x: auto;
+}
+.vy-stranka-b {
+  width: 28px;
+  height: 30px;
+  border: 1px solid var(--fm-line, #dfe4e2);
+  border-radius: 4px;
+  background: var(--surface, #fff);
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.vy-stranka-b:hover {
+  border-color: var(--fm-brand, #2f9e44);
+}
+.vy-stranka-b.aktivni {
+  background: var(--fm-brand, #2f9e44);
+  border-color: var(--fm-brand, #2f9e44);
+  color: #fff;
+}
+.vy-stranka-b.problem::after {
+  content: "!";
+  color: var(--st-crit, #c92a2a);
+  font-weight: 700;
+}
+.vy-stranka-b.aktivni.problem::after {
+  color: #ffe3e3;
+}
+
+.vy-problemy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: #fff4e6;
+  border-top: 1px solid #ffd8a8;
+  font-size: 12.5px;
+  color: #8a4b08;
+  flex-wrap: wrap;
+}
+.vy-problem-b {
+  border: 1px solid #ffd8a8;
+  background: #fff;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  color: inherit;
+}
+
+.fm-btn.nebezpecne,
+.vl-btn.nebezpecne {
+  border-color: #f1c6c6;
+  color: var(--st-crit, #c92a2a);
+}
+
+/* ---------------------------------------------------------------------------
+   2. Tři panely
+   ------------------------------------------------------------------------ */
+.vystup-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) 300px;
+  gap: 0;
+}
+.vystup-layout.bez-leveho {
+  grid-template-columns: 26px minmax(0, 1fr) 300px;
+}
+.vystup-layout.bez-praveho {
+  grid-template-columns: 260px minmax(0, 1fr) 26px;
+}
+.vystup-layout.bez-leveho.bez-praveho {
+  grid-template-columns: 26px minmax(0, 1fr) 26px;
+}
+
+.vystup-panel {
+  position: relative;
+  background: var(--surface, #fff);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.vystup-panel.vlevo {
+  border-right: 1px solid var(--fm-line, #dfe4e2);
+}
+.vystup-panel.vpravo {
+  border-left: 1px solid var(--fm-line, #dfe4e2);
+}
+.panel-obsah {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 10px 12px 40px;
+  flex: 1 1 auto;
+}
+.panel-prepinac {
+  position: absolute;
+  top: 6px;
+  z-index: 3;
+  width: 20px;
+  height: 26px;
+  border: 1px solid var(--fm-line, #dfe4e2);
+  background: var(--surface, #fff);
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--fm-muted, #6a7570);
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+}
+.vystup-panel.vlevo .panel-prepinac {
+  right: 3px;
+}
+.vystup-panel.vpravo .panel-prepinac {
+  left: 3px;
+}
+.vystup-panel.zabaleny .panel-prepinac {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+
+/* Pracovní plocha s papírem */
+.vystup-plocha {
+  overflow: auto;
+  padding: 20px 0 60px;
+  background: var(--fm-bg, #eceeed);
+  min-height: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   3. Papír
+   ------------------------------------------------------------------------ */
+.vy-papir {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+/* Obal drží místo za zvětšenou stránku – `scale` samo rozměr v rozvržení
+   nemění, takže bez něj by se stránky při zoomu přes 100 % překrývaly. */
+.vy-stranka-obal {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.vy-stranka {
+  position: relative;
+  box-sizing: border-box;
+  background: #fff;
+  color: #1c2321;
+  overflow: hidden;
+  transform: scale(var(--vy-zoom, 1));
+  transform-origin: top left;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.14);
+
+  /* Typografie papíru je v bodech – je to tiskovina, ne obrazovka. */
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 10pt;
+  line-height: 1.45;
+}
+
+.vy-stranka h1 {
+  font-size: 19pt;
+  line-height: 1.2;
+  margin: 0 0 2pt;
+  color: var(--fm-brand-dk, #237a35);
+}
+.vy-stranka h2 {
+  font-size: 12.5pt;
+  line-height: 1.25;
+  margin: 0 0 3pt;
+  color: var(--fm-brand-dk, #237a35);
+}
+.vy-stranka h3 {
+  font-size: 11pt;
+  margin: 0 0 2pt;
+}
+.vy-stranka h4 {
+  font-size: 10pt;
+  margin: 0 0 2pt;
+}
+.vy-stranka p {
+  margin: 0 0 4pt;
+}
+.vy-stranka p:last-child {
+  margin-bottom: 0;
+}
+.vy-stranka ul,
+.vy-stranka ol {
+  margin: 0 0 4pt;
+  padding-left: 14pt;
+}
+
+/* ---- Pás se značkou a zápatí (opakují se na každé stránce) ---- */
 .vy-pas {
+  position: absolute;
+  left: 16mm;
+  right: 16mm;
+  top: 12mm;
   display: flex;
   align-items: flex-end;
-  gap: 14px;
-  padding-bottom: 8px;
-  margin-bottom: 16px;
-  border-bottom: 3px solid var(--brand, #2f9e44);
+  gap: 8mm;
+  padding-bottom: 2mm;
+  border-bottom: 0.8mm solid var(--brand, #2f9e44);
+  pointer-events: none;
 }
 .vy-pas-info {
   margin-left: auto;
   display: flex;
   flex-direction: column;
   text-align: right;
-  font-size: 10.5px;
-  line-height: 1.4;
+  font-size: 7.5pt;
+  line-height: 1.35;
   color: #6a7570;
 }
 
-/* ---- Vodoznak: značka na střed listu, hodně světlá ---- */
-.vy-vodoznak {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  opacity: 0.07;
-  pointer-events: none;
-  z-index: 0;
-}
-
-/* Obsah musí ležet nad vodoznakem, jinak by ho vodoznak překryl. */
-.vy-list,
-.vy-zapati {
-  position: relative;
-  z-index: 1;
-}
-
-/* ---- Zápatí s kontaktem (jako na hlavičkovém papíře) ----
- * Není v toku textu, ale ukotvené ke spodnímu okraji listu – jinak by skončilo
- * tam, kde náhodou dojde text. Místo pro ně drží .vy-zapati-mezera. */
 .vy-zapati {
   position: absolute;
-  left: var(--vy-okraj);
-  right: var(--vy-okraj);
-  bottom: var(--vy-okraj-sv);
-  padding-top: 11px;
-  border-top: 1px solid #dfe6e1;
+  left: 16mm;
+  right: 16mm;
+  bottom: 10mm;
   display: flex;
   align-items: center;
-  gap: 14px;
-  font-size: 10.5px;
-  line-height: 1.45;
+  gap: 6mm;
+  padding-top: 2mm;
+  border-top: 0.3mm solid #dfe4e2;
+  font-size: 7pt;
+  line-height: 1.35;
   color: #6a7570;
-  background: #fff;
+  pointer-events: none;
 }
-
-.vy-zapati-znacka {
-  flex: none;
-  display: flex;
-  color: #17321f;
-}
-
 .vy-zapati-adresa,
 .vy-zapati-kontakt {
   display: flex;
   flex-direction: column;
 }
-
-.vy-zapati-adresa b {
-  color: #17321f;
-  font-size: 11px;
-  letter-spacing: 0.02em;
-}
-
 .vy-zapati-kontakt {
   margin-left: auto;
   text-align: right;
 }
 
-/* Hlavička nabídky (název + příjemce). Zelenou linku kreslí pás nad ní,
-   proto tu žádná není. */
-.vy-hlavicka { margin-bottom: 22px; }
-/* Logo v pásu. Text logotypu bere barvu odsud (currentColor) — na papíře
-   tedy tmavý, ne šedý jako okolní popisky. */
-.vy-logo {
+.vy-vodoznak {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ---- Vodicí plocha editoru: naznačí sazbu, do které se má obsah vejít ---- */
+.vy-vodici-plocha {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.vy-sazba {
+  position: absolute;
+  border: 1px dashed rgba(47, 158, 68, 0.35);
+}
+.vy-cislo-listu {
+  position: absolute;
+  left: 0;
+  bottom: -18px;
+  font-size: 11px;
+  color: var(--fm-muted, #6a7570);
+}
+
+/* ---------------------------------------------------------------------------
+   4. Prvky na papíře
+   ------------------------------------------------------------------------ */
+.vy-prvek {
+  box-sizing: border-box;
+  position: relative;
+  z-index: 2;
+}
+.vy-prvek.na-papire {
+  /* pozice a rozměry přicházejí inline z modelu (mm) */
+  overflow: visible;
+}
+
+.vy-prvek.editovatelny {
+  cursor: move;
+  outline: 1px solid transparent;
+  transition: outline-color 0.1s;
+}
+.vy-prvek.editovatelny:hover {
+  outline-color: rgba(47, 158, 68, 0.45);
+}
+.vy-prvek.vybrany {
+  outline: 2px solid var(--fm-brand, #2f9e44);
+  outline-offset: 1px;
+}
+.vy-prvek.pise {
+  cursor: text;
+  outline: 2px solid #1971c2;
+}
+.vy-prvek.tazeny {
+  opacity: 0.55;
+  /* Aby `elementsFromPoint` viděl, co je POD taženým prvkem – jinak by cíl
+     puštění byl vždycky prvek sám. */
+  pointer-events: none;
+}
+.vy-prvek.skryty {
+  opacity: 0.35;
+}
+.vy-prvek.skryty::after {
+  content: "netiskne se";
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  font-size: 7px;
+  background: #495057;
+  color: #fff;
+  padding: 0 3px;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.vy-prvek.pretece {
+  outline: 2px dashed var(--st-crit, #c92a2a);
+}
+.vy-prvek.cil {
+  outline: 2px solid #1971c2;
+  background: rgba(25, 113, 194, 0.06);
+}
+
+/* Úchyty pro změnu velikosti */
+.vy-uchyt {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  background: #fff;
+  border: 1.5px solid var(--fm-brand, #2f9e44);
+  border-radius: 2px;
+  z-index: 30;
+}
+.vy-uchyt-sz { top: -5px; left: -5px; cursor: nwse-resize; }
+.vy-uchyt-s  { top: -5px; left: 50%; margin-left: -4.5px; cursor: ns-resize; }
+.vy-uchyt-sv { top: -5px; right: -5px; cursor: nesw-resize; }
+.vy-uchyt-v  { top: 50%; right: -5px; margin-top: -4.5px; cursor: ew-resize; }
+.vy-uchyt-jv { bottom: -5px; right: -5px; cursor: nwse-resize; }
+.vy-uchyt-j  { bottom: -5px; left: 50%; margin-left: -4.5px; cursor: ns-resize; }
+.vy-uchyt-jz { bottom: -5px; left: -5px; cursor: nesw-resize; }
+.vy-uchyt-z  { top: 50%; left: -5px; margin-top: -4.5px; cursor: ew-resize; }
+
+.vy-znacka-vyberu {
+  position: absolute;
+  inset: -2px;
+  border: 2px solid var(--fm-brand, #2f9e44);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* Vodicí linky při přichytávání */
+.vy-voditko {
+  position: absolute;
+  background: #e8590c;
+  z-index: 40;
+  pointer-events: none;
+}
+.vy-voditko.svisle {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+.vy-voditko.vodorovne {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+/* Náhled místa, kam prvek dopadne */
+.vy-nahled-pusteni {
+  position: absolute;
+  border: 2px dashed var(--fm-brand, #2f9e44);
+  background: rgba(47, 158, 68, 0.08);
+  border-radius: 2px;
+  z-index: 35;
+  pointer-events: none;
+}
+
+/* ---- Kontejner ---- */
+.vy-kontejner-deti {
+  display: grid;
+  align-items: start;
+  min-height: 8mm;
+}
+.vy-kontejner-nadpis {
+  margin-bottom: 2mm;
+}
+.vy-kontejner-prazdny {
+  grid-column: 1 / -1;
+  border: 1px dashed #c9d3ce;
+  border-radius: 2px;
+  padding: 4mm;
+  text-align: center;
+  font-size: 8pt;
+  color: #98a5a0;
+}
+.vy-prvek.v-kontejneru {
+  cursor: move;
+}
+
+/* ---- Obsah prvků ---- */
+.vy-udaj {
+  height: 100%;
+  box-sizing: border-box;
   display: flex;
-  flex: none;
-  color: #17321f;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1mm;
 }
-.vy-hlavicka h1 { font-size: 22px; margin: 0 0 4px; color: #17321f; }
-.vy-hlavicka .podnadpis { color: var(--brand, #2f9e44); font-weight: 600; font-size: 13px; }
-.vy-prijemce { margin-top: 12px; font-size: 12.5px; }
-.vy-prijemce .lbl { color: #6a7570; }
-.vy-prijemce b { font-size: 14px; }
-
-/* Bloky */
-.vy-blok { margin-bottom: 20px; }
-.vy-blok h2 {
-  font-size: 15px; margin: 0 0 8px;
-  color: #17321f; border-left: 4px solid var(--brand, #2f9e44);
-  padding-left: 8px;
+.vy-udaj .k-nazev {
+  font-size: 7.5pt;
+  color: #6a7570;
+  line-height: 1.25;
 }
-.vy-text { white-space: pre-wrap; margin: 0 0 6px; }
-.vy-intro { color: #55605b; margin: 0 0 10px; }
-
-/* Karty údajů */
-.vy-karty { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.vy-karty.dva { grid-template-columns: repeat(2, 1fr); }
-.vy-karta {
-  border: 1px solid #e2e8e4; border-radius: 10px; padding: 12px 14px;
-  background: #f7faf8;
+.vy-udaj .k-hodnota {
+  font-size: 14pt;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #1c2321;
 }
-.vy-karta .k-nazev { font-size: 11px; color: #6a7570; margin-bottom: 4px; }
-.vy-karta .k-hodnota { font-size: 19px; font-weight: 700; color: #17321f; }
-.vy-karta .k-hodnota.slovni { font-size: 14px; line-height: 1.3; }
-.vy-karta.zvyraznit { background: #eaf6ec; border-color: #bfe3c6; }
-.vy-karta.zvyraznit .k-hodnota { color: var(--brand-strong, #248139); }
+.vy-udaj .k-hodnota.slovni {
+  font-size: 10pt;
+  font-weight: 600;
+}
+.vy-udaj.zvyraznit .k-hodnota {
+  color: var(--fm-brand-dk, #237a35);
+}
 
-/* Tabulka */
-.vy-tabulka { width: 100%; border-collapse: collapse; font-size: 12px; }
-.vy-tabulka th, .vy-tabulka td { padding: 6px 8px; text-align: right; border-bottom: 1px solid #e2e8e4; }
-.vy-tabulka th:first-child, .vy-tabulka td:first-child { text-align: left; }
-.vy-tabulka thead th { background: #eef3f0; color: #43514c; font-weight: 600; }
+.vy-tabulka {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8.5pt;
+}
+.vy-tabulka th,
+.vy-tabulka td {
+  border-bottom: 0.2mm solid #dfe4e2;
+  padding: 1.2mm 1.5mm;
+  text-align: right;
+}
+.vy-tabulka th:first-child,
+.vy-tabulka td:first-child {
+  text-align: left;
+}
+.vy-tabulka th {
+  background: #f4f6f5;
+  font-weight: 600;
+  color: #43514c;
+  border-bottom-width: 0.4mm;
+}
 
-.vy-graf { border: 1px solid #e9eeeb; border-radius: 10px; padding: 12px; }
-.vy-prazdno { color: #99a3a0; font-style: italic; font-size: 12px; }
-
-/* ---- Mřížka papíru ----
- * Prvky se skládají do řádků po 12 sloupcích. Buňka roste podle --s
- * (flex-grow = počet sloupců), nevyužitý zbytek řádku drží .vy-mezera – bez ní
- * by jedna třetinová dlaždice roztáhla řádek na celou šířku. */
-.vy-radek {
+.vy-graf,
+.vy-graf-dvojice {
+  width: 100%;
+  height: 100%;
+}
+.vy-graf-dvojice {
   display: flex;
-  align-items: stretch;
-  gap: 10px;
+  flex-direction: column;
+  gap: 3mm;
 }
-.vy-bunka,
-.vy-mezera {
-  flex: var(--s, 12) 1 0;
-  min-width: 0; /* jinak dlouhé slovo rozhodí poměry sloupců */
+.vy-graf > svg,
+.vy-graf svg {
+  width: 100%;
+  height: auto;
+  display: block;
 }
-/* Prvek uvnitř buňky nese odsazení sám (.vy-blok), u dlaždice ho dáme sem. */
-.vy-bunka > .vy-karta { margin-bottom: 20px; }
 
-/* Ruční zlom stránky – v tisku jen zlomí, na obrazovce je vidět čárka. */
-.vy-zlom {
+.vy-obrazek {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.vy-obrazek-nacita {
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(45deg, #f4f6f5, #f4f6f5 6px, #eceeed 6px, #eceeed 12px);
+}
+.vy-obrazek-prazdny {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.vy-cara {
+  width: 100%;
+  height: 100%;
+  border-top: 0.3mm solid currentColor;
+  color: #c9d3ce;
+}
+.vy-cislo-stranky {
+  font-size: 8pt;
+  color: #6a7570;
+  text-align: center;
+}
+
+.vy-prazdno {
+  font-size: 8pt;
+  color: #98a5a0;
+  font-style: italic;
+  border: 1px dashed #dfe4e2;
+  border-radius: 2px;
+  padding: 2mm;
+}
+
+/* ---------------------------------------------------------------------------
+   5. Psaní textu
+   ------------------------------------------------------------------------ */
+.vy-editovatelny {
+  outline: none;
+  min-height: 1em;
+}
+.vy-editovatelny.pise {
+  cursor: text;
+  background: rgba(25, 113, 194, 0.04);
+}
+/* Během tažení nesmí kurzor označovat text – jinak se z přetahování stane
+   výběr odstavců. */
+body.vy-tahame {
+  user-select: none;
+  cursor: grabbing;
+}
+
+/* Plovoucí formátovací lišta. `fixed` schválně: leží mimo zvětšenou stránku,
+   takže se se zoomem nezvětšuje a zůstane čitelná. */
+.vy-lista {
+  position: fixed;
+  z-index: 100;
+  transform: translateY(-100%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  background: #2b3a34;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  max-width: 96vw;
+  flex-wrap: wrap;
+}
+.vy-lista-b {
+  min-width: 26px;
+  height: 26px;
+  border: 0;
+  background: transparent;
+  color: #e9efec;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 5px;
+}
+.vy-lista-b:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+.vy-lista-s {
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #e9efec;
+  font-size: 12px;
+  padding: 0 4px;
+  cursor: pointer;
+}
+.vy-lista-s option {
+  color: #1c2321;
+}
+.vy-lista-del {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.22);
+  margin: 0 3px;
+}
+.vy-lista-barvy {
+  display: inline-flex;
+  gap: 3px;
+}
+.vy-lista-barva {
+  width: 16px;
+  height: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   6. Paleta (levý panel)
+   ------------------------------------------------------------------------ */
+.pal-napoveda,
+.vl-napoveda {
+  font-size: 11.5px;
+  color: var(--fm-muted, #6a7570);
+  line-height: 1.4;
+  margin-bottom: 10px;
+}
+.pal-skupina {
+  margin-bottom: 8px;
+}
+.pal-skupina-h {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--fm-line, #dfe4e2);
+  padding: 6px 0;
+  cursor: pointer;
+  color: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+}
+.pal-skupina-h .nazev {
+  flex: 1;
+}
+.pal-skupina-h .pocet {
+  font-weight: 400;
+  color: var(--fm-muted, #6a7570);
+  font-size: 11px;
+}
+.pal-skupina-telo {
+  padding: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.pal-mrizka {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+.pal-polozka {
+  border: 1px solid var(--fm-line, #dfe4e2);
+  border-radius: 7px;
+  padding: 7px;
+  background: var(--surface, #fff);
+  cursor: grab;
+  font-size: 11.5px;
+  user-select: none;
+  touch-action: none; /* jinak by dotyk stránku scrolloval místo tažení */
+}
+.pal-polozka:hover {
+  border-color: var(--fm-brand, #2f9e44);
+  background: #f6fbf7;
+}
+.pal-polozka:active {
+  cursor: grabbing;
+}
+.pal-polozka.ztlumena {
+  opacity: 0.5;
+}
+.pal-mrizka .pal-polozka {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+}
+.pal-ikona {
+  font-size: 16px;
+  line-height: 1;
+  color: var(--fm-brand-dk, #237a35);
+}
+.pal-nazev {
+  font-size: 11px;
+  line-height: 1.2;
+}
+/* Náhled dlaždice v paletě: zmenšená verze toho, co se položí na papír. */
+.pal-polozka .vy-udaj .k-nazev {
+  font-size: 10px;
+}
+.pal-polozka .vy-udaj .k-hodnota {
+  font-size: 15px;
+}
+.pal-polozka .vy-udaj .k-hodnota.slovni {
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------------------
+   7. Vlastnosti (pravý panel)
+   ------------------------------------------------------------------------ */
+.vl-hlava {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.vl-druh {
+  font-weight: 600;
+  font-size: 13px;
+}
+.vl-znacka {
+  font-size: 10.5px;
+  background: #eaf5ee;
+  color: var(--fm-brand-dk, #237a35);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.vl-sekce {
+  border-top: 1px solid var(--fm-line, #dfe4e2);
+  padding: 9px 0;
+}
+.vl-sekce:first-of-type {
+  border-top: 0;
+}
+.vl-sekce-t {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fm-muted, #6a7570);
+  margin-bottom: 7px;
+}
+.vl-cislo,
+.vl-barva,
+.vl-text {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 6px 0 20px;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #99a3a0;
+  margin-bottom: 6px;
+  font-size: 12px;
 }
-.vy-zlom::before,
-.vy-zlom::after {
-  content: "";
+.vl-text {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+}
+.vl-popisek {
   flex: 1;
-  border-top: 1px dashed #c9d3ce;
+  color: var(--fm-muted, #6a7570);
 }
-
-/* ---- Editor (ovládání) ---- */
-.ed-blok {
-  border: 1px solid var(--fm-line, #dfe4e2); border-radius: 10px;
-  padding: 10px; margin-bottom: 10px; background: var(--surface, #fff);
+.vl-vstup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
-.ed-blok.skryty { opacity: 0.55; }
-.ed-hlava { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-.ed-hlava .druh { font-size: 10px; color: var(--fm-muted, #7a857f); text-transform: uppercase; letter-spacing: 0.04em; }
-.ed-hlava .sp { flex: 1; }
-.ed-btn {
-  border: 1px solid var(--fm-line, #dfe4e2); background: var(--surface, #fff);
-  border-radius: 6px; padding: 2px 7px; cursor: pointer; font-size: 12px; color: inherit;
+.vl-cislo input,
+.vl-text input,
+.vl-text select {
+  width: 100%;
+  height: 28px;
+  border: 1px solid var(--fm-line, #dfe4e2);
+  border-radius: 5px;
+  padding: 0 6px;
+  font-size: 12px;
+  background: var(--surface, #fff);
+  color: inherit;
 }
-.ed-btn:disabled { opacity: 0.35; cursor: default; }
-.ed-pole-nadpis { width: 100%; box-sizing: border-box; margin-bottom: 6px; }
-.ed-textarea { width: 100%; box-sizing: border-box; min-height: 66px; resize: vertical; font: inherit; }
-.ed-checkbox { display: flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 3px 0; }
-.ed-checkbox .sp { flex: 1; }
-.ed-sekce-nadpis { font-size: 11px; color: var(--fm-muted, #7a857f); margin: 8px 0 2px; }
-
-/* Sekce levého panelu (šablona, paleta, vypnuté prvky, vlastnosti) */
-.ed-sekce { margin-bottom: 14px; }
-.ed-sekce-t {
+.vl-cislo input {
+  width: 62px;
+  text-align: right;
+}
+.vl-jednotka {
   font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--fm-muted, #7a857f);
-  margin-bottom: 6px;
+  color: var(--fm-muted, #6a7570);
+  width: 18px;
 }
-.ed-napoveda {
-  font-size: 11.5px;
-  line-height: 1.45;
-  color: var(--fm-muted, #7a857f);
-  margin-bottom: 6px;
+.vl-barva input[type="color"] {
+  width: 34px;
+  height: 26px;
+  border: 1px solid var(--fm-line, #dfe4e2);
+  border-radius: 5px;
+  padding: 1px;
+  background: none;
+  cursor: pointer;
 }
-.ed-btn.aktivni {
-  background: var(--fm-brand-dk, #248139);
-  border-color: var(--fm-brand-dk, #248139);
-  color: #fff;
+.vl-dvojice {
+  display: flex;
+  gap: 8px;
 }
-.ed-sirky { display: flex; gap: 4px; margin-bottom: 6px; }
-.ed-sirky .ed-btn { flex: 1; }
-
-/* Skládací sekce palety */
-.ed-skupina {
+.vl-dvojice .vl-cislo {
+  flex: 1;
+}
+.vl-prepinac {
   display: flex;
   align-items: center;
-  gap: 6px;
-  width: 100%;
-  border: 0;
-  background: none;
-  padding: 4px 0;
+  gap: 7px;
+  font-size: 12px;
+  margin-bottom: 5px;
   cursor: pointer;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--fm-muted, #7a857f);
 }
-.ed-skupina .pocet {
-  font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-/* Položka palety – tahá se na papír. Uvnitř je grafický náhled toho, jak prvek
-   vypadá na papíře, ne jen jeho název. */
-.ed-paleta-polozka {
+.vl-tlacitka {
   display: flex;
-  align-items: flex-start;
   gap: 6px;
-  padding: 6px;
   margin-bottom: 6px;
+}
+.vl-btn {
+  flex: 1;
+  height: 28px;
   border: 1px solid var(--fm-line, #dfe4e2);
-  border-radius: 8px;
-  background: var(--surface, #fff);
-  font-size: 12.5px;
-  cursor: grab;
-}
-.ed-paleta-polozka:hover { border-color: var(--fm-brand-dk, #248139); }
-.ed-paleta-polozka.ztlumene { opacity: 0.45; }
-.ed-paleta-telo { flex: 1; min-width: 0; }
-.ed-paleta-popisek {
-  margin-top: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--fm-muted, #7a857f);
-}
-.ed-uchop { color: var(--fm-muted, #7a857f); cursor: grab; }
-
-/* Náhled dlaždice v paletě je skutečná karta z papíru – necháme jí papírové
-   barvy i v tmavém režimu, ať odpovídá výsledku. */
-.ed-paleta-telo .vy-karta { background: #f7faf8; color: #1c2321; }
-
-/* Miniatura strukturního prvku: výřez papíru zmenšený na šířku panelu.
-   Obsah má šířku textového sloupce A4 (210 − 2×16 mm), takže se poměry chovají
-   stejně jako na papíře; --k je zmenšení, výška výřezu je pevná a obsah se
-   ustřihne (nejde o čtení, ale o tvar). */
-.ed-nahled {
-  --k: 0.43;
-  position: relative;
-  overflow: hidden;
   border-radius: 6px;
-  border: 1px solid var(--fm-line, #dfe4e2);
-  background: #fff;
-  color: #1c2321;
+  background: var(--surface, #fff);
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 8px;
 }
-.ed-nahled-obsah {
-  width: 178mm;
-  transform: scale(var(--k));
-  transform-origin: top left;
-  padding: 6px 8px 0;
-  font-size: 12.5px;
-  line-height: 1.5;
+.vl-btn:hover {
+  border-color: var(--fm-brand, #2f9e44);
 }
-/* Výšky výřezu na míru jednotlivým prvkům (výška obsahu × --k). */
-.ed-nahled-text { height: 52px; }
-.ed-nahled-udaje { height: 62px; }
-.ed-nahled-graf { height: 80px; }
-.ed-nahled-tabulka { height: 74px; }
-.ed-nahled-zlom { height: 20px; }
-.ed-nahled-zlom .ed-nahled-obsah { padding-top: 2px; }
-/* Uvnitř miniatury nechceme spodní mezery bloků – kradou výšku výřezu. */
-.ed-nahled .vy-blok { margin-bottom: 0; }
+.vl-btn.maly {
+  flex: 0 0 auto;
+  height: 24px;
+  font-size: 11px;
+}
+.vl-chyba {
+  color: var(--st-crit, #c92a2a);
+  font-size: 11.5px;
+  margin: 4px 0;
+}
+.vl-varovani {
+  background: #fff4e6;
+  border: 1px solid #ffd8a8;
+  border-radius: 7px;
+  padding: 8px;
+  font-size: 11.5px;
+  color: #8a4b08;
+  margin-bottom: 10px;
+}
+.vl-varovani .vl-btn {
+  margin-top: 6px;
+  width: 100%;
+}
 
-/* ---- Ovládání na papíře ---- */
-.vystup-editace .ed-polozka { position: relative; cursor: pointer; }
-.vystup-editace .ed-polozka:hover { outline: 1px dashed var(--fm-brand-dk, #248139); }
-.vystup-editace .ed-polozka.vybrana {
-  outline: 2px solid var(--fm-brand-dk, #248139);
-  outline-offset: 2px;
-}
-/* Úchop se ukáže až při přejezdu, ať náhled zůstane čistý. */
-.vystup-editace .ed-polozka > .ed-uchop {
-  position: absolute;
-  top: 2px;
-  left: -14px;
-  opacity: 0;
-  font-size: 13px;
-}
-.vystup-editace .ed-polozka:hover > .ed-uchop,
-.vystup-editace .ed-polozka.vybrana > .ed-uchop { opacity: 1; }
-
-/* Místo, kam se prvek pustí. Nezabírá šířku, dokud se netáhne. */
-.ed-misto {
-  flex: 0 0 4px;
-  align-self: stretch;
-  border-radius: 3px;
-  margin: 0 -2px;
-}
-.ed-misto.konec { height: 26px; flex: none; }
-/* Při tahání se cíle rozšíří a zesvětlí, ať je vidět, kam se dá pustit. */
-.vystup-tahame .ed-misto { flex-basis: 16px; background: rgba(36, 129, 57, 0.08); }
-.vystup-tahame .ed-misto.konec { height: 44px; }
-.ed-misto.aktivni {
-  background: var(--fm-brand-dk, #248139);
-  box-shadow: 0 0 0 2px rgba(36, 129, 57, 0.25);
+/* ---------------------------------------------------------------------------
+   8. Tisk
+   ------------------------------------------------------------------------ */
+.vystup-tisk {
+  display: none;
 }
 
 @media print {
-  /* Okraje listu přebírá @page, aby platily na každé stránce – padding na
-     .vystup-sheet by se uplatnil jen na první a poslední. Svisle symetricky,
-     jinak by vodoznak nebyl na středu papíru. */
-  @page { size: A4; margin: 14mm 16mm; }
-  .np { display: none !important; }
-  .vystup-page { background: #fff; }
-  .vystup-layout { display: block; padding: 0; margin: 0; max-width: none; }
-  .vystup-nahled-wrap { display: block; }
-  .vystup-sheet {
-    width: auto; min-height: 0; box-shadow: none; padding: 0;
-    /* overflow: hidden by při stránkování odřízlo všechno za první stránkou */
+  /* Okraje řeší samotné prvky (papír je přesně A4), takže stránka je bez
+     okrajů – jinak by se obsah zmenšil a mm souřadnice by přestaly sedět. */
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+
+  html,
+  body {
+    background: #fff;
+    height: auto;
     overflow: visible;
-    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  /* Editor a všechno ovládání pryč; tiskne se skrytá kopie papíru. */
+  .np,
+  .vystup-layout,
+  .vy-lista-horni,
+  .vy-lista {
+    display: none !important;
+  }
+  .vystup-page {
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+  .vystup-tisk {
+    display: block;
   }
 
-  /* Vodoznak a zápatí přepínáme na position: fixed – takový prvek Chrome
-     vykreslí na každé stránce znovu. Souřadnice se počítají od plochy stránky
-     (tj. už uvnitř @page margin), takže stačí 0 a 50 %. Negativní offsety
-     (kreslení do okrajů) Chrome umísťuje nespolehlivě – nepoužívat. */
-  .vy-vodoznak {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+  .vy-papir.tisk {
+    display: block;
+    gap: 0;
   }
-  .vy-zapati {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
+  .vy-stranka-obal {
+    display: block;
+  }
+  .vy-stranka.tisk {
+    width: 210mm;
+    height: 297mm;
+    transform: none;
+    box-shadow: none;
+    overflow: hidden;
+    /* Každá stránka dokumentu = jeden list papíru. */
+    break-after: page;
+    page-break-after: always;
+  }
+  .vy-stranka-obal:last-child .vy-stranka.tisk {
+    break-after: auto;
+    page-break-after: auto;
   }
 
-  /* Lámání stránek: dlouhý blok se klidně rozdělí (jinak by celý přeskočil na
-     další stránku a nechal v listu velkou mezeru), ale nadpis zůstane u svého
-     obsahu a karty, graf ani řádek tabulky se nerozříznou. Dlouhá tabulka si
-     na další stránce zopakuje hlavičku sloupců. */
-  .vy-hlavicka { break-inside: avoid; }
-  .vy-blok h2 { break-after: avoid; }
-  .vy-karty, .vy-karta, .vy-graf { break-inside: avoid; }
-  /* Řádek s víc prvky vedle sebe se nesmí rozříznout (flex se přes stránky
-     láme nespolehlivě); řádek s jediným prvkem se lámat smí, jinak by dlouhý
-     text přeskočil na další stránku a nechal mezeru. */
-  .vy-radek-nelamat { break-inside: avoid; }
-  /* Ruční zlom stránky: čárka s popiskem je jen pro obrazovku. */
-  .vy-zlom { break-after: page; margin: 0; border: 0; height: 0; overflow: hidden; }
-  .vy-zlom > span, .vy-zlom::before, .vy-zlom::after { display: none; }
-  /* Ovládání editoru do PDF nepatří. */
-  .ed-uchop, .ed-misto { display: none !important; }
-  .ed-polozka { outline: none !important; }
-  .vy-tabulka thead { display: table-header-group; }
-  .vy-tabulka tr { break-inside: avoid; }
-  /* Pás se značkou se opakuje jako záhlaví tabulky, ať se nikdy nerozlomí. */
-  .vy-list > thead { display: table-header-group; break-inside: avoid; }
-  .vy-list > tfoot { display: table-footer-group; }
+  /* Bez tohohle Chrome zahodí barevná pozadí a vytiskne bílou nabídku. */
+  .vy-stranka,
+  .vy-stranka * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }
 
-/* Podnadpis uvnitř bloku – kombinace opatření kreslí dva grafy pod sebou
-   a každý potřebuje vlastní popisek. */
-.vy-podnadpis {
-  margin: 12px 0 6px;
-  font-size: 13px;
-  font-weight: 700;
+/* ---------------------------------------------------------------------------
+   9. Užší obrazovky
+   ------------------------------------------------------------------------ */
+@media (max-width: 1100px) {
+  .vystup-layout {
+    grid-template-columns: 210px minmax(0, 1fr) 250px;
+  }
+}
+
+/* Na úzkém displeji se panely překryjí přes papír – tři sloupce by z něj
+   nechaly proužek. Papír má přednost, panely se vysouvají přes něj. */
+@media (max-width: 860px) {
+  .vystup-layout,
+  .vystup-layout.bez-leveho,
+  .vystup-layout.bez-praveho,
+  .vystup-layout.bez-leveho.bez-praveho {
+    grid-template-columns: minmax(0, 1fr);
+    position: relative;
+  }
+  .vystup-panel {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 260px;
+    z-index: 15;
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.18);
+  }
+  .vystup-panel.vlevo {
+    left: 0;
+  }
+  .vystup-panel.vpravo {
+    right: 0;
+  }
+  .vystup-panel.zabaleny {
+    width: 26px;
+    box-shadow: none;
+  }
+  .vy-stranky {
+    max-width: 100%;
+  }
+}
+
+/* Značka místa, kam prvek spadne uvnitř kontejneru. Zabírá vlastní buňku
+   mřížky, takže je vidět i mezi dlaždicemi vedle sebe. */
+.vy-misto-vlozeni {
+  display: block;
+  min-height: 6mm;
+  border-left: 2px solid #e8590c;
+  border-radius: 1px;
+  background: rgba(232, 89, 12, 0.1);
 }

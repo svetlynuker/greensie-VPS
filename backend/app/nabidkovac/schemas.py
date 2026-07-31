@@ -2,7 +2,7 @@
 
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 TypNabidky = Literal["ppa", "prodej", "peak_shaving", "kombinace"]
 StavNabidky = Literal["koncept", "data_nahrana", "zkontrolovano_oz", "spocitano", "hotovo"]
@@ -337,44 +337,156 @@ class PpaVstup(BaseModel):
 # Typy řešení, pro které existuje nabídková šablona (viz sablona_katalog).
 # "kombinace" spojuje PPA a peak shaving do jednoho dokumentu.
 TypReseniVystup = Literal["ppa", "peak_shaving", "kombinace"]
-# `udaj` = jedna dlaždice s hodnotou (tahá se z palety), `zlom` = ruční zlom
-# stránky. `udaje` (celý blok s několika poli) zůstává kvůli starším nabídkám.
-DruhBloku = Literal["hlavicka", "text", "udaje", "udaj", "graf", "tabulka", "zlom"]
+# Druhy prvků, které jdou položit na papír.
+#   kontejner     – rámeček, uvnitř kterého prvky stojí pod sebou
+#   text          – formátovaný odstavec (HTML, čistí se přes vystup_html)
+#   udaj          – jedna dlaždice s hodnotou z výpočtu
+#   graf, tabulka – data řešení
+#   obrazek       – nahraný soubor
+#   cara, obdelnik, cislo_stranky – grafické drobnosti
+DruhPrvku = Literal[
+    "kontejner", "text", "udaj", "graf", "tabulka",
+    "obrazek", "cara", "obdelnik", "cislo_stranky",
+]
 
-# Šířka prvku v mřížce papíru: 12 sloupců = celá šířka. Editor nabízí 3/4/6/8/12.
-SIRKA_PLNA = 12
+# Papír je natvrdo A4 na výšku. Souřadnice prvků jsou v milimetrech vůči
+# levému hornímu rohu rodiče (stránky nebo kontejneru).
+A4_SIRKA_MM = 210.0
+A4_VYSKA_MM = 297.0
+
+# Meze proti nesmyslným/škodlivým konfiguracím. Prvek smí kus přesahovat
+# (editor na to upozorní), ale ne skončit kilometr za papírem.
+MIN_SOURADNICE_MM = -100.0
+MAX_SOURADNICE_MM = 400.0
+MAX_STRANEK = 50
+MAX_PRVKU_NA_STRANCE = 300
+MAX_DETI_KONTEJNERU = 100
+
+# Barva je buď prázdná (= průhledné/zděděné), nebo #rrggbb.
+_BARVA = r"^(#[0-9a-fA-F]{6})?$"
 
 
-class VystupBlok(BaseModel):
-    """Jeden prvek nabídky.
+class VystupStyl(BaseModel):
+    """Vzhled prvku. Prázdná barva znamená „nekreslit“, ne černou."""
 
-    `pole` se používá u druhů udaje/tabulka, `klic` u druhu udaj (jedna
-    dlaždice). `sirka` je šířka v mřížce papíru (12 = celá) – prvky se skládají
-    do řádků po 12 sloupcích, takže dvě dlaždice po 6 stojí vedle sebe.
-    Starší uložené nabídky `sirka` nemají a dostanou celou šířku jako dřív.
+    pozadi: str = Field(default="", pattern=_BARVA)
+    barva_ramecku: str = Field(default="", pattern=_BARVA)
+    sirka_ramecku: float = Field(default=0, ge=0, le=10)  # mm
+    zaobleni: float = Field(default=0, ge=0, le=40)  # mm
+    odsazeni: float = Field(default=4, ge=0, le=40)  # mm, vnitřní okraj
+    mezera: float = Field(default=4, ge=0, le=40)  # mm mezi dětmi kontejneru
+    pruhlednost: float = Field(default=1, ge=0, le=1)
+    # Kolik dětí vedle sebe uvnitř kontejneru. 1 = pod sebou (výchozí),
+    # víc = mřížka, aby dlaždice s údaji stály v řadě jako dřív.
+    sloupce: int = Field(default=1, ge=1, le=6)
+
+
+class VystupPrvek(BaseModel):
+    """Jeden prvek na papíře.
+
+    Prvek leží buď přímo na stránce (pak platí `x`/`y`), nebo v kontejneru –
+    tam se souřadnice ignorují a prvky stojí pod sebou v pořadí, v jakém jsou
+    v `deti`. Kontejner do kontejneru nepatří (hlídá validátor níž): jedna
+    úroveň vnoření stačí a chová se předvídatelně při tažení.
     """
 
-    id: str
-    druh: DruhBloku
+    id: str = Field(min_length=1, max_length=64)
+    druh: DruhPrvku
     viditelny: bool = True
-    nadpis: str = ""
-    text: str = ""
-    pole: list[str] = []
-    klic: str = ""
-    sirka: int = Field(default=SIRKA_PLNA, ge=1, le=SIRKA_PLNA)
+
+    x: float = Field(default=0, ge=MIN_SOURADNICE_MM, le=MAX_SOURADNICE_MM)
+    y: float = Field(default=0, ge=MIN_SOURADNICE_MM, le=MAX_SOURADNICE_MM)
+    sirka: float = Field(default=60, gt=0, le=MAX_SOURADNICE_MM)
+    vyska: float = Field(default=20, gt=0, le=MAX_SOURADNICE_MM)
+    # True = výška se řídí obsahem (text, kontejner), uložená `vyska` je jen
+    # poslední naměřená hodnota pro odhad přetečení.
+    auto_vyska: bool = True
+    z: int = Field(default=0, ge=0, le=9999)  # pořadí vrstev v rámci rodiče
+    zamceno: bool = False
+
+    styl: VystupStyl = VystupStyl()
+
+    html: str = ""  # jen druh text; sanitizuje se při ukládání
+    klic: str = Field(default="", max_length=64)  # druh udaj
+    pole: list[str] = []  # druh tabulka: vybrané sloupce
+    obrazek: str = Field(default="", max_length=255)  # relativní cesta v úložišti
+    popis: str = Field(default="", max_length=255)  # alt text obrázku
+
+    deti: list["VystupPrvek"] = []
+
+    @field_validator("deti")
+    @classmethod
+    def _hlidej_vnoreni(cls, deti: list["VystupPrvek"]) -> list["VystupPrvek"]:
+        if len(deti) > MAX_DETI_KONTEJNERU:
+            raise ValueError(f"Kontejner smí mít nejvýš {MAX_DETI_KONTEJNERU} prvků.")
+        for dite in deti:
+            if dite.druh == "kontejner":
+                raise ValueError("Kontejner nelze vložit do jiného kontejneru.")
+        return deti
+
+
+class VystupStranka(BaseModel):
+    """Jedna pevná A4 na výšku."""
+
+    id: str = Field(min_length=1, max_length=64)
+    prvky: list[VystupPrvek] = []
+
+    @field_validator("prvky")
+    @classmethod
+    def _hlidej_pocet(cls, prvky: list[VystupPrvek]) -> list[VystupPrvek]:
+        if len(prvky) > MAX_PRVKU_NA_STRANCE:
+            raise ValueError(f"Na stránce smí být nejvýš {MAX_PRVKU_NA_STRANCE} prvků.")
+        return prvky
+
+
+class VystupPas(BaseModel):
+    """Opakující se pruh (hlavička/zápatí) – pevný, jen zap/vyp a obsah."""
+
+    zobrazit: bool = True
+    text: str = Field(default="", max_length=500)
+
+
+class VystupVodoznak(BaseModel):
+    zobrazit: bool = True
+    pruhlednost: float = Field(default=0.07, ge=0, le=0.5)
 
 
 class VystupKonfigurace(BaseModel):
-    bloky: list[VystupBlok] = []
+    """Celý dokument nabídky: pevné A4 stránky s volně umístěnými prvky.
+
+    `verze` odděluje tenhle model od původního plochého seznamu bloků
+    v mřížce 12 sloupců. Starší uložené konfigurace se nemigrují – v době
+    přepisu byly v provozu jen tři a Dan zvolil čistý start; cokoli bez
+    `verze: 2` se zahodí a nahradí výchozí předlohou (viz sablona_katalog).
+    """
+
+    verze: Literal[2] = 2
+    stranky: list[VystupStranka] = []
+    hlavicka: VystupPas = VystupPas()
+    zapati: VystupPas = VystupPas()
+    vodoznak: VystupVodoznak = VystupVodoznak()
+
+    @field_validator("stranky")
+    @classmethod
+    def _hlidej_stranky(cls, stranky: list[VystupStranka]) -> list[VystupStranka]:
+        if len(stranky) > MAX_STRANEK:
+            raise ValueError(f"Nabídka smí mít nejvýš {MAX_STRANEK} stránek.")
+        return stranky
 
 
 class VystupSablonaOut(BaseModel):
-    """Pojmenovaná šablona rozvržení (bez zákaznických čísel)."""
+    """Pojmenovaná šablona rozvržení (bez zákaznických čísel).
+
+    `pouzitelna=False` znamená šablonu z původního modelu (plochý seznam bloků
+    v mřížce 12 sloupců). Nový editor ji otevřít neumí, ale v seznamu zůstává,
+    aby ji šlo aspoň smazat – jinak by v databázi uvízla navždy.
+    """
 
     id: int
     nazev: str
     konfigurace: VystupKonfigurace
     aktualizovano_at: Optional[str] = None
+    pouzitelna: bool = True
 
 
 class VystupSablonaZNabidky(BaseModel):
