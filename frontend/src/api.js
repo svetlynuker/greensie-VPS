@@ -729,6 +729,20 @@ export async function crmSlozkaNahraj(entita, zaznamId, soubor, folderId = null)
   return res.json();
 }
 
+// Hromadné akce nad vybranými záznamy (CRM-19). Vrací počty a u aktivit i plán,
+// kdo dostal jaký čas.
+export function crmHromadnyVlastnik(data) {
+  return zavolej("/crm/hromadne/vlastnik", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function crmHromadnyStav(data) {
+  return zavolej("/crm/hromadne/stav", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function crmHromadnaAktivita(data) {
+  return zavolej("/crm/hromadne/aktivita", { method: "POST", body: JSON.stringify(data) });
+}
+
 export function crmMujDen() {
   return zavolej("/crm/muj-den");
 }

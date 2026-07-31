@@ -1169,3 +1169,66 @@
 .ds-ikona {
   flex: 0 0 auto;
 }
+
+/* ---- hromadné akce nad seznamem (CRM-19) ---- */
+.crm-th-vyber,
+.crm-td-vyber {
+  width: 34px;
+  text-align: center;
+  padding-right: 0 !important;
+}
+.crm-radek-vybrany {
+  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 9%, transparent);
+}
+/* Lišta se ukáže až když je něco vybrané — prázdná by jen zabírala místo. */
+.ha {
+  margin-bottom: 10px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fm-brand, #2f9e44) 30%, transparent);
+  border-radius: var(--radius);
+}
+.ha-lista {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.ha-formular {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+/* Formulář plánování je delší — název dostane zbylé místo. */
+.ha-aktivita input[type="text"],
+.ha-aktivita .crm-pole:not(.crm-pole-uzke):not(.crm-pole-cislo) {
+  flex: 1;
+  min-width: 200px;
+}
+.ha-mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* Náhled plánu: krátký seznam časů, ať je vidět, co se založí. */
+.ha-plan {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--fm-brand, #2f9e44) 30%, transparent);
+}
+.ha-plan ul {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 2px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}

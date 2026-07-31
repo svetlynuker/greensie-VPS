@@ -27,6 +27,11 @@ export default function CrmTabulka({
   // Základ názvu exportovaného souboru („pripady" → pripady-2026-07-30.csv).
   // Bez něj se tlačítko exportu nekreslí.
   exportNazev = null,
+  // Výběr řádků pro hromadné akce (CRM-19). Bez `onVybrane` se sloupec
+  // se zaškrtávátky vůbec nekreslí — v seznamech, kde hromadné akce nejsou,
+  // by jen mátl.
+  vybrane = null,
+  onVybrane = null,
 }) {
   const [filtryOtevrene, setFiltryOtevrene] = useState(false);
 
@@ -50,6 +55,19 @@ export default function CrmTabulka({
       return;
     }
     onPodminky([...bez, { ...zmena, pole: klic, zdroj: "sloupec" }]);
+  }
+
+  const vyberAktivni = Boolean(onVybrane);
+  const vsechnyVybrane =
+    vyberAktivni && radky.length > 0 && radky.every((r) => vybrane?.includes(r.id));
+
+  function prepniRadek(id) {
+    const set = new Set(vybrane || []);
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    // Pořadí výběru se drží podle POŘADÍ V TABULCE, ne podle kliknutí — na něm
+    // závisí, komu vyjde jaký čas při plánování aktivit za sebou.
+    onVybrane(radky.filter((r) => set.has(r.id)).map((r) => r.id));
   }
 
   const filtrSloupce = (klic) =>
@@ -111,6 +129,19 @@ export default function CrmTabulka({
         <table className="crm-tabulka">
           <thead>
             <tr>
+              {vyberAktivni && (
+                <th className="crm-th-vyber">
+                  <input
+                    type="checkbox"
+                    checked={vsechnyVybrane}
+                    onChange={() =>
+                      onVybrane(vsechnyVybrane ? [] : radky.map((r) => r.id))
+                    }
+                    title={vsechnyVybrane ? "Odznačit vše" : "Označit vše, co je vidět"}
+                    aria-label="Označit vše"
+                  />
+                </th>
+              )}
               {sloupce.map((s) => {
                 const r = (razeni || []).find((x) => x.pole === s.klic);
                 const uroven = (razeni || []).findIndex((x) => x.pole === s.klic);
@@ -134,6 +165,7 @@ export default function CrmTabulka({
             </tr>
             {filtryOtevrene && (
               <tr className="crm-radek-filtru">
+                {vyberAktivni && <th />}
                 {sloupce.map((s) => (
                   <th key={s.klic}>
                     <FiltrSloupce
@@ -155,9 +187,24 @@ export default function CrmTabulka({
             {radky.map((radek) => (
               <tr
                 key={radek.id}
+                className={vybrane?.includes(radek.id) ? "crm-radek-vybrany" : undefined}
                 onClick={onOtevri ? () => onOtevri(radek) : undefined}
                 style={onOtevri ? undefined : { cursor: "default" }}
               >
+                {vyberAktivni && (
+                  <td
+                    className="crm-td-vyber"
+                    // Klik na zaškrtávátko nesmí otevřít detail řádku.
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={vybrane?.includes(radek.id) || false}
+                      onChange={() => prepniRadek(radek.id)}
+                      aria-label="Označit řádek"
+                    />
+                  </td>
+                )}
                 {sloupce.map((s) => (
                   <td key={s.klic} className={s.vpravo ? "crm-vpravo" : undefined}>
                     {vykresli
@@ -169,7 +216,7 @@ export default function CrmTabulka({
             ))}
             {radky.length === 0 && (
               <tr>
-                <td colSpan={sloupce.length} className="crm-prazdno">
+                <td colSpan={sloupce.length + (vyberAktivni ? 1 : 0)} className="crm-prazdno">
                   {prazdneHlaseni}
                 </td>
               </tr>

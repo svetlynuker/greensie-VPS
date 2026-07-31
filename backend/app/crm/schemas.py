@@ -460,6 +460,32 @@ class OpakovaniOut(BaseModel):
     instanci: int = 0
 
 
+class HromadnyVlastnikVstup(BaseModel):
+    entita: str = "op"
+    ids: list[int]
+    vlastnik_user_id: int
+
+
+class HromadnyStavVstup(BaseModel):
+    ids: list[int]
+    stav: str
+    duvod_prohry: str = ""
+
+
+class HromadnaAktivitaVstup(BaseModel):
+    """Hromadné založení aktivit. `retez=True` je naskládá za sebe."""
+
+    entita: str = "op"
+    ids: list[int]
+    druh: DruhAktivity = "telefon"
+    nazev: str
+    termin: str  # ISO den
+    cas: Optional[str] = None  # HH:MM; prázdné = celodenní úkol
+    delka_min: Optional[int] = None
+    retez: bool = True
+    vlastnik_user_id: Optional[int] = None
+
+
 class UdalostVstup(BaseModel):
     """Nová událost zakládaná z kalendáře.
 
