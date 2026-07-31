@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import ImportRaynet from "../components/ImportRaynet";
 import CrmTabulka from "../components/CrmTabulka";
 import FiltrPanel from "../components/FiltrPanel";
+import KpiPas from "../components/KpiPas";
+import OdkazRaynet from "../components/OdkazRaynet";
 import ZakaznikFormular from "../components/ZakaznikFormular";
 import { nactiMe, logout, crmVlastniPole, crmZakaznici } from "../api";
 import { POHLEDY_ZAKAZNIKU, fmtDatum } from "../crm";
@@ -32,6 +34,19 @@ export default function Zakaznici() {
 
   // Filtr a řazení; výchozí řazení klientů je podle názvu (číslo nemají).
   const f = pouzitFiltr("zakaznik", zakaznici || [], sloupce);
+
+  // KPI nad seznamem (CRM-22) — z vyfiltrovaných řádků, ať sedí s tabulkou.
+  // U firem nejde o peníze, ale o to, kde má obchod díru: firma bez případu
+  // je kontakt, se kterým se nic neděje, a firma bez vlastníka nemá nikoho,
+  // kdo by to změnil.
+  const kpi = useMemo(() => {
+    const r = f.radky || [];
+    return {
+      pocet: r.length,
+      bezPripadu: r.filter((z) => !z.pocet_pripadu).length,
+      bezVlastnika: r.filter((z) => !z.vlastnik_jmeno).length,
+    };
+  }, [f.radky]);
 
   const nacti = useCallback(
     async (dotaz = "") => {
@@ -142,6 +157,31 @@ export default function Zakaznici() {
         </div>
 
         {chyba && <div className="crm-chyba">{chyba}</div>}
+
+        {/* KPI nad seznamem (CRM-22) */}
+        <KpiPas
+          zobrazit={kpi.pocet > 0}
+          filtrovano={f.podminky.length > 0}
+          polozky={[
+            { klic: "pocet", hodnota: kpi.pocet, label: pohled === "lead" ? "leadů" : "klientů" },
+            kpi.bezPripadu > 0 && {
+              klic: "bez_pripadu",
+              hodnota: kpi.bezPripadu,
+              label: "bez případu",
+              tise: true,
+              title: "Firmy, u kterých zatím není žádný obchodní případ",
+            },
+            kpi.bezVlastnika > 0 && {
+              klic: "bez_vlastnika",
+              hodnota: kpi.bezVlastnika,
+              label: "bez vlastníka",
+              tise: true,
+              title: "Firmy, které nemá nikdo přiřazené",
+            },
+          ].filter(Boolean)}
+        />
+        {/* CRM-45 */}
+        <OdkazRaynet co="firmy" />
 
         <FiltrPanel
           entita="zakaznik"

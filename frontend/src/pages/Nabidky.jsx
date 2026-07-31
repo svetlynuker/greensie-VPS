@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import CrmTabulka from "../components/CrmTabulka";
 import FiltrPanel from "../components/FiltrPanel";
 import Kanban from "../components/Kanban";
+import KpiPas from "../components/KpiPas";
 import MigraceNabidek from "../components/MigraceNabidek";
 import StavyNastaveni from "../components/StavyNastaveni";
 import {
@@ -44,6 +45,18 @@ export default function Nabidky() {
 
   // Jeden filtr pro tabulku i kanban.
   const f = pouzitFiltr("nab", radky, sloupce);
+
+  // KPI nad seznamem (CRM-22). U nabídek nejde o součet — cena je až
+  // v objednávce; jde o to, co brzdí: nespočítaná nabídka se nedá poslat
+  // a nabídka bez případu nemá kam patřit.
+  const kpi = useMemo(() => {
+    const r = f.radky || [];
+    return {
+      pocet: r.length,
+      nespocitane: r.filter((n) => !n.spocitana).length,
+      bezPripadu: r.filter((n) => !n.pripad_id).length,
+    };
+  }, [f.radky]);
 
   const nacti = useCallback(async (dotaz = "") => {
     const [k, r, s, pole] = await Promise.all([
@@ -199,6 +212,28 @@ export default function Nabidky() {
         />
 
         {chyba && <div className="crm-chyba">{chyba}</div>}
+
+        {/* KPI nad seznamem (CRM-22). Platí i pro kanban — filtr je společný. */}
+        <KpiPas
+          zobrazit={kpi.pocet > 0}
+          filtrovano={f.podminky.length > 0}
+          polozky={[
+            { klic: "pocet", hodnota: kpi.pocet, label: "nabídek" },
+            kpi.nespocitane > 0 && {
+              klic: "nespocitane",
+              hodnota: kpi.nespocitane,
+              label: "nespočítaných",
+              tise: true,
+              title: "Nespočítanou nabídku není co poslat zákazníkovi",
+            },
+            kpi.bezPripadu > 0 && {
+              klic: "bez_pripadu",
+              hodnota: kpi.bezPripadu,
+              label: "bez případu",
+              tise: true,
+            },
+          ].filter(Boolean)}
+        />
 
         {zobrazeni === "kanban" ? (
           <Kanban

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import CrmTabulka from "../components/CrmTabulka";
 import FiltrPanel from "../components/FiltrPanel";
 import Kanban from "../components/Kanban";
+import KpiPas from "../components/KpiPas";
 import ObjednavkaFormular from "../components/ObjednavkaFormular";
 import StavyNastaveni from "../components/StavyNastaveni";
 import DuvodProhry from "../components/DuvodProhry";
@@ -45,6 +46,19 @@ export default function Objednavky() {
   const [chyba, setChyba] = useState(null);
 
   const f = pouzitFiltr("obj", radky, sloupce);
+
+  // KPI nad seznamem (CRM-22). Objednávka JE peníze, takže tady součet dává
+  // smysl; „bez projektu" je fronta práce, která se ještě nerozjela.
+  const kpi = useMemo(() => {
+    const r = f.radky || [];
+    const soucet = r.reduce((a, o) => a + (Number(o.cena_kc) || 0), 0);
+    return {
+      pocet: r.length,
+      soucet,
+      prumer: r.length ? soucet / r.length : 0,
+      bezProjektu: r.filter((o) => !o.ma_projekt).length,
+    };
+  }, [f.radky]);
 
   const nacti = useCallback(async (dotaz = "") => {
     const [k, r, s, pole] = await Promise.all([
@@ -200,6 +214,30 @@ export default function Objednavky() {
         />
 
         {chyba && <div className="crm-chyba">{chyba}</div>}
+
+        {/* KPI nad seznamem (CRM-22) */}
+        <KpiPas
+          zobrazit={kpi.pocet > 0}
+          filtrovano={f.podminky.length > 0}
+          // Odkaz jen tomu, kdo na Přehled financí smí — jinak by vedl na 403.
+          odkaz={
+            me.prava?.includes("finance")
+              ? { cesta: "/finance", text: "Přehled financí" }
+              : undefined
+          }
+          polozky={[
+            { klic: "pocet", hodnota: kpi.pocet, label: "objednávek" },
+            { klic: "soucet", pred: "celkem", hodnota: fmtKcKratce(kpi.soucet) },
+            { klic: "prumer", pred: "průměr", hodnota: fmtKcKratce(kpi.prumer) },
+            kpi.bezProjektu > 0 && {
+              klic: "bez_projektu",
+              hodnota: kpi.bezProjektu,
+              label: "bez projektu",
+              tise: true,
+              title: "Podepsané objednávky, ke kterým se ještě nerozjela realizace",
+            },
+          ].filter(Boolean)}
+        />
 
         {zobrazeni === "kanban" ? (
           <Kanban

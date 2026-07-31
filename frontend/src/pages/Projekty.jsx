@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import CrmTabulka from "../components/CrmTabulka";
 import FiltrPanel from "../components/FiltrPanel";
 import Kanban from "../components/Kanban";
+import KpiPas from "../components/KpiPas";
 import SablonyNastaveni from "../components/SablonyNastaveni";
 import StavyNastaveni from "../components/StavyNastaveni";
 import {
@@ -39,6 +40,20 @@ export default function Projekty() {
   const [chyba, setChyba] = useState(null);
 
   const f = pouzitFiltr("pro", radky, sloupce);
+
+  // KPI nad seznamem (CRM-22). U realizace nejde o peníze, ale o čas: co je
+  // po termínu, se musí řešit dnes, a průměrná hotovost říká, jak daleko
+  // projekty celkově jsou.
+  const kpi = useMemo(() => {
+    const r = f.radky || [];
+    return {
+      pocet: r.length,
+      poTerminu: r.filter((p) => (p.po_terminu || 0) > 0).length,
+      hotovoProcent: r.length
+        ? Math.round(r.reduce((a, p) => a + (Number(p.procent) || 0), 0) / r.length)
+        : 0,
+    };
+  }, [f.radky]);
 
   const nacti = useCallback(async (dotaz = "") => {
     const [k, r, pole] = await Promise.all([
@@ -173,6 +188,23 @@ export default function Projekty() {
         />
 
         {chyba && <div className="crm-chyba">{chyba}</div>}
+
+        {/* KPI nad seznamem (CRM-22) */}
+        <KpiPas
+          zobrazit={kpi.pocet > 0}
+          filtrovano={f.podminky.length > 0}
+          polozky={[
+            { klic: "pocet", hodnota: kpi.pocet, label: "projektů" },
+            { klic: "hotovo", pred: "hotovo průměrně", hodnota: `${kpi.hotovoProcent} %` },
+            kpi.poTerminu > 0 && {
+              klic: "po_terminu",
+              hodnota: kpi.poTerminu,
+              label: "s krokem po termínu",
+              tise: true,
+              title: "Projekty, ve kterých je aspoň jeden krok po termínu",
+            },
+          ].filter(Boolean)}
+        />
 
         {zobrazeni === "kanban" ? (
           <Kanban

@@ -117,7 +117,7 @@ zakázky, je zbytek seznamu odhad — ne zkušenost. Proto se nejdřív zapíná
 | Dávka | Obsah | Odhad | Proč právě tady |
 |---|---|---|---|
 | **A · Základ** ✅ | ~~CRM-01, CRM-03, CRM-25, CRM-13~~ — **hotovo 30. 7. 2026** | — | Hotové a otestované. Práva se **záměrně nepřidělují** (rozhodl Dan 30. 7. 2026: appku zatím staví a testuje jen s Claudem, CRM vidí pouze admini). |
-| **B · Ať vedení vidí čísla** ⚠️ | ~~CRM-39, CRM-40, CRM-43, CRM-16~~ — **hotovo 30. 7. 2026**; **CRM-22 a CRM-45 jen částečně** (zjištěno 31. 7. 2026, viz položky) | zbývá ~0,5 dne | Grafové komponenty už v appce jsou, data se v nich sečtou sama. Jediná věc, po které vedení pozná, že přechod z Raynetu má smysl. **CRM-41 a CRM-42 sem nepatří** — bez uzavřených obchodů v appce nemají co ukázat. |
+| **B · Ať vedení vidí čísla** ✅ | ~~CRM-39, CRM-40, CRM-43, CRM-16~~ — **hotovo 30. 7. 2026**; ~~CRM-22, CRM-45~~ — **doklepnuto 31. 7. 2026** | — | Grafové komponenty už v appce jsou, data se v nich sečtou sama. Jediná věc, po které vedení pozná, že přechod z Raynetu má smysl. **CRM-41 a CRM-42 sem nepatří** — bez uzavřených obchodů v appce nemají co ukázat. *Poučení: 31. 7. se ukázalo, že tabulka hlásila „hotovo" u dvou položek, které hotové nebyly — odškrtávat až po kontrole v kódu.* |
 | **C · Denní práce se zakázkou** ✅ | ~~CRM-05, CRM-19, CRM-30, CRM-24, CRM-27, CRM-18~~ — **hotovo 31. 7. 2026** | — | Odpracováno podle seznamu. Rezerva na to, „co vyleze z provozu", tím padla — až se appka začne používat naostro, přijdou věci, které v seznamu nejsou. |
 | **D · Peníze** ✅ | ~~CRM-08, CRM-09~~ — **hotovo 31. 7. 2026** | — | Zakázka projde celým řetězcem až k faktuře v appce. Katalog technologií se přitom stal katalogem produktů (244 položek z Raynetu, přílohy, zaškrtávátko Aktivní). |
 | **E · Komunikace** | CRM-36 → CRM-10 → CRM-32 | ~4 dny | V tomhle pořadí. Notifikace bez volby, co chci dostávat, je obtěžování. |
@@ -347,10 +347,14 @@ jinak přidělení nic neudělá.
 - [ ] **CRM-21 · Ganttův diagram projektu** — Velikost **L** · Dopad **★★**
   Kroky mají trvání i návaznosti, takže Gantt je nad nimi přirozený a ukáže kritickou cestu.
 
-- [~] **CRM-22 · KPI dlaždice nad seznamy** — Velikost **S** · Dopad **★★** · **částečně, dávka B**
-  Hotové jsou dlaždice nad **Obchodními případy** (`crm-kpi-pas`) a v Přehledu obchodu
-  (`gs-kpi`). **Zbývá:** Zákazníci, Nabídky, Objednávky a Projekty je nemají.
-  *Zjištěno 31. 7. 2026* — tabulka dávek tvrdila „hotovo", kód říká „jen na jednom seznamu".
+- [x] **CRM-22 · KPI dlaždice nad seznamy** — **hotovo 31. 7. 2026** (doklepnutí dávky B)
+  Pás nad seznamem má **všech pět** sekcí: Zákazníci, Obchodní případy, Nabídky, Objednávky,
+  Projekty. Vytaženo do sdílené komponenty `KpiPas.jsx` (dřív to bylo JSX jen v Případech).
+  *Dvě věci, na kterých to stojí:* čísla se počítají z **vyfiltrovaných** řádků (jinak by pás
+  tvrdil něco jiného, než je pod ním vidět — proto to napíše „(po filtru)"), a každá sekce
+  ukazuje **to, co ji brzdí**, ne všude totéž: firmy bez případu, nespočítané nabídky,
+  objednávky bez projektu, projekty s krokem po termínu. Peníze se sčítají jen tam, kde
+  existují (Případy, Objednávky).
 
 - [ ] **CRM-23 · Swimlanes v kanbanu** — Velikost **M** · Dopad **★**
   Řádky podle vlastníka (nebo kategorie) — vedení hned vidí, kdo má co rozjeté.
@@ -482,17 +486,18 @@ CRM nemá **ani jeden graf**, přitom grafové komponenty v appce existují (pro
   Avatary/iniciály vlastníka na dlaždicích, barevné zvýraznění případů po termínu v kanbanu,
   ikonky typů nabídek, počítadlo dní ve fázi na dlaždici.
 
-- [~] **CRM-45 · Přiznat, že Raynet ještě jede** — Velikost **S** · Dopad **★★★** · **částečně, dávka B**
-  *Stav k 31. 7. 2026:* hotová je věta u grafů v Přehledu obchodu („…dojíždí v Raynetu,
-  takže tohle není celý byznys firmy"). **Zbývá** odkaz v Zákaznících a Případech
-  a pravidlo v nápovědě — obojí je z původního zadání níž.
-  Vznikla rozhodnutím neimportovat. Appka se dnes tváří, jako by v ní byl celý byznys —
-  a přitom v ní budou jen nové zakázky, zatímco staré dojíždějí v Raynetu. Bez toho bude
-  **forecast a funnel v dávce B vypadat jako propad obchodu**, i když se nic nestalo.
-  *Co udělat:*
-  - u grafů a KPI napsat, od kterého data appka data má („zakázky založené od …")
-  - v Zákaznících a Případech viditelný odkaz „starší zakázky najdeš v Raynetu"
-  - jedno pravidlo v nápovědě: **nová věc = vždycky appka, do Raynetu se už nezakládá**
+- [x] **CRM-45 · Přiznat, že Raynet ještě jede** — **hotovo 31. 7. 2026** (doklepnutí dávky B)
+  Vznikla rozhodnutím neimportovat: appka se tvářila, jako by v ní byl celý byznys, a přitom
+  v ní budou jen nové zakázky, zatímco staré dojíždějí v Raynetu. Bez toho vypadá
+  **forecast a funnel jako propad obchodu**, i když se nic nestalo. Hotové je všechno ze
+  zadání:
+  - **u grafů** datum, od kdy appka data má (`statistiky.data_od` → věta v Přehledu obchodu),
+  - **v Zákaznících a Případech** pás `OdkazRaynet.jsx` s odkazem „Otevřít Raynet",
+  - **v nápovědě** (`docs/znalostni-baze/moduly/crm.md`) je to jako **první** kapitola
+    uživatelské části — ne schované vzadu, protože je to pravidlo, na kterém stojí zbytek.
+
+  *Pozor:* pás záměrně nese **obě** poloviny věty — „starší jsou v Raynetu" i „nové se
+  zakládají vždycky tady". Bez té druhé by lidé Raynet dál používali podle zvyku.
 
   *Volitelné později:* až Raynet dojede, jednorázově dotáhnout jen **historii uzavřených
   obchodů** (vyhráno/prohráno + důvod), aby CRM-41 a CRM-43 měly z čeho počítat. Není to

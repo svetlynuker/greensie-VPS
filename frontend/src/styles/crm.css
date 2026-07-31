@@ -1073,6 +1073,21 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Pás „Raynet ještě jede" (CRM-45). Vypadá jako KPI pás, ale je vědomě tišší —
+   je to poznámka k výkladu čísel, ne další číslo. */
+.crm-raynet-pas {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 7px 14px;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+  background: var(--surface-2, var(--surface));
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+
 /* ---- Můj den ---- */
 .md-seznam {
   list-style: none;
