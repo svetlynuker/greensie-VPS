@@ -6,6 +6,7 @@ import Ikona from "./Ikona";
 import Sidebar from "./Sidebar";
 import UserMenu from "./UserMenu";
 import GlobalniHledani from "./GlobalniHledani";
+import Zvonecek from "./Zvonecek";
 
 // Zúžení panelu si pamatujeme lokálně — je to volba zařízení (malý notebook),
 // ne uživatele, takže se do DB neposílá.
@@ -92,6 +93,8 @@ export default function Layout({ uzivatel, children }) {
           {kdo && (
             <>
               <GlobalniHledani />
+              {/* Zvoneček (CRM-10) — vedle hledání, před uživatelským menu. */}
+              <Zvonecek />
               <UserMenu uzivatel={kdo} prava={prava} />
             </>
           )}

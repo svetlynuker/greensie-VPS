@@ -6,6 +6,7 @@ import DuvodProhry from "../components/DuvodProhry";
 import PripadFormular from "../components/PripadFormular";
 import PripadNabidky from "../components/PripadNabidky";
 import PripadRealizace from "../components/PripadRealizace";
+import EmailOkno from "../components/EmailOkno";
 import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
 import VlastniPoleVypis from "../components/VlastniPoleVypis";
 import DiskSlozka from "../components/DiskSlozka";
@@ -49,6 +50,8 @@ export default function ObchodniPripadDetail() {
   const [historie, setHistorie] = useState([]);
   const [zalozka, setZalozka] = useState("prehled");
   const [upravuje, setUpravuje] = useState(false);
+  // Odeslání e-mailu z appky (CRM-10) – zapíše se k případu jako aktivita.
+  const [posilaEmail, setPosilaEmail] = useState(false);
   const [prohra, setProhra] = useState(null);
   const [spravaPoli, setSpravaPoli] = useState(false);
   const [chyba, setChyba] = useState(null);
@@ -186,6 +189,9 @@ export default function ObchodniPripadDetail() {
               </option>
             ))}
           </select>
+          <button className="fm-btn" onClick={() => setPosilaEmail(true)}>
+            ✉ Poslat e-mail
+          </button>
           <button className="fm-btn" onClick={() => setUpravuje(true)}>
             Upravit
           </button>
@@ -386,6 +392,17 @@ export default function ObchodniPripadDetail() {
           nazevObrazovky="Obchodní případy"
           onZavri={() => setSpravaPoli(false)}
           onZmena={nactiZnovu}
+        />
+      )}
+
+      {posilaEmail && (
+        <EmailOkno
+          entita="op"
+          zaznamId={p.id}
+          nazev={`${p.cislo}${p.nazev ? ` · ${p.nazev}` : ""}`}
+          onZavri={() => setPosilaEmail(false)}
+          // Po odeslání se detail přenačte, aby se e-mail objevil v aktivitách.
+          onOdeslano={nactiZnovu}
         />
       )}
 

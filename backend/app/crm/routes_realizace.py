@@ -25,6 +25,7 @@ from app.crm import fakturace as fakturace_modul
 from app.crm import kategorie as kategorie_modul
 from app.crm import projekty_kroky as kroky_modul
 from app.crm import stavy as stavy_modul
+from app.crm import notifikace as notifikace_modul
 from app.crm import vlastni_pole as pole_modul
 from app.crm.models import (
     ENTITY_FILTRU,
@@ -416,6 +417,9 @@ def uprav_objednavku(
     _vidi_pripad(db, o.obchodni_pripad_id, user)
 
     vlastnik, spolu = _vlastnictvi(db, vstup, user, zaznam=o)
+    # Jen nově přibylí vlastníci – viz notifikace.ohlas_prirazeni.
+    drivejsi = {o.vlastnik_user_id, *(o.spoluvlastnici or [])}
+    pribyli = [i for i in [vlastnik, *spolu] if i and i not in drivejsi]
     o.nazev = (vstup.nazev or "").strip()
     o.popis = vstup.popis or ""
     # Cena z formuláře je ruční zásah – kromě případu, kdy se rovná součtu
@@ -431,6 +435,9 @@ def uprav_objednavku(
     o.vlastnik_user_id = vlastnik
     o.spoluvlastnici = spolu
     o.extra = pole_modul.zpracuj(db, "obj", vstup.extra)
+    notifikace_modul.ohlas_prirazeni(
+        db, user, f"{o.cislo} · {o.nazev}".strip(" ·"), "/objednavky", pribyli
+    )
     db.commit()
     db.refresh(o)
     return _objednavka_detail(db, o, user)
@@ -470,6 +477,10 @@ def zmen_stav_objednavky(
                 entita="obj", zaznam_id=o.id, ze_stavu=puvodni,
                 do_stavu=novy.klic, zmenil_user_id=user.id,
             )
+        )
+        notifikace_modul.ohlas_zmenu_stavu(
+            db, user, f"{o.cislo} · {o.nazev}".strip(" ·"), "/objednavky",
+            novy.nazev, o.vlastnik_user_id, o.spoluvlastnici,
         )
     db.commit()
     db.refresh(o)
@@ -1030,6 +1041,8 @@ def uprav_projekt(
     _vidi_pripad(db, p.obchodni_pripad_id, user)
 
     vlastnik, spolu = _vlastnictvi(db, vstup, user, zaznam=p)
+    drivejsi = {p.vlastnik_user_id, *(p.spoluvlastnici or [])}
+    pribyli = [i for i in [vlastnik, *spolu] if i and i not in drivejsi]
     puvodni_zahajeni = p.zahajeni
     p.nazev = (vstup.nazev or "").strip()
     p.popis = vstup.popis or ""
@@ -1039,6 +1052,9 @@ def uprav_projekt(
     p.vlastnik_user_id = vlastnik
     p.spoluvlastnici = spolu
     p.extra = pole_modul.zpracuj(db, "pro", vstup.extra)
+    notifikace_modul.ohlas_prirazeni(
+        db, user, f"{p.cislo} · {p.nazev}".strip(" ·"), f"/projekty/detail/{p.id}", pribyli
+    )
     db.flush()
     if p.zahajeni != puvodni_zahajeni:
         kroky_modul.prepocitej_terminy(db, p)
@@ -1070,6 +1086,10 @@ def zmen_stav_projektu(
                 entita="pro", zaznam_id=p.id, ze_stavu=puvodni,
                 do_stavu=novy.klic, zmenil_user_id=user.id,
             )
+        )
+        notifikace_modul.ohlas_zmenu_stavu(
+            db, user, f"{p.cislo} · {p.nazev}".strip(" ·"), f"/projekty/detail/{p.id}",
+            novy.nazev, p.vlastnik_user_id, p.spoluvlastnici,
         )
     db.commit()
     db.refresh(p)

@@ -5,6 +5,7 @@ import DokumentUpload from "../components/DokumentUpload";
 import PeakShavingPanel from "../components/PeakShavingPanel";
 import PpaPanel from "../components/PpaPanel";
 import ProdejPanel from "../components/ProdejPanel";
+import EmailOkno from "../components/EmailOkno";
 import RozpisPolozek from "../components/RozpisPolozek";
 import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
 import VlastniPoleVstupy from "../components/VlastniPoleVstupy";
@@ -50,6 +51,8 @@ export default function NabidkaDetail() {
   // ne zvlášť – jinak by při chybě zůstala nabídka uložená jen napůl.
   const [extra, setExtra] = useState({});
   const [spravaPoli, setSpravaPoli] = useState(false);
+  // Odeslání nabídky zákazníkovi e-mailem (CRM-10).
+  const [posilaEmail, setPosilaEmail] = useState(false);
 
   function naplnFormular(n) {
     setNazev(n.zakaznik_nazev || "");
@@ -169,6 +172,9 @@ export default function NabidkaDetail() {
           <span className="nb-badge">{STAV_NABIDKY[nabidka.stav] || nabidka.stav}</span>
           <button className="fm-btn" onClick={() => setUpravaZakaznika((s) => !s)}>
             {upravaZakaznika ? "Zavřít údaje" : "Upravit zákazníka"}
+          </button>
+          <button className="fm-btn" onClick={() => setPosilaEmail(true)}>
+            ✉ Poslat e-mail
           </button>
           {/* Nabídka pro zákazníka (PDF) – jen tam, kde už je výpočet. */}
           {(nabidka.typ === "ppa" || nabidka.typ === "peak_shaving") && (
@@ -302,6 +308,16 @@ export default function NabidkaDetail() {
           </div>
         </details>
       </div>
+
+      {posilaEmail && (
+        <EmailOkno
+          entita="nab"
+          zaznamId={nabidka.id}
+          nazev={nabidka.cislo || `#${nabidka.id}`}
+          onZavri={() => setPosilaEmail(false)}
+          onOdeslano={() => nactiZnovu().then(naplnFormular)}
+        />
+      )}
 
       {spravaPoli && (
         <VlastniPoleNastaveni

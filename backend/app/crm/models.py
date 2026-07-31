@@ -1085,3 +1085,71 @@ class CrmUlozenyFiltr(Base):
     )
 
     vlastnik = relationship("User")
+
+
+class CrmNotifikace(Base):
+    """Notifikace v appce — to, co visí pod zvonečkem (CRM-10).
+
+    Proč vlastní tabulka a ne jen e-mail: e-mail si člověk odklikne a ztratí se
+    v poště, zatímco tady zůstane, dokud ho nepřečte, a dá se dohledat zpětně.
+    E-mail je jen druhý kanál téže události — řídí ho volba uživatele
+    (CRM-36, `crm/notifikace.py`).
+
+    `cesta` je adresa ve FRONTENDU (`/pripady/detail/12`), ne celé URL. Doménu
+    si domyslí e-mail z `APP_URL`; kdyby tu byla natvrdo, notifikace z náhledu
+    by odkazovaly na produkci.
+
+    Záznam se schválně **neváže cizím klíčem na entitu**, které se týká: úkol,
+    případ i nabídka mohou zmizet, ale zpráva „tohle ti bylo přiřazeno" má
+    v historii zůstat. Mrtvý odkaz je menší zlo než mazání historie.
+    """
+
+    __tablename__ = "crm_notifikace"
+
+    id = Column(Integer, primary_key=True, index=True)
+    uzivatel_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Klíč z `notifikace.UDALOSTI` – podle něj se pozná, co uživatel vypnul.
+    udalost = Column(String, nullable=False, index=True)
+    predmet = Column(String, nullable=False, default="", server_default="")
+    text = Column(Text, nullable=False, default="", server_default="")
+    cesta = Column(String, nullable=False, default="", server_default="")
+
+    precteno_at = Column(DateTime(timezone=True), nullable=True)
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    uzivatel = relationship("User")
+
+
+class CrmSablona(Base):
+    """Šablona e-mailu nebo poznámky (CRM-32).
+
+    Vzniklo to kvůli tomu, že OZ píše pořád dokola totéž („posílám nabídku",
+    „ozvu se příští týden"). Šablona je proto **předvyplnění, ne uzamčení** —
+    po vložení se text normálně edituje.
+
+    Zástupné symboly (`{{zakaznik}}`, `{{cislo}}`, `{{moje_jmeno}}`…) doplňuje
+    `crm/sablony.py`. Neznámý symbol se **nechává v textu**, ať je vidět, že se
+    nedoplnil — tiché smazání by poslalo zákazníkovi větu s dírou.
+    """
+
+    __tablename__ = "crm_sablony"
+
+    id = Column(Integer, primary_key=True, index=True)
+    druh = Column(String, nullable=False, index=True)  # "email" | "poznamka"
+    nazev = Column(String, nullable=False)
+    predmet = Column(String, nullable=False, default="", server_default="")
+    telo = Column(Text, nullable=False, default="", server_default="")
+    # Kde se šablona nabízí: klíč entity ("op", "nab"…) nebo prázdné = všude.
+    entita = Column(String, nullable=False, default="", server_default="")
+    aktivni = Column(Boolean, nullable=False, default=True, server_default="true")
+    poradi = Column(Integer, nullable=False, default=0, server_default="0")
+
+    vytvoril_user_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True
+    )
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    aktualizovano_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )

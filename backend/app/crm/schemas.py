@@ -1000,3 +1000,104 @@ class OdberneMistoPripaduVstup(BaseModel):
     """Přiřazení místa k obchodnímu případu. `null` = zrušit vazbu."""
 
     odberne_misto_id: Optional[int] = None
+
+
+# ---- notifikace (CRM-10, CRM-36) --------------------------------------------
+class NotifikaceOut(BaseModel):
+    """Řádek pod zvonečkem."""
+
+    id: int
+    udalost: str
+    predmet: str = ""
+    text: str = ""
+    cesta: str = ""
+    precteno: bool = False
+    vytvoreno_at: Optional[str] = None
+
+
+class NotifikaceSouhrnOut(BaseModel):
+    neprectenych: int = 0
+    zaznamy: list[NotifikaceOut] = []
+
+
+class NotifikacePrectenoVstup(BaseModel):
+    """Bez `ids` se označí za přečtené všechny nepřečtené."""
+
+    ids: Optional[list[int]] = None
+
+
+class UdalostOut(BaseModel):
+    """Položka katalogu událostí pro obrazovku Notifikace."""
+
+    klic: str
+    nazev: str
+    popis: str = ""
+    appka: bool = True
+    email: bool = False
+
+
+class NastaveniNotifikaciOut(BaseModel):
+    udalosti: list[UdalostOut] = []
+    # {klíč události: {"appka": bool, "email": bool}}
+    volby: dict = {}
+    # Bez nastaveného SMTP se e-maily neposílají – UI to musí říct nahlas,
+    # jinak si člověk zaškrtne e-mail a diví se, že nic nechodí.
+    email_funguje: bool = False
+
+
+class NastaveniNotifikaciVstup(BaseModel):
+    volby: dict = {}
+
+
+# ---- šablony (CRM-32) --------------------------------------------------------
+class SablonaOut(BaseModel):
+    id: int
+    druh: str
+    nazev: str
+    predmet: str = ""
+    telo: str = ""
+    entita: str = ""
+    aktivni: bool = True
+    poradi: int = 0
+
+
+class SablonaVstup(BaseModel):
+    druh: str = "email"
+    nazev: str
+    predmet: str = ""
+    telo: str = ""
+    entita: str = ""
+    aktivni: bool = True
+    poradi: int = 0
+
+
+class SymbolOut(BaseModel):
+    klic: str
+    popis: str
+
+
+class SablonyOut(BaseModel):
+    sablony: list[SablonaOut] = []
+    symboly: list[SymbolOut] = []
+
+
+class SablonaPouzitiOut(BaseModel):
+    """Šablona s už doplněnými symboly pro konkrétní záznam."""
+
+    predmet: str = ""
+    telo: str = ""
+
+
+# ---- odeslání e-mailu z appky (CRM-10) ---------------------------------------
+class EmailVstup(BaseModel):
+    komu: str
+    predmet: str
+    telo: str
+    # Zapsat odeslání jako aktivitu k záznamu (log komunikace).
+    entita: str = ""
+    zaznam_id: Optional[int] = None
+
+
+class EmailOut(BaseModel):
+    ok: bool = True
+    aktivita_id: Optional[int] = None

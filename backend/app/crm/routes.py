@@ -34,7 +34,9 @@ from app.crm import (
     diagramy as diagramy_modul,
     kategorie as kategorie_modul,
     nabidky_pipeline,
+    notifikace as notifikace_modul,
     odberna_mista as om_modul,
+    sablony as sablony_modul,
     stavy as stavy_modul,
     ukoly as ukoly_modul,
     vlastni_pole as pole_modul,
@@ -55,6 +57,7 @@ from app.crm.models import (
     CrmKategorie,
     CrmKategorieAktivity,
     CrmProjekt,
+    CrmSablona,
     CrmSerieAktivit,
     CrmStav,
     CrmStavHistorie,
@@ -82,14 +85,30 @@ from app.crm.schemas import (
     AktivitaVstup,
     AresOut,
     DiagramOut,
+    EmailOut,
+    EmailVstup,
+    HromadnaAktivitaVstup,
+    HromadnyStavVstup,
+    HromadnyVlastnikVstup,
+    KalendarOut,
+    KalendarUdalostOut,
     KanbanOut,
     KanbanSloupec,
+    KategorieAktivityOut,
+    KategorieAktivityVstup,
+    KategorieOut,
+    KategorieVstup,
+    KontaktOut,
+    KontaktVstup,
     NabidkaKanbanOut,
     NabidkaKanbanSloupec,
     NabidkaRadekOut,
     NabidkaZmenaStavuVstup,
-    KontaktOut,
-    KontaktVstup,
+    NastaveniNotifikaciOut,
+    NastaveniNotifikaciVstup,
+    NotifikaceOut,
+    NotifikacePrectenoVstup,
+    NotifikaceSouhrnOut,
     OdbernaMistaOut,
     OdberneMistoOut,
     OdberneMistoPripaduVstup,
@@ -98,20 +117,17 @@ from app.crm.schemas import (
     PripadRadekOut,
     PripadUprava,
     PripadVstup,
-    HromadnaAktivitaVstup,
-    HromadnyStavVstup,
-    HromadnyVlastnikVstup,
-    KalendarOut,
-    KalendarUdalostOut,
-    KategorieAktivityOut,
-    KategorieAktivityVstup,
-    KategorieOut,
-    KategorieVstup,
     RadaOut,
     RadaVstup,
+    SablonaOut,
+    SablonaPouzitiOut,
+    SablonaVstup,
+    SablonyOut,
     StavOut,
     StavVstup,
     StavyPoradi,
+    SymbolOut,
+    UdalostOut,
     UdalostVstup,
     UkolOut,
     UzivatelVolbaOut,
@@ -791,6 +807,11 @@ def uprav_pripad(
         p.zakaznik_id = novy.id
 
     vlastnik, spolu = _vlastnictvi(db, vstup, user, zaznam=p)
+    # Kdo je na případu NOVĚ – jen jim se ozve „máš to na starost" (CRM-10).
+    # Porovnává se před přepsáním; bez toho by notifikace chodila po každém
+    # uložení, i když se vlastníci nezměnili.
+    drivejsi = {p.vlastnik_user_id, *(p.spoluvlastnici or [])}
+    pribyli = [i for i in [vlastnik, *spolu] if i and i not in drivejsi]
     p.nazev = (vstup.nazev or "").strip()
     p.popis = vstup.popis or ""
     p.kategorie = _over_kategorie(db, list(vstup.kategorie or []))
@@ -808,6 +829,9 @@ def uprav_pripad(
     if novy_kod:
         p.raynet_code = novy_kod
 
+    notifikace_modul.ohlas_prirazeni(
+        db, user, f"{p.cislo} · {p.nazev}".strip(" ·"), f"/pripady/detail/{p.id}", pribyli
+    )
     db.commit()
     db.refresh(p)
     return _pripad_detail(db, p, user)
@@ -879,6 +903,15 @@ def zmen_stav_pripadu(
                 do_stavu=novy.klic,
                 zmenil_user_id=user.id,
             )
+        )
+        notifikace_modul.ohlas_zmenu_stavu(
+            db,
+            user,
+            f"{p.cislo} · {p.nazev}".strip(" ·"),
+            f"/pripady/detail/{p.id}",
+            novy.nazev,
+            p.vlastnik_user_id,
+            p.spoluvlastnici,
         )
     db.commit()
     db.refresh(p)
@@ -3143,3 +3176,267 @@ def odberna_mista_nabidky(
         return OdbernaMistaOut(zakaznik_id=0, zakaznik_nazev="", mista=[], muze_editovat=False)
     p = vyzaduj_zaznam(db.get(ObchodniPripad, n.obchodni_pripad_id), user, "Obchodní případ")
     return seznam_odbernych_mist("op", p.id, user, db)
+
+
+# ---- notifikace: zvoneček (CRM-10) ------------------------------------------
+def _notifikace_out(n) -> NotifikaceOut:
+    return NotifikaceOut(
+        id=n.id,
+        udalost=n.udalost,
+        predmet=n.predmet or "",
+        text=n.text or "",
+        cesta=n.cesta or "",
+        precteno=n.precteno_at is not None,
+        vytvoreno_at=_iso(n.vytvoreno_at),
+    )
+
+
+@router.get("/notifikace", response_model=NotifikaceSouhrnOut)
+def seznam_notifikaci(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Zvoneček: posledních pár zpráv včetně přečtených + počet nepřečtených.
+
+    Právo se tu nekontroluje schválně — notifikace jsou vždycky jen moje
+    a přijdou i na věci mimo CRM (např. přiřazení projektu).
+    """
+    zaznamy = notifikace_modul.posledni(db, user.id)
+    neprectenych = sum(1 for n in zaznamy if n.precteno_at is None)
+    return NotifikaceSouhrnOut(
+        neprectenych=neprectenych,
+        zaznamy=[_notifikace_out(n) for n in zaznamy],
+    )
+
+
+@router.post("/notifikace/precteno")
+def oznac_notifikace_precteno(
+    vstup: NotifikacePrectenoVstup,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    pocet = notifikace_modul.oznac_precteno(db, user.id, vstup.ids)
+    return {"ok": True, "oznaceno": pocet}
+
+
+# ---- notifikace: volba, co chci dostávat (CRM-36) ---------------------------
+@router.get("/notifikace/nastaveni", response_model=NastaveniNotifikaciOut)
+def nastaveni_notifikaci(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.mailer import email_nastaven
+
+    return NastaveniNotifikaciOut(
+        udalosti=[UdalostOut(**u) for u in notifikace_modul.UDALOSTI],
+        volby=notifikace_modul.volby(db, user.id),
+        email_funguje=email_nastaven(),
+    )
+
+
+@router.put("/notifikace/nastaveni", response_model=NastaveniNotifikaciOut)
+def uloz_nastaveni_notifikaci(
+    vstup: NastaveniNotifikaciVstup,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.mailer import email_nastaven
+
+    ulozene = notifikace_modul.uloz_volby(db, user.id, vstup.volby)
+    return NastaveniNotifikaciOut(
+        udalosti=[UdalostOut(**u) for u in notifikace_modul.UDALOSTI],
+        volby=ulozene,
+        email_funguje=email_nastaven(),
+    )
+
+
+# ---- šablony e-mailů a poznámek (CRM-32) ------------------------------------
+def _sablona_out(s) -> SablonaOut:
+    return SablonaOut(
+        id=s.id,
+        druh=s.druh,
+        nazev=s.nazev,
+        predmet=s.predmet or "",
+        telo=s.telo or "",
+        entita=s.entita or "",
+        aktivni=bool(s.aktivni),
+        poradi=s.poradi,
+    )
+
+
+@router.get("/sablony", response_model=SablonyOut)
+def seznam_sablon(
+    druh: str | None = Query(default=None),
+    entita: str | None = Query(default=None),
+    vse: bool = Query(default=False),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Šablony k použití. `vse=true` vrací i vypnuté – pro obrazovku správy."""
+    if vse:
+        q = db.query(CrmSablona)
+        if druh:
+            q = q.filter(CrmSablona.druh == druh)
+        polozky = q.order_by(CrmSablona.druh, CrmSablona.poradi, CrmSablona.id).all()
+    else:
+        polozky = sablony_modul.seznam(db, druh, entita)
+    return SablonyOut(
+        sablony=[_sablona_out(s) for s in polozky],
+        symboly=[SymbolOut(klic=k, popis=p) for k, p in sablony_modul.SYMBOLY],
+    )
+
+
+@router.get("/sablony/{sablona_id}/pouzit", response_model=SablonaPouzitiOut)
+def pouzij_sablonu(
+    sablona_id: int,
+    entita: str = Query(default=""),
+    zaznam_id: int | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Text šablony s doplněnými symboly. Co se nedoplní, zůstane jako `{{klic}}`."""
+    s = db.get(CrmSablona, sablona_id)
+    if s is None:
+        raise HTTPException(status_code=404, detail="Šablona neexistuje")
+    hodnoty = sablony_modul.hodnoty(db, entita, zaznam_id, user)
+    return SablonaPouzitiOut(
+        predmet=sablony_modul.doplnil(s.predmet, hodnoty),
+        telo=sablony_modul.doplnil(s.telo, hodnoty),
+    )
+
+
+@router.post("/sablony", response_model=SablonaOut)
+def pridej_sablonu(
+    vstup: SablonaVstup,
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    if vstup.druh not in sablony_modul.DRUHY:
+        raise HTTPException(status_code=422, detail=f"Neznámý druh šablony: {vstup.druh}")
+    if not vstup.nazev.strip():
+        raise HTTPException(status_code=422, detail="Šablona musí mít název.")
+    s = CrmSablona(
+        druh=vstup.druh,
+        nazev=vstup.nazev.strip(),
+        predmet=vstup.predmet.strip(),
+        telo=vstup.telo,
+        entita=vstup.entita.strip(),
+        aktivni=vstup.aktivni,
+        poradi=vstup.poradi,
+        vytvoril_user_id=user.id,
+    )
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    return _sablona_out(s)
+
+
+@router.put("/sablony/{sablona_id}", response_model=SablonaOut)
+def uprav_sablonu(
+    sablona_id: int,
+    vstup: SablonaVstup,
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    s = db.get(CrmSablona, sablona_id)
+    if s is None:
+        raise HTTPException(status_code=404, detail="Šablona neexistuje")
+    if vstup.druh not in sablony_modul.DRUHY:
+        raise HTTPException(status_code=422, detail=f"Neznámý druh šablony: {vstup.druh}")
+    s.druh = vstup.druh
+    s.nazev = vstup.nazev.strip()
+    s.predmet = vstup.predmet.strip()
+    s.telo = vstup.telo
+    s.entita = vstup.entita.strip()
+    s.aktivni = vstup.aktivni
+    s.poradi = vstup.poradi
+    db.commit()
+    db.refresh(s)
+    return _sablona_out(s)
+
+
+@router.delete("/sablony/{sablona_id}")
+def smaz_sablonu(
+    sablona_id: int,
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    s = db.get(CrmSablona, sablona_id)
+    if s is None:
+        raise HTTPException(status_code=404, detail="Šablona neexistuje")
+    db.delete(s)
+    db.commit()
+    return {"ok": True}
+
+
+# ---- odeslání e-mailu z appky (CRM-10) --------------------------------------
+@router.post("/email", response_model=EmailOut)
+def posli_email_z_appky(
+    vstup: EmailVstup,
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Pošle e-mail zákazníkovi a **zapíše ho k záznamu jako aktivitu**.
+
+    Zápis do logu komunikace je vlastní důvod, proč se maily posílají z appky
+    a ne z Outlooku: jinak nikdo nedohledá, co už zákazníkovi odešlo.
+    Aktivita se ukládá **až po úspěšném odeslání** — záznam „odesláno" u něčeho,
+    co neodešlo, je horší než žádný záznam.
+
+    Odesílatelem je **firemní schránka**, ne osobní; v podpisu je jméno autora,
+    aby zákazník věděl, s kým mluví. Vlastní schránky by znamenaly ukládat
+    hesla lidí, což nechceme.
+    """
+    from app.mailer import email_nastaven, posli_email
+
+    komu = (vstup.komu or "").strip()
+    if "@" not in komu:
+        raise HTTPException(status_code=422, detail="Vyplň platnou e-mailovou adresu příjemce.")
+    predmet = (vstup.predmet or "").strip()
+    if not predmet:
+        raise HTTPException(status_code=422, detail="E-mail musí mít předmět.")
+    telo = (vstup.telo or "").strip()
+    if not telo:
+        raise HTTPException(status_code=422, detail="E-mail nemůže být prázdný.")
+    if not email_nastaven():
+        raise HTTPException(
+            status_code=422,
+            detail="Odesílání e-mailů není nastavené (chybí SMTP_HESLO v .env na serveru).",
+        )
+
+    podpis = f"\n\n--\n{user.jmeno or ''}\nGreensie s.r.o.".rstrip()
+    try:
+        posli_email(komu, predmet, f"{telo}{podpis}")
+    except Exception as e:  # noqa: BLE001 - chybu chce uživatel vidět, ne v logu
+        raise HTTPException(status_code=502, detail=f"E-mail se nepodařilo odeslat: {e}")
+
+    aktivita_id = None
+    if vstup.entita and vstup.zaznam_id:
+        _over_pristup_k_zaznamu(db, vstup.entita, vstup.zaznam_id, user)
+        a = CrmAktivita(
+            entita=vstup.entita,
+            zaznam_id=vstup.zaznam_id,
+            druh="email",
+            nazev=f"Odesláno: {predmet}",
+            text=f"Komu: {komu}\n\n{telo}",
+            stav="realizovano",
+            vlastnik_user_id=user.id,
+            vytvoril_user_id=user.id,
+        )
+        db.add(a)
+        db.flush()
+        aktivita_id = a.id
+        # Potvrzení „opravdu to odešlo" – u nabídky je to jediná zpětná vazba,
+        # že si zákazník má co otevřít.
+        if vstup.entita == "nab":
+            notifikace_modul.posli(
+                db,
+                user,
+                "nabidka_odeslana",
+                f"Nabídka odešla na {komu}",
+                predmet,
+                f"/nabidkovac/nabidka/{vstup.zaznam_id}",
+            )
+        db.commit()
+
+    return EmailOut(ok=True, aktivita_id=aktivita_id)
