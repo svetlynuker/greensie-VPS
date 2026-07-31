@@ -78,3 +78,22 @@ def test_seznam_routeru_odpovida_mainu():
         f"main.py registruje {pocet_v_mainu} routerů, ale test hlídá "
         f"{len(MODULY_ROUTERU)}. Doplň chybějící do MODULY_ROUTERU."
     )
+
+
+# ---- kolize NÁZVŮ schémat ----------------------------------------------------
+# Druhá polovina téže chyby z 31. 7. 2026: kromě cesty se srazily i názvy tříd.
+# `class SablonaOut` pro šablony textů tiše přepsal `SablonaOut` projektových
+# šablon o 200 řádků výš — Python nic neřekne, ale endpointy, které staršího
+# schématu používají, začnou padat na 500 (chybí jim pole).
+def test_v_modulu_schemat_nejsou_dve_tridy_stejneho_jmena():
+    import ast
+    import pathlib
+
+    for soubor in sorted(pathlib.Path("app").rglob("schemas.py")):
+        strom = ast.parse(soubor.read_text(encoding="utf-8"))
+        jmena = [u.name for u in strom.body if isinstance(u, ast.ClassDef)]
+        duplicity = sorted({j for j in jmena if jmena.count(j) > 1})
+        assert not duplicity, (
+            f"{soubor}: dvě třídy stejného jména – ta pozdější tiše přepíše dřívější: "
+            + ", ".join(duplicity)
+        )
