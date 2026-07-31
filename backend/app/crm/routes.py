@@ -24,6 +24,7 @@ from app.crm import ares as ares_modul
 from app.crm import (
     ciselne_rady,
     hromadne as hromadne_modul,
+    povinna_pole as povinna_pole_modul,
     nastaveni_crm,
     statistiky as statistiky_modul,
     kalendar,
@@ -817,6 +818,20 @@ def zmen_stav_pripadu(
     if p.stav == novy.klic and not vstup.duvod_prohry:
         return _pripad_detail(db, p, user)
 
+    # CRM-30: pole povinná pro přechod do cílového stavu. Hlídá se PŘECHOD,
+    # ne uložení — případ se zakládá rozpracovaný a nutit cenu hned při vzniku
+    # by lidi jen otravovalo (psali by tam nuly).
+    chybi = povinna_pole_modul.chybejici(db, p, novy.klic)
+    if chybi:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Do stavu {novy.nazev} nejde přejít, dokud nevyplníš: "
+                + ", ".join(chybi)
+                + "."
+            ),
+        )
+
     duvod = (vstup.duvod_prohry or "").strip()
     if novy.druh == "prohra" and not duvod and not (p.duvod_prohry or "").strip():
         raise HTTPException(
@@ -1446,6 +1461,7 @@ def _stav_out(s: CrmStav) -> StavOut:
         poradi=s.poradi,
         barva=s.barva or "",
         druh=s.druh,
+        povinna_pole=list(s.povinna_pole or []),
     )
 
 
@@ -1468,6 +1484,28 @@ def _klic_ze_nazvu(db: Session, entita: str, nazev: str) -> str:
         klic = f"{zaklad}_{i}"
         i += 1
     return klic
+
+
+def _over_povinna_pole(db: Session, klice: list[str]) -> list[str]:
+    """Zahodí klíče, které neodpovídají žádnému poli.
+
+    Pole se dá smazat (vlastní pole), takže by v nastavení stavu jinak zůstal
+    klíč, který nikdo nevyplní — a případ by nešlo posunout nikdy.
+    """
+    platne = {p["klic"] for p in povinna_pole_modul.dostupna_pole(db)}
+    return [k for k in dict.fromkeys(klice or []) if k in platne]
+
+
+@router.get("/stavy-pole")
+def seznam_poli_pro_povinnost(
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    """Co všechno lze u stavu označit jako povinné (systémová + vlastní pole).
+
+    Skládá se za běhu, takže vlastní pole se v nabídce objeví hned, jak vzniknou.
+    """
+    return povinna_pole_modul.dostupna_pole(db)
 
 
 @router.get("/stavy/{entita}", response_model=list[StavOut])
@@ -1534,6 +1572,8 @@ def uprav_stav(
     s.nazev = nazev
     s.barva = (vstup.barva or "").strip()
     s.druh = vstup.druh
+    if vstup.povinna_pole is not None:
+        s.povinna_pole = _over_povinna_pole(db, vstup.povinna_pole)
     if vstup.poradi is not None:
         s.poradi = vstup.poradi
     db.commit()

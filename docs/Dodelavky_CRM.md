@@ -309,7 +309,14 @@ Co běžná CRM mají navíc:
 
 ## 6. Modifikace a konfigurace
 
-- [ ] **CRM-30 · Povinná pole podle stavu** — Velikost **M** · Dopad **★★**
+- [x] **CRM-30 · Povinná pole podle stavu** — **hotovo 31. 7. 2026** (dávka C)
+  U každého stavu pipeline se zaškrtne, co musí být vyplněné pro přechod do něj. Zadání
+  Dana: **jakékoli editovatelné pole, stávající i budoucí** — proto se seznam skládá za
+  běhu (systémová pole z jedné deklarace v `povinna_pole.py` + vlastní pole z DB, ta se
+  v nabídce objeví hned jak vzniknou). Kromě políček jdou vynutit i vazby („aspoň jedna
+  nabídka", „kontaktní osoba u zákazníka").
+  *Hlídá se PŘECHOD, ne uložení:* případ se zakládá rozpracovaný a nutit cenu hned při
+  vzniku by lidi otravovalo (psali by tam nuly). Kontrola platí i pro hromadnou změnu stavu.
   „Bez ceny nesmíš dát *Nabídka odeslána*", „bez data podpisu ne *Podepsaná*". Dnes hlídáme
   jen důvod prohry a zrušení.
 

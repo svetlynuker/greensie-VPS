@@ -1232,3 +1232,20 @@
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- povinná pole u stavu (CRM-30) ---- */
+/* Rozbalený panel zabírá celou šířku řádku stavů, aby se checkboxy vešly
+   do sloupců a nemusely se mačkat vedle tlačítek. */
+.crm-povinna {
+  flex-basis: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--muted) 6%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.crm-povinna-mrizka {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 2px 14px;
+}

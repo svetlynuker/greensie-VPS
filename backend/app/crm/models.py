@@ -290,6 +290,10 @@ class CrmStav(Base):
     poradi = Column(Integer, nullable=False, default=0, server_default="0")
     barva = Column(String, nullable=False, default="", server_default="")  # token nebo hex
     druh = Column(String, nullable=False, default="otevreny", server_default="otevreny")
+    # Klíče polí, které musí být vyplněné, aby se záznam do tohoto stavu dostal
+    # (CRM-30). Prázdné = bez podmínek. Seznam, ne pevné sloupce, protože jde
+    # o „jakékoli pole včetně budoucích" — viz `povinna_pole.py`.
+    povinna_pole = Column(ARRAY(String), nullable=False, default=list, server_default="{}")
 
     vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 

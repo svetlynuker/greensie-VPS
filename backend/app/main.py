@@ -271,6 +271,13 @@ def _lehka_migrace():
         conn.execute(
             text("CREATE INDEX IF NOT EXISTS ix_crm_aktivity_serie ON crm_aktivity (serie_id)")
         )
+        # CRM-30: povinná pole pro přechod do stavu.
+        conn.execute(
+            text(
+                "ALTER TABLE crm_stavy ADD COLUMN IF NOT EXISTS povinna_pole "
+                "VARCHAR[] NOT NULL DEFAULT '{}'"
+            )
+        )
         # Soukromá událost nemá klienta ani případ, takže obojí musí být
         # nepovinné. IF EXISTS obalení není potřeba – DROP NOT NULL je
         # idempotentní.

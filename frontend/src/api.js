@@ -779,6 +779,11 @@ export function crmStavy(entita) {
   return zavolej(`/crm/stavy/${entita}`);
 }
 
+// Co lze u stavu označit jako povinné (systémová + vlastní pole, CRM-30).
+export function crmStavyPole() {
+  return zavolej("/crm/stavy-pole");
+}
+
 export function crmStavPridej(entita, data) {
   return zavolej(`/crm/stavy/${entita}`, { method: "POST", body: JSON.stringify(data) });
 }

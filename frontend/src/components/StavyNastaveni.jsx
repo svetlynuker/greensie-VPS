@@ -18,6 +18,7 @@ import {
   crmStavSmaz,
   crmStavUprav,
   crmStavy,
+  crmStavyPole,
   crmStavyPoradi,
 } from "../api";
 
@@ -65,6 +66,10 @@ export default function StavyNastaveni({ entita, onZavri, onZmena }) {
   const [stitky, setStitky] = useState(null);
   const [novyStitek, setNovyStitek] = useState({ nazev: "", barva: "#b9e6c9" });
   const [naseAdresa, setNaseAdresa] = useState("");
+  // CRM-30: která pole lze označit jako povinná, a u kterého stavu je právě
+  // rozbalené nastavení.
+  const [pole, setPole] = useState([]);
+  const [rozbaleny, setRozbaleny] = useState(null);
   const [chyba, setChyba] = useState(null);
 
   // Kategorie se spravují jen u obchodního případu – u nabídky, objednávky
@@ -89,14 +94,16 @@ export default function StavyNastaveni({ entita, onZavri, onZmena }) {
       entita === "op" ? crmKategorie().catch(() => []) : Promise.resolve(null),
       entita === "op" ? crmKategorieAktivit().catch(() => []) : Promise.resolve(null),
       entita === "op" ? crmNastaveni().catch(() => null) : Promise.resolve(null),
+      crmStavyPole().catch(() => []),
     ])
-      .then(([s, r, n, k, st, nast]) => {
+      .then(([s, r, n, k, st, nast, pol]) => {
         setStavy(s);
         setRady(r);
         setNavrh(n);
         setKategorie(k);
         setStitky(st);
         setNaseAdresa(nast?.nase_adresa || "");
+        setPole(pol || []);
       })
       .catch((e) => setChyba(e.message));
   }, [entita]);
@@ -123,6 +130,7 @@ export default function StavyNastaveni({ entita, onZavri, onZmena }) {
         nazev: zmeny.nazev ?? s.nazev,
         barva: zmeny.barva ?? s.barva,
         druh: zmeny.druh ?? s.druh,
+        povinna_pole: zmeny.povinna_pole ?? s.povinna_pole ?? [],
       });
       await nacti();
       onZmena?.();
@@ -345,12 +353,52 @@ export default function StavyNastaveni({ entita, onZavri, onZmena }) {
                     ↓
                   </button>
                   <button
+                    className={`fm-btn crm-btn-maly ${
+                      (s.povinna_pole || []).length ? "fm-primary" : ""
+                    }`}
+                    onClick={() => setRozbaleny(rozbaleny === s.id ? null : s.id)}
+                    title="Pole povinná pro přechod do tohoto stavu"
+                  >
+                    Povinné
+                    {(s.povinna_pole || []).length ? ` (${s.povinna_pole.length})` : ""}
+                  </button>
+                  <button
                     className="fm-btn crm-btn-maly crm-btn-smazat"
                     onClick={() => smaz(s)}
                     title="Smazat stav"
                   >
                     ✕
                   </button>
+                  {rozbaleny === s.id && (
+                    <div className="crm-povinna">
+                      <p className="crm-tise" style={{ margin: "0 0 6px" }}>
+                        Bez těchto polí se případ do stavu <b>{s.nazev}</b> nedostane.
+                        Kontroluje se až přechod, ne uložení — případ se zakládá
+                        rozpracovaný.
+                      </p>
+                      <div className="crm-povinna-mrizka">
+                        {pole.map((f) => {
+                          const zapnuto = (s.povinna_pole || []).includes(f.klic);
+                          return (
+                            <label key={f.klic} className="crm-zaskrtavaci">
+                              <input
+                                type="checkbox"
+                                checked={zapnuto}
+                                onChange={() => {
+                                  const set = new Set(s.povinna_pole || []);
+                                  if (zapnuto) set.delete(f.klic);
+                                  else set.add(f.klic);
+                                  uprav(s, { povinna_pole: [...set] });
+                                }}
+                              />
+                              {f.nazev}
+                              {f.vlastni && <span className="crm-tise"> · vlastní pole</span>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
