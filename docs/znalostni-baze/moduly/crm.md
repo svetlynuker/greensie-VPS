@@ -599,6 +599,47 @@ znakem **∑**.
 > Výsledek se **přepočítává při každém zobrazení**, neukládá se. Když se změní cena, marže
 > se změní sama — nemůže se stát, že by na kartě svítilo staré číslo.
 
+### Automatizace: co appka udělá sama
+Některé kroky se dělají pokaždé stejně: případ se vyhraje → založí se objednávka; objednávka
+se podepíše → založí se projekt s kroky; nabídka odejde → za týden se má zavolat. Tohle za
+tebe udělá appka, pokud je k tomu nastavené **pravidlo**.
+
+> 📸 SCREENSHOT: Nastavení → Automatizace, seznam pravidel s vypínačem a historií běhů
+
+Jak to poznáš, když se to stane:
+
+- **U záznamu se objeví poznámka** „Automatizace: Založena objednávka OBJ-26-0003 — pravidlo
+  *Případ vyhrán → objednávka*". Takže je vždycky vidět, že to nebyl člověk.
+- Při **hromadné změně stavu** se nad seznamem vypíše, co všechno appka založila.
+
+Tři věci, které je dobré vědět dopředu:
+
+1. **Pravidlo zabere u jednoho záznamu jen jednou.** Když případ vrátíš z *Vyhráno* zpátky
+   a znovu ho vyhraješ, druhá objednávka nevznikne. Není to chyba — je to ochrana, aby
+   zákazník nedostal dvě objednávky na tutéž zakázku.
+2. **Když už objednávka (nebo projekt) existuje, automatika nic nezaloží.** Druhá objednávka
+   na jednu zakázku je vždycky lidské rozhodnutí, tak ji založ ručně.
+3. **Ručně to jde pořád stejně.** Automatika tlačítka nenahrazuje, jen ubírá klikání.
+
+**Nastavení** (Nastavení → Automatizace) patří správci nastavení. Pravidlo se skládá ze tří
+vět: *když se přesune* (případ / nabídka / objednávka / projekt) — *do stavu* — *tak appka*
+(založ objednávku / založ projekt ze šablony / založ úkol s termínem).
+
+> **Nové pravidlo se zakládá vypnuté** a appka s ním nabízí trojici hotových pravidel, taky
+> vypnutých. Nejdřív si je projdi, pak zapni — automatika, kterou nikdo nečekal, dělá
+> v evidenci větší nepořádek než ruční práce.
+
+U akce **založ projekt ze šablony** se dá šablona nechat na *„podle kategorie případu"* —
+FVE případ pak dostane FVE šablonu, peak shaving tu svoji, a stačí jedno pravidlo pro celou
+firmu.
+
+U akce **založ úkol** se nastaví, za kolik dní má být termín, jak se úkol jmenuje a kdo ho
+dostane (výchozí je vlastník záznamu). Úkol se pak objeví v *Mých úkolech* i v kalendáři.
+
+**Když chceš pravidlo zastavit, vypni ho — nemaž ho.** Historie běhů je jediné vysvětlení,
+odkud se vzaly staré automaticky založené záznamy; smazáním pravidla o něj přijdeš (samotné
+objednávky a projekty zůstanou).
+
 ### Prohra: proč se appka ptá na důvod
 Při přesunu případu do **prohraného** stavu se objeví dotaz na důvod (cena, konkurence,
 odložená investice…). Bez důvodu prohru uložit nelze. Není to šikana: bez důvodů proher
@@ -771,6 +812,40 @@ případu** (vznikla přímo v nabídkovači) vidí jen její autor a kdokoli s 
 Kanban sekce Nabídky používá **tutéž komponentu** jako kanban případů; liší se jen render
 dlaždice (`dlazdice` prop). Dva kanbany by se rozešly.
 
+### Automatizace: jak to funguje uvnitř
+`app/crm/automatizace.py`. Volá se z **pěti míst**, kde se mění stav: `zmen_stav_pripadu`,
+`zmen_stav_nabidky` (oba `crm/routes.py`), `zmen_stav_objednavky`, `zmen_stav_projektu`
+(`crm/routes_realizace.py`) a `hromadne.zmen_stav`. Hromadná akce je v tom seznamu schválně —
+kdyby automatiku obcházela, byla by to tichá zadní vrátka („u jednoho případu objednávka
+vznikne, u deseti ne").
+
+Čtyři věci, na kterých to stojí, a každá se dá udělat špatně tak, že to vypadá funkčně:
+
+1. **Chyba akce se řeší SAVEPOINTEM, ne `db.rollback()`.** Automatika běží uvnitř transakce,
+   která už nese změnu stavu od člověka. Rollback by ji zahodil: appka odpoví OK a případ
+   zůstane v původním sloupci. Savepoint (`db.begin_nested()`) vrátí jen to, co nastihla
+   spáchat spadlá akce. Hlídá `test_selhani_akce_nezrusi_predchozi_zmeny`.
+2. **Před savepointem se flushuje.** Změna stavu je v session ještě neuložená; kdyby ji
+   poprvé zapsal až flush *uvnitř* akce, patřila by do savepointu a rollback by ji vzal
+   s sebou. Nespoléhat se na autoflush hlídá `test_zmena_stavu_prezije_i_bez_autoflushe`.
+3. **„Jednou na záznam" hlídá unikátní index na `crm_pravidlo_behy`**, ne kontrola „existuje
+   už objednávka?". Ta by u úkolů nefungovala (úkol může vzniknout i jinak) a případ vrácený
+   z výhry a znovu vyhraný by vyrobil druhou objednávku.
+4. **Zapisuje se i přeskočení a chyba.** Jen úspěch v logu by znamenal, že tiché selhání
+   vypadá jako „pravidlo se nikdy nespustilo" a nikdo by ho nehledal.
+
+Cena objednávky se bere **tou samou funkcí** jako u ručního zakládání (`_cena_z_nabidky`) —
+druhá implementace by znamenala, že automaticky a ručně založená objednávka mají jinou cenu.
+
+Katalog akcí (`AKCE`) i nabídku stavů dodává endpoint `/crm/automatizace/akce`, ne konstanta
+ve frontendu: stavy jsou konfigurovatelné, takže zadrátovaný seznam by po přeskládání kanbanu
+nabízel fáze, které neexistují. Přidání akce = záznam v `AKCE` + funkce `_akce_<klic>`;
+`test_kazda_akce_ma_vykonavace` hlídá, že se to nerozejde.
+
+Výchozí pravidla (`seed_pravidla`) se zakládají **`aktivni=False`** a seed sahá jen do úplně
+prázdné tabulky. Automatika, která po nasazení začne sama zakládat záznamy, je přesně to, co
+lidem vezme důvěru v appku.
+
 ### Vlastní pole: jak to funguje uvnitř
 Stejný princip, jaký appka už používá pro vlastní sloupce katalogu technologií
 (`KatalogSloupec` + `Technologie.extra`):
@@ -822,6 +897,8 @@ Práva: **čtení definic** smí každý, kdo vidí CRM (z definic se kreslí fo
 | `crm_projekt_kroky` | kroky projektu; `zavisi_na_id` je skutečná návaznost mezi kroky |
 | `crm_projekt_sablony`, `crm_projekt_sablona_kroky` | šablony kroků; návaznost drží **pořadí** předchůdce, ne id |
 | `crm_ulozene_filtry` | uživatelské filtry: podmínky a řazení jako JSONB, příznaky sdílený/výchozí |
+| `crm_pravidla` | automatizace: spouštěč (`spoust_entita` + `spoust_stav`), `akce` a její parametry v JSONB `nastaveni`, vypínač `aktivni` |
+| `crm_pravidlo_behy` | co pravidlo u kterého záznamu udělalo; unikátní `(pravidlo_id, entita, zaznam_id)` je to, co brání druhému spuštění |
 
 Na `nabidky` (nabídkovač) přibyly dva sloupce: **`cislo`** (`NAB-26-NNNN`) a
 **`obchodni_pripad_id`**. Obojí je nullable schválně — nabídkovač jde pořád otevřít samostatně
@@ -851,6 +928,10 @@ i na výpočet nabídky (`typ_nabidky`) řeší ta tabulka.
 | Termín kroku se nepřepočítal | Je zadaný ručně (`ruční` u termínu). Vrať ho do automatu odkazem u pole. |
 | Objednávku nelze smazat | Vznikl z ní projekt. Smaž nejdřív projekt. |
 | Přehled projektů zmizel z `/projekty` | Je na `/prehled-projektu` — adresu převzala CRM realizace. |
+| Pravidlo automatizace je zapnuté, ale nic neudělalo | Tři možnosti: (a) u toho záznamu už jednou zabralo — v historii pravidla je řádek, (b) objednávka/projekt už existuje (v logu „Nebylo co udělat"), (c) pravidlo míří na stav, který v nastavení kanbanu už není. |
+| V historii pravidla je „Chyba" | Podrobnost je v logu aplikace (`journalctl -u greensie-backend`). Změna stavu se uložila, akce ne — dokonči ji ručně. |
+| Automatika nezaložila druhou objednávku po vrácení případu z výhry | Správné chování — pravidlo zabere u záznamu jen jednou. Druhou objednávku (etapu) založ ručně. |
+| Projekt vznikl bez kroků | Žádná šablona neodpovídá kategorii případu, nebo případ kategorii nemá. Přiřaď šablonu v pravidle přímo, nebo doplň kategorie u šablon. |
 
 ### Poznámky a úskalí
 - **Dvě pravdy o zákazníkovi.** Dokud běží Raynet i appka, vedou se klienti na dvou místech

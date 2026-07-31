@@ -1163,6 +1163,52 @@ class AuditOut(BaseModel):
     kdy: Optional[str] = None
 
 
+# ---- automatizace (CRM-31) ---------------------------------------------------
+class PravidloVstup(BaseModel):
+    """Pravidlo „když záznam přejde do stavu X, udělej Y".
+
+    `akce` ZÁMĚRNĚ není Literal — katalog akcí je v `crm/automatizace.py` a
+    validuje se proti němu (`over_pravidlo`). Druhý seznam v typu by se dřív
+    nebo později rozešel s tím, co appka umí vykonat.
+    """
+
+    nazev: str
+    spoust_entita: EntitaCrm
+    spoust_stav: str
+    akce: str
+    nastaveni: dict[str, Any] = {}
+    aktivni: Optional[bool] = None
+    poradi: Optional[int] = None
+
+
+class PravidloBehOut(BaseModel):
+    id: int
+    entita: str
+    zaznam_id: int
+    vysledek: str  # hotovo | preskoceno | chyba
+    popis: str = ""
+    kdo: Optional[str] = None
+    kdy: Optional[str] = None
+
+
+class PravidloOut(BaseModel):
+    id: int
+    nazev: str
+    aktivni: bool = True
+    poradi: int = 0
+    spoust_entita: str
+    spoust_stav: str
+    spoust_stav_nazev: str = ""
+    entita_nazev: str = ""
+    akce: str
+    akce_nazev: str = ""
+    nastaveni: dict[str, Any] = {}
+    # Počet úspěšných běhů; `behy` se posílá jen u detailu, aby seznam pravidel
+    # netahal celou historii.
+    behu: int = 0
+    behy: Optional[list[PravidloBehOut]] = None
+
+
 # ---- mapa (CRM-20) -----------------------------------------------------------
 class MapaBodOut(BaseModel):
     zakaznik_id: int

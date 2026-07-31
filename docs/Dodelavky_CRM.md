@@ -124,7 +124,8 @@ zakázky, je zbytek seznamu odhad — ne zkušenost. Proto se nejdřív zapíná
 | **G · Denní práce se seznamy** ✅ | ~~CRM-26, CRM-28, CRM-37, CRM-38~~ — **hotovo 31. 7. 2026** | — | Vzniklo mimo původní plán dávek: až se appka začala používat, ukázalo se, že tohle lidi potká každý den dřív než servisní modul. |
 | **H · Přehled a dohledatelnost** ✅ | ~~CRM-12, CRM-20, CRM-21~~ — **hotovo 31. 7. 2026** | — | Audit log dává smysl zapnout co nejdřív: dohledá jen to, co se stalo po jeho zapnutí. |
 | **I · Doladění** ✅ | ~~CRM-33, CRM-34, CRM-44~~ — **hotovo 31. 7. 2026** | — | Drobnosti, které nečekaly na žádný spouštěč. Vlastní pole tím dostala vše, co od nich admin čeká. |
-| **F · Druhý životní cyklus** | CRM-11, CRM-31 | ~1 týden+ | Až budou v appce první předané projekty, ke kterým se dá servis navěsit. |
+| **F1 · Automatizace** ✅ | ~~CRM-31~~ — **hotovo 31. 7. 2026** | — | Dávka F se rozdělila na dvě etapy: automatizace nemá žádný spouštěč (šetří klikání od první zakázky), zatímco servis ho má. Rytmus je stejný jako u kalendáře — nasadit etapu, reportovat, pak pokračovat. |
+| **F2 · Servis** | CRM-11 | ~1 týden+ | Až budou v appce první předané projekty, ke kterým se dá servis navěsit. |
 | **Odloženo s podmínkou** | CRM-02 (~300 řádků v seznamu; CRM-38 už hotové zvlášť), CRM-29 (desetitisíce), CRM-06 (jen když se objeví osoba u dvou firem), CRM-41 + CRM-42 (až bude ~20 uzavřených obchodů) | — | Spouštěč je napsaný, ať se to nedělá dřív, než to začne bolet. |
 
 **Práva: zatím NEPŘIDĚLOVAT** (rozhodnutí Dana 30. 7. 2026). CRM i nové funkce vidí jen
@@ -480,11 +481,32 @@ Co běžná CRM mají navíc:
   „Bez ceny nesmíš dát *Nabídka odeslána*", „bez data podpisu ne *Podepsaná*". Dnes hlídáme
   jen důvod prohry a zrušení.
 
-- [ ] **CRM-31 · Workflow automatizace** — Velikost **XL** · Dopad **★★**
-  „Případ vyhrán → založ objednávku", „objednávka podepsána → založ projekt ze šablony",
-  „nabídka odeslána → za 7 dní úkol *zavolat*". Dnes se tyhle kroky dělají ručně.
-  *Pozor:* automatika, která něco zakládá sama, musí být viditelná a vypnutelná, jinak lidé
-  přestanou appce věřit.
+- [x] **CRM-31 · Workflow automatizace** — **hotovo 31. 7. 2026** (dávka F1)
+  Tabulky `crm_pravidla` + `crm_pravidlo_behy`, modul `crm/automatizace.py`, správa
+  v **Nastavení → Automatizace** (právo `crm_nastaveni`). Tři akce: založ objednávku,
+  založ projekt ze šablony, založ úkol s termínem za N dní. Spouštěč = přechod do stavu
+  u případu / nabídky / objednávky / projektu.
+
+  *Požadavek „viditelná a vypnutelná" je splněný třemi věcmi zvlášť:* každé provedení píše
+  **poznámku do aktivit záznamu** (tam se člověk kouká, ne do nastavení), log běhů u pravidla
+  ukazuje i přeskočení a chyby, a každé pravidlo má vypínač. Výchozí trojice se seeduje
+  **vypnutá** — automatika, která se rozjede sama po deployi, je to nejjistější, jak lidem
+  vzít důvěru v appku.
+
+  *Čtyři věci, na kterých to stojí (každá se dá udělat špatně tak, že to vypadá funkčně):*
+  1. **Chyba akce se řeší savepointem, ne `db.rollback()`.** Rollback by zahodil i změnu
+     stavu, kterou právě udělal člověk — appka odpoví OK a případ zůstane v původním sloupci.
+  2. **Před savepointem se flushuje**, jinak by neuložená změna stavu patřila do savepointu
+     a rollback by ji vzal s sebou. Nespoléhat se na autoflush hlídá test.
+  3. **„Jednou na záznam" hlídá unikátní index na `crm_pravidlo_behy`**, ne kontrola
+     „existuje už objednávka?" — ta u úkolů nefunguje a případ vrácený z výhry a znovu
+     vyhraný by vyrobil druhou objednávku.
+  4. **Platí i pro hromadnou změnu stavu** (`hromadne.zmen_stav`). Kdyby ji obcházela, byla
+     by to tichá zadní vrátka; volajícímu se vrací `automatika` a seznam případů to vypíše.
+
+  Ověřeno HTTP testem nad kopií produkční DB: celý řetěz případ → objednávka → projekt
+  s 8 kroky ze šablony vybrané podle kategorie, úkol z odeslané nabídky, nespuštění
+  podruhé po vrácení případu, hromadná změna dvou případů, vypnuté pravidlo bez efektu.
 
 - [x] **CRM-32 · Šablony e-mailů a poznámek** — **hotovo 31. 7. 2026** (dávka E)
   Tabulka `crm_sablony` + `crm/sablony.py`, spravuje je `crm_nastaveni` (Nastavení →

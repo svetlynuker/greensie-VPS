@@ -20,6 +20,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.auth.models import User
+from app.crm import automatizace as automatizace_modul
 from app.crm import ciselne_rady
 from app.crm import fakturace as fakturace_modul
 from app.crm import kategorie as kategorie_modul
@@ -482,6 +483,8 @@ def zmen_stav_objednavky(
             db, user, f"{o.cislo} · {o.nazev}".strip(" ·"), "/objednavky",
             novy.nazev, o.vlastnik_user_id, o.spoluvlastnici,
         )
+        # CRM-31: typicky „objednávka podepsaná → projekt ze šablony".
+        automatizace_modul.po_zmene_stavu(db, "obj", o, novy.klic, user)
     db.commit()
     db.refresh(o)
     return _objednavka_detail(db, o, user)
@@ -1091,6 +1094,7 @@ def zmen_stav_projektu(
             db, user, f"{p.cislo} · {p.nazev}".strip(" ·"), f"/projekty/detail/{p.id}",
             novy.nazev, p.vlastnik_user_id, p.spoluvlastnici,
         )
+        automatizace_modul.po_zmene_stavu(db, "pro", p, novy.klic, user)
     db.commit()
     db.refresh(p)
     return _projekt_detail(db, p, user)

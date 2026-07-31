@@ -1244,3 +1244,94 @@ class CrmAudit(Base):
     kdy = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
 
     zmenil = relationship("User")
+
+
+class CrmPravidlo(Base):
+    """Pravidlo automatizace: „když záznam přejde do stavu X, udělej Y" (CRM-31).
+
+    Kroky jako „případ vyhrán → založ objednávku" nebo „objednávka podepsaná →
+    založ projekt ze šablony" dneska dělá člověk ručně. Jsou to vždycky tytéž
+    kroky, takže je appka umí udělat sama.
+
+    ---- Proč DATA a ne kód -------------------------------------------------
+    Stejný důvod jako u stavů (`crm_stavy`) a kategorií (`crm_kategorie`):
+    firma si pipeline přeskládá a spouštěč „stav vyhrano" by přestal existovat.
+    Pravidlo je řádek v tabulce, spravuje ho vedení v Nastavení.
+
+    ---- Pravidlo, kvůli kterému tu je log běhů -----------------------------
+    Automatika, která zakládá záznamy a není vidět, je horší než ruční práce:
+    člověk nepozná, jestli objednávku založil kolega, nebo appka, a přestane jí
+    věřit. Proto se KAŽDÉ provedení zapíše do `crm_pravidlo_behy` **a** jako
+    poznámka do aktivit záznamu, a každé pravidlo se dá vypnout (`aktivni`).
+
+    `spoust_stav` je klíč stavu z `crm_stavy` (ne id): klíč je neměnný, takže
+    přejmenování sloupce kanbanu pravidlo nerozbije.
+    """
+
+    __tablename__ = "crm_pravidla"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nazev = Column(String, nullable=False)
+    # Vypnuté pravidlo zůstává v seznamu i s historií běhů – mazání by smazalo
+    # i vysvětlení, odkud se vzaly staré automaticky založené záznamy.
+    aktivni = Column(Boolean, nullable=False, default=True, server_default="true")
+    poradi = Column(Integer, nullable=False, default=0, server_default="0")
+
+    # Spouštěč: entita ("op" | "nab" | "obj" | "pro") a klíč cílového stavu.
+    spoust_entita = Column(String, nullable=False, index=True)
+    spoust_stav = Column(String, nullable=False, index=True)
+
+    # Akce: klíč z `automatizace.AKCE`; parametry v `nastaveni`
+    # (např. {"sablona_id": 3} nebo {"za_dni": 7, "nazev": "Zavolat"}).
+    akce = Column(String, nullable=False)
+    nastaveni = Column(JSONB, nullable=False, default=dict, server_default="{}")
+
+    vytvoril_user_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True
+    )
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    behy = relationship(
+        "CrmPravidloBeh", back_populates="pravidlo", cascade="all, delete-orphan"
+    )
+
+
+class CrmPravidloBeh(Base):
+    """Co pravidlo u kterého záznamu udělalo (CRM-31).
+
+    Dvě role v jedné tabulce, obojí důležité:
+
+      1. **Viditelnost** – v Nastavení je u pravidla vidět, co reálně vykonalo.
+         Bez toho by automatika byla černá skříňka.
+      2. **Aby se to nestalo dvakrát.** Když se případ vrátí z „Vyhráno" do
+         „Vyjednávání" a pak zpátky, druhá objednávka vzniknout nesmí. Pravidlo
+         proto běží na jeden záznam **nejvýš jednou** a hlídá to unikátní
+         index — ne kontrola „existuje už objednávka?", protože ta by
+         u úkolů nefungovala vůbec.
+
+    Neúspěch se zapisuje taky (`vysledek="chyba"`). Kdyby se logoval jen úspěch,
+    tichá chyba by znamenala „pravidlo se nikdy nespustilo" a nikdo by nehledal.
+    """
+
+    __tablename__ = "crm_pravidlo_behy"
+    __table_args__ = (
+        UniqueConstraint("pravidlo_id", "entita", "zaznam_id", name="uq_crm_pravidlo_beh"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    pravidlo_id = Column(
+        Integer, ForeignKey("crm_pravidla.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Záznam, který pravidlo spustil (spouštěcí entita, ne to, co vzniklo).
+    entita = Column(String, nullable=False)
+    zaznam_id = Column(Integer, nullable=False)
+    # "hotovo" | "preskoceno" | "chyba"
+    vysledek = Column(String, nullable=False, default="hotovo", server_default="hotovo")
+    popis = Column(Text, nullable=False, default="", server_default="")
+    spustil_user_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True
+    )
+    kdy = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+
+    pravidlo = relationship("CrmPravidlo", back_populates="behy")
+    spustil = relationship("User")

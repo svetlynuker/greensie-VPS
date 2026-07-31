@@ -23,7 +23,7 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy.orm import Session
 
 from app.auth.models import User
-from app.crm import kalendar, stavy as stavy_modul
+from app.crm import automatizace as automatizace_modul, kalendar, stavy as stavy_modul
 from app.crm.models import CrmAktivita, CrmStavHistorie, ObchodniPripad, Zakaznik
 from app.crm.pristup import smi_menit, vidi_zaznam
 
@@ -69,6 +69,7 @@ def zmen_stav(
         raise ValueError("U prohry je potřeba důvod — bez něj nemá statistika smysl.")
 
     zaznamy, preskoceno = _zaznamy(db, "op", ids, user)
+    automatika: list[str] = []
     for p in zaznamy:
         if p.stav == stav:
             continue
@@ -88,8 +89,18 @@ def zmen_stav(
             p.uzavreno_at = datetime.now()
         else:
             p.uzavreno_at = None
+        # CRM-31: pravidla platí i tady. Kdyby hromadná změna automatiku
+        # obcházela, byla by to tichá zadní vrátka („u jednoho případu se
+        # objednávka založí, u deseti ne") — přesně ten druh nekonzistence,
+        # kvůli které lidé přestanou appce věřit. Co se stalo, se vrací
+        # volajícímu, aby to UI mohlo vypsat.
+        automatika += automatizace_modul.po_zmene_stavu(db, "op", p, stav, user)
     db.commit()
-    return {"zmeneno": len(zaznamy), "preskoceno": preskoceno}
+    return {
+        "zmeneno": len(zaznamy),
+        "preskoceno": preskoceno,
+        "automatika": automatika,
+    }
 
 
 def naplanuj_aktivity(

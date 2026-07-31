@@ -763,6 +763,26 @@
   color: var(--st-crit);
 }
 
+/* ---- automatizace (CRM-31) ---- */
+/* Vypnuté pravidlo zůstává v seznamu (i s historií běhů), ale nesmí vypadat
+   jako aktivní — jinak by se v tabulce nedalo na první pohled poznat, co appka
+   opravdu dělá. Zeslabení, ne skrytí: vypnout se dá jen to, co je vidět. */
+.crm-radek-vypnuty td {
+  opacity: 0.55;
+}
+/* Hlášení, co automatika právě udělala. Není to chyba (proto ne `crm-chyba`),
+   ale ani tichá informace — člověk se z toho musí dozvědět, že objednávku
+   už zakládat nemá. */
+.crm-hlaska-automatika {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--st-ok);
+  border-radius: 6px;
+  background: var(--panel);
+  font-size: 13px;
+}
+
 /* ---- vlastní (admin definovaná) pole ---- */
 /* Oddělovač mezi standardními a doplňujícími poli ve formuláři – ať je jasné,
    že dál pokračují údaje, které si firma přidala sama. */
