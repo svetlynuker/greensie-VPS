@@ -24,15 +24,27 @@ from sqlalchemy.orm import Session
 from app.crm.models import (
     ENTITY_VLASTNICH_POLI,
     TYPY_VLASTNIHO_POLE,
+    CrmProjekt,
     CrmVlastniPole,
     ObchodniPripad,
+    Objednavka,
     OdberneMisto,
     Zakaznik,
 )
+from app.nabidkovac.models import Nabidka
 
 # Entita → model, na kterém žije `extra`. Přidání další obrazovky = jeden řádek
-# (a klíč v ENTITY_VLASTNICH_POLI).
-MODELY = {"zakaznik": Zakaznik, "op": ObchodniPripad, "om": OdberneMisto}
+# (a klíč v ENTITY_VLASTNICH_POLI). Musí tu být VŠECHNY entity ze seznamu –
+# chybějící model se projeví jen tiše: mazání pole pak hlásí „0 záznamů má
+# hodnotu", i když je má.
+MODELY = {
+    "zakaznik": Zakaznik,
+    "op": ObchodniPripad,
+    "om": OdberneMisto,
+    "obj": Objednavka,
+    "pro": CrmProjekt,
+    "nab": Nabidka,
+}
 
 # Lidské názvy typů pro chybová hlášení.
 NAZVY_TYPU = {

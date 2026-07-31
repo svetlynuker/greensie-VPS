@@ -6,8 +6,25 @@
  * zbytkem formuláře (jinak by se záznam ukládal na dvakrát a při chybě by
  * zůstal půl uložený).
  */
-export default function VlastniPoleVstupy({ pole, hodnoty, onZmena, nadpis = "Doplňující údaje" }) {
+// Nabídkovač má vlastní sadu tříd (nb-*) a jinou mřížku než CRM. Kdyby se sem
+// natvrdo psaly crm-* třídy, pole by v detailu nabídky vypadala cize a přetekla
+// by mimo mřížku formuláře.
+const STYLY = {
+  crm: { pole: "crm-pole", label: "crm-label", sirka: "crm-sirka3", nadpis: "crm-podnadpis" },
+  // Vstupy v nabídkovači nesou nb-* (sedí do jeho mřížky), podnadpis zůstává
+  // crm-* – je to tentýž prvek a nemá smysl mít pro něj dvě stejná pravidla.
+  nb: { pole: "nb-pole", label: "nb-label", sirka: "nb-sirka2", nadpis: "crm-podnadpis" },
+};
+
+export default function VlastniPoleVstupy({
+  pole,
+  hodnoty,
+  onZmena,
+  nadpis = "Doplňující údaje",
+  styl = "crm",
+}) {
   if (!pole || pole.length === 0) return null;
+  const t = STYLY[styl] || STYLY.crm;
 
   function zmen(klic, hodnota) {
     onZmena({ ...(hodnoty || {}), [klic]: hodnota });
@@ -15,22 +32,22 @@ export default function VlastniPoleVstupy({ pole, hodnoty, onZmena, nadpis = "Do
 
   return (
     <>
-      <div className="crm-sirka3 crm-oddelovac">
-        <h4 className="crm-podnadpis">{nadpis}</h4>
+      <div className={`${t.sirka} crm-oddelovac`}>
+        <h4 className={t.nadpis}>{nadpis}</h4>
       </div>
       {pole.map((p) => {
         const hodnota = (hodnoty || {})[p.klic];
         const popisek = `${p.nazev}${p.povinne ? " *" : ""}`;
         return (
-          <div key={p.klic} className={p.typ === "dlouhy_text" ? "crm-sirka3" : undefined}>
-            <label className="crm-label" htmlFor={`vp-${p.klic}`}>
+          <div key={p.klic} className={p.typ === "dlouhy_text" ? t.sirka : undefined}>
+            <label className={t.label} htmlFor={`vp-${p.klic}`}>
               {popisek}
             </label>
 
             {p.typ === "dlouhy_text" ? (
               <textarea
                 id={`vp-${p.klic}`}
-                className="crm-pole"
+                className={t.pole}
                 rows={3}
                 value={hodnota ?? ""}
                 onChange={(e) => zmen(p.klic, e.target.value)}
@@ -48,7 +65,7 @@ export default function VlastniPoleVstupy({ pole, hodnoty, onZmena, nadpis = "Do
             ) : p.typ === "vyber" ? (
               <select
                 id={`vp-${p.klic}`}
-                className="crm-pole"
+                className={t.pole}
                 value={hodnota ?? ""}
                 onChange={(e) => zmen(p.klic, e.target.value)}
               >
@@ -62,7 +79,7 @@ export default function VlastniPoleVstupy({ pole, hodnoty, onZmena, nadpis = "Do
             ) : (
               <input
                 id={`vp-${p.klic}`}
-                className="crm-pole"
+                className={t.pole}
                 type={p.typ === "datum" ? "date" : "text"}
                 inputMode={p.typ === "cislo" ? "decimal" : undefined}
                 value={hodnota ?? ""}

@@ -6,6 +6,8 @@ import PeakShavingPanel from "../components/PeakShavingPanel";
 import PpaPanel from "../components/PpaPanel";
 import ProdejPanel from "../components/ProdejPanel";
 import RozpisPolozek from "../components/RozpisPolozek";
+import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
+import VlastniPoleVstupy from "../components/VlastniPoleVstupy";
 import {
   nactiMe,
   logout,
@@ -18,6 +20,9 @@ import {
 } from "../api";
 import { PODSEKCE, STAV_NABIDKY, fmtDatum } from "../nabidkovac";
 import "../styles/nabidkovac.css";
+// Vlastní pole nesou crm-* třídy (podnadpis, nápověda, zaškrtávátko) – jsou
+// všechny prefixované, takže se do nabídkovače nepletou.
+import "../styles/crm.css";
 
 export default function NabidkaDetail() {
   const { id } = useParams();
@@ -41,12 +46,17 @@ export default function NabidkaDetail() {
   const [adresa, setAdresa] = useState("");
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
+  // Hodnoty vlastních polí (CRM-04). Ukládají se spolu se zbytkem formuláře,
+  // ne zvlášť – jinak by při chybě zůstala nabídka uložená jen napůl.
+  const [extra, setExtra] = useState({});
+  const [spravaPoli, setSpravaPoli] = useState(false);
 
   function naplnFormular(n) {
     setNazev(n.zakaznik_nazev || "");
     setAdresa(n.zakaznik_adresa || "");
     setLat(n.zakaznik_gps_lat != null ? String(n.zakaznik_gps_lat) : "");
     setLng(n.zakaznik_gps_lng != null ? String(n.zakaznik_gps_lng) : "");
+    setExtra(n.extra || {});
   }
 
   async function nactiZnovu() {
@@ -96,8 +106,10 @@ export default function NabidkaDetail() {
         zakaznik_adresa: adresa.trim(),
         zakaznik_gps_lat: lat.trim() === "" ? null : Number(lat.replace(",", ".")),
         zakaznik_gps_lng: lng.trim() === "" ? null : Number(lng.replace(",", ".")),
+        extra,
       });
       setNabidka(n);
+      setExtra(n.extra || {});
       setZprava("Uloženo.");
     } catch (e) {
       setChyba(e.message);
@@ -190,6 +202,15 @@ export default function NabidkaDetail() {
                 <label className="nb-label">GPS délka (lng) – pro budoucí PVGIS</label>
                 <input className="nb-pole" value={lng} onChange={(e) => setLng(e.target.value)} placeholder="např. 14.421" inputMode="decimal" />
               </div>
+
+              {/* Vlastní pole nabídky – definuje je admin v CRM, ukládají se
+                  spolu s údaji zákazníka jedním tlačítkem níž. */}
+              <VlastniPoleVstupy
+                styl="nb"
+                pole={nabidka.vlastni_pole}
+                hodnoty={extra}
+                onZmena={setExtra}
+              />
             </div>
             {zprava && <div style={{ color: "var(--fm-brand-dk)", fontSize: 13, marginTop: 10 }}>{zprava}</div>}
             {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13, marginTop: 10 }}>{chyba}</div>}
@@ -197,6 +218,17 @@ export default function NabidkaDetail() {
               <button className="fm-btn fm-primary" onClick={uloz} disabled={uklada}>
                 {uklada ? "Ukládám…" : "Uložit"}
               </button>
+              {/* Správa polí je vidět jen adminovi – běžnému OZ by nabízela
+                  nastavení, do kterého stejně nesmí. */}
+              {me.prava?.includes("crm_nastaveni") && (
+                <button
+                  className="fm-btn"
+                  onClick={() => setSpravaPoli(true)}
+                  title="Přidat nebo upravit vlastní pole nabídek"
+                >
+                  ⚙ Vlastní pole
+                </button>
+              )}
               <span style={{ flex: 1 }} />
               <button className="fm-btn" style={{ color: "var(--st-crit)" }} onClick={smaz}>
                 Smazat nabídku
@@ -270,6 +302,17 @@ export default function NabidkaDetail() {
           </div>
         </details>
       </div>
+
+      {spravaPoli && (
+        <VlastniPoleNastaveni
+          entita="nab"
+          nazevObrazovky="Nabídky"
+          onZavri={() => setSpravaPoli(false)}
+          // Po změně definic se musí přenačíst detail, jinak by formulář
+          // vykresloval pole podle staré definice.
+          onZmena={() => nactiZnovu().then(naplnFormular)}
+        />
+      )}
     </Layout>
   );
 }

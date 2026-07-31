@@ -173,7 +173,14 @@ def _lehka_migrace():
         # CRM: hodnoty vlastních (admin definovaných) polí. Tabulky
         # `crm_zakaznici` / `crm_obchodni_pripady` mohly vzniknout ještě bez
         # tohoto sloupce – create_all ho do existující tabulky nepřidá.
-        for tabulka in ("crm_zakaznici", "crm_obchodni_pripady", "crm_objednavky", "crm_projekty"):
+        # `nabidky` nejsou CRM tabulka, ale vlastní pole mají taky (CRM-04).
+        for tabulka in (
+            "crm_zakaznici",
+            "crm_obchodni_pripady",
+            "crm_objednavky",
+            "crm_projekty",
+            "nabidky",
+        ):
             conn.execute(
                 text(
                     f"ALTER TABLE {tabulka} ADD COLUMN IF NOT EXISTS extra "

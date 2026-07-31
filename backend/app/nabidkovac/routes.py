@@ -117,8 +117,19 @@ def _dokument_out(d: NabidkaDokument) -> DokumentOut:
     )
 
 
-def _nabidka_detail(n: Nabidka) -> NabidkaDetailOut:
+def _nabidka_detail(n: Nabidka, db: Session) -> NabidkaDetailOut:
+    """Detail nabídky včetně definic vlastních polí (CRM-04).
+
+    Import CRM modulu je uvnitř funkce schválně: `nabidkovac` je na CRM jinak
+    nezávislý a top-level import by udělal kruh (crm/vlastni_pole si naopak
+    tahá model Nabidka).
+    """
+    from app.crm import vlastni_pole as pole_modul
+
     return NabidkaDetailOut(
+        # Pydantic si dicty z `pro_frontend` zvaliduje sám na VlastniPoleOut.
+        vlastni_pole=pole_modul.pro_frontend(db, "nab"),
+        extra=n.extra or {},
         id=n.id,
         typ=n.typ,
         cislo=n.cislo,
@@ -195,7 +206,7 @@ def zaloz_nabidku(
     db.add(n)
     db.commit()
     db.refresh(n)
-    return _nabidka_detail(n)
+    return _nabidka_detail(n, db)
 
 
 @router.get("/nabidky/{nabidka_id}", response_model=NabidkaDetailOut)
@@ -207,7 +218,7 @@ def detail_nabidky(
     n = db.get(Nabidka, nabidka_id)
     if n is None:
         raise HTTPException(status_code=404, detail="Nabídka neexistuje")
-    return _nabidka_detail(n)
+    return _nabidka_detail(n, db)
 
 
 @router.put("/nabidky/{nabidka_id}", response_model=NabidkaDetailOut)
@@ -226,9 +237,13 @@ def uprav_nabidku(
     n.zakaznik_gps_lng = vstup.zakaznik_gps_lng
     if vstup.stav is not None:
         n.stav = vstup.stav
+    if vstup.extra is not None:
+        from app.crm import vlastni_pole as pole_modul
+
+        n.extra = pole_modul.zpracuj(db, "nab", vstup.extra)
     db.commit()
     db.refresh(n)
-    return _nabidka_detail(n)
+    return _nabidka_detail(n, db)
 
 
 @router.delete("/nabidky/{nabidka_id}")

@@ -11,6 +11,7 @@ import {
   crmNabidky,
   crmNabidkyKanban,
   crmStavy,
+  crmVlastniPole,
   logout,
   nactiMe,
 } from "../api";
@@ -38,20 +39,25 @@ export default function Nabidky() {
   const [hledat, setHledat] = useState("");
   const [nastaveniStavu, setNastaveniStavu] = useState(false);
   const [migrace, setMigrace] = useState(false);
+  const [sloupce, setSloupce] = useState([]);
   const [chyba, setChyba] = useState(null);
 
   // Jeden filtr pro tabulku i kanban.
-  const f = pouzitFiltr("nab", radky);
+  const f = pouzitFiltr("nab", radky, sloupce);
 
   const nacti = useCallback(async (dotaz = "") => {
-    const [k, r, s] = await Promise.all([
+    const [k, r, s, pole] = await Promise.all([
       crmNabidkyKanban(),
       crmNabidky({ hledat: dotaz || undefined }),
       crmStavy("nab"),
+      // Vlastní pole si smí přečíst každý, kdo vidí seznam; kdyby endpoint
+      // přesto odmítl, seznam se kvůli tomu nemá rozbít.
+      crmVlastniPole("nab").catch(() => []),
     ]);
     setKanban(k);
     setRadky(r);
     setStavy(s);
+    setSloupce(pole.filter((x) => x.v_seznamu));
   }, []);
 
   useEffect(() => {
@@ -229,6 +235,7 @@ export default function Nabidky() {
             exportNazev="nabidky"
             onOtevri={otevri}
             vykresli={(n, sl) => {
+              if (sl.klic.startsWith("extra:")) return (n.extra_text || {})[sl.klic.slice(6)] ?? "—";
               if (sl.klic === "cislo")
                 return <span className="crm-silne">{n.cislo || `#${n.id}`}</span>;
               if (sl.klic === "typ") return TYPY[n.typ] || n.typ;
