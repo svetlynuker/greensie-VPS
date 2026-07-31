@@ -250,8 +250,25 @@ jinak přidělení nic neudělá.
   | Etapa | Co v ní je | Stav |
   |---|---|---|
   | E1 | tabulka `crm_odberna_mista` (EAN, adresa, **vlastní GPS**, distributor, hladina, rezervovaná kapacita i příkon, vlastní pole přes `extra`), vazba `crm_obchodni_pripady.odberne_misto_id`, panel `OdbernaMistaPanel` na kartě klienta i případu, mazání s náhledem nasucho | ✅ hotovo 31. 7. 2026 |
-  | E2 | tabulka `crm_diagramy` na odběrném místě: nahrání, **parsování hned při uložení** (období od–do, počet intervalů, roční spotřeba, maximum kW), stažení, smazání | čeká |
-  | E3 | „vzít diagram z odběrného místa" v peak shaving i PPA panelu + předvyplnění distributora, hladiny, rezervované kapacity a GPS z místa | čeká |
+  | E2 | tabulka `crm_diagramy` na odběrném místě: nahrání, **parsování hned při uložení** (období od–do, počet intervalů, roční spotřeba, maximum kW), stažení, smazání | ✅ hotovo 31. 7. 2026 |
+  | E3 | „vzít diagram z odběrného místa" v peak shaving i PPA panelu + předvyplnění distributora, hladiny, rezervované kapacity a GPS z místa | ✅ hotovo 31. 7. 2026 |
+
+  **Opravená chyba, kterou Dan nahlásil u etapy 2** („když nechám generovat nabídku,
+  ze souboru se nenačítají data spotřeby“) — byly to tři věci najednou:
+  1. **`PpaPanel` posílal id nabídky místo id dokumentu** (`profilZpracuj(nabidka.id, dokumentId)`
+     proti funkci s jediným parametrem). Skončilo to 404 a profil se nenačetl. Kdyby se čísla
+     potkala, zapsal by se profil do CIZÍ nabídky a ta by přitom o svůj přišla („poslední
+     vyhrává“). V produkci k záměně nedošlo — všech 10 profilů patřilo svým nabídkám.
+     Endpoint má teď nabídku v cestě (`/nabidky/{id}/dokumenty/{id}/zpracuj-profil`) a nesoulad
+     vrací 422, takže tahle záměna už není možná.
+  2. **Profil se parsoval až na kliknutí** v panelu výpočtu. Kdo tlačítko nenašel, měl nahraný
+     soubor a nabídku bez dat. Teď se `spotreba_csv` zpracuje **hned při nahrání**; ruční
+     tlačítko zůstává pro případ, že je souborů víc a je potřeba vybrat, který platí.
+  3. **Panel po nahrání souhrn neobnovil** (`useEffect` závisel jen na `nabidka.id`), takže
+     i po úspěšném zpracování tvrdil „profil chybí“, dokud se stránka nereloadovala.
+     Do závislostí přišel podpis dokumentů.
+  Text u nahraného souboru „Čeká na zpracování (funkce se připravuje)“ taky lhal — funkce
+  existuje. Teď je tam „Data spotřeby načtena ✓“, resp. důvod, proč soubor nešel přečíst.
 
   *Jak (E1):* `crm/odberna_mista.py` drží validace (EAN 18 číslic, duplicita jen v rámci
   zákazníka, distributor a hladina proti seznamům nabídkovače) a překlad místa na parametry

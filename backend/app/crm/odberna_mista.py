@@ -139,11 +139,9 @@ def seznam(db: Session, zakaznik_id: int) -> list[OdberneMisto]:
 
 
 def pocet_diagramu(db: Session, misto_id: int) -> int:
-    """Kolik diagramů na místě visí (etapa 2 – tabulka může chybět)."""
-    try:
-        from app.crm.models import CrmDiagram
-    except ImportError:  # pragma: no cover – dokud diagramy nejsou nasazené
-        return 0
+    """Kolik 15min diagramů na místě visí."""
+    from app.crm.models import CrmDiagram
+
     return db.query(CrmDiagram).filter(CrmDiagram.odberne_misto_id == misto_id).count()
 
 

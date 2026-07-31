@@ -55,8 +55,13 @@ def _bezpecny_nazev(nazev: str) -> str:
     return zaklad[:120]
 
 
-def uloz_soubor(nabidka_id: int, puvodni_nazev: str, obsah: bytes) -> str:
-    """Uloží obsah a vrátí cestu relativní k UPLOAD_DIR (do DB)."""
+def uloz_soubor(nabidka_id: int | str, puvodni_nazev: str, obsah: bytes) -> str:
+    """Uloží obsah a vrátí cestu relativní k UPLOAD_DIR (do DB).
+
+    První parametr je jméno podsložky. U nabídek je to jejich id, u diagramů
+    odběrných míst `om-<id>` (viz `crm/diagramy.py`) — tím zůstávají soubory
+    míst oddělené od souborů nabídek, i když leží pod stejným UPLOAD_DIR.
+    """
     cilova_slozka = UPLOAD_DIR / str(nabidka_id)
     cilova_slozka.mkdir(parents=True, exist_ok=True)
     nazev = f"{uuid.uuid4().hex}_{_bezpecny_nazev(puvodni_nazev)}"

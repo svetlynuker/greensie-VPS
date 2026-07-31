@@ -30,13 +30,19 @@ export default function ProdejPanel({ nabidka }) {
   const [chyba, setChyba] = useState(null);
   const [zprava, setZprava] = useState(null);
 
+  // Profil se parsuje hned při nahrání souboru, proto je v závislostech podpis
+  // dokumentů — jinak by panel po nahrání dál tvrdil, že profil chybí.
+  const dokPodpis = (nabidka.dokumenty || [])
+    .map((d) => `${d.id}:${d.stav_zpracovani}`)
+    .join(",");
+
   useEffect(() => {
     // Endpoint je pojmenovaný podle PPA, ale jen čte tabulku profilu spotřeby
     // dané nabídky a na typ se neváže — pro prodej vrací totéž.
     ppaProfilSouhrn(nabidka.id)
       .then(setSouhrn)
       .catch(() => setSouhrn({ pocet: 0 }));
-  }, [nabidka.id]);
+  }, [nabidka.id, dokPodpis]);
 
   const profilDoklady = (nabidka.dokumenty || []).filter(
     (d) => d.typ === "spotreba_csv" || d.typ === "jiny"
@@ -48,7 +54,7 @@ export default function ProdejPanel({ nabidka }) {
     setChyba(null);
     setZprava(null);
     try {
-      const s = await profilZpracuj(dokId);
+      const s = await profilZpracuj(nabidka.id, dokId);
       setSouhrn(await ppaProfilSouhrn(nabidka.id));
       setZprava(`Profil načten: ${s.pocet.toLocaleString("cs-CZ")} intervalů.`);
     } catch (e) {

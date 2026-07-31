@@ -1,6 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import inspect, text
 
 from app.auth import models  # noqa: F401 - registrace modelů před create_all
@@ -559,6 +561,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(RequestValidationError)
+async def _validacni_chyba(request: Request, exc: RequestValidationError):
+    """Validační chyba (422) bez surového těla požadavku.
+
+    Výchozí handler FastAPI vrací i `input` — tedy to, co přišlo. U nahrávání
+    souboru je v těle binární XLS a serializace odpovědi na něm spadne
+    (`UnicodeDecodeError`), takže uživatel místo čitelné 422 dostane 500 a v logu
+    je chyba kodeku, ne skutečná příčina. Zjištěno při testu CRM-46 na náhledu.
+    Necháváme typ, umístění a hlášku — to je na dohledání chyby podstatné.
+    """
+    detaily = [
+        {"type": e.get("type"), "loc": e.get("loc"), "msg": e.get("msg")} for e in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content={"detail": detaily})
+
 
 app.include_router(auth_router)
 app.include_router(matice_router)

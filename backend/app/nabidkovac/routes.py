@@ -121,6 +121,8 @@ def _nabidka_detail(n: Nabidka) -> NabidkaDetailOut:
     return NabidkaDetailOut(
         id=n.id,
         typ=n.typ,
+        cislo=n.cislo,
+        obchodni_pripad_id=n.obchodni_pripad_id,
         zakaznik_nazev=n.zakaznik_nazev,
         zakaznik_adresa=n.zakaznik_adresa or "",
         zakaznik_gps_lat=_num(n.zakaznik_gps_lat),
@@ -311,6 +313,21 @@ async def nahraj_dokument(
         n.stav = "data_nahrana"
     db.commit()
     db.refresh(d)
+
+    # Profil spotřeby zpracujeme HNED. Dřív se čekalo na ruční kliknutí
+    # v panelu výpočtu, což znamenalo, že OZ nahrál diagram, viděl u něj
+    # „čeká na zpracování“ a nabídka se pak počítala bez dat spotřeby
+    # (nahlásil Dan 31. 7. 2026). Selhání parsování nesmí shodit celé
+    # nahrání — soubor je uložený a dokument dostane stav `chyba_extrakce`,
+    # takže se dá přeoznačit typ nebo nahrát jiný export.
+    if typ == "spotreba_csv":
+        try:
+            _zpracuj_profil_dokumentu(db, d)
+        except HTTPException:
+            db.rollback()
+            d.stav_zpracovani = "chyba_extrakce"
+            db.commit()
+        db.refresh(d)
     return _dokument_out(d)
 
 
@@ -1190,23 +1207,19 @@ def profil_souhrn(
     return _profil_souhrn(db, nabidka_id)
 
 
-@router.post("/dokumenty/{dokument_id}/zpracuj-profil")
-def zpracuj_profil(
-    dokument_id: int,
-    user: User = Depends(vyzaduj_nabidkovac),
-    db: Session = Depends(get_db),
-):
-    """Naparsuje nahraný soubor s 15min profilem (XLS/XLSX/CSV) do `spotreba_profil`.
+def _zpracuj_profil_dokumentu(db: Session, d: NabidkaDokument) -> dict:
+    """Naparsuje soubor dokumentu do `spotreba_profil` jeho nabídky.
 
     „Poslední vyhrává“ (audit SP-2): nahradí se CELÝ dosavadní profil nabídky
     (i z jiných dokumentů) – dřív se mazaly jen řádky ze stejného dokumentu
     a dva různé soubory se tiše sečetly do dvojnásobné spotřeby. Duplicitní
     časy uvnitř souboru (podzimní přechod času) se slučují před vkladem,
     unikátnost (nabidka_id, cas) jistí i DB constraint.
+
+    Vytažené z endpointu, aby se profil dal zpracovat i automaticky hned po
+    nahrání souboru (viz `nahraj_dokument`) – čekání na ruční kliknutí bylo
+    zdrojem nabídek, které se počítaly bez dat spotřeby.
     """
-    d = db.get(NabidkaDokument, dokument_id)
-    if d is None:
-        raise HTTPException(status_code=404, detail="Dokument neexistuje")
     if d.typ not in ("spotreba_csv", "jiny"):
         raise HTTPException(
             status_code=422, detail="Tenhle dokument není profil spotřeby (nahraj CSV/XLS se spotřebou)."
@@ -1224,8 +1237,6 @@ def zpracuj_profil(
 
     body, pocet_duplicit = profil_import.deduplikuj_casy(body)
 
-    # „Poslední vyhrává“ – zahoď celý předchozí profil nabídky a vlož nový
-    # (bulk kvůli objemu ~35 tis. řádků).
     db.query(SpotrebaProfil).filter(
         SpotrebaProfil.nabidka_id == d.nabidka_id,
     ).delete(synchronize_session=False)
@@ -1242,6 +1253,35 @@ def zpracuj_profil(
     if pocet_duplicit:
         out["slouceno_duplicitnich_radku"] = pocet_duplicit
     return out
+
+
+@router.post("/nabidky/{nabidka_id}/dokumenty/{dokument_id}/zpracuj-profil")
+def zpracuj_profil(
+    nabidka_id: int,
+    dokument_id: int,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Naparsuje nahraný soubor s 15min profilem (XLS/XLSX/CSV) do `spotreba_profil`.
+
+    Nabídka je v cestě schválně, i když by se dala odvodit z dokumentu: dřív šlo
+    poslat id dokumentu PATŘÍCÍHO JINÉ NABÍDCE a profil se zapsal do ní (a předchozí
+    profil té nabídky se přitom smazal, „poslední vyhrává“). Přesně to se stalo,
+    když frontend omylem poslal id nabídky místo id dokumentu — většinou to skončilo
+    404, ale při shodě čísel by se ticho přepsala cizí data. Teď se příslušnost
+    ověřuje a nesoulad je 422.
+    """
+    if db.get(Nabidka, nabidka_id) is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    d = db.get(NabidkaDokument, dokument_id)
+    if d is None:
+        raise HTTPException(status_code=404, detail="Dokument neexistuje")
+    if d.nabidka_id != nabidka_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Tenhle dokument patří jiné nabídce — profil by se zapsal do cizích dat.",
+        )
+    return _zpracuj_profil_dokumentu(db, d)
 
 
 # ================= Peak shaving – výpočet (METODIKA kap. 4–5) =================
