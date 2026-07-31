@@ -9,6 +9,7 @@ import PripadRealizace from "../components/PripadRealizace";
 import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
 import VlastniPoleVypis from "../components/VlastniPoleVypis";
 import DiskSlozka from "../components/DiskSlozka";
+import OdbernaMistaPanel from "../components/OdbernaMistaPanel";
 import {
   crmKategorie,
   crmPripadDetail,
@@ -227,6 +228,15 @@ export default function ObchodniPripadDetail() {
                     </span>
                   )}
                 </dd>
+                <dt>Odběrné místo</dt>
+                <dd>
+                  {p.odberne_misto_nazev || (
+                    <span className="crm-tise">
+                      nevybráno – vyber ho v kartě Odběrná místa, nabídka si z něj vezme
+                      diagram i sazby
+                    </span>
+                  )}
+                </dd>
                 <dt>Stav</dt>
                 <dd>{stav?.nazev || p.stav}</dd>
                 <dt>Hodnota</dt>
@@ -274,6 +284,12 @@ export default function ObchodniPripadDetail() {
                 hodnoty={p.extra}
                 muzeSpravovat={me.prava?.includes("crm_nastaveni")}
                 onSprava={() => setSpravaPoli(true)}
+              />
+              <OdbernaMistaPanel
+                entita="op"
+                zaznamId={p.id}
+                onZmenaVazby={nactiZnovu}
+                muzeSpravovatPole={me.prava?.includes("crm_nastaveni")}
               />
               <div className="fm-card crm-blok">
                 <DiskSlozka entita="op" zaznamId={p.id} popisZaznamu="případu" />

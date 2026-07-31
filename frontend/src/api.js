@@ -1260,3 +1260,40 @@ export function crmFiltrUprav(id, data) {
 export function crmFiltrSmaz(id) {
   return zavolej(`/crm/filtry/${id}`, { method: "DELETE" });
 }
+
+// ---- CRM: odběrná místa (CRM-46) ----
+// Stejné pole na kartě klienta i obchodního případu: `entita` je "zakaznik"
+// nebo "op", `zaznamId` id té karty. Místa vždy patří zákazníkovi — u případu
+// je to druhý vchod do téhož seznamu (viz backend `crm/odberna_mista.py`).
+export function crmOdbernaMista(entita, zaznamId) {
+  return zavolej(`/crm/odberna-mista/${entita}/${zaznamId}`);
+}
+
+export function crmOdberneMistoPridej(entita, zaznamId, data) {
+  return zavolej(`/crm/odberna-mista/${entita}/${zaznamId}`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function crmOdberneMistoUprav(mistoId, data) {
+  return zavolej(`/crm/odberna-mista/${mistoId}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+// Bez `potvrzeno` jen vrátí náhled, co by smazání odneslo (diagramy, případy).
+export function crmOdberneMistoSmaz(mistoId, potvrzeno = false) {
+  return zavolej(`/crm/odberna-mista/${mistoId}?potvrzeno=${potvrzeno ? "true" : "false"}`, {
+    method: "DELETE",
+  });
+}
+
+// `mistoId = null` vazbu případu na místo zruší.
+export function crmPripadOdberneMisto(pripadId, mistoId) {
+  return zavolej(`/crm/pripady/${pripadId}/odberne-misto`, {
+    method: "PUT",
+    body: JSON.stringify({ odberne_misto_id: mistoId }),
+  });
+}

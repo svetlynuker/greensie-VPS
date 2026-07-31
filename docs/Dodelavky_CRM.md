@@ -230,6 +230,35 @@ jinak přidělení nic neudělá.
   Bez cílů nejde měřit výkon a bez provizí se stejně počítají v Excelu. Navazuje na CRM-42,
   takže stejný spouštěč: má smysl až budou v appce uzavřené obchody.
 
+- [~] **CRM-46 · Odběrná místa a 15minutové diagramy u klienta i případu** — Velikost **L** ·
+  Dopad **★★★** · *zadal Dan 31. 7. 2026, etapa 1 hotová*
+  *Bylo:* 15minutový diagram odběru se nahrával **jen k nabídce** (`nabidka_dokumenty`
+  typu `spotreba_csv` → `spotreba_profil` podle `nabidka_id`). Když měl klient tři případy,
+  stahoval OZ tentýž soubor z portálu distributora třikrát. Na kartě klienta ani případu
+  nebylo pro diagram místo vůbec.
+  *Zadání Dana:* „na kartu klienta i OP stejné pole, které bude provázané, kam se budou
+  nahrávat 15minutové diagramy pro nabídku."
+  *Rozhodnutí Dana (31. 7. 2026):*
+  - **plnohodnotná odběrná místa**, ne jen volný popis u souboru — jedna firma má víc
+    provozoven a každá má svůj EAN, distributora, hladinu a rezervovanou kapacitu,
+  - **nabídka si drží svá čísla**: diagram je zdroj, nabídka si při výpočtu vezme kopii do
+    `spotreba_profil`. Novější diagram se do odeslané nabídky nedostane sám (je na to
+    tlačítko) — stejný princip jako u kombinace opatření.
+  - Soubory se ukládají **do appky** (`UPLOAD_DIR`), ne na Disk: appka s nimi počítá,
+    stahovat je z Disku při každém výpočtu by byla zbytečná závislost.
+
+  | Etapa | Co v ní je | Stav |
+  |---|---|---|
+  | E1 | tabulka `crm_odberna_mista` (EAN, adresa, **vlastní GPS**, distributor, hladina, rezervovaná kapacita i příkon, vlastní pole přes `extra`), vazba `crm_obchodni_pripady.odberne_misto_id`, panel `OdbernaMistaPanel` na kartě klienta i případu, mazání s náhledem nasucho | ✅ hotovo 31. 7. 2026 |
+  | E2 | tabulka `crm_diagramy` na odběrném místě: nahrání, **parsování hned při uložení** (období od–do, počet intervalů, roční spotřeba, maximum kW), stažení, smazání | čeká |
+  | E3 | „vzít diagram z odběrného místa" v peak shaving i PPA panelu + předvyplnění distributora, hladiny, rezervované kapacity a GPS z místa | čeká |
+
+  *Jak (E1):* `crm/odberna_mista.py` drží validace (EAN 18 číslic, duplicita jen v rámci
+  zákazníka, distributor a hladina proti seznamům nabídkovače) a překlad místa na parametry
+  výpočtu. Práva se **dědí ze zákazníka** — místo nemá vlastníka, protože kdo vidí firmu,
+  má vidět i její provozovny; jinak by se místo dalo „ztratit" pod viditelným zákazníkem.
+  GPS je na místě vlastní schválně: FVE se staví na provozovně, adresa firmy bývá fakturační.
+
 ---
 
 ## 4. Pohledy

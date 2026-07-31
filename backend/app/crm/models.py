@@ -109,7 +109,7 @@ STAVY_UZAVRENE = ("realizovano", "nekonalo_se")
 # Obrazovky, na které smí admin přidávat vlastní pole. Rozšíření o další
 # entitu = přidat klíč sem a její model do `vlastni_pole.MODELY` (entita musí
 # mít sloupec `extra`).
-ENTITY_VLASTNICH_POLI = ("zakaznik", "op", "obj", "pro")
+ENTITY_VLASTNICH_POLI = ("zakaznik", "op", "obj", "pro", "om")
 
 # Datový typ vlastního pole. Dan chtěl „textová pole“; typy navíc stojí skoro
 # nic a ušetří pozdější práci (datum se dá řadit, ano/ne filtrovat, výběr
@@ -420,6 +420,73 @@ class Zakaznik(Base):
         "ZakaznikKontakt", back_populates="zakaznik", cascade="all, delete-orphan"
     )
     pripady = relationship("ObchodniPripad", back_populates="zakaznik")
+    odberna_mista = relationship(
+        "OdberneMisto", back_populates="zakaznik", cascade="all, delete-orphan"
+    )
+
+
+class OdberneMisto(Base):
+    """Odběrné místo zákazníka – kde se elektřina odebírá a čím je zasmluvněná.
+
+    Proč vlastní entita a ne pár polí na zákazníkovi: jedna firma má běžně víc
+    provozoven a každá má svůj EAN, svého distributora, svou napěťovou hladinu
+    a svou rezervovanou kapacitu. Právě na tyhle čtyři věci se váže celý výpočet
+    peak shavingu, a 15minutový diagram odběru patří k MÍSTU, ne k firmě ani
+    k nabídce – proto na něj visí `CrmDiagram`.
+
+    Co se tím odemklo: hodnoty, které OZ dnes vypisuje ručně do každého výpočtu
+    (distributor, hladina, rezervovaná kapacita) i GPS pro výpočet výroby FVE
+    se dají předvyplnit z místa. GPS je tu schválně vlastní a ne přebíraná ze
+    zákazníka: FVE se staví na provozovně, kdežto adresa firmy je fakturační
+    (klidně sídlo účetní v jiném kraji).
+
+    Práva se nedědí přes vlastní vlastníka, ale přes zákazníka: kdo vidí firmu,
+    vidí i její odběrná místa. Vlastní vlastník by znamenal, že se místo dá
+    „ztratit" pod zákazníkem, kterého uživatel vidí.
+    """
+
+    __tablename__ = "crm_odberna_mista"
+
+    id = Column(Integer, primary_key=True, index=True)
+    zakaznik_id = Column(
+        Integer, ForeignKey("crm_zakaznici.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    nazev = Column(String, nullable=False)  # „Hala Kolín", „Sídlo – Praha 9"
+
+    # EAN odběrného místa (18 znaků, v ČR začíná 859). Nepovinný – u leadu ho
+    # OZ ještě nemá. Index kvůli hledání „ke kterému místu patří tenhle diagram".
+    ean = Column(String, nullable=False, default="", server_default="", index=True)
+
+    adresa_ulice = Column(String, nullable=False, default="", server_default="")
+    adresa_mesto = Column(String, nullable=False, default="", server_default="")
+    adresa_psc = Column(String, nullable=False, default="", server_default="")
+    # Poloha PROVOZOVNY (ne fakturační adresy) – vstup pro výpočet výroby FVE.
+    gps_lat = Column(Numeric(9, 6), nullable=True)
+    gps_lng = Column(Numeric(9, 6), nullable=True)
+
+    # Distribuční parametry místa. Prázdné = ještě nezjištěno; hodnoty drží
+    # nabídkovač (`nabidkovac.models.DISTRIBUTORI` / `NAPETOVE_HLADINY`), tady
+    # jsou jako text, aby CRM nemuselo importovat modely nabídkovače.
+    distributor = Column(String, nullable=False, default="", server_default="")
+    napetova_hladina = Column(String, nullable=False, default="", server_default="")
+    rezervovana_kapacita_kw = Column(Numeric(12, 3), nullable=True)
+    rezervovany_prikon_kw = Column(Numeric(12, 3), nullable=True)
+
+    poznamka = Column(Text, nullable=False, default="", server_default="")
+    # Vypnuté místo (odprodaná provozovna) se nenabízí k novým nabídkám, ale
+    # zůstává i s diagramy kvůli historii už odeslaných nabídek.
+    aktivni = Column(Boolean, nullable=False, default=True, server_default="true")
+
+    # Hodnoty vlastních (admin definovaných) polí – viz `CrmVlastniPole`.
+    extra = Column(JSONB, nullable=False, default=dict, server_default="{}")
+
+    vytvoril_user_id = Column(Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True)
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    aktualizovano_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    zakaznik = relationship("Zakaznik", back_populates="odberna_mista")
 
 
 class ZakaznikKontakt(Base):
@@ -464,6 +531,15 @@ class ObchodniPripad(Base):
     )
     nazev = Column(String, nullable=False, default="", server_default="")
     popis = Column(Text, nullable=False, default="", server_default="")
+
+    # Kterého odběrného místa se případ týká. Nepovinné: u případu, kde se ještě
+    # neví, kam se bude stavět, se nechá prázdné, a u nabídky bez peak shavingu
+    # (třeba jen dotaz na cenu) není potřeba vůbec. Když je vyplněné, nabídka si
+    # z místa vezme diagram i distribuční parametry. SET NULL, ne CASCADE –
+    # smazané místo nesmí odnést celý obchodní případ.
+    odberne_misto_id = Column(
+        Integer, ForeignKey("crm_odberna_mista.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     kategorie = Column(ARRAY(String), nullable=False, default=list, server_default="{}")
     # Klíč do CrmStav (entita="op"). Ne FK, protože stavy se dají mazat a

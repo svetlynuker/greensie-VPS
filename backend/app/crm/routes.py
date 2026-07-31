@@ -33,6 +33,7 @@ from app.crm import (
     opakovani as opakovani_modul,
     kategorie as kategorie_modul,
     nabidky_pipeline,
+    odberna_mista as om_modul,
     stavy as stavy_modul,
     ukoly as ukoly_modul,
     vlastni_pole as pole_modul,
@@ -58,6 +59,7 @@ from app.crm.models import (
     CrmVlastniPole,
     ObchodniPripad,
     Objednavka,
+    OdberneMisto,
     Zakaznik,
     ZakaznikKontakt,
 )
@@ -85,6 +87,10 @@ from app.crm.schemas import (
     NabidkaZmenaStavuVstup,
     KontaktOut,
     KontaktVstup,
+    OdbernaMistaOut,
+    OdberneMistoOut,
+    OdberneMistoPripaduVstup,
+    OdberneMistoVstup,
     PripadDetailOut,
     PripadRadekOut,
     PripadUprava,
@@ -600,6 +606,7 @@ def _nabidky_pripadu(db: Session, pripad_id: int) -> list[dict]:
 def _pripad_detail(db: Session, p: ObchodniPripad, user: User) -> PripadDetailOut:
     zaklad = _pripad_radek(p, _mapa_stavu(db, "op")).model_dump()
     zaklad.pop("extra_text", None)  # v detailu se posílají surové hodnoty + definice
+    misto = db.get(OdberneMisto, p.odberne_misto_id) if p.odberne_misto_id else None
     return PripadDetailOut(
         **zaklad,
         popis=p.popis or "",
@@ -608,6 +615,8 @@ def _pripad_detail(db: Session, p: ObchodniPripad, user: User) -> PripadDetailOu
         vlastnik_user_id=p.vlastnik_user_id,
         spoluvlastnici=list(p.spoluvlastnici or []),
         raynet_id=p.raynet_id,
+        odberne_misto_id=p.odberne_misto_id,
+        odberne_misto_nazev=misto.nazev if misto is not None else "",
         nabidky=_nabidky_pripadu(db, p.id),
         extra_text={},
         extra=p.extra or {},
@@ -2699,3 +2708,215 @@ def navrh_startu(
             "stovky, aby si obě řady během koexistence nezkřížily cestu."
         ),
     }
+
+
+# ---- odběrná místa (CRM-46) --------------------------------------------------
+# Jeden pár endpointů pro kartu klienta i kartu obchodního případu — stejně jako
+# u složek na Disku. Odběrné místo patří VŽDY zákazníkovi; u případu je to jen
+# druhý vchod do téhož seznamu, plus vazba „tohoto místa se případ týká".
+# Právo je `zakaznici`, protože odběrné místo je vlastnost firmy; kdo vidí
+# případ, má v CRM i právo na zákazníky (viz tabulka práv v Dodelavky_CRM.md).
+
+
+def _misto_out(
+    db: Session, m: OdberneMisto, vybrane_id: int | None = None, zakaznik_nazev: str = ""
+) -> OdberneMistoOut:
+    return OdberneMistoOut(
+        id=m.id,
+        zakaznik_id=m.zakaznik_id,
+        zakaznik_nazev=zakaznik_nazev,
+        nazev=m.nazev,
+        ean=m.ean or "",
+        adresa_ulice=m.adresa_ulice or "",
+        adresa_mesto=m.adresa_mesto or "",
+        adresa_psc=m.adresa_psc or "",
+        adresa_text=om_modul.adresa_textem(m),
+        gps_lat=float(m.gps_lat) if m.gps_lat is not None else None,
+        gps_lng=float(m.gps_lng) if m.gps_lng is not None else None,
+        distributor=m.distributor or "",
+        napetova_hladina=m.napetova_hladina or "",
+        rezervovana_kapacita_kw=(
+            float(m.rezervovana_kapacita_kw) if m.rezervovana_kapacita_kw is not None else None
+        ),
+        rezervovany_prikon_kw=(
+            float(m.rezervovany_prikon_kw) if m.rezervovany_prikon_kw is not None else None
+        ),
+        poznamka=m.poznamka or "",
+        aktivni=bool(m.aktivni),
+        extra=m.extra or {},
+        diagramu=om_modul.pocet_diagramu(db, m.id),
+        vybrane_pro_pripad=(vybrane_id is not None and m.id == vybrane_id),
+    )
+
+
+def _napln_misto(db: Session, m: OdberneMisto, vstup: OdberneMistoVstup) -> OdberneMisto:
+    """Přepíše pole místa ze vstupu (společné pro zakládání i úpravu)."""
+    nazev = (vstup.nazev or "").strip()
+    if not nazev:
+        raise HTTPException(status_code=422, detail="Odběrné místo musí mít název.")
+
+    ean = om_modul.normalizuj_ean(vstup.ean)
+    om_modul.over_duplicitni_ean(db, m.zakaznik_id, ean, krome_id=m.id)
+    distributor, hladina = om_modul.over_distribuci(vstup.distributor, vstup.napetova_hladina)
+
+    m.nazev = nazev
+    m.ean = ean
+    m.adresa_ulice = (vstup.adresa_ulice or "").strip()
+    m.adresa_mesto = (vstup.adresa_mesto or "").strip()
+    m.adresa_psc = (vstup.adresa_psc or "").strip()
+    m.gps_lat = vstup.gps_lat
+    m.gps_lng = vstup.gps_lng
+    m.distributor = distributor
+    m.napetova_hladina = hladina
+    m.rezervovana_kapacita_kw = vstup.rezervovana_kapacita_kw
+    m.rezervovany_prikon_kw = vstup.rezervovany_prikon_kw
+    m.poznamka = (vstup.poznamka or "").strip()
+    m.aktivni = bool(vstup.aktivni)
+    m.extra = pole_modul.zpracuj(db, "om", vstup.extra)
+    return m
+
+
+@router.get("/odberna-mista/{entita}/{zaznam_id}", response_model=OdbernaMistaOut)
+def seznam_odbernych_mist(
+    entita: str,
+    zaznam_id: int,
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Odběrná místa zákazníka — z karty klienta i z karty obchodního případu.
+
+    U případu se vrací místa jeho zákazníka a `vybrane_id` říká, kterého se
+    případ týká. Tím je „stejné pole na obou obrazovkách" jeden zdroj pravdy:
+    co OZ založí u případu, vidí i na kartě klienta a použijí to i další
+    případy téže firmy.
+    """
+    z, pripad = om_modul.zaznam_a_zakaznik(db, entita, zaznam_id, user)
+    if z is None:
+        raise HTTPException(status_code=404, detail="Zákazník neexistuje")
+    vybrane_id = pripad.odberne_misto_id if pripad is not None else None
+    mista = om_modul.seznam(db, z.id)
+    return OdbernaMistaOut(
+        zakaznik_id=z.id,
+        zakaznik_nazev=z.nazev,
+        mista=[_misto_out(db, m, vybrane_id, z.nazev) for m in mista],
+        vybrane_id=vybrane_id,
+        vlastni_pole=[VlastniPoleOut(**p) for p in pole_modul.pro_frontend(db, "om")],
+        muze_editovat=smi_menit(pripad if pripad is not None else z, user),
+    )
+
+
+@router.post("/odberna-mista/{entita}/{zaznam_id}", response_model=OdberneMistoOut)
+def zaloz_odberne_misto(
+    entita: str,
+    zaznam_id: int,
+    vstup: OdberneMistoVstup,
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Založí odběrné místo u zákazníka.
+
+    Když se zakládá z karty obchodního případu a případ ještě žádné místo
+    nemá, rovnou se mu přiřadí — OZ zakládá místo právě proto, že ho pro ten
+    případ potřebuje, a druhé kliknutí by byl jen obřad. Když už případ místo
+    má, vazba se nepřepisuje (to je vědomé rozhodnutí, ne vedlejší efekt).
+    """
+    z, pripad = om_modul.zaznam_a_zakaznik(db, entita, zaznam_id, user)
+    if z is None:
+        raise HTTPException(status_code=404, detail="Zákazník neexistuje")
+    if not smi_menit(pripad if pripad is not None else z, user):
+        raise HTTPException(status_code=403, detail="Na úpravu tohoto záznamu nemáš právo.")
+
+    m = OdberneMisto(zakaznik_id=z.id, nazev="", vytvoril_user_id=user.id)
+    _napln_misto(db, m, vstup)
+    db.add(m)
+    db.flush()
+    if pripad is not None and pripad.odberne_misto_id is None:
+        pripad.odberne_misto_id = m.id
+    db.commit()
+    db.refresh(m)
+    return _misto_out(db, m, pripad.odberne_misto_id if pripad is not None else None, z.nazev)
+
+
+@router.put("/odberna-mista/{misto_id}", response_model=OdberneMistoOut)
+def uprav_odberne_misto(
+    misto_id: int,
+    vstup: OdberneMistoVstup,
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    m = om_modul.vyzaduj_misto(db, misto_id, user)
+    z = db.get(Zakaznik, m.zakaznik_id)
+    if not smi_menit(z, user):
+        raise HTTPException(status_code=403, detail="Na úpravu tohoto zákazníka nemáš právo.")
+    _napln_misto(db, m, vstup)
+    db.commit()
+    db.refresh(m)
+    return _misto_out(db, m, None, z.nazev if z is not None else "")
+
+
+@router.delete("/odberna-mista/{misto_id}")
+def smaz_odberne_misto(
+    misto_id: int,
+    potvrzeno: bool = Query(default=False, description="Bez potvrzení se jen vypíše, co smazání odnese"),
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Smaže odběrné místo. Bez `potvrzeno=true` jen řekne, co by se stalo.
+
+    Náhled nasucho je tu proto, že s místem odejdou i jeho diagramy — a ty
+    OZ stahoval z portálu distributora, což je hodinová práce a čekání na
+    přístupy. Případy, které místo používaly, se jen odpojí (nemažou se).
+    """
+    m = om_modul.vyzaduj_misto(db, misto_id, user)
+    z = db.get(Zakaznik, m.zakaznik_id)
+    if not smi_menit(z, user):
+        raise HTTPException(status_code=403, detail="Na úpravu tohoto zákazníka nemáš právo.")
+
+    diagramu = om_modul.pocet_diagramu(db, m.id)
+    pripadu = (
+        db.query(ObchodniPripad).filter(ObchodniPripad.odberne_misto_id == m.id).count()
+    )
+    if not potvrzeno:
+        return {
+            "smazano": False,
+            "nazev": m.nazev,
+            "diagramu": diagramu,
+            "pripadu": pripadu,
+            "co_se_stane": (
+                f"Smaže se odběrné místo „{m.nazev}“ včetně {diagramu} nahraných diagramů. "
+                f"Obchodní případy ({pripadu}) zůstanou, jen se jim vazba na místo zruší."
+            ),
+        }
+    db.delete(m)
+    db.commit()
+    return {"smazano": True, "id": misto_id, "diagramu": diagramu, "pripadu": pripadu}
+
+
+@router.put("/pripady/{pripad_id}/odberne-misto", response_model=OdbernaMistaOut)
+def nastav_odberne_misto_pripadu(
+    pripad_id: int,
+    vstup: OdberneMistoPripaduVstup,
+    user: User = Depends(vyzaduj_pripady),
+    db: Session = Depends(get_db),
+):
+    """Přiřadí případu odběrné místo (nebo vazbu zruší hodnotou `null`).
+
+    Místo musí patřit zákazníkovi případu — jinak by nabídka počítala z diagramu
+    cizí firmy, což je chyba, kterou by na výsledku nikdo nepoznal.
+    """
+    p = vyzaduj_zaznam(db.get(ObchodniPripad, pripad_id), user, "Obchodní případ")
+    if not smi_menit(p, user):
+        raise HTTPException(status_code=403, detail="Na úpravu tohoto případu nemáš právo.")
+
+    if vstup.odberne_misto_id is None:
+        p.odberne_misto_id = None
+    else:
+        m = db.get(OdberneMisto, vstup.odberne_misto_id)
+        if m is None or m.zakaznik_id != p.zakaznik_id:
+            raise HTTPException(
+                status_code=422,
+                detail="Odběrné místo patří jinému zákazníkovi, než je na tomto případu.",
+            )
+        p.odberne_misto_id = m.id
+    db.commit()
+    return seznam_odbernych_mist("op", p.id, user, db)

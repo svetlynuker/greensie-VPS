@@ -242,6 +242,10 @@ class PripadDetailOut(PripadRadekOut):
     vlastnik_user_id: Optional[int] = None
     spoluvlastnici: list[int] = []
     raynet_id: Optional[int] = None
+    # Odběrné místo, kterého se případ týká (CRM-46). Název posíláme s sebou,
+    # aby karta nemusela kvůli jednomu popisku dotahovat celý seznam míst.
+    odberne_misto_id: Optional[int] = None
+    odberne_misto_nazev: str = ""
     # Nabídky, které k případu patří (zatím vazba přes nabídkovač – doplní
     # se v druhé dávce). Držíme pole už teď, ať frontend nemusí měnit tvar.
     nabidky: list[dict] = []
@@ -897,3 +901,72 @@ class UlozenyFiltrVstup(BaseModel):
     razeni: list[RazeniFiltru] = []
     sdileny: bool = False
     vychozi: bool = False
+
+
+# ---- odběrná místa (CRM-46) --------------------------------------------------
+# Distributor a hladina jsou tu `str`, ne Literal: seznamy patří nabídkovači
+# (`nabidkovac.models.DISTRIBUTORI` / `NAPETOVE_HLADINY`) a validují se proti
+# nim v `odberna_mista.over_distribuci`. Dvě kopie stejného enumu by se rozešly.
+class OdberneMistoOut(BaseModel):
+    id: int
+    zakaznik_id: int
+    zakaznik_nazev: str = ""
+    nazev: str
+    ean: str = ""
+    adresa_ulice: str = ""
+    adresa_mesto: str = ""
+    adresa_psc: str = ""
+    adresa_text: str = ""  # celá adresa na jeden řádek (pro seznamy)
+    gps_lat: Optional[float] = None
+    gps_lng: Optional[float] = None
+    distributor: str = ""
+    napetova_hladina: str = ""
+    rezervovana_kapacita_kw: Optional[float] = None
+    rezervovany_prikon_kw: Optional[float] = None
+    poznamka: str = ""
+    aktivni: bool = True
+    extra: dict = {}
+    # Kolik 15min diagramů na místě visí (etapa 2). Ať je z karty klienta hned
+    # vidět, ke kterému místu podklady pro výpočet jsou a ke kterému chybí.
+    diagramu: int = 0
+    # Je tohle místo to, kterého se otevřený obchodní případ týká?
+    vybrane_pro_pripad: bool = False
+
+
+class OdbernaMistaOut(BaseModel):
+    """Odpověď pro obě obrazovky: klienta i obchodní případ.
+
+    `muze_editovat` říká, jestli má UI vůbec nabízet tlačítka – právo na záznam
+    se stejně kontroluje na každém zápisu, tohle je jen kvůli tomu, aby se
+    uživateli nenabízelo, co mu backend odmítne.
+    """
+
+    zakaznik_id: int
+    zakaznik_nazev: str = ""
+    mista: list[OdberneMistoOut] = []
+    vybrane_id: Optional[int] = None  # jen u entity "op"
+    vlastni_pole: list[VlastniPoleOut] = []
+    muze_editovat: bool = True
+
+
+class OdberneMistoVstup(BaseModel):
+    nazev: str
+    ean: str = ""
+    adresa_ulice: str = ""
+    adresa_mesto: str = ""
+    adresa_psc: str = ""
+    gps_lat: Optional[float] = None
+    gps_lng: Optional[float] = None
+    distributor: str = ""
+    napetova_hladina: str = ""
+    rezervovana_kapacita_kw: Optional[float] = None
+    rezervovany_prikon_kw: Optional[float] = None
+    poznamka: str = ""
+    aktivni: bool = True
+    extra: dict = {}
+
+
+class OdberneMistoPripaduVstup(BaseModel):
+    """Přiřazení místa k obchodnímu případu. `null` = zrušit vazbu."""
+
+    odberne_misto_id: Optional[int] = None
