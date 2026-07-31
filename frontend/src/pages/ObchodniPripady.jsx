@@ -225,6 +225,8 @@ export default function ObchodniPripady() {
           razeni={f.razeni}
           onPodminky={f.setPodminky}
           onRazeni={f.setRazeni}
+          rozvrzeni={f.rozvrzeni}
+          onRozvrzeni={f.ulozRozvrzeni}
           mojeJmeno={me?.uzivatel?.jmeno || ""}
           otevreneStavy={stavy.filter((s) => s.druh === "otevreny").map((s) => s.nazev)}
         />
@@ -273,7 +275,10 @@ export default function ObchodniPripady() {
           />
         ) : (
           <CrmTabulka
-            sloupce={f.sloupce}
+            sloupce={f.sloupceTabulky}
+            vsechnySloupce={f.sloupce}
+            rozvrzeni={f.rozvrzeni}
+            onRozvrzeni={f.ulozRozvrzeni}
             radky={f.radky}
             vsechnyRadky={radky}
             razeni={f.razeni}

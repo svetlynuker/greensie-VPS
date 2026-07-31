@@ -188,6 +188,15 @@ def _lehka_migrace():
                 )
             )
 
+        # CRM-28: rozvržení tabulky uložené s filtrem. `crm_ulozene_filtry`
+        # existuje od dřívějška, takže create_all sloupec nedoplní.
+        conn.execute(
+            text(
+                "ALTER TABLE crm_ulozene_filtry ADD COLUMN IF NOT EXISTS sloupce "
+                "JSONB NOT NULL DEFAULT '{}'::jsonb"
+            )
+        )
+
         # CRM: počátek číselné řady. Tabulka `crm_ciselne_rady` mohla vzniknout
         # ještě bez tohoto sloupce (create_all ho do existující tabulky nepřidá).
         conn.execute(

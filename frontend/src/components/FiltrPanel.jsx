@@ -12,6 +12,8 @@ import {
   moznostiSloupce,
   popisPodminky,
   rozsahObdobi,
+  poskupinuj,
+  spojkyZPodminek,
   vychoziRazeni,
 } from "../crmFiltry";
 
@@ -37,6 +39,10 @@ export default function FiltrPanel({
   // CRM-27: pro předvolby „jen moje" a „jen otevřené".
   mojeJmeno = "",
   otevreneStavy = null,
+  // CRM-28: rozvržení tabulky se dá uložit spolu s filtrem — kdo sleduje jiná
+  // čísla, chce i jinou tabulku. Bez těchhle props se nabídka neukazuje.
+  rozvrzeni = null,
+  onRozvrzeni = null,
 }) {
   const [filtry, setFiltry] = useState([]);
   const [aktivni, setAktivni] = useState(null); // id použitého uloženého filtru
@@ -67,6 +73,16 @@ export default function FiltrPanel({
     setAktivni(f.id);
     onPodminky(f.podminky || []);
     onRazeni((f.razeni || []).length ? f.razeni : vychoziRazeni(entita));
+    // Rozvržení jen když si ho filtr nese. Prázdné znamená „tenhle filtr
+    // rozvržení neřeší" — pak zůstane to, co má člověk nastavené, protože
+    // přehazovat mu sloupce u každého filtru by bylo otravné.
+    const ulozeneSloupce = f.sloupce;
+    if (onRozvrzeni && ulozeneSloupce && (ulozeneSloupce.skryte?.length || ulozeneSloupce.poradi?.length)) {
+      onRozvrzeni({
+        skryte: ulozeneSloupce.skryte || [],
+        poradi: ulozeneSloupce.poradi || [],
+      });
+    }
   }
 
   function zrus() {
@@ -162,6 +178,7 @@ export default function FiltrPanel({
           podminky={podminky}
           razeni={razeni}
           ulozeny={filtry.find((f) => f.id === aktivni) || null}
+          rozvrzeni={rozvrzeni}
           onZavri={() => setEditor(false)}
           onPouzij={(p, r) => {
             onPodminky(p);
@@ -253,6 +270,7 @@ function FiltrEditor({
   podminky,
   razeni,
   ulozeny,
+  rozvrzeni,
   onZavri,
   onPouzij,
   onUlozeno,
@@ -266,6 +284,11 @@ function FiltrEditor({
   const [nazev, setNazev] = useState(ulozeny?.nazev || "");
   const [sdileny, setSdileny] = useState(Boolean(ulozeny?.sdileny));
   const [vychozi, setVychozi] = useState(Boolean(ulozeny?.vychozi));
+  // Uložit s filtrem i rozvržení tabulky (CRM-28). Výchozí je podle toho, jestli
+  // ho stávající filtr nese — ať se při úpravě omylem nezahodí.
+  const [sRozvrzenim, setSRozvrzenim] = useState(
+    Boolean(ulozeny?.sloupce?.skryte?.length || ulozeny?.sloupce?.poradi?.length)
+  );
   const [pracuje, setPracuje] = useState(false);
   const [chyba, setChyba] = useState(null);
 
@@ -292,6 +315,15 @@ function FiltrEditor({
     setP(p.map((x, j) => (j === i ? { ...x, ...zmena } : x)));
   }
 
+  // Spojky (a / nebo) jsou POHLED na čísla skupin, ne druhý zdroj pravdy —
+  // jinak by se po smazání podmínky uprostřed rozešly s tím, co se uloží.
+  const spojky = spojkyZPodminek(p);
+
+  function zmenSpojku(i, nova) {
+    const upravene = spojky.map((s, j) => (j === i ? nova : s));
+    setP(poskupinuj(p, upravene));
+  }
+
   function pridejRazeni() {
     setR([...r, { pole: prvniSloupec, smer: "asc" }]);
   }
@@ -308,6 +340,8 @@ function FiltrEditor({
         nazev: nazev.trim(),
         podminky: p.filter((x) => x.pole && x.operator),
         razeni: r.filter((x) => x.pole),
+        // Prázdný objekt = filtr rozvržení neřeší (viz `pouzij` výš).
+        sloupce: sRozvrzenim && rozvrzeni ? rozvrzeni : {},
         sdileny,
         vychozi,
       };
@@ -366,6 +400,30 @@ function FiltrEditor({
                 : [];
             return (
               <div className="crm-podminka" key={i}>
+                {/* Spojka s PŘEDCHOZÍ podmínkou (CRM-26). „nebo" je slepí do
+                    jedné skupiny, „a" začíná novou — víc než tohle uživatel
+                    k vyjádření běžného filtru nepotřebuje a závorky by ho jen
+                    přinutily přemýšlet jako programátor. */}
+                {i === 0 ? (
+                  <span className="crm-tise crm-spojka-misto">kde</span>
+                ) : (
+                  <span className="gs-seg crm-spojka">
+                    <button
+                      onClick={() => zmenSpojku(i, "a")}
+                      aria-pressed={spojky[i] !== "nebo"}
+                      title="Musí platit obojí"
+                    >
+                      a
+                    </button>
+                    <button
+                      onClick={() => zmenSpojku(i, "nebo")}
+                      aria-pressed={spojky[i] === "nebo"}
+                      title="Stačí jedna z podmínek"
+                    >
+                      nebo
+                    </button>
+                  </span>
+                )}
                 <select
                   className="crm-pole crm-pole-uzke"
                   value={x.pole}
@@ -478,7 +536,12 @@ function FiltrEditor({
 
                 <button
                   className="fm-btn crm-btn-maly crm-btn-smazat"
-                  onClick={() => setP(p.filter((_, j) => j !== i))}
+                  onClick={() => {
+                    // Přečíslovat: po smazání prostřední podmínky by jinak
+                    // zůstaly osiřelé skupiny a „nebo" by viselo v prázdnu.
+                    const zbytek = p.filter((_, j) => j !== i);
+                    setP(poskupinuj(zbytek, spojkyZPodminek(zbytek)));
+                  }}
                   title="Odebrat podmínku"
                 >
                   ✕
@@ -556,6 +619,19 @@ function FiltrEditor({
                   />
                   Použít po otevření sekce
                 </label>
+                {rozvrzeni && (
+                  <label
+                    className="crm-zaskrtavaci"
+                    title="Uloží i to, které sloupce jsou vidět a v jakém pořadí"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={sRozvrzenim}
+                      onChange={(e) => setSRozvrzenim(e.target.checked)}
+                    />
+                    Uložit i rozvržení sloupců
+                  </label>
+                )}
               </div>
             </div>
           </div>

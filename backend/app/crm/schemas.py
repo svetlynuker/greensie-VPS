@@ -878,6 +878,10 @@ class PodminkaFiltru(BaseModel):
     operator: OperatorFiltru
     # Hodnota může být text, číslo, seznam (je_jeden_z) nebo dvojice (mezi).
     hodnota: Any = None
+    # CRM-26: číslo skupiny. Podmínky se STEJNÝM číslem se spojují přes NEBO,
+    # skupiny navzájem přes A. `None` = podmínka stojí sama (chová se jako A),
+    # takže starší uložené filtry i rychlé předvolby fungují beze změny.
+    skupina: Optional[int] = None
 
 
 class RazeniFiltru(BaseModel):
@@ -891,6 +895,9 @@ class UlozenyFiltrOut(BaseModel):
     nazev: str
     podminky: list[PodminkaFiltru] = []
     razeni: list[RazeniFiltru] = []
+    # CRM-28: rozvržení tabulky uložené s filtrem — kdo sleduje jiná čísla,
+    # chce i jinou tabulku. Prázdné = uživatelovo běžné rozvržení zůstane.
+    sloupce: dict = {}
     sdileny: bool = False
     vychozi: bool = False
     poradi: int = 0
@@ -903,6 +910,7 @@ class UlozenyFiltrVstup(BaseModel):
     nazev: str
     podminky: list[PodminkaFiltru] = []
     razeni: list[RazeniFiltru] = []
+    sloupce: dict = {}
     sdileny: bool = False
     vychozi: bool = False
 
@@ -1105,3 +1113,21 @@ class EmailVstup(BaseModel):
 class EmailOut(BaseModel):
     ok: bool = True
     aktivita_id: Optional[int] = None
+
+
+# ---- oblíbené a naposledy otevřené (CRM-37) ---------------------------------
+class OblibenyOut(BaseModel):
+    entita: str
+    zaznam_id: int
+    nazev: str = ""
+    cesta: str = ""
+    oblibene: bool = False
+
+
+class OblibeneOut(BaseModel):
+    oblibene: list[OblibenyOut] = []
+    nedavne: list[OblibenyOut] = []
+
+
+class OblibeneVstup(BaseModel):
+    oblibene: bool = True

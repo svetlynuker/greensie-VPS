@@ -1068,6 +1068,9 @@ class CrmUlozenyFiltr(Base):
     nazev = Column(String, nullable=False)
     podminky = Column(JSONB, nullable=False, default=list, server_default="[]")
     razeni = Column(JSONB, nullable=False, default=list, server_default="[]")
+    # CRM-28: rozvržení tabulky uložené s filtrem – {"skryte": [...], "poradi": [...]}.
+    # Prázdné = filtr rozvržení neřeší a zůstane to, co má uživatel nastavené.
+    sloupce = Column(JSONB, nullable=False, default=dict, server_default="{}")
 
     # Autor filtru. NULL by znamenalo „nikoho“, což nechceme – filtr vždy někomu
     # patří a jen sdílený je vidět i ostatním.
@@ -1151,5 +1154,40 @@ class CrmSablona(Base):
     )
     vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     aktualizovano_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CrmOblibene(Base):
+    """Oblíbený a naposledy otevřený záznam (CRM-37).
+
+    Jedna tabulka pro obojí, rozlišené příznakem `oblibene`: je to tentýž pár
+    (uživatel, záznam) a dvě tabulky by znamenaly dvě místa, kde po smazání
+    záznamu zůstávají osiřelé řádky.
+
+    ---- Proč se to nedrží v prohlížeči ----
+    „Naposledy otevřené" má smysl hlavně tehdy, když si člověk sedne k jinému
+    počítači nebo pokračuje druhý den. localStorage by obojí ztratil právě
+    v tu chvíli, kdy je to potřeba.
+
+    Bez cizího klíče na entitu (stejně jako `CrmNotifikace`): záznam může
+    zmizet a odkaz zůstane mrtvý, což je menší zlo než mazat historii. Neplatné
+    položky se zahazují až při čtení, kdy se dotahují názvy.
+    """
+
+    __tablename__ = "crm_oblibene"
+    __table_args__ = (
+        UniqueConstraint("uzivatel_id", "entita", "zaznam_id", name="uq_crm_oblibene"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    uzivatel_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    entita = Column(String, nullable=False)  # klíč z ukoly.ENTITY
+    zaznam_id = Column(Integer, nullable=False)
+    # True = přišpendlené uživatelem; False = jen prošel kolem (historie).
+    oblibene = Column(Boolean, nullable=False, default=False, server_default="false")
+    otevreno_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )

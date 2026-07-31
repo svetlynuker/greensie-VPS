@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
+import Spendlik from "../components/Spendlik";
 import Aktivity from "../components/Aktivity";
 import KontaktyPanel from "../components/KontaktyPanel";
 import OdbernaMistaPanel from "../components/OdbernaMistaPanel";
@@ -124,7 +125,10 @@ export default function ZakaznikDetail() {
 
         <div className="crm-karta-hlava">
           <div style={{ minWidth: 0 }}>
-            <h1>{z.nazev}</h1>
+            <h1>
+              <Spendlik entita="zakaznik" zaznamId={z.id} />
+              {z.nazev}
+            </h1>
             <div className="crm-karta-radek">
               {z.ico ? `IČO ${z.ico}` : "bez IČO"}
               {adresa ? ` · ${adresa}` : ""}

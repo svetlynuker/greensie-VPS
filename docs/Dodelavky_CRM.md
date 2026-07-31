@@ -121,8 +121,9 @@ zakázky, je zbytek seznamu odhad — ne zkušenost. Proto se nejdřív zapíná
 | **C · Denní práce se zakázkou** ✅ | ~~CRM-05, CRM-19, CRM-30, CRM-24, CRM-27, CRM-18~~ — **hotovo 31. 7. 2026** | — | Odpracováno podle seznamu. Rezerva na to, „co vyleze z provozu", tím padla — až se appka začne používat naostro, přijdou věci, které v seznamu nejsou. |
 | **D · Peníze** ✅ | ~~CRM-08, CRM-09~~ — **hotovo 31. 7. 2026** | — | Zakázka projde celým řetězcem až k faktuře v appce. Katalog technologií se přitom stal katalogem produktů (244 položek z Raynetu, přílohy, zaškrtávátko Aktivní). |
 | **E · Komunikace** ✅ | ~~CRM-36, CRM-10, CRM-32~~ — **hotovo 31. 7. 2026** | — | Uděláno v tomhle pořadí schválně: volba notifikací vznikla dřív než notifikace samotné, aby si je nikdo nemusel „vytrpět". |
+| **G · Denní práce se seznamy** ✅ | ~~CRM-26, CRM-28, CRM-37, CRM-38~~ — **hotovo 31. 7. 2026** | — | Vzniklo mimo původní plán dávek: až se appka začala používat, ukázalo se, že tohle lidi potká každý den dřív než servisní modul. |
 | **F · Druhý životní cyklus** | CRM-11, CRM-31 | ~1 týden+ | Až budou v appce první předané projekty, ke kterým se dá servis navěsit. |
-| **Odloženo s podmínkou** | CRM-02 + CRM-38 (~300 řádků v seznamu), CRM-29 (desetitisíce), CRM-06 (jen když se objeví osoba u dvou firem), CRM-41 + CRM-42 (až bude ~20 uzavřených obchodů) | — | Spouštěč je napsaný, ať se to nedělá dřív, než to začne bolet. |
+| **Odloženo s podmínkou** | CRM-02 (~300 řádků v seznamu; CRM-38 už hotové zvlášť), CRM-29 (desetitisíce), CRM-06 (jen když se objeví osoba u dvou firem), CRM-41 + CRM-42 (až bude ~20 uzavřených obchodů) | — | Spouštěč je napsaný, ať se to nedělá dřív, než to začne bolet. |
 
 **Práva: zatím NEPŘIDĚLOVAT** (rozhodnutí Dana 30. 7. 2026). CRM i nové funkce vidí jen
 admini (Dan, Mirek, Dezzi test) — appka se staví a testuje interně. Návrh přidělení níž
@@ -400,9 +401,17 @@ Co běžná CRM mají navíc:
   *Pozor:* dny se počítají v lokálním čase, ne přes `toISOString()` — ten by
   v našem pásmu každý večer hlásil „dnes" jako předchozí den.
 
-- [ ] **CRM-26 · OR a skupiny podmínek** — Velikost **M** · Dopad **★★**
-  Dnes se všechny podmínky sčítají (AND). Chybí „stav je Nabídka **nebo** Vyjednávání".
-  Formát podmínek v `crm_ulozene_filtry` to zvládne, jde o vyhodnocení v `crmFiltry.js`.
+- [x] **CRM-26 · OR a skupiny podmínek** — **hotovo 31. 7. 2026** (dávka „seznamy")
+  Podmínka dostala nepovinné pole `skupina`: **stejné číslo = NEBO, různá čísla = A.**
+  Tím se vyjádří všechno, co jde napsat jako součin součtů, a to pokryje, co lidé od
+  filtru chtějí — bez editoru se závorkami.
+  *Proč zrovna takhle:* formát zůstal plochý, takže **uložené filtry i rychlé předvolby
+  (CRM-27) fungují beze změny**. Podmínka bez `skupina` stojí sama; klíč osamocené
+  podmínky je odvozený od jejího pořadí, jinak by všechny bezskupinové spadly do jedné
+  a začaly se OR-ovat.
+  *V UI* je to přepínač **a / nebo** mezi podmínkami. Spojky jsou POHLED na čísla skupin
+  (`spojkyZPodminek`), ne druhý zdroj pravdy — po smazání prostřední podmínky se skupiny
+  přečíslují (`poskupinuj`), jinak by „nebo" viselo v prázdnu.
 
 - [x] **CRM-27 · Rychlé předvolby** — **hotovo 31. 7. 2026** (dávka C)
   Pilulky nad seznamem: **Jen moje · Jen otevřené · Po termínu · Uzavření tento měsíc**.
@@ -411,8 +420,14 @@ Co běžná CRM mají navíc:
   relativní období, aby za měsíc nelhaly.
   „Jen moje", „jen otevřené", „po termínu" jedním kliknutím, bez skládání filtru.
 
-- [ ] **CRM-28 · Skrývání a přeskládání sloupců** — Velikost **M** · Dopad **★★**
-  Včetně uložení rozvržení k filtru — kdo sleduje jiná čísla, chce jinou tabulku.
+- [x] **CRM-28 · Skrývání a přeskládání sloupců** — **hotovo 31. 7. 2026** (dávka „seznamy")
+  Tlačítko **⋮⋮ Sloupce** nad tabulkou; ukládá se do `uzivatelska_nastaveni` pod klíč
+  `crm_sloupce_<entita>` a volitelně i s uloženým filtrem (`crm_ulozene_filtry.sloupce`).
+  *Věc, na kterou pozor:* rozvržení řídí **jen tabulku**, ne filtr. `pouzitFiltr` proto
+  vrací dvě sady — `sloupce` (všechny, do FiltrPanelu) a `sloupceTabulky` (viditelné,
+  do CrmTabulky). Kdyby dostaly obě totéž, skrytí sloupce by potichu zrušilo i možnost
+  podle něj filtrovat.
+  Sloupec, který v uloženém pořadí není (nové vlastní pole), se řadí na konec — nezmizí.
 
 - [ ] **CRM-29 · Filtr na serveru** — Velikost **L** · Dopad **★** · **odloženo, spouštěč: desetitisíce záznamů**
   Dnes se filtruje na klientu (vědomé rozhodnutí, viz `crmFiltry.js`). Až budou desetitisíce
@@ -472,11 +487,23 @@ Co běžná CRM mají navíc:
   je neměnný**, protože ho nese uložená volba (přejmenování by lidem tiše zaplo, co si
   vypnuli).
 
-- [ ] **CRM-37 · Oblíbené a naposledy otevřené** — Velikost **S** · Dopad **★**
-  Rychlý návrat k záznamu, se kterým člověk zrovna pracuje.
+- [x] **CRM-37 · Oblíbené a naposledy otevřené** — **hotovo 31. 7. 2026** (dávka „seznamy")
+  Tabulka `crm_oblibene` (jedna pro obojí, rozlišené příznakem `oblibene`), hvězdička
+  `Spendlik.jsx` na kartě zákazníka, případu a projektu, výpis v hledání (Ctrl+K) při
+  prázdném poli.
+  *Tři rozhodnutí:* zápis do historie dělá **sama hvězdička** při vykreslení (jinak by se
+  na to u nové obrazovky zapomnělo); **názvy se dotahují až při čtení**, aby po přejmenování
+  firmy nesvítil v historii starý; historie se **ořezává při zápisu** na 15 položek —
+  oblíbené se do limitu nepočítají a nemažou se samy.
 
-- [ ] **CRM-38 · Počet řádků na stránku** — Velikost **S** · Dopad **★**
-  Souvisí s CRM-02.
+- [x] **CRM-38 · Počet řádků na stránku** — **hotovo 31. 7. 2026** (dávka „seznamy")
+  Volba 25 / 50 / 100 / vše pod tabulkou, včetně přepínání stránek.
+  *Dvě věci, které se snadno udělají špatně:* stránkuje se **až po filtru** (jinak by filtr
+  prohledával jen aktuální stránku a seznam by lhal) a při změně filtru se skáče na první
+  stránku (jinak člověk kouká na prázdnou pátou a myslí si, že nic nenašel).
+  Volba žije **v prohlížeči** (`nastaveniTabulky.js`), ne v profilu — je závislá na
+  velikosti displeje, takže přenášet ji mezi počítači by byla medvědí služba.
+  Serverové stránkování je pořád CRM-02 a čeká na svůj spouštěč.
 
 > **Hotové už teď:** světlý/tmavý režim, velikost textu a režim pro barvoslepé (appka je má
 > globálně — `theme.js`, `velikost.js`), výchozí filtr per sekce (`crm_ulozene_filtry.vychozi`).

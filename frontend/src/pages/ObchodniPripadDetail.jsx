@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
+import Spendlik from "../components/Spendlik";
 import Aktivity from "../components/Aktivity";
 import DuvodProhry from "../components/DuvodProhry";
 import PripadFormular from "../components/PripadFormular";
@@ -163,6 +164,7 @@ export default function ObchodniPripadDetail() {
         <div className="crm-karta-hlava">
           <div style={{ minWidth: 0 }}>
             <h1>
+              <Spendlik entita="op" zaznamId={p.id} />
               {p.cislo}
               {p.nazev ? ` · ${p.nazev}` : ""}
             </h1>
