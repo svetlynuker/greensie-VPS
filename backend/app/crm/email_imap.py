@@ -457,13 +457,19 @@ class ImapSpojeni:
         return '"' + imap_nazev.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
     def vyber(self, imap_nazev: str, jen_cteni: bool = True) -> dict:
-        """SELECT složky. Vrací `{pocet, uidvalidity}`.
+        """Otevře složku. Vrací `{pocet, uidvalidity}`.
 
-        `jen_cteni=True` (EXAMINE) je výchozí schválně: synchronizace nesmí
-        sáhnout na příznaky. Kdo chce měnit, řekne si o to.
+        `jen_cteni=True` je výchozí schválně: synchronizace nesmí sáhnout na
+        příznaky. Kdo chce měnit, řekne si o to.
+
+        POZOR – `imaplib` **nemá metodu `examine`**, i když IMAP příkaz EXAMINE
+        existuje. Read-only otevření se dělá přes `select(mailbox, readonly=True)`,
+        která EXAMINE pošle sama. Volání `examine` skončí na `AttributeError`
+        („Unknown IMAP4 command"), a protože se název příkazu dřív skládal do
+        proměnné, neodhalila to ani statická kontrola názvů. Proto se tu jméno
+        příkazu **nesmí skládat dynamicky** (hlídá `test_email_klient.py`).
         """
-        prikaz = "examine" if jen_cteni else "select"
-        data = self._prikaz(prikaz, self._uvozovky(imap_nazev))
+        data = self._prikaz("select", self._uvozovky(imap_nazev), jen_cteni)
         self._vybrana = imap_nazev
         try:
             pocet = int(data[0]) if data and data[0] else 0
