@@ -1333,3 +1333,82 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---- timeline zákazníka (CRM-18) ---- */
+.tl {
+  display: grid;
+  gap: 14px;
+}
+/* Datum vlevo, události vpravo. Na úzké obrazovce datum nad seznamem. */
+.tl-den {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px;
+}
+@media (max-width: 620px) {
+  .tl-den {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+.tl-datum {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  padding-top: 7px;
+  white-space: nowrap;
+}
+/* Svislá linka osy — kreslí ji rámeček seznamu, ne pseudoelement u každé
+   položky (ten by se u poslední události nedal ukončit). */
+.tl-seznam {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 14px;
+  border-left: 2px solid var(--line);
+  display: grid;
+  gap: 2px;
+}
+.tl-radek {
+  appearance: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--text);
+}
+.tl-radek:disabled {
+  cursor: default;
+}
+.tl-radek:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 7%, transparent);
+}
+.tl-znak {
+  flex: 0 0 20px;
+  text-align: center;
+}
+.tl-telo {
+  flex: 1;
+  min-width: 0;
+}
+.tl-titulek {
+  display: block;
+  font-size: 13px;
+}
+.tl-popis {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+.tl-cas {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

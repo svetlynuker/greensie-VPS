@@ -34,6 +34,9 @@ export default function FiltrPanel({
   onPodminky,
   onRazeni,
   onVychoziNacten,
+  // CRM-27: pro předvolby „jen moje" a „jen otevřené".
+  mojeJmeno = "",
+  otevreneStavy = null,
 }) {
   const [filtry, setFiltry] = useState([]);
   const [aktivni, setAktivni] = useState(null); // id použitého uloženého filtru
@@ -100,6 +103,45 @@ export default function FiltrPanel({
         </button>
       ))}
 
+      {/* Rychlé předvolby (CRM-27). Aktivní se pozná podle toho, že jsou její
+          podmínky mezi právě použitými — takže se dá i odkliknout. */}
+      {predvolby({ entita, mojeJmeno, otevreneStavy }).map((p) => {
+        const jePouzita = p.podminky.every((pp) =>
+          (podminky || []).some(
+            (x) =>
+              x.pole === pp.pole &&
+              x.operator === pp.operator &&
+              JSON.stringify(x.hodnota) === JSON.stringify(pp.hodnota)
+          )
+        );
+        return (
+          <button
+            key={p.klic}
+            className={`crm-pilulka ${jePouzita ? "aktivni" : ""}`}
+            onClick={() => {
+              if (jePouzita) {
+                // Odkliknutí odebere jen podmínky téhle předvolby, ne celý filtr.
+                onPodminky(
+                  (podminky || []).filter(
+                    (x) => !p.podminky.some((pp) => pp.pole === x.pole && pp.operator === x.operator)
+                  )
+                );
+              } else {
+                // Přidání nahradí případnou starší podmínku nad stejným polem,
+                // aby se „po termínu" a „tento měsíc" nevylučovaly navzájem.
+                const bez = (podminky || []).filter(
+                  (x) => !p.podminky.some((pp) => pp.pole === x.pole)
+                );
+                onPodminky([...bez, ...p.podminky]);
+              }
+              setAktivni(null);
+            }}
+          >
+            {p.nazev}
+          </button>
+        );
+      })}
+
       <button className="fm-btn crm-btn-maly" onClick={() => setEditor(true)}>
         {pocetPodminek > 0 ? `✎ Upravit filtr (${pocetPodminek})` : "+ Vlastní filtr"}
       </button>
@@ -138,6 +180,56 @@ export default function FiltrPanel({
       )}
     </div>
   );
+}
+
+/**
+ * Rychlé předvolby (CRM-27) — jedním kliknutím, bez skládání podmínek.
+ *
+ * Vrací podmínky ve stejném formátu, jaký ukládá vlastní filtr, takže se dají
+ * dál upravovat a uložit jako pohled. Kdyby to byl vlastní mechanismus,
+ * existovaly by dvě cesty, jak filtrovat, a rozešly by se.
+ *
+ * `mojeJmeno` a `otevreneStavy` přicházejí zvenčí: seznam řádků nezná id
+ * vlastníka ani druh stavu, jen jejich názvy — filtruje se nad tím, co je
+ * v tabulce vidět.
+ */
+function predvolby({ entita, mojeJmeno, otevreneStavy }) {
+  const out = [];
+  if (mojeJmeno) {
+    out.push({
+      klic: "moje",
+      nazev: "Jen moje",
+      podminky: [{ pole: "vlastnik_jmeno", operator: "je", hodnota: mojeJmeno }],
+    });
+  }
+  if (entita === "op" && otevreneStavy?.length) {
+    out.push({
+      klic: "otevrene",
+      nazev: "Jen otevřené",
+      // Otevřené fáze se vyjmenují — řádek zná jen NÁZEV stavu, ne jeho druh.
+      podminky: [
+        { pole: "stav_nazev", operator: "je_jeden_z", hodnota: otevreneStavy },
+      ],
+    });
+  }
+  if (entita === "op") {
+    out.push({
+      klic: "po_terminu",
+      nazev: "Po termínu",
+      // Relativní období, ne pevné datum — jinak by předvolba za měsíc lhala.
+      podminky: [
+        { pole: "predpokladane_uzavreni", operator: "v_obdobi", hodnota: "v_minulosti" },
+      ],
+    });
+    out.push({
+      klic: "tento_mesic",
+      nazev: "Uzavření tento měsíc",
+      podminky: [
+        { pole: "predpokladane_uzavreni", operator: "v_obdobi", hodnota: "tento_mesic" },
+      ],
+    });
+  }
+  return out;
 }
 
 /** „(1. – 31. 7. 2026)" k vybranému období, ať je vidět, co dnes znamená. */

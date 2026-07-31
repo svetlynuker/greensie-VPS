@@ -223,6 +223,8 @@ export default function ObchodniPripady() {
           razeni={f.razeni}
           onPodminky={f.setPodminky}
           onRazeni={f.setRazeni}
+          mojeJmeno={me?.uzivatel?.jmeno || ""}
+          otevreneStavy={stavy.filter((s) => s.druh === "otevreny").map((s) => s.nazev)}
         />
 
         {chyba && <div className="crm-chyba">{chyba}</div>}
