@@ -112,7 +112,7 @@ zakázky, je zbytek seznamu odhad — ne zkušenost. Proto se nejdřív zapíná
 |---|---|---|---|
 | **A · Základ** ✅ | ~~CRM-01, CRM-03, CRM-25, CRM-13~~ — **hotovo 30. 7. 2026** | — | Hotové a otestované. Práva se **záměrně nepřidělují** (rozhodl Dan 30. 7. 2026: appku zatím staví a testuje jen s Claudem, CRM vidí pouze admini). |
 | **B · Ať vedení vidí čísla** ✅ | ~~CRM-39, CRM-40, CRM-43, CRM-45, CRM-22, CRM-16~~ — **hotovo 30. 7. 2026** | — | Grafové komponenty už v appce jsou, data se v nich sečtou sama. Jediná věc, po které vedení pozná, že přechod z Raynetu má smysl. **CRM-41 a CRM-42 sem nepatří** — bez uzavřených obchodů v appce nemají co ukázat. |
-| **C · Denní práce se zakázkou** | CRM-05, CRM-24, CRM-27, CRM-30, CRM-18, CRM-19 + co nahlásí lidi | ~1 týden | Náplň se doladí podle prvních týdnů provozu. Rezervovaná kapacita, ne pevný seznam. |
+| **C · Denní práce se zakázkou** ✅ | ~~CRM-05, CRM-19, CRM-30, CRM-24, CRM-27, CRM-18~~ — **hotovo 31. 7. 2026** | — | Odpracováno podle seznamu. Rezerva na to, „co vyleze z provozu", tím padla — až se appka začne používat naostro, přijdou věci, které v seznamu nejsou. |
 | **D · Peníze** | CRM-08, CRM-09 | ~5 dní | Největší přínos pro vedení a teď má na čem běžet: nové zakázky projdou celým řetězcem až k faktuře v appce. |
 | **E · Komunikace** | CRM-36 → CRM-10 → CRM-32 | ~4 dny | V tomhle pořadí. Notifikace bez volby, co chci dostávat, je obtěžování. |
 | **F · Druhý životní cyklus** | CRM-11, CRM-31 | ~1 týden+ | Až budou v appce první předané projekty, ke kterým se dá servis navěsit. |
@@ -244,7 +244,13 @@ jinak přidělení nic neudělá.
   **Kalendář je hotový (30. 7. 2026).** Vědomě mimo rozsah: napojení na Google
   Kalendář a připomenutí (to patří k notifikacím, CRM-10/36).
 
-- [ ] **CRM-18 · Timeline zákazníka** — Velikost **M** · Dopad **★★**
+- [x] **CRM-18 · Timeline zákazníka** — **hotovo 31. 7. 2026** (dávka C)
+  Nová záložka **Historie** na kartě zákazníka: aktivity, vznik případů, nabídek,
+  objednávek a projektů a změny stavů na jedné chronologické ose, seskupené po dnech.
+  Změny stavů se berou z `crm_stav_historie` — kvůli tomuhle ta tabulka existuje.
+  *Soukromé aktivity v ose nejsou* (nemají vazbu na zákazníka a obsah nevidí ani vedení).
+  *Skládá se v Pythonu z pěti dotazů, ne SQL UNIONem:* každá entita má jiné sloupce
+  a UNION by je musel narovnávat ručně při každé změně pole.
   Všechno chronologicky na jedné ose (aktivity, nabídky, objednávky, projekty, změny stavů).
   Dnes je to rozdělené do záložek a člověk si musí děj skládat v hlavě.
 
@@ -303,7 +309,11 @@ Co běžná CRM mají navíc:
   Dnes se všechny podmínky sčítají (AND). Chybí „stav je Nabídka **nebo** Vyjednávání".
   Formát podmínek v `crm_ulozene_filtry` to zvládne, jde o vyhodnocení v `crmFiltry.js`.
 
-- [ ] **CRM-27 · Rychlé předvolby** — Velikost **S** · Dopad **★★**
+- [x] **CRM-27 · Rychlé předvolby** — **hotovo 31. 7. 2026** (dávka C)
+  Pilulky nad seznamem: **Jen moje · Jen otevřené · Po termínu · Uzavření tento měsíc**.
+  Dají se kombinovat i odkliknout a vracejí podmínky ve **stejném formátu** jako vlastní
+  filtr — takže se dají dál upravit a uložit jako pohled. Datumové předvolby používají
+  relativní období, aby za měsíc nelhaly.
   „Jen moje", „jen otevřené", „po termínu" jedním kliknutím, bez skládání filtru.
 
 - [ ] **CRM-28 · Skrývání a přeskládání sloupců** — Velikost **M** · Dopad **★★**

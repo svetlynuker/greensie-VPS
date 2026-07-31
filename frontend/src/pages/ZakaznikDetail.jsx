@@ -7,6 +7,7 @@ import PripadFormular from "../components/PripadFormular";
 import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
 import VlastniPoleVypis from "../components/VlastniPoleVypis";
 import DiskSlozka from "../components/DiskSlozka";
+import Timeline from "../components/Timeline";
 import ZakaznikFormular from "../components/ZakaznikFormular";
 import {
   crmKategorie,
@@ -24,6 +25,9 @@ const ZALOZKY = [
   { klic: "prehled", nazev: "Přehled" },
   { klic: "pripady", nazev: "Obchodní případy" },
   { klic: "aktivity", nazev: "Aktivity a úkoly" },
+  // Timeline (CRM-18) je zvlášť od Aktivit schválně: aktivity jsou log práce,
+  // který se edituje, timeline je čtení celého děje včetně případů a nabídek.
+  { klic: "historie", nazev: "Historie" },
 ];
 
 /**
@@ -264,6 +268,17 @@ export default function ZakaznikDetail() {
         )}
 
         {zalozka === "aktivity" && <Aktivity entita="zakaznik" zaznamId={z.id} />}
+
+        {zalozka === "historie" && (
+          <section className="fm-card crm-blok">
+            <h3>Celý děj na jedné ose</h3>
+            <p className="crm-tise">
+              Aktivity, případy, nabídky, objednávky, projekty a změny stavů — chronologicky,
+              nejnovější první. Soukromé aktivity tady nejsou.
+            </p>
+            <Timeline zakaznikId={z.id} />
+          </section>
+        )}
       </div>
 
       {upravuje && (

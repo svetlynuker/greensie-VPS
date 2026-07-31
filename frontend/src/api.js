@@ -744,6 +744,12 @@ export function crmHromadnaAktivita(data) {
 }
 
 // Globální hledání napříč CRM (CRM-24). Od dvou znaků.
+// Timeline zákazníka (CRM-18) — aktivity, případy, nabídky, objednávky,
+// projekty a změny stavů na jedné ose.
+export function crmTimeline(zakaznikId) {
+  return zavolej(`/crm/timeline/zakaznik/${zakaznikId}`);
+}
+
 export function crmHledat(dotaz) {
   return zavolej(`/crm/hledat?q=${encodeURIComponent(dotaz)}`);
 }

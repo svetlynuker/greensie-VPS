@@ -24,6 +24,7 @@ from app.crm import ares as ares_modul
 from app.crm import (
     ciselne_rady,
     hledani as hledani_modul,
+    timeline as timeline_modul,
     hromadne as hromadne_modul,
     povinna_pole as povinna_pole_modul,
     nastaveni_crm,
@@ -1627,6 +1628,22 @@ def smaz_stav(
     db.delete(s)
     db.commit()
     return {"ok": True}
+
+
+# ---- timeline zákazníka (CRM-18) --------------------------------------------
+@router.get("/timeline/zakaznik/{zakaznik_id}")
+def timeline_zakaznika(
+    zakaznik_id: int,
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Celý děj u zákazníka na jedné chronologické ose.
+
+    Slévá aktivity, vznik případů, nabídek, objednávek a projektů a změny stavů.
+    Dnes je to rozsypané do záložek a člověk si děj skládá v hlavě.
+    """
+    z = vyzaduj_zaznam(db.get(Zakaznik, zakaznik_id), user, "Zákazník")
+    return {"udalosti": timeline_modul.pro_zakaznika(db, user, z)}
 
 
 # ---- globální hledání (CRM-24) ----------------------------------------------
