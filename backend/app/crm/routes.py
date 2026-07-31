@@ -994,7 +994,9 @@ def smaz_pripad(
 # ---- nabídky: obchodní pipeline a sekce Nabídky -----------------------------
 # Nabídky zůstávají v tabulce nabídkovače (ten je zdroj pravdy o výpočtech);
 # CRM jim přidává obchodní stav a pohled „co je odesláno a co viselo".
-def _nabidka_radek(db: Session, n, stav_mapa: dict[str, CrmStav]) -> NabidkaRadekOut:
+def _nabidka_radek(
+    db: Session, n, stav_mapa: dict[str, CrmStav], extra_text: dict | None = None
+) -> NabidkaRadekOut:
     klic = nabidky_pipeline.stav_nabidky(db, n)
     stav = stav_mapa.get(klic)
     pripad = n.obchodni_pripad_id and db.get(ObchodniPripad, n.obchodni_pripad_id)
@@ -1017,6 +1019,7 @@ def _nabidka_radek(db: Session, n, stav_mapa: dict[str, CrmStav]) -> NabidkaRade
         pripad_cislo=pripad.cislo if pripad is not None else "",
         vytvoril_jmeno=_jmeno(n.vytvoril),
         vytvoreno_at=_iso(n.vytvoreno_at),
+        extra_text=extra_text or {},
     )
 
 
@@ -1043,7 +1046,8 @@ def seznam_nabidek_crm(
     nabidky = q.order_by(Nabidka.id.desc()).all()
 
     mapa = _mapa_stavu(db, "nab")
-    radky = [_nabidka_radek(db, n, mapa) for n in nabidky]
+    texty = pole_modul.hodnoty_pro_seznam(db, "nab", nabidky)
+    radky = [_nabidka_radek(db, n, mapa, texty.get(n.id)) for n in nabidky]
     # Filtr podle stavu až tady: starší nabídky stav v DB nemají a dopočítává
     # se jim první stav pipeline, takže v SQL by se nechytily.
     if stav:
@@ -1063,6 +1067,7 @@ def kanban_nabidek(
     nabidky = q.order_by(Nabidka.id.desc()).all()
     seznam_stavu = stavy_modul.seznam(db, "nab")
     mapa = {s.klic: s for s in seznam_stavu}
+    texty = pole_modul.hodnoty_pro_seznam(db, "nab", nabidky)
 
     koše: dict[str, list] = {s.klic: [] for s in seznam_stavu}
     for n in nabidky:
@@ -1076,7 +1081,9 @@ def kanban_nabidek(
     sloupce = [
         NabidkaKanbanSloupec(
             stav=_stav_out(s),
-            zaznamy=[_nabidka_radek(db, n, mapa) for n in koše.get(s.klic, [])],
+            zaznamy=[
+                _nabidka_radek(db, n, mapa, texty.get(n.id)) for n in koše.get(s.klic, [])
+            ],
             pocet=len(koše.get(s.klic, [])),
         )
         for s in seznam_stavu
@@ -1122,7 +1129,8 @@ def zmen_stav_nabidky(
         )
         db.commit()
         db.refresh(n)
-    return _nabidka_radek(db, n, _mapa_stavu(db, "nab"))
+    texty = pole_modul.hodnoty_pro_seznam(db, "nab", [n])
+    return _nabidka_radek(db, n, _mapa_stavu(db, "nab"), texty.get(n.id))
 
 
 # ---- aktivity a poznámky ----------------------------------------------------

@@ -107,9 +107,11 @@ STAVY_AKTIVITY = ("naplanovano", "realizovano", "nekonalo_se")
 STAVY_UZAVRENE = ("realizovano", "nekonalo_se")
 
 # Obrazovky, na které smí admin přidávat vlastní pole. Rozšíření o další
-# entitu = přidat klíč sem a její model do `vlastni_pole.MODELY` (entita musí
-# mít sloupec `extra`).
-ENTITY_VLASTNICH_POLI = ("zakaznik", "op", "obj", "pro", "om")
+# entitu = přidat klíč sem, její model do `vlastni_pole.MODELY` (entita musí
+# mít sloupec `extra`) a klíč do `EntitaPole` ve `schemas.py` – jinak se pole
+# založí, ale endpoint spadne při skládání odpovědi. Hlídá to
+# `tests/test_vlastni_pole.py`.
+ENTITY_VLASTNICH_POLI = ("zakaznik", "op", "obj", "pro", "om", "nab")
 
 # Datový typ vlastního pole. Dan chtěl „textová pole“; typy navíc stojí skoro
 # nic a ušetří pozdější práci (datum se dá řadit, ano/ne filtrovat, výběr

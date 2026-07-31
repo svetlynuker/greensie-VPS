@@ -1255,6 +1255,12 @@ textarea::placeholder {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
 }
+/* Prvek přes celou šířku mřížky – nadpis sekce nebo delší text, který by se
+   v jednom sloupci mačkal. */
+.gs-sirka2,
+.nb-sirka2 {
+  grid-column: 1 / -1;
+}
 
 /* ---------- Stránka modulu (kontejner obsahu) ----------
    Nadpis stránky nese horní lišta rámce, tady začíná rovnou obsah. */

@@ -4,6 +4,11 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+# Definice vlastních polí spravuje CRM (jedna obrazovka pro všechny entity),
+# takže i nabídka posílá stejný tvar – jinak by frontend měl dvě varianty
+# téhož a `VlastniPoleVstupy` by je musela rozlišovat.
+from app.crm.schemas import VlastniPoleOut
+
 TypNabidky = Literal["ppa", "prodej", "peak_shaving", "kombinace"]
 StavNabidky = Literal["koncept", "data_nahrana", "zkontrolovano_oz", "spocitano", "hotovo"]
 TypTechnologie = Literal["fve_panel", "invertor", "baterie", "jina"]
@@ -68,6 +73,10 @@ class NabidkaDetailOut(BaseModel):
     vypoctova_nastaveni_id: Optional[int] = None
     dokumenty: list[DokumentOut] = []
     reseni: list[ReseniOut] = []
+    # Vlastní pole nabídky (CRM-04): definice i hodnoty jdou spolu s detailem,
+    # ať frontend nemusí na druhý dotaz jen kvůli tomu, co má vykreslit.
+    vlastni_pole: list[VlastniPoleOut] = []
+    extra: dict = {}
 
 
 class NabidkaVstup(BaseModel):
@@ -83,6 +92,10 @@ class NabidkaUprava(BaseModel):
     zakaznik_gps_lat: Optional[float] = None
     zakaznik_gps_lng: Optional[float] = None
     stav: Optional[StavNabidky] = None
+    # Hodnoty vlastních polí. `None` = formulář je neposlal (starší klient nebo
+    # jiné volání) a `extra` se nesahá; `{}` = uživatel je vyprázdnil. Bez toho
+    # rozlišení by každé uložení stavu smazalo doplňující údaje.
+    extra: Optional[dict] = None
 
 
 # ---- Katalog produktů (dřív „katalog technologií“, CRM-08) ----

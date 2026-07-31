@@ -90,14 +90,20 @@ Tohle nejsou chybějící featury, ale díry, které vznikly během stavby. Maj�
   případy používají, nelze smazat (jen vypnout), a vypnutá se dál zobrazuje
   u případů, které ji mají.
 
-- [ ] **CRM-04 · Vlastní pole i na nabídkách — a hlavně dodělat objednávku a projekt** — Velikost **S** · Dopad **★★**
-  `ENTITY_VLASTNICH_POLI` zná zákazníka, případ, objednávku a projekt — nabídka chybí.
-  **Nález z 30. 7. 2026 (dopad zvýšen z ★ na ★★):** u objednávky a projektu jsou vlastní
-  pole jen *napůl*. Admin je smí definovat (klíč je v `ENTITY_VLASTNICH_POLI`), oba modely
-  mají i sloupec `extra` — ale `vlastni_pole.MODELY` zná pouze zákazníka a případ a routes
-  hodnoty nikde nezpracovávají. Takže **pole se založí, ale nikde se nezobrazí ani neuloží**,
-  a to tiše. Buď to dodělat, nebo ty dva klíče z `ENTITY_VLASTNICH_POLI` dočasně vyndat —
-  funkce, která mlčky nic nedělá, je horší než funkce, která tam není.
+- [x] **CRM-04 · Vlastní pole i na nabídkách — a dodělání objednávky a projektu** — **hotovo 31. 7. 2026**
+  Nabídka dostala sloupec `extra` a entitu `"nab"`: pole se vyplňují v detailu nabídky
+  (karta „Upravit zákazníka", ukládají se **spolu** se zbytkem formuláře, ne zvlášť)
+  a ta označená „v seznamu" fungují v sekci Nabídky jako sloupec i filtr.
+  Zároveň se zavřely dvě tiché díry, které tu byly popsané jako „napůl hotové":
+  * `EntitaPole` ve `schemas.py` neznalo `"om"` — **první** vlastní pole u odběrného místa
+    by shodilo endpoint na 500 při skládání odpovědi. Nedalo se to poznat při nasazení,
+    jen prvním použitím.
+  * `vlastni_pole.MODELY` neznalo `"obj"` ani `"pro"`, takže mazání pole hlásilo
+    „0 záznamů má hodnotu", i když je měly. (Zpracování hodnot v routes už dodělala dávka D.)
+
+  *Pozor při přidávání další entity:* jsou to **tři** místa — `ENTITY_VLASTNICH_POLI`
+  (models), `EntitaPole` (schemas) a `MODELY` (vlastni_pole). Zapomenout na jedno se
+  neprojeví při nasazení, ale až u prvního pole; hlídá to `tests/test_vlastni_pole.py`.
 
 ---
 
@@ -111,7 +117,7 @@ zakázky, je zbytek seznamu odhad — ne zkušenost. Proto se nejdřív zapíná
 | Dávka | Obsah | Odhad | Proč právě tady |
 |---|---|---|---|
 | **A · Základ** ✅ | ~~CRM-01, CRM-03, CRM-25, CRM-13~~ — **hotovo 30. 7. 2026** | — | Hotové a otestované. Práva se **záměrně nepřidělují** (rozhodl Dan 30. 7. 2026: appku zatím staví a testuje jen s Claudem, CRM vidí pouze admini). |
-| **B · Ať vedení vidí čísla** ✅ | ~~CRM-39, CRM-40, CRM-43, CRM-45, CRM-22, CRM-16~~ — **hotovo 30. 7. 2026** | — | Grafové komponenty už v appce jsou, data se v nich sečtou sama. Jediná věc, po které vedení pozná, že přechod z Raynetu má smysl. **CRM-41 a CRM-42 sem nepatří** — bez uzavřených obchodů v appce nemají co ukázat. |
+| **B · Ať vedení vidí čísla** ⚠️ | ~~CRM-39, CRM-40, CRM-43, CRM-16~~ — **hotovo 30. 7. 2026**; **CRM-22 a CRM-45 jen částečně** (zjištěno 31. 7. 2026, viz položky) | zbývá ~0,5 dne | Grafové komponenty už v appce jsou, data se v nich sečtou sama. Jediná věc, po které vedení pozná, že přechod z Raynetu má smysl. **CRM-41 a CRM-42 sem nepatří** — bez uzavřených obchodů v appce nemají co ukázat. |
 | **C · Denní práce se zakázkou** ✅ | ~~CRM-05, CRM-19, CRM-30, CRM-24, CRM-27, CRM-18~~ — **hotovo 31. 7. 2026** | — | Odpracováno podle seznamu. Rezerva na to, „co vyleze z provozu", tím padla — až se appka začne používat naostro, přijdou věci, které v seznamu nejsou. |
 | **D · Peníze** ✅ | ~~CRM-08, CRM-09~~ — **hotovo 31. 7. 2026** | — | Zakázka projde celým řetězcem až k faktuře v appce. Katalog technologií se přitom stal katalogem produktů (244 položek z Raynetu, přílohy, zaškrtávátko Aktivní). |
 | **E · Komunikace** | CRM-36 → CRM-10 → CRM-32 | ~4 dny | V tomhle pořadí. Notifikace bez volby, co chci dostávat, je obtěžování. |
@@ -280,9 +286,9 @@ jinak přidělení nic neudělá.
 
 ## 4. Pohledy
 
-- [ ] **CRM-16 · Můj den** — Velikost **M** · Dopad **★★★** · *dávka B*
-  Jedna obrazovka: úkoly po termínu, dnešní úkoly, případy bez aktivity X dní, nabídky
-  odeslané bez reakce. Staví na CRM-01.
+- [x] **CRM-16 · Můj den** — **hotovo 30. 7. 2026** (dávka B)
+  Obrazovka `/muj-den` (`MujDen.jsx`): úkoly po termínu, dnešní úkoly, případy bez aktivity
+  a nabídky odeslané bez reakce. Staví na CRM-01.
 
 - [ ] **CRM-17 · Kalendář aktivit** — Velikost **XL** · Dopad **★★★** · **ROZPRACOVÁNO od 30. 7. 2026**
   Zadání Dana z 30. 7. 2026 je širší než původní odrážka („měsíční/týdenní pohled"), proto
@@ -341,9 +347,10 @@ jinak přidělení nic neudělá.
 - [ ] **CRM-21 · Ganttův diagram projektu** — Velikost **L** · Dopad **★★**
   Kroky mají trvání i návaznosti, takže Gantt je nad nimi přirozený a ukáže kritickou cestu.
 
-- [ ] **CRM-22 · KPI dlaždice nad seznamy** — Velikost **S** · Dopad **★★** · *dávka B*
-  Nad tabulkou počet, celková hodnota, průměr, kolik je po termínu. Appka má na to hotový
-  vizuální prvek (`gs-kpi` na rozcestníku).
+- [~] **CRM-22 · KPI dlaždice nad seznamy** — Velikost **S** · Dopad **★★** · **částečně, dávka B**
+  Hotové jsou dlaždice nad **Obchodními případy** (`crm-kpi-pas`) a v Přehledu obchodu
+  (`gs-kpi`). **Zbývá:** Zákazníci, Nabídky, Objednávky a Projekty je nemají.
+  *Zjištěno 31. 7. 2026* — tabulka dávek tvrdila „hotovo", kód říká „jen na jednom seznamu".
 
 - [ ] **CRM-23 · Swimlanes v kanbanu** — Velikost **M** · Dopad **★**
   Řádky podle vlastníka (nebo kategorie) — vedení hned vidí, kdo má co rozjeté.
@@ -454,12 +461,11 @@ Co běžná CRM mají navíc:
 CRM nemá **ani jeden graf**, přitom grafové komponenty v appce existují (pro nabídkovač:
 `GrafOdberu`, `GrafVyrobaSpotreba`, `GrafPrubehu`).
 
-- [ ] **CRM-39 · Pipeline funnel** — Velikost **M** · Dopad **★★★** · *dávka B*
-  Kolik případů v které fázi, kolik hodnoty a kde to propadá.
+- [x] **CRM-39 · Pipeline funnel** — **hotovo 30. 7. 2026** (dávka B)
+  V Přehledu obchodu (`/prehled-obchodu`, `GrafyObchodu.jsx`, data z `crm/statistiky.py`).
 
-- [ ] **CRM-40 · Forecast** — Velikost **M** · Dopad **★★★** · *dávka B*
-  Hodnota × pravděpodobnost podle měsíce předpokládaného uzavření. Data jsou uložená
-  (`hodnota_kc`, `pravdepodobnost`, `predpokladane_uzavreni`), jen se nikde nesčítají.
+- [x] **CRM-40 · Forecast** — **hotovo 30. 7. 2026** (dávka B)
+  Tamtéž: hodnota × pravděpodobnost podle měsíce předpokládaného uzavření.
 
 - [ ] **CRM-41 · Konverze a doba ve fázi** — Velikost **M** · Dopad **★★** · **odloženo, spouštěč: ~20 uzavřených obchodů**
   Z `crm_stav_historie` — kolik % projde z fáze do fáze a jak dlouho tam případ visí. Tohle je
@@ -469,14 +475,17 @@ CRM nemá **ani jeden graf**, přitom grafové komponenty v appce existují (pro
 - [ ] **CRM-42 · Výkon OZ** — Velikost **M** · Dopad **★★** · **odloženo, stejný spouštěč jako CRM-41**
   Vyhráno/prohráno, průměrná délka obchodu, průměrná hodnota. Navazuje na CRM-15.
 
-- [ ] **CRM-43 · Důvody proher** — Velikost **S** · Dopad **★★** · *dávka B*
-  Rozpad podle `duvod_prohry`. Kvůli tomu se ten důvod vynucuje.
+- [x] **CRM-43 · Důvody proher** — **hotovo 30. 7. 2026** (dávka B)
+  Rozpad podle `duvod_prohry` v Přehledu obchodu. Kvůli tomu se ten důvod vynucuje.
 
 - [ ] **CRM-44 · Drobnosti v UI** — Velikost **S** · Dopad **★**
   Avatary/iniciály vlastníka na dlaždicích, barevné zvýraznění případů po termínu v kanbanu,
   ikonky typů nabídek, počítadlo dní ve fázi na dlaždici.
 
-- [ ] **CRM-45 · Přiznat, že Raynet ještě jede** — Velikost **S** · Dopad **★★★** · *dávka B*
+- [~] **CRM-45 · Přiznat, že Raynet ještě jede** — Velikost **S** · Dopad **★★★** · **částečně, dávka B**
+  *Stav k 31. 7. 2026:* hotová je věta u grafů v Přehledu obchodu („…dojíždí v Raynetu,
+  takže tohle není celý byznys firmy"). **Zbývá** odkaz v Zákaznících a Případech
+  a pravidlo v nápovědě — obojí je z původního zadání níž.
   Vznikla rozhodnutím neimportovat. Appka se dnes tváří, jako by v ní byl celý byznys —
   a přitom v ní budou jen nové zakázky, zatímco staré dojíždějí v Raynetu. Bez toho bude
   **forecast a funnel v dávce B vypadat jako propad obchodu**, i když se nic nestalo.

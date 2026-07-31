@@ -352,6 +352,11 @@ class Nabidka(Base):
         Integer, ForeignKey("vypoctova_nastaveni.id", ondelete="SET NULL"), nullable=True
     )
 
+    # Hodnoty vlastních (admin definovaných) polí – definice žijí v
+    # `crm_vlastni_pole` pro entitu "nab". Stejný princip jako u zákazníka
+    # a případu; nabídka je v CRM měla jako jediná chybět (CRM-04).
+    extra = Column(JSONB, nullable=False, default=dict, server_default="{}")
+
     vytvoril = relationship("User")
     dokumenty = relationship(
         "NabidkaDokument", back_populates="nabidka", cascade="all, delete-orphan"

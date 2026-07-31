@@ -68,7 +68,10 @@ class RadaVstup(BaseModel):
 
 
 # ---- vlastní (admin definovaná) pole ----------------------------------------
-EntitaPole = Literal["zakaznik", "op", "obj", "pro"]
+# Musí sedět s `ENTITY_VLASTNICH_POLI` v models.py. Když se to rozejde, pole se
+# na chybějící entitě založí, ale odpověď se nedá složit (500 až u prvního pole,
+# ne při nasazení) – proto na to je test.
+EntitaPole = Literal["zakaznik", "op", "obj", "pro", "om", "nab"]
 TypPole = Literal["text", "dlouhy_text", "cislo", "datum", "ano_ne", "vyber"]
 
 
@@ -302,6 +305,7 @@ class NabidkaRadekOut(BaseModel):
     pripad_cislo: str = ""
     vytvoril_jmeno: Optional[str] = None
     vytvoreno_at: Optional[str] = None
+    extra_text: dict = {}
 
 
 class NabidkaKanbanSloupec(BaseModel):
