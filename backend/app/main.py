@@ -566,6 +566,12 @@ app.add_middleware(GZipMiddleware, minimum_size=4096)
 # vrstvou (jinak by se hlavičky nemusely dostat na chybové odpovědi).
 app.add_middleware(LogovaciMiddleware)
 
+# Autor změn pro audit log (CRM-12). Musí to být middleware, ne závislost —
+# viz komentář u AuditMiddleware.
+from app.crm.audit import AuditMiddleware  # noqa: E402
+
+app.add_middleware(AuditMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

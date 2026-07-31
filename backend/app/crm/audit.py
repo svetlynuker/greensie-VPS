@@ -262,6 +262,55 @@ def _after_flush(session: Session, kontext):  # noqa: ARG001
         log.warning("Audit selhal při zápisu vzniku", exc_info=True)
 
 
+class AuditMiddleware:
+    """Nastaví autora změn pro celý request (CRM-12).
+
+    ---- Proč middleware, a ne `get_current_user` ----
+    Sync endpointy a jejich závislosti běží u FastAPI v threadpoolu, přičemž
+    závislost a endpoint můžou skončit v RŮZNÝCH vláknech. Contextvar nastavená
+    v závislosti se pak do endpointu vůbec nedostane a audit zapíše změnu bez
+    autora — přesně to se stalo při prvním ostrém testu.
+
+    Middleware běží v hlavní úloze requestu, takže hodnota platí všude pod ním.
+    Token se tu jen dekóduje (žádný dotaz do DB): potřebujeme jediné číslo a
+    ověření platnosti stejně dělá autentizace o kus dál.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        token = None
+        for jmeno, hodnota in scope.get("headers") or []:
+            if jmeno == b"authorization":
+                text = hodnota.decode("latin-1")
+                if text.lower().startswith("bearer "):
+                    token = text[7:]
+                break
+
+        uzivatel_id = None
+        if token:
+            try:
+                from jose import jwt
+
+                from app.auth.permissions import ALGORITHM, SECRET_KEY
+
+                sub = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("sub")
+                uzivatel_id = int(sub) if sub is not None else None
+            except Exception:  # noqa: BLE001 - neplatný token řeší autentizace
+                uzivatel_id = None
+
+        zeton = aktualni_uzivatel_id.set(uzivatel_id)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            aktualni_uzivatel_id.reset(zeton)
+
+
 def zapni() -> None:
     """Zapne sběr. Volá se jednou při startu (`app.main`)."""
     if not event.contains(Session, "before_flush", _before_flush):
