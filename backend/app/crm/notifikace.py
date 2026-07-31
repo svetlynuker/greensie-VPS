@@ -84,6 +84,16 @@ UDALOSTI = [
         "appka": True,
         "email": False,
     },
+    {
+        "klic": "automatizace",
+        "nazev": "Zpráva od automatiky",
+        "popis": "Upozornění, které poslalo pravidlo automatizace (Nastavení → Automatizace).",
+        "appka": True,
+        # E-mailem ne: pravidlo, které má poslat e-mail, má na to vlastní krok
+        # „Pošli e-mail“. Kdyby chodilo obojí, dostal by člověk dvě zprávy o téže
+        # věci a jednu z nich by si vypnul — nejspíš tu, o kterou šlo.
+        "email": False,
+    },
 ]
 
 MAPA_UDALOSTI = {u["klic"]: u for u in UDALOSTI}

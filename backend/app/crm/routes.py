@@ -50,6 +50,7 @@ from app.crm.models import (
     DRUHY_AKTIVITY,
     DRUHY_STAVU,
     CrmPravidlo,
+    CrmPravidloBeh,
     ROZSAHY_SERIE,
     STAVY_AKTIVITY,
     STAVY_UZAVRENE,
@@ -71,6 +72,7 @@ from app.crm.models import (
     ObchodniPripad,
     Objednavka,
     OdberneMisto,
+    ProjektSablona,
     Zakaznik,
     ZakaznikKontakt,
 )
@@ -89,8 +91,12 @@ from app.crm.schemas import (
     AktivitaOut,
     AuditOut,
     MapaBodOut,
+    PravidloBehOut,
+    PravidloKandidatOut,
     PravidloOut,
+    PravidloSpusteniVstup,
     PravidloVstup,
+    PravidloZkouskaOut,
     AktivitaUprava,
     AktivitaVstup,
     AresOut,
@@ -834,6 +840,8 @@ def zaloz_pripad(
             entita="op", zaznam_id=p.id, ze_stavu=None, do_stavu=stav, zmenil_user_id=user.id
         )
     )
+    # CRM-31: pravidla navěšená na „vznikl nový případ“ (typicky uvítací úkol).
+    automatizace_modul.po_vzniku(db, "op", p, user)
     db.commit()
     db.refresh(p)
     return _pripad_detail(db, p, user)
@@ -888,6 +896,10 @@ def uprav_pripad(
     notifikace_modul.ohlas_prirazeni(
         db, user, f"{p.cislo} · {p.nazev}".strip(" ·"), f"/pripady/detail/{p.id}", pribyli
     )
+    # CRM-31: pravidla navěšená na změnu konkrétního pole. Musí to být PŘED
+    # commitem — po něm SQLAlchemy zahodí historii atributů a nebylo by z čeho
+    # poznat, co se vlastně změnilo.
+    automatizace_modul.po_zmene_poli(db, "op", p, user)
     db.commit()
     db.refresh(p)
     return _pripad_detail(db, p, user)
@@ -3627,19 +3639,30 @@ def body_na_mapu(
 
 
 # ---- automatizace (CRM-31) ---------------------------------------------------
-@router.get("/automatizace/akce")
-def katalog_akci_automatizace(
+# POZOR na pořadí cest: `/automatizace/katalog`, `/automatizace/behy` a
+# `/automatizace/zaznamy/...` musí být PŘED `/automatizace/{pravidlo_id}`,
+# jinak by FastAPI slovo „katalog“ zkusil přečíst jako id pravidla. Stejná past
+# jako u šablon a odběrných míst — hlídá ji `tests/test_kolize_cest.py`.
+@router.get("/automatizace/katalog")
+def katalog_automatizace(
     user: User = Depends(vyzaduj_nastaveni),
     db: Session = Depends(get_db),
 ):
-    """Co automatika umí + z jakých stavů se to dá spustit.
+    """Všechno, z čeho se skládá formulář pravidla: spouštěče, pole, akce, volby.
 
     UI se skládá z tohohle výpisu, ne z konstant ve frontendu — jinak by nová
     akce vyžadovala změnu na dvou místech a nabídka stavů by nesouhlasila
     s přeskládaným kanbanem.
     """
+    from app.crm import automatizace_pole as auto_pole
+
     return {
+        "spoustece": automatizace_modul.SPOUSTECE,
+        "casove_zaklady": automatizace_modul.CASOVE_ZAKLADY,
+        "opakovani": automatizace_modul.OPAKOVANI,
         "akce": automatizace_modul.AKCE,
+        "prijemci": automatizace_modul.PRIJEMCI,
+        "symboly": [{"klic": k, "popis": p} for k, p in sablony_modul.SYMBOLY],
         "entity": [
             {
                 "klic": klic,
@@ -3648,10 +3671,73 @@ def katalog_akci_automatizace(
                     {"klic": s.klic, "nazev": s.nazev, "druh": s.druh}
                     for s in stavy_modul.seznam(db, klic)
                 ],
+                # Pole s operátory a naplněnými volbami – z nich se staví
+                # podmínky i akce „nastav hodnotu pole“.
+                "pole": auto_pole.katalog(db, klic),
             }
             for klic, nazev in automatizace_modul.SPOUSTECI_ENTITY.items()
         ],
+        "sablony_kroku": [
+            {"id": s.id, "nazev": s.nazev}
+            for s in db.query(ProjektSablona).order_by(ProjektSablona.nazev).all()
+        ],
+        "sablony_textu": [
+            {"id": s.id, "nazev": s.nazev, "druh": s.druh}
+            for s in db.query(CrmSablona)
+            .filter(CrmSablona.aktivni.is_(True))
+            .order_by(CrmSablona.poradi, CrmSablona.id)
+            .all()
+        ],
+        "uzivatele": [
+            {"id": u.id, "jmeno": u.jmeno or u.email or f"#{u.id}"}
+            for u in db.query(User).order_by(User.jmeno, User.id).all()
+        ],
     }
+
+
+@router.get("/automatizace/behy", response_model=list[PravidloBehOut])
+def posledni_behy(
+    limit: int = 50,
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    """Poslední běhy napříč pravidly — „co automatika dělala“ na jednom místě."""
+    behy = (
+        db.query(CrmPravidloBeh)
+        .order_by(CrmPravidloBeh.id.desc())
+        .limit(max(1, min(200, limit)))
+        .all()
+    )
+    return [PravidloBehOut(**automatizace_modul.beh_out(b)) for b in behy]
+
+
+@router.get("/automatizace/zaznamy/{entita}")
+def zaznamy_pro_zkousku(
+    entita: str,
+    q: str = "",
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    """Záznamy do výběru „na kterém to vyzkoušet“. Hledá podle čísla a názvu."""
+    from app.crm import automatizace_pole as auto_pole
+
+    model = auto_pole.model_entity(entita)
+    if model is None:
+        raise HTTPException(status_code=404, detail="Neznámá entita")
+    dotaz = db.query(model)
+    hledany = (q or "").strip()
+    if hledany:
+        vzor = f"%{hledany}%"
+        podminky = [model.cislo.ilike(vzor)]
+        if hasattr(model, "nazev"):
+            podminky.append(model.nazev.ilike(vzor))
+        if hasattr(model, "zakaznik_nazev"):
+            podminky.append(model.zakaznik_nazev.ilike(vzor))
+        dotaz = dotaz.filter(or_(*podminky))
+    return [
+        {"id": z.id, "popis": automatizace_modul.popis_zaznamu(z)}
+        for z in dotaz.order_by(model.id.desc()).limit(20).all()
+    ]
 
 
 @router.get("/automatizace", response_model=list[PravidloOut])
@@ -3660,12 +3746,29 @@ def seznam_pravidel(
     db: Session = Depends(get_db),
 ):
     """Pravidla včetně historie běhů — je to jediné místo, kde je automatika vidět."""
-    pravidla = (
-        db.query(CrmPravidlo).order_by(CrmPravidlo.poradi, CrmPravidlo.id).all()
-    )
+    pravidla = db.query(CrmPravidlo).order_by(CrmPravidlo.poradi, CrmPravidlo.id).all()
     return [
         PravidloOut(**automatizace_modul.pravidlo_out(db, p, s_behy=True)) for p in pravidla
     ]
+
+
+def _uloz_pravidlo(db: Session, p: CrmPravidlo, vstup: PravidloVstup) -> None:
+    """Společné pro založení i úpravu: kontrola vstupu a přepsání sloupců."""
+    nazev = (vstup.nazev or "").strip()
+    if not nazev:
+        raise HTTPException(status_code=422, detail="Pravidlo musí mít název.")
+    try:
+        ciste = automatizace_modul.over_pravidlo(db, vstup.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+
+    p.nazev = nazev
+    for klic, hodnota in ciste.items():
+        setattr(p, klic, hodnota)
+    if vstup.aktivni is not None:
+        p.aktivni = bool(vstup.aktivni)
+    if vstup.poradi is not None:
+        p.poradi = int(vstup.poradi)
 
 
 @router.post("/automatizace", response_model=PravidloOut)
@@ -3679,27 +3782,15 @@ def pridej_pravidlo(
     Vypnuté jako výchozí schválně: pravidlo, které začne zakládat záznamy hned
     po uložení, se snadno napíše špatně a projeví se to až na živých datech.
     """
-    nazev = (vstup.nazev or "").strip()
-    if not nazev:
-        raise HTTPException(status_code=422, detail="Pravidlo musí mít název.")
-    try:
-        ciste = automatizace_modul.over_pravidlo(
-            db, vstup.spoust_entita, vstup.spoust_stav, vstup.akce, vstup.nastaveni
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from None
-
     posledni = db.query(func.max(CrmPravidlo.poradi)).scalar()
     p = CrmPravidlo(
-        nazev=nazev,
-        aktivni=bool(vstup.aktivni) if vstup.aktivni is not None else False,
+        nazev="",
+        aktivni=False,
         poradi=(posledni or 0) + 1,
         spoust_entita=vstup.spoust_entita,
-        spoust_stav=vstup.spoust_stav,
-        akce=vstup.akce,
-        nastaveni=ciste,
         vytvoril_user_id=user.id,
     )
+    _uloz_pravidlo(db, p, vstup)
     db.add(p)
     db.commit()
     db.refresh(p)
@@ -3717,25 +3808,7 @@ def uprav_pravidlo(
     p = db.get(CrmPravidlo, pravidlo_id)
     if p is None:
         raise HTTPException(status_code=404, detail="Pravidlo neexistuje")
-    nazev = (vstup.nazev or "").strip()
-    if not nazev:
-        raise HTTPException(status_code=422, detail="Pravidlo musí mít název.")
-    try:
-        ciste = automatizace_modul.over_pravidlo(
-            db, vstup.spoust_entita, vstup.spoust_stav, vstup.akce, vstup.nastaveni
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from None
-
-    p.nazev = nazev
-    p.spoust_entita = vstup.spoust_entita
-    p.spoust_stav = vstup.spoust_stav
-    p.akce = vstup.akce
-    p.nastaveni = ciste
-    if vstup.aktivni is not None:
-        p.aktivni = bool(vstup.aktivni)
-    if vstup.poradi is not None:
-        p.poradi = int(vstup.poradi)
+    _uloz_pravidlo(db, p, vstup)
     db.commit()
     db.refresh(p)
     return PravidloOut(**automatizace_modul.pravidlo_out(db, p, s_behy=True))
@@ -3755,6 +3828,160 @@ def prepni_pravidlo(
     db.commit()
     db.refresh(p)
     return PravidloOut(**automatizace_modul.pravidlo_out(db, p, s_behy=True))
+
+
+@router.post("/automatizace/{pravidlo_id}/kopie", response_model=PravidloOut)
+def zkopiruj_pravidlo(
+    pravidlo_id: int,
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    """Kopie pravidla — vypnutá, bez historie běhů.
+
+    Nejrychlejší cesta k druhému skoro stejnému pravidlu („totéž, ale pro peak
+    shaving“). Bez kopie by ho člověk naklikal znovu a udělal v něm jinou chybu.
+    """
+    p = db.get(CrmPravidlo, pravidlo_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Pravidlo neexistuje")
+    posledni = db.query(func.max(CrmPravidlo.poradi)).scalar()
+    kopie = CrmPravidlo(
+        nazev=f"{p.nazev} (kopie)"[:200],
+        aktivni=False,
+        poradi=(posledni or 0) + 1,
+        spoust_entita=p.spoust_entita,
+        spoust_typ=p.spoust_typ,
+        spoust_stav=p.spoust_stav,
+        spoust_pole=p.spoust_pole,
+        cas_nastaveni=dict(p.cas_nastaveni or {}),
+        podminky=dict(p.podminky or {}),
+        kroky=list(p.kroky or []),
+        opakovat=p.opakovat,
+        vytvoril_user_id=user.id,
+    )
+    db.add(kopie)
+    db.commit()
+    db.refresh(kopie)
+    return PravidloOut(**automatizace_modul.pravidlo_out(db, kopie, s_behy=True))
+
+
+def _zaznam_pravidla(db: Session, p: CrmPravidlo, zaznam_id: int):
+    from app.crm import automatizace_pole as auto_pole
+
+    model = auto_pole.model_entity(p.spoust_entita)
+    zaznam = db.get(model, zaznam_id) if model is not None else None
+    if zaznam is None:
+        raise HTTPException(status_code=404, detail="Záznam neexistuje")
+    return zaznam
+
+
+@router.post("/automatizace/{pravidlo_id}/nanecisto", response_model=PravidloZkouskaOut)
+def zkus_pravidlo(
+    pravidlo_id: int,
+    vstup: PravidloSpusteniVstup,
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    """Suchý běh: ukáže, co by pravidlo na záznamu udělalo — a neudělá to.
+
+    Tohle je funkce, kvůli které se automatika dá zapnout bez obav. Běží
+    v savepointu, který se **vždycky** zahodí, takže v databázi nezůstane nic;
+    akce, které posílají zprávy ven, se poznají podle `nanecisto` a jen popíšou,
+    co by odeslaly (viz `automatizace_akce`).
+    """
+    from app.crm import automatizace_pole as auto_pole
+
+    p = db.get(CrmPravidlo, pravidlo_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Pravidlo neexistuje")
+    zaznam = _zaznam_pravidla(db, p, vstup.zaznam_id)
+    plati, duvod = auto_pole.vyhodnot(db, p.spoust_entita, zaznam, p.podminky)
+
+    sp = db.begin_nested()
+    try:
+        kroky = automatizace_modul.spust_rucne(db, p, zaznam, user, nanecisto=True)
+    finally:
+        # ROLLBACK VŽDY, i když akce prošly. Tohle je celý smysl náhledu — kdyby
+        # se savepoint někdy potvrdil, „zkusit nanečisto“ by tiše zakládalo
+        # objednávky a nikdo by tomu tlačítku už nevěřil.
+        sp.rollback()
+    # Session je po rollbacku savepointu čistá, ale objekty v ní můžou mít
+    # rozpracované změny z akcí – zahodíme je, ať se nedostanou do commitu
+    # jiného requestu přes tutéž session.
+    db.expire_all()
+
+    return PravidloZkouskaOut(
+        zaznam_popis=automatizace_modul.popis_zaznamu(zaznam),
+        plati=plati,
+        duvod=duvod,
+        kroky=kroky,
+    )
+
+
+@router.post("/automatizace/{pravidlo_id}/spustit", response_model=PravidloZkouskaOut)
+def spust_pravidlo_rucne(
+    pravidlo_id: int,
+    vstup: PravidloSpusteniVstup,
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    """Pustí pravidlo na konkrétní záznam doopravdy (tlačítko „Spustit teď“)."""
+    p = db.get(CrmPravidlo, pravidlo_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Pravidlo neexistuje")
+    zaznam = _zaznam_pravidla(db, p, vstup.zaznam_id)
+    kroky = automatizace_modul.spust_rucne(db, p, zaznam, user)
+    db.commit()
+    return PravidloZkouskaOut(
+        zaznam_popis=automatizace_modul.popis_zaznamu(zaznam),
+        plati=True,
+        duvod="" if kroky else "Nic se nestalo — podmínky neplatí, nebo už pravidlo běželo.",
+        kroky=kroky,
+    )
+
+
+@router.get("/automatizace/{pravidlo_id}/kandidati", response_model=list[PravidloKandidatOut])
+def kandidati_pravidla(
+    pravidlo_id: int,
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    """Na které záznamy by pravidlo teď sedělo.
+
+    U časových pravidel je to jediný způsob, jak si člověk ověří, že si pravidlo
+    napsal dobře — bez toho by čekal do rána a doufal.
+    """
+    from app.crm import automatizace_pole as auto_pole
+    from app.crm import automatizace_scheduler as planovac
+
+    p = db.get(CrmPravidlo, pravidlo_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Pravidlo neexistuje")
+
+    if (p.spoust_typ or "stav") == "cas":
+        nalezene = planovac.kandidati(db, p)
+    else:
+        # U ostatních spouštěčů „kandidát“ znamená: záznam, na který sedí
+        # podmínky. Nesmí se to plést s tím, že pravidlo zabere — to udělá až
+        # spouštěč. Bereme jen posledních pár set záznamů, jde o náhled.
+        model = auto_pole.model_entity(p.spoust_entita)
+        if model is None:
+            return []
+        vzorek = db.query(model).order_by(model.id.desc()).limit(300).all()
+        nalezene = [
+            z for z in vzorek if auto_pole.vyhodnot(db, p.spoust_entita, z, p.podminky)[0]
+        ]
+
+    out = []
+    for z in nalezene[:50]:
+        out.append(
+            PravidloKandidatOut(
+                id=z.id,
+                popis=automatizace_modul.popis_zaznamu(z),
+                uz_bezelo=automatizace_modul.uz_bezelo(db, p, p.spoust_entita, z.id),
+            )
+        )
+    return out
 
 
 @router.delete("/automatizace/{pravidlo_id}")

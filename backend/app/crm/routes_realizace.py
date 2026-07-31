@@ -387,6 +387,8 @@ def zaloz_objednavku(
             entita="obj", zaznam_id=o.id, ze_stavu=None, do_stavu=stav, zmenil_user_id=user.id
         )
     )
+    # CRM-31: pravidla navěšená na „vznikla nová objednávka“.
+    automatizace_modul.po_vzniku(db, "obj", o, user)
     db.commit()
     db.refresh(o)
     return _objednavka_detail(db, o, user)
@@ -439,6 +441,9 @@ def uprav_objednavku(
     notifikace_modul.ohlas_prirazeni(
         db, user, f"{o.cislo} · {o.nazev}".strip(" ·"), "/objednavky", pribyli
     )
+    # CRM-31: změna pole (např. doplněné datum podpisu). Před commitem — viz
+    # `po_zmene_poli`.
+    automatizace_modul.po_zmene_poli(db, "obj", o, user)
     db.commit()
     db.refresh(o)
     return _objednavka_detail(db, o, user)
@@ -1011,6 +1016,8 @@ def zaloz_projekt(
         db.refresh(p)
         kroky_modul.prepocitej_terminy(db, p)
 
+    # CRM-31: pravidla navěšená na „vznikl nový projekt“.
+    automatizace_modul.po_vzniku(db, "pro", p, user)
     db.commit()
     db.refresh(p)
     return _projekt_detail(db, p, user)
@@ -1061,6 +1068,8 @@ def uprav_projekt(
     db.flush()
     if p.zahajeni != puvodni_zahajeni:
         kroky_modul.prepocitej_terminy(db, p)
+    # CRM-31: změna pole (typicky posunuté předání).
+    automatizace_modul.po_zmene_poli(db, "pro", p, user)
     db.commit()
     db.refresh(p)
     return _projekt_detail(db, p, user)
