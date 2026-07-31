@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.auth.models import LoginRequest, MeOut, Token, User, UserOut, ZmenaHeslaVstup
+from app.crm.novinky import ma_novinky
 from app.auth.permissions import (
     dlazdice_pro,
     get_current_user,
@@ -73,6 +74,8 @@ def me(user: User = Depends(get_current_user)):
         muze_editovat=muze_editovat(user),
         prava=sorted(prava_uzivatele(user)),
         musi_zmenit_heslo=user.musi_zmenit_heslo,
+        # Čerstvě postavené funkce se zatím zkoušejí interně (viz crm/novinky.py).
+        novinky=ma_novinky(user),
     )
 
 

@@ -232,11 +232,11 @@ export default function Nastaveni() {
           </div>
         </section>
 
-        {/* ---- notifikace (CRM-36) ---- */}
-        <NotifikaceNastaveni />
+        {/* ---- notifikace (CRM-36) – zatím jen pro interní testování ---- */}
+        {me.novinky && <NotifikaceNastaveni />}
 
         {/* ---- šablony textů (CRM-32), jen pro správce nastavení ---- */}
-        {me.prava?.includes("crm_nastaveni") && (
+        {me.novinky && me.prava?.includes("crm_nastaveni") && (
           <section className="fm-card">
             <div className="gs-karta-hlava">
               <span className="gs-karta-titulek">Šablony e-mailů a poznámek</span>

@@ -165,7 +165,7 @@ export default function ObchodniPripadDetail() {
         <div className="crm-karta-hlava">
           <div style={{ minWidth: 0 }}>
             <h1>
-              <Spendlik entita="op" zaznamId={p.id} />
+              {me.novinky && <Spendlik entita="op" zaznamId={p.id} />}
               {p.cislo}
               {p.nazev ? ` · ${p.nazev}` : ""}
             </h1>
@@ -192,9 +192,11 @@ export default function ObchodniPripadDetail() {
               </option>
             ))}
           </select>
-          <button className="fm-btn" onClick={() => setPosilaEmail(true)}>
-            ✉ Poslat e-mail
-          </button>
+          {me.novinky && (
+            <button className="fm-btn" onClick={() => setPosilaEmail(true)}>
+              ✉ Poslat e-mail
+            </button>
+          )}
           <button className="fm-btn" onClick={() => setUpravuje(true)}>
             Upravit
           </button>
@@ -295,7 +297,7 @@ export default function ObchodniPripadDetail() {
                 onSprava={() => setSpravaPoli(true)}
               />
               {/* CRM-12: sbalené, načítá se až po rozbalení. */}
-              <HistorieZmen entita="op" zaznamId={p.id} />
+              {me.novinky && <HistorieZmen entita="op" zaznamId={p.id} />}
               <OdbernaMistaPanel
                 entita="op"
                 zaznamId={p.id}

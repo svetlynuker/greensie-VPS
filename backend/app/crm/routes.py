@@ -22,6 +22,7 @@ from app.auth.models import User
 from app.auth.permissions import get_current_user, muze_otevrit
 from app.crm import ares as ares_modul
 from app.crm import audit as audit_modul
+from app.crm.novinky import vyzaduj_novinky
 from app.crm import mapa as mapa_modul
 from app.crm import (
     ciselne_rady,
@@ -3211,7 +3212,7 @@ def _notifikace_out(n) -> NotifikaceOut:
 
 @router.get("/notifikace", response_model=NotifikaceSouhrnOut)
 def seznam_notifikaci(
-    user: User = Depends(get_current_user),
+    user: User = Depends(vyzaduj_novinky),
     db: Session = Depends(get_db),
 ):
     """Zvoneček: posledních pár zpráv včetně přečtených + počet nepřečtených.
@@ -3230,7 +3231,7 @@ def seznam_notifikaci(
 @router.post("/notifikace/precteno")
 def oznac_notifikace_precteno(
     vstup: NotifikacePrectenoVstup,
-    user: User = Depends(get_current_user),
+    user: User = Depends(vyzaduj_novinky),
     db: Session = Depends(get_db),
 ):
     pocet = notifikace_modul.oznac_precteno(db, user.id, vstup.ids)
@@ -3240,7 +3241,7 @@ def oznac_notifikace_precteno(
 # ---- notifikace: volba, co chci dostávat (CRM-36) ---------------------------
 @router.get("/notifikace/nastaveni", response_model=NastaveniNotifikaciOut)
 def nastaveni_notifikaci(
-    user: User = Depends(get_current_user),
+    user: User = Depends(vyzaduj_novinky),
     db: Session = Depends(get_db),
 ):
     from app.mailer import email_nastaven
@@ -3255,7 +3256,7 @@ def nastaveni_notifikaci(
 @router.put("/notifikace/nastaveni", response_model=NastaveniNotifikaciOut)
 def uloz_nastaveni_notifikaci(
     vstup: NastaveniNotifikaciVstup,
-    user: User = Depends(get_current_user),
+    user: User = Depends(vyzaduj_novinky),
     db: Session = Depends(get_db),
 ):
     from app.mailer import email_nastaven
@@ -3291,7 +3292,7 @@ def seznam_sablon(
     druh: str | None = Query(default=None),
     entita: str | None = Query(default=None),
     vse: bool = Query(default=False),
-    user: User = Depends(get_current_user),
+    user: User = Depends(vyzaduj_novinky),
     db: Session = Depends(get_db),
 ):
     """Šablony k použití. `vse=true` vrací i vypnuté – pro obrazovku správy."""
@@ -3313,7 +3314,7 @@ def pouzij_sablonu(
     sablona_id: int,
     entita: str = Query(default=""),
     zaznam_id: int | None = Query(default=None),
-    user: User = Depends(get_current_user),
+    user: User = Depends(vyzaduj_novinky),
     db: Session = Depends(get_db),
 ):
     """Text šablony s doplněnými symboly. Co se nedoplní, zůstane jako `{{klic}}`."""
@@ -3330,7 +3331,7 @@ def pouzij_sablonu(
 @router.post("/sablony-textu", response_model=SablonaTextuOut)
 def pridej_sablonu(
     vstup: SablonaTextuVstup,
-    user: User = Depends(vyzaduj_nastaveni),
+    user: User = Depends(vyzaduj_novinky),
     db: Session = Depends(get_db),
 ):
     if vstup.druh not in sablony_modul.DRUHY:
@@ -3357,7 +3358,7 @@ def pridej_sablonu(
 def uprav_sablonu(
     sablona_id: int,
     vstup: SablonaTextuVstup,
-    user: User = Depends(vyzaduj_nastaveni),
+    user: User = Depends(vyzaduj_novinky),
     db: Session = Depends(get_db),
 ):
     s = db.get(CrmSablona, sablona_id)
@@ -3380,7 +3381,7 @@ def uprav_sablonu(
 @router.delete("/sablony-textu/{sablona_id}")
 def smaz_sablonu(
     sablona_id: int,
-    user: User = Depends(vyzaduj_nastaveni),
+    user: User = Depends(vyzaduj_novinky),
     db: Session = Depends(get_db),
 ):
     s = db.get(CrmSablona, sablona_id)
@@ -3395,7 +3396,7 @@ def smaz_sablonu(
 @router.post("/email", response_model=EmailOut)
 def posli_email_z_appky(
     vstup: EmailVstup,
-    user: User = Depends(vyzaduj_zakazniky),
+    user: User = Depends(vyzaduj_novinky),
     db: Session = Depends(get_db),
 ):
     """Pošle e-mail zákazníkovi a **zapíše ho k záznamu jako aktivitu**.
@@ -3467,7 +3468,7 @@ def posli_email_z_appky(
 # ---- oblíbené a naposledy otevřené (CRM-37) ---------------------------------
 @router.get("/oblibene", response_model=OblibeneOut)
 def seznam_oblibenych(
-    user: User = Depends(vyzaduj_zakazniky),
+    user: User = Depends(vyzaduj_novinky),
     db: Session = Depends(get_db),
 ):
     """Přišpendlené a naposledy otevřené záznamy pro nabídku v hledání."""
@@ -3479,7 +3480,7 @@ def prepni_oblibeny(
     entita: str,
     zaznam_id: int,
     vstup: OblibeneVstup,
-    user: User = Depends(vyzaduj_zakazniky),
+    user: User = Depends(vyzaduj_novinky),
     db: Session = Depends(get_db),
 ):
     """Přišpendlí nebo odšpendlí záznam.
@@ -3496,7 +3497,7 @@ def prepni_oblibeny(
 def zaznamenej_otevreni(
     entita: str,
     zaznam_id: int,
-    user: User = Depends(vyzaduj_zakazniky),
+    user: User = Depends(vyzaduj_novinky),
     db: Session = Depends(get_db),
 ):
     """Zápis do historie „naposledy otevřené".
@@ -3518,7 +3519,7 @@ def zaznamenej_otevreni(
 def historie_zmen(
     entita: str,
     zaznam_id: int,
-    user: User = Depends(vyzaduj_zakazniky),
+    user: User = Depends(vyzaduj_novinky),
     db: Session = Depends(get_db),
 ):
     """Kdo co kdy u záznamu změnil.
@@ -3545,7 +3546,7 @@ def historie_zmen(
 # ---- mapa zákazníků a projektů (CRM-20) -------------------------------------
 @router.get("/mapa", response_model=list[MapaBodOut])
 def body_na_mapu(
-    user: User = Depends(vyzaduj_zakazniky),
+    user: User = Depends(vyzaduj_novinky),
     db: Session = Depends(get_db),
 ):
     """Zákazníci se souřadnicemi. Kdo nemá `crm_vse`, vidí jen svoje."""

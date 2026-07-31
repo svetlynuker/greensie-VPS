@@ -23,7 +23,9 @@ export const NABIDKA = [
       // Jede pod právem Zákazníků: aktivity visí na záznamech CRM, takže kdo
       // vidí zákazníky, má co plánovat.
       { klic: "muj_den", nazev: "Můj den", ikona: "ukol", cesta: "/muj-den", pravo: "zakaznici" },
-      { klic: "mapa", nazev: "Mapa", ikona: "mapa", cesta: "/mapa", pravo: "zakaznici" },
+      // `novinka: true` = ukáže se jen tomu, kdo má v /auth/me `novinky`
+      // (funkce se zatím zkouší interně, viz backend crm/novinky.py).
+      { klic: "mapa", nazev: "Mapa", ikona: "mapa", cesta: "/mapa", pravo: "zakaznici", novinka: true },
       { klic: "kalendar", nazev: "Kalendář", ikona: "kalendar", cesta: "/kalendar", pravo: "zakaznici" },
     ],
   },
@@ -118,10 +120,12 @@ export function smiPolozku(polozka, prava) {
 }
 
 /** Nabídka profiltrovaná právy — skupiny bez jediné položky vypadnou. */
-export function nabidkaPro(prava) {
+export function nabidkaPro(prava, novinky = false) {
   return NABIDKA.map((grp) => ({
     ...grp,
-    polozky: grp.polozky.filter((p) => smiPolozku(p, prava)),
+    // Položka označená `novinka` se ukáže jen tomu, komu se novinky zapínají
+    // (viz backend `crm/novinky.py`) — právo samo nestačí.
+    polozky: grp.polozky.filter((p) => smiPolozku(p, prava) && (!p.novinka || novinky)),
   })).filter((grp) => grp.polozky.length > 0);
 }
 
