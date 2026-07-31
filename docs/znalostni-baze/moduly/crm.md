@@ -457,6 +457,14 @@ Všechno je uložené u tvého účtu, ne v prohlížeči, takže to platí i na
 > Nastavení firmy (stavy pipeline, kategorie, práva, uživatelé) je jinde — v **Admin
 > nastavení**. Sem patří jen to, co je osobní.
 
+### Co je vidět na dlaždici v kanbanu
+Kromě čísla, zákazníka a hodnoty ukazuje dlaždice tři věci, které se hodí na první pohled:
+
+- **kolečko s iniciálami** vlastníka (barva je pro každého člověka stálá),
+- **počet dní ve fázi** vpravo dole — od poslední změny stavu. Nad 30 dní se zvýrazní, takže
+  je vidět, co někde leží,
+- **propadlý termín** předpokládaného uzavření červeně a tučně.
+
 ### Historie změn: kdo co kdy upravil
 Na kartě zákazníka, obchodního případu i projektu je dole sbalený panel **Historie změn**.
 Po rozbalení ukáže řádek na každou změněnou položku: kdy, co, **z čeho na co** a kdo to
@@ -575,6 +583,21 @@ Pořadí polí se posouvá šipkami, tak se ve formuláři i objeví.
 
 Zákazníci a obchodní případy mají **každý svou sadu** polí; pole přidané u případů se
 u zákazníků neobjeví.
+
+**Skupiny.** Vyplněná *Skupina* seskupí pole pod společný nadpis („Peníze", „Technika").
+Pole bez skupiny zůstanou pod obecným nadpisem *Doplňující údaje*.
+
+**Ukázat, jen když…** Pole se dá schovat, dokud jiné pole nemá určitou hodnotu — třeba
+*Výkon FVE* jen u případů s kategorií PPA. Napíše se název pole a hodnota, na kterou má
+reagovat. Skryté pole se **nevyžaduje**, ani když je označené jako povinné.
+
+**Výpočtová pole.** Vyplněný *Vzorec* udělá z pole počítané: nevyplňuje se ručně, ale
+spočítá se — například `hodnota_kc - nakup` pro marži. Ve vzorci smí být čísla, názvy jiných
+**číselných** polí, `+ − * /` a závorky. V přehledu i na kartě je takové pole označené
+znakem **∑**.
+
+> Výsledek se **přepočítává při každém zobrazení**, neukládá se. Když se změní cena, marže
+> se změní sama — nemůže se stát, že by na kartě svítilo staré číslo.
 
 ### Prohra: proč se appka ptá na důvod
 Při přesunu případu do **prohraného** stavu se objeví dotaz na důvod (cena, konkurence,

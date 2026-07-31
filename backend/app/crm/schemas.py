@@ -86,6 +86,13 @@ class VlastniPoleOut(BaseModel):
     povinne: bool = False
     v_seznamu: bool = False
     poradi: int = 0
+    # CRM-33: nadpis skupiny; prázdné = „Doplňující údaje".
+    skupina: str = ""
+    # CRM-33: pole se ukáže, jen když `zavislost_pole` má `zavislost_hodnota`.
+    zavislost_pole: str = ""
+    zavislost_hodnota: str = ""
+    # CRM-34: neprázdný vzorec = pole se počítá, nevyplňuje.
+    vzorec: str = ""
 
 
 class VlastniPoleVstup(BaseModel):
@@ -96,6 +103,10 @@ class VlastniPoleVstup(BaseModel):
     povinne: bool = False
     v_seznamu: bool = False
     poradi: Optional[int] = None
+    skupina: str = ""
+    zavislost_pole: str = ""
+    zavislost_hodnota: str = ""
+    vzorec: str = ""
 
 
 class VlastniPoleUprava(BaseModel):
@@ -108,6 +119,10 @@ class VlastniPoleUprava(BaseModel):
     povinne: Optional[bool] = None
     v_seznamu: Optional[bool] = None
     poradi: Optional[int] = None
+    skupina: Optional[str] = None
+    zavislost_pole: Optional[str] = None
+    zavislost_hodnota: Optional[str] = None
+    vzorec: Optional[str] = None
 
 
 class VlastniPolePoradi(BaseModel):
@@ -236,6 +251,9 @@ class PripadRadekOut(BaseModel):
     raynet_code: str = ""
     vytvoreno_at: Optional[str] = None
     extra_text: dict = {}
+    # CRM-44: jak dlouho případ visí v aktuálním stavu. Počítá se od poslední
+    # změny stavu, u případů bez historie od založení.
+    dni_ve_fazi: int = 0
 
 
 class PripadDetailOut(PripadRadekOut):

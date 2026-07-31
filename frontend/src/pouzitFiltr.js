@@ -1,5 +1,9 @@
 // Sdílený stav filtru, řazení a rozvržení sloupců pro jednu sekci CRM.
 //
+// Jméno začíná na `use` schválně: React na tom prefixu staví (pravidla hooků
+// v lintu i devtools), takže `pouzitFiltr` by se sice četlo česky, ale nástroje
+// by ho nepovažovaly za hook a přestaly hlídat pravidla volání.
+//
 // Je to jeden hook, protože filtr má platit ZÁROVEŇ pro tabulku i kanban —
 // kdyby si každé zobrazení drželo vlastní stav, uživatel by v každém viděl něco
 // jiného a nechápal proč.
@@ -39,7 +43,7 @@ export function uplatniRozvrzeni(sloupce, rozvrzeni) {
   return serazene.filter((s) => !skryteSet.has(s.klic));
 }
 
-export default function pouzitFiltr(entita, radky, vlastniPole = []) {
+export default function usePouzitFiltr(entita, radky, vlastniPole = []) {
   const [podminky, setPodminky] = useState([]);
   const [razeni, setRazeni] = useState(() => vychoziRazeni(entita));
   const [rozvrzeni, setRozvrzeni] = useState({ skryte: [], poradi: [] });

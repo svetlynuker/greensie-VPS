@@ -123,6 +123,7 @@ zakázky, je zbytek seznamu odhad — ne zkušenost. Proto se nejdřív zapíná
 | **E · Komunikace** ✅ | ~~CRM-36, CRM-10, CRM-32~~ — **hotovo 31. 7. 2026** | — | Uděláno v tomhle pořadí schválně: volba notifikací vznikla dřív než notifikace samotné, aby si je nikdo nemusel „vytrpět". |
 | **G · Denní práce se seznamy** ✅ | ~~CRM-26, CRM-28, CRM-37, CRM-38~~ — **hotovo 31. 7. 2026** | — | Vzniklo mimo původní plán dávek: až se appka začala používat, ukázalo se, že tohle lidi potká každý den dřív než servisní modul. |
 | **H · Přehled a dohledatelnost** ✅ | ~~CRM-12, CRM-20, CRM-21~~ — **hotovo 31. 7. 2026** | — | Audit log dává smysl zapnout co nejdřív: dohledá jen to, co se stalo po jeho zapnutí. |
+| **I · Doladění** ✅ | ~~CRM-33, CRM-34, CRM-44~~ — **hotovo 31. 7. 2026** | — | Drobnosti, které nečekaly na žádný spouštěč. Vlastní pole tím dostala vše, co od nich admin čeká. |
 | **F · Druhý životní cyklus** | CRM-11, CRM-31 | ~1 týden+ | Až budou v appce první předané projekty, ke kterým se dá servis navěsit. |
 | **Odloženo s podmínkou** | CRM-02 (~300 řádků v seznamu; CRM-38 už hotové zvlášť), CRM-29 (desetitisíce), CRM-06 (jen když se objeví osoba u dvou firem), CRM-41 + CRM-42 (až bude ~20 uzavřených obchodů) | — | Spouštěč je napsaný, ať se to nedělá dřív, než to začne bolet. |
 
@@ -493,11 +494,23 @@ Co běžná CRM mají navíc:
   v textu**. Tiché smazání by zákazníkovi poslalo větu s dírou („nabídka pro ,"), zatímco
   viditelné `{{zakaznik}}` je vidět na první pohled.
 
-- [ ] **CRM-33 · Skupiny a podmíněná viditelnost vlastních polí** — Velikost **M** · Dopad **★**
-  Dnes jsou vlastní pole jeden seznam pod sebou. Chybí sekce a „ukaž jen když kategorie = PPA".
+- [x] **CRM-33 · Skupiny a podmíněná viditelnost vlastních polí** — **hotovo 31. 7. 2026**
+  Pole má `skupina` (nadpis, pod který patří) a dvojici `zavislost_pole` + `zavislost_hodnota`.
+  *Skupina je text, ne cizí klíč:* nemá žádné vlastní chování, takže tabulka o jednom sloupci
+  by se navíc musela uklízet, když z ní vypadne poslední pole.
+  *Skryté pole se NEVYŽADUJE, ani když je povinné* — jinak by formulář nešel uložit a nebylo
+  by vidět proč. Hlídá to backend i frontend stejnou logikou (`viditelne` / `poleViditelne`);
+  kdyby se rozešly, pole by šlo vyplnit, ale neuložit.
 
-- [ ] **CRM-34 · Výpočtová pole** — Velikost **M** · Dopad **★**
-  Např. „marže = cena − nákup" bez zásahu do kódu.
+- [x] **CRM-34 · Výpočtová pole** — **hotovo 31. 7. 2026**
+  Pole s vyplněným `vzorec` se nevyplňuje, ale počítá — „marže = hodnota_kc - nakup".
+  *Počítá se PŘI ČTENÍ a do `extra` se neukládá:* uložený výsledek by zastaral, jakmile se
+  změní vstup, a nikdo by nepoznal, že číslo na obrazovce už neplatí. Ověřeno i to, že pokus
+  poslat vlastní hodnotu výpočtového pole se zahodí.
+  *Bezpečnost:* vzorec projde kontrolou už při ukládání definice (jen čísla, názvy číselných
+  polí, `+ - * /` a závorky) a při vyhodnocení se jména nahradí čísly, takže se počítá čistá
+  aritmetika bez jediného identifikátoru. Testy hlídají, že přes vzorec nejde volat funkce.
+  Pole nesmí odkazovat samo na sebe (počítalo by se donekonečna).
 
 ---
 
@@ -563,9 +576,13 @@ CRM nemá **ani jeden graf**, přitom grafové komponenty v appce existují (pro
 - [x] **CRM-43 · Důvody proher** — **hotovo 30. 7. 2026** (dávka B)
   Rozpad podle `duvod_prohry` v Přehledu obchodu. Kvůli tomu se ten důvod vynucuje.
 
-- [ ] **CRM-44 · Drobnosti v UI** — Velikost **S** · Dopad **★**
-  Avatary/iniciály vlastníka na dlaždicích, barevné zvýraznění případů po termínu v kanbanu,
-  ikonky typů nabídek, počítadlo dní ve fázi na dlaždici.
+- [x] **CRM-44 · Drobnosti v UI** — **hotovo 31. 7. 2026**
+  Iniciály vlastníka v barevném kolečku (`Iniciraly.jsx`), počítadlo **dní ve fázi** na
+  dlaždici (nad 30 dní zvýrazněné) a zvýraznění propadlého termínu.
+  *Barva iniciál se odvozuje z jména, ne z pořadí v seznamu* — jinak by kolega měnil barvu
+  pokaždé, když někdo přibude nebo odejde.
+  *Dny ve fázi* počítá backend z `crm_stav_historie`; případ bez historie se počítá od
+  založení, jinak by čerstvý případ hlásil 0 dní i po měsíci.
 
 - [x] **CRM-45 · Přiznat, že Raynet ještě jede** — **hotovo 31. 7. 2026** (doklepnutí dávky B)
   Vznikla rozhodnutím neimportovat: appka se tvářila, jako by v ní byl celý byznys, a přitom

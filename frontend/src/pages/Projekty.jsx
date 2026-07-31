@@ -17,7 +17,7 @@ import {
   nactiMe,
 } from "../api";
 import { fmtDatum } from "../crm";
-import pouzitFiltr from "../pouzitFiltr";
+import usePouzitFiltr from "../pouzitFiltr";
 import "../styles/crm.css";
 
 /**
@@ -39,7 +39,7 @@ export default function Projekty() {
   const [sablony, setSablony] = useState(false);
   const [chyba, setChyba] = useState(null);
 
-  const f = pouzitFiltr("pro", radky, sloupce);
+  const f = usePouzitFiltr("pro", radky, sloupce);
 
   // KPI nad seznamem (CRM-22). U realizace nejde o peníze, ale o čas: co je
   // po termínu, se musí řešit dnes, a průměrná hotovost říká, jak daleko

@@ -9,7 +9,7 @@ import OdkazRaynet from "../components/OdkazRaynet";
 import ZakaznikFormular from "../components/ZakaznikFormular";
 import { nactiMe, logout, crmVlastniPole, crmZakaznici } from "../api";
 import { POHLEDY_ZAKAZNIKU, fmtDatum } from "../crm";
-import pouzitFiltr from "../pouzitFiltr";
+import usePouzitFiltr from "../pouzitFiltr";
 import "../styles/crm.css";
 
 /**
@@ -33,7 +33,7 @@ export default function Zakaznici() {
   const sekce = POHLEDY_ZAKAZNIKU.find((p) => p.klic === pohled);
 
   // Filtr a řazení; výchozí řazení klientů je podle názvu (číslo nemají).
-  const f = pouzitFiltr("zakaznik", zakaznici || [], sloupce);
+  const f = usePouzitFiltr("zakaznik", zakaznici || [], sloupce);
 
   // KPI nad seznamem (CRM-22) — z vyfiltrovaných řádků, ať sedí s tabulkou.
   // U firem nejde o peníze, ale o to, kde má obchod díru: firma bez případu

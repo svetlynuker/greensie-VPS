@@ -17,6 +17,10 @@ const TYPY = [
 ];
 
 const PRAZDNE = {
+  skupina: "",
+  zavislost_pole: "",
+  zavislost_hodnota: "",
+  vzorec: "",
   nazev: "",
   typ: "text",
   volby: "",
@@ -68,6 +72,10 @@ export default function VlastniPoleNastaveni({ entita, nazevObrazovky, onZavri, 
         napoveda: novy.napoveda.trim(),
         povinne: novy.povinne,
         v_seznamu: novy.v_seznamu,
+        skupina: novy.skupina.trim(),
+        zavislost_pole: novy.zavislost_pole.trim(),
+        zavislost_hodnota: novy.zavislost_hodnota.trim(),
+        vzorec: novy.vzorec.trim(),
       });
       setNovy(PRAZDNE);
       await nacti();
@@ -273,6 +281,56 @@ export default function VlastniPoleNastaveni({ entita, nazevObrazovky, onZavri, 
                 />
               </div>
             )}
+            <div>
+              <label className="crm-label">Skupina (nepovinné)</label>
+              <input
+                className="crm-pole"
+                value={novy.skupina}
+                onChange={(e) => setNovy((n) => ({ ...n, skupina: e.target.value }))}
+                placeholder="např. Technické údaje"
+              />
+              <p className="crm-tise crm-napoveda">
+                Pole se stejnou skupinou se na kartě zobrazí pod společným nadpisem.
+              </p>
+            </div>
+
+            <div>
+              <label className="crm-label">Vzorec (nepovinné)</label>
+              <input
+                className="crm-pole"
+                value={novy.vzorec}
+                onChange={(e) => setNovy((n) => ({ ...n, vzorec: e.target.value }))}
+                placeholder="např. cena_kc - nakup"
+              />
+              <p className="crm-tise crm-napoveda">
+                Když vyplníš, pole se nevyplňuje ručně, ale <b>počítá</b> — z čísel a jiných
+                číselných polí, znaky + − * / a závorky. Výsledek se přepočítá při každém
+                zobrazení, takže nezastará.
+              </p>
+            </div>
+
+            <div>
+              <label className="crm-label">Ukázat, jen když… (nepovinné)</label>
+              <div className="crm-filtr-rozsah">
+                <input
+                  className="crm-pole"
+                  value={novy.zavislost_pole}
+                  onChange={(e) => setNovy((n) => ({ ...n, zavislost_pole: e.target.value }))}
+                  placeholder="pole (např. kategorie)"
+                />
+                <input
+                  className="crm-pole"
+                  value={novy.zavislost_hodnota}
+                  onChange={(e) => setNovy((n) => ({ ...n, zavislost_hodnota: e.target.value }))}
+                  placeholder="má hodnotu (např. ppa)"
+                />
+              </div>
+              <p className="crm-tise crm-napoveda">
+                Necháš-li prázdné, pole je vidět vždycky. Skryté pole se nevyžaduje, ani když
+                je označené jako povinné.
+              </p>
+            </div>
+
             <div className="crm-sirka2">
               <label className="crm-label">Nápověda pod polem (nepovinné)</label>
               <input

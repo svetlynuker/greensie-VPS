@@ -188,6 +188,16 @@ def _lehka_migrace():
                 )
             )
 
+        # CRM-33 a CRM-34: skupiny, podmíněná viditelnost a výpočtová pole.
+        # `crm_vlastni_pole` existuje od dřívějška, takže create_all nedoplní.
+        for sloupec in ("skupina", "zavislost_pole", "zavislost_hodnota", "vzorec"):
+            conn.execute(
+                text(
+                    f"ALTER TABLE crm_vlastni_pole ADD COLUMN IF NOT EXISTS {sloupec} "
+                    "TEXT NOT NULL DEFAULT ''"
+                )
+            )
+
         # CRM-28: rozvržení tabulky uložené s filtrem. `crm_ulozene_filtry`
         # existuje od dřívějška, takže create_all sloupec nedoplní.
         conn.execute(

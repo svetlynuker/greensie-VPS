@@ -356,6 +356,22 @@ class CrmVlastniPole(Base):
     v_seznamu = Column(Boolean, nullable=False, default=False, server_default="false")
     poradi = Column(Integer, nullable=False, default=0, server_default="0")
 
+    # CRM-33: nadpis skupiny, pod který pole patří. Prázdné = „Doplňující údaje".
+    # Je to text, ne cizí klíč do tabulky skupin: skupina nemá žádné vlastní
+    # chování ani nastavení, takže by to byla tabulka o jednom sloupci a navíc
+    # by se musela uklízet, když z ní vypadne poslední pole.
+    skupina = Column(String, nullable=False, default="", server_default="")
+
+    # CRM-33: pole se ukáže, jen když má záznam tuhle hodnotu ve `zavislost_pole`.
+    # Obojí prázdné = pole je vidět vždycky.
+    zavislost_pole = Column(String, nullable=False, default="", server_default="")
+    zavislost_hodnota = Column(String, nullable=False, default="", server_default="")
+
+    # CRM-34: výraz výpočtového pole („cena - nakup"). Neprázdný = pole se
+    # nevyplňuje, ale počítá; do `extra` se neukládá (počítá se při zobrazení),
+    # aby v datech nebyla zastaralá kopie výsledku.
+    vzorec = Column(String, nullable=False, default="", server_default="")
+
     vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     vytvoril_user_id = Column(
         Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True

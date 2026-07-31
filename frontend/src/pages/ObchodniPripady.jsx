@@ -22,7 +22,7 @@ import {
   nactiMe,
 } from "../api";
 import { fmtDatum, fmtKc, fmtKcKratce, nazvyKategorii } from "../crm";
-import pouzitFiltr from "../pouzitFiltr";
+import usePouzitFiltr from "../pouzitFiltr";
 import "../styles/crm.css";
 
 /**
@@ -49,7 +49,7 @@ export default function ObchodniPripady() {
   const [chyba, setChyba] = useState(null);
 
   // Filtr a řazení platí zároveň pro tabulku i kanban (jeden stav pro obojí).
-  const f = pouzitFiltr("op", radky, sloupce);
+  const f = usePouzitFiltr("op", radky, sloupce);
 
   // KPI nad seznamem (CRM-22). Počítá se z VYFILTROVANÝCH řádků, ne ze všech —
   // jinak by čísla nad tabulkou nesouhlasila s tím, co je v ní vidět.
