@@ -566,6 +566,12 @@ app.add_middleware(GZipMiddleware, minimum_size=4096)
 # vrstvou (jinak by se hlavičky nemusely dostat na chybové odpovědi).
 app.add_middleware(LogovaciMiddleware)
 
+# Autor změn pro audit log (CRM-12). Musí to být middleware, ne závislost —
+# viz komentář u AuditMiddleware.
+from app.crm.audit import AuditMiddleware  # noqa: E402
+
+app.add_middleware(AuditMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -637,6 +643,14 @@ def _zastav_konektor_worker():
     from app.konektor.scheduler import zastav_worker
 
     zastav_worker()
+
+
+@app.on_event("startup")
+def _zapni_audit():
+    # Audit log CRM (CRM-12) – sbírá se událostí SQLAlchemy, ne v endpointech.
+    from app.crm.audit import zapni
+
+    zapni()
 
 
 @app.on_event("startup")

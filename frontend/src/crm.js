@@ -102,6 +102,17 @@ export function fmtDatum(s) {
   return m ? `${m[3]}.${m[2]}.${m[1]}` : "";
 }
 
+/** Datum a čas („31.7.2026 14:05") — do historie změn, kde na hodině záleží. */
+export function fmtDatumCas(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(String(s || ""));
+  if (!m) return fmtDatum(s);
+  // Časy z backendu jsou v UTC; převod na místní čas dělá Date, ne string.
+  const d = new Date(s);
+  return Number.isNaN(d.getTime())
+    ? `${m[3]}.${m[2]}.${m[1]} ${m[4]}:${m[5]}`
+    : `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
 /** Peníze v Kč bez desetin – tabulky i kanban mají být čitelné na první pohled. */
 export function fmtKc(x) {
   if (x === null || x === undefined || x === "") return "—";

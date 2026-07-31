@@ -122,6 +122,7 @@ zakázky, je zbytek seznamu odhad — ne zkušenost. Proto se nejdřív zapíná
 | **D · Peníze** ✅ | ~~CRM-08, CRM-09~~ — **hotovo 31. 7. 2026** | — | Zakázka projde celým řetězcem až k faktuře v appce. Katalog technologií se přitom stal katalogem produktů (244 položek z Raynetu, přílohy, zaškrtávátko Aktivní). |
 | **E · Komunikace** ✅ | ~~CRM-36, CRM-10, CRM-32~~ — **hotovo 31. 7. 2026** | — | Uděláno v tomhle pořadí schválně: volba notifikací vznikla dřív než notifikace samotné, aby si je nikdo nemusel „vytrpět". |
 | **G · Denní práce se seznamy** ✅ | ~~CRM-26, CRM-28, CRM-37, CRM-38~~ — **hotovo 31. 7. 2026** | — | Vzniklo mimo původní plán dávek: až se appka začala používat, ukázalo se, že tohle lidi potká každý den dřív než servisní modul. |
+| **H · Přehled a dohledatelnost** ✅ | ~~CRM-12, CRM-20, CRM-21~~ — **hotovo 31. 7. 2026** | — | Audit log dává smysl zapnout co nejdřív: dohledá jen to, co se stalo po jeho zapnutí. |
 | **F · Druhý životní cyklus** | CRM-11, CRM-31 | ~1 týden+ | Až budou v appce první předané projekty, ke kterým se dá servis navěsit. |
 | **Odloženo s podmínkou** | CRM-02 (~300 řádků v seznamu; CRM-38 už hotové zvlášť), CRM-29 (desetitisíce), CRM-06 (jen když se objeví osoba u dvou firem), CRM-41 + CRM-42 (až bude ~20 uzavřených obchodů) | — | Spouštěč je napsaný, ať se to nedělá dřív, než to začne bolet. |
 
@@ -231,9 +232,24 @@ jinak přidělení nic neudělá.
   reklamace, výměna měniče. U FVE je to **celý druhý životní cyklus** a dnes pro něj v appce
   není místo. Zvážit jako pátou entitu řetězce s vlastní číselnou řadou (`SER-26-NNNN`).
 
-- [ ] **CRM-12 · Audit log změn záznamů** — Velikost **M** · Dopad **★★**
-  Máte historii **stavů** (`crm_stav_historie`), ale ne „kdo změnil cenu z 2,5 na 1,9 mil.".
-  Appka má modul `logy` — dá se využít.
+- [x] **CRM-12 · Audit log změn záznamů** — **hotovo 31. 7. 2026** (dávka „přehled")
+  Tabulka `crm_audit` + `crm/audit.py`, panel **Historie změn** na kartě zákazníka,
+  případu a projektu (sbalený, načítá se až po rozbalení).
+
+  *Tři věci, na kterých to stojí — každá z nich se dá udělat špatně tak, že to vypadá funkčně:*
+  1. **Sbírá se událostí SQLAlchemy `before_flush`, ne voláním v endpointech.** Ruční
+     `zaloguj(...)` je věc, která se u desátého endpointu vynechá a nikdo si toho nevšimne,
+     dokud v logu něco nechybí.
+  2. **Původní hodnoty se čtou surovým SELECTem** (`_puvodni_radek`). Varianta přes
+     `attrs[...].history` projde všemi ostatními testy a selže na jediném: po commitu jsou
+     atributy vyexpirované, takže by log u každé změny hlásil „z prázdna na X" — a ztratil by
+     přesně tu informaci, kvůli které existuje. Hlídá to `test_stara_hodnota_prezije_expiraci`.
+  3. **Autora nastavuje middleware, ne závislost.** Sync závislost a sync endpoint běží
+     u FastAPI v threadpoolu a můžou skončit v různých vláknech — contextvar nastavená
+     v `get_current_user` se do události nedostane a log je bez autora.
+
+  Nelogují se technická pole, stav (má vlastní historii) ani provozní tabulky. Vlastní pole
+  se logují po klíčích, ne jako celý JSON.
 
 - [x] **CRM-13 · Export do CSV / Excelu** — **hotovo 30. 7. 2026** (dávka A)
   Tlačítko „↓ Export CSV (n)" v liště tabulky všech pěti sekcí. Exportuje **přesně
@@ -354,12 +370,27 @@ jinak přidělení nic neudělá.
   (pokračuje dalším dnem) a před založením se ukáže plán, kdo dostane jaký čas.
   Označit víc řádků a hromadně: změnit vlastníka, změnit stav, přidat aktivitu, exportovat.
 
-- [ ] **CRM-20 · Mapa zákazníků a projektů** — Velikost **M** · Dopad **★★**
-  **GPS už v datech je** (z Raynetu i z ARESu). U FVE se hodí na plánování obchůzek, na
-  posouzení lokality a na „co máme v okolí, když už tam jedeme".
+- [x] **CRM-20 · Mapa zákazníků a projektů** — **hotovo 31. 7. 2026** (dávka „přehled")
+  Sekce **Mapa** (`/mapa`), Leaflet + OpenStreetMap, bez API klíče. U bodu je vidět, kolik
+  u firmy běží případů a projektů — kvůli tomu se na mapu člověk dívá.
+  *Souřadnice:* přednost má **provozovna** (odběrné místo), teprve pak adresa firmy — FVE se
+  staví na provozovně, zatímco sídlo v rejstříku bývá fakturační. U každého bodu je napsané,
+  odkud souřadnice jsou, aby se podle mapy neplánovala cesta jinam.
+  *Stránka se načítá lazy* — Leaflet váží ~180 kB a používá ho jediná obrazovka.
 
-- [ ] **CRM-21 · Ganttův diagram projektu** — Velikost **L** · Dopad **★★**
-  Kroky mají trvání i návaznosti, takže Gantt je nad nimi přirozený a ukáže kritickou cestu.
+  ⚠️ **Zadání tvrdilo „GPS už v datech je" — k 31. 7. 2026 to neplatí.** Import z Raynetu se
+  nedělal a ARES souřadnice nevrací, takže **žádný záznam GPS nemá a mapa je prázdná**
+  (a říká to nahlas). Naplní se, až se GPS začnou vyplňovat u odběrných míst.
+
+- [x] **CRM-21 · Ganttův diagram projektu** — **hotovo 31. 7. 2026** (dávka „přehled")
+  Sbalená **Časová osa** v záložce Kroky realizace. Bez knihovny — kroky už mají trvání
+  i návaznosti, takže pruhy jsou obyčejné divy v procentech (funguje to i v tmavém režimu
+  a při tisku).
+  *Kritická cesta se počítá z trvání, ne z termínů:* ručně nastavený termín (`termin_rucne`)
+  se od toho, co plyne z návazností, může lišit. Ověřeno nad standardní šablonou FVE —
+  38 dní, paralelní „žádost o připojení" správně mimo cestu.
+  *Kroky bez termínu se nekreslí* a je to napsané nahlas; tiché vynechání by vypadalo, že
+  projekt má míň práce, než má.
 
 - [x] **CRM-22 · KPI dlaždice nad seznamy** — **hotovo 31. 7. 2026** (doklepnutí dávky B)
   Pás nad seznamem má **všech pět** sekcí: Zákazníci, Obchodní případy, Nabídky, Objednávky,

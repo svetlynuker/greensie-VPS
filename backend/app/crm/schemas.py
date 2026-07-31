@@ -1131,3 +1131,29 @@ class OblibeneOut(BaseModel):
 
 class OblibeneVstup(BaseModel):
     oblibene: bool = True
+
+
+# ---- audit log (CRM-12) ------------------------------------------------------
+class AuditOut(BaseModel):
+    id: int
+    druh: str  # zmena | vznik | smazani
+    pole: str = ""
+    pole_nazev: str = ""
+    stara: str = ""
+    nova: str = ""
+    kdo: Optional[str] = None
+    kdy: Optional[str] = None
+
+
+# ---- mapa (CRM-20) -----------------------------------------------------------
+class MapaBodOut(BaseModel):
+    zakaznik_id: int
+    nazev: str
+    typ: str = ""
+    lat: float
+    lng: float
+    zdroj: str = ""
+    misto_nazev: str = ""
+    mesto: str = ""
+    otevrenych_pripadu: int = 0
+    projektu: int = 0
