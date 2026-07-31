@@ -7,3 +7,5 @@ __pycache__/
 nabidka_soubory/
 # přílohy položek katalogu produktů (technické listy, fotky) – taky ne
 katalog_soubory/
+# obrázky vysázené do nabídkových výstupů (fotky realizací, schémata)
+vystup_obrazky/

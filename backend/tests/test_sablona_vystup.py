@@ -253,140 +253,194 @@ class TestGraf:
         assert PS_2027["doporucena"]["graf"] == puvodni
 
 
-class TestVychoziSablona:
-    def test_ppa_ma_bloky(self):
+class TestVychoziPredloha:
+    """Předloha v modelu v2: pevné A4 stránky a prvky na mm souřadnicích."""
+
+    def _prvky(self, konfigurace: dict) -> list[dict]:
+        """Všechny prvky napříč stránkami včetně dětí kontejnerů."""
+        out = []
+
+        def projdi(prvky):
+            for p in prvky:
+                out.append(p)
+                projdi(p.get("deti") or [])
+
+        for s in konfigurace["stranky"]:
+            projdi(s["prvky"])
+        return out
+
+    def test_predloha_ma_stranky_a_prvky(self):
         s = sk.vychozi_sablona("ppa")
-        assert s["bloky"]
-        druhy = {b["druh"] for b in s["bloky"]}
-        assert {"hlavicka", "text", "udaje", "graf"} <= druhy
+        assert s["verze"] == 2
+        assert len(s["stranky"]) >= 1
+        druhy = {p["druh"] for p in self._prvky(s)}
+        assert {"text", "kontejner", "udaj", "graf"} <= druhy
+
+    def test_predloha_projde_schematem(self):
+        from app.nabidkovac.schemas import VystupKonfigurace
+
+        for typ in sk.PODPOROVANE_TYPY:
+            VystupKonfigurace(**sk.vychozi_sablona(typ))
 
     def test_vsechna_pole_ve_vychozi_jsou_v_katalogu(self):
         # Výchozí předloha nesmí odkazovat na neexistující/interní pole.
         for typ in sk.PODPOROVANE_TYPY:
             s = sk.vychozi_sablona(typ)
-            pole_klice = sk.platne_klice(typ)
-            sloupce_klice = sk.platne_sloupce(typ)
-            for b in s["bloky"]:
-                if b["druh"] == "udaje":
-                    assert set(b["pole"]) <= pole_klice, (typ, b["id"])
-                elif b["druh"] == "tabulka":
-                    assert set(b["pole"]) <= sloupce_klice, (typ, b["id"])
+            for p in self._prvky(s):
+                if p["druh"] == "udaj":
+                    assert p["klic"] in sk.platne_klice(typ), (typ, p["id"])
+                elif p["druh"] == "tabulka":
+                    assert set(p["pole"]) <= sk.platne_sloupce(typ), (typ, p["id"])
 
-    def test_ps_predloha_ma_bloky_2027_i_obchod(self):
-        ids = [b["id"] for b in sk.vychozi_sablona("peak_shaving")["bloky"]]
+    def test_nic_nepretece_pres_zapati(self):
+        # Předloha se má po otevření vejít – jinak by obchodníka hned vítalo
+        # červené varování o přetečení.
+        for typ in sk.PODPOROVANE_TYPY:
+            for s in sk.vychozi_sablona(typ)["stranky"]:
+                for p in s["prvky"]:
+                    assert p["y"] + p["vyska"] <= sk.OBSAH_DO_MM + 1, (typ, p["id"])
+                    assert p["y"] >= sk.OBSAH_OD_MM - 1, (typ, p["id"])
+
+    def test_prvky_se_neprekryvaji(self):
+        # Generátor skládá sekce pod sebe; překryv by znamenal chybu v odhadu.
+        for typ in sk.PODPOROVANE_TYPY:
+            for s in sk.vychozi_sablona(typ)["stranky"]:
+                serazene = sorted(s["prvky"], key=lambda p: p["y"])
+                for a, b in zip(serazene, serazene[1:]):
+                    assert a["y"] + a["vyska"] <= b["y"] + 0.01, (typ, a["id"], b["id"])
+
+    def test_ps_predloha_ma_sekce_2027_i_obchod(self):
+        ids = {p["id"] for p in self._prvky(sk.vychozi_sablona("peak_shaving"))}
         assert "uspora_2027" in ids and "obchod" in ids
+
+    def test_dlazdice_stoji_vedle_sebe(self):
+        # Klíčové údaje mají být v mřížce, ne pod sebou na celou šířku.
+        klicove = next(
+            p
+            for p in self._prvky(sk.vychozi_sablona("peak_shaving"))
+            if p["id"] == "klicove"
+        )
+        assert klicove["druh"] == "kontejner"
+        assert klicove["styl"]["sloupce"] == 3
+        assert len(klicove["deti"]) == 5
 
     def test_kopie_je_nezavisla(self):
         a = sk.vychozi_sablona("ppa")
-        a["bloky"].clear()
-        b = sk.vychozi_sablona("ppa")
-        assert b["bloky"]  # mutace kopie neovlivní další volání
+        a["stranky"].clear()
+        assert sk.vychozi_sablona("ppa")["stranky"]
 
 
-class TestDoplneneBloky:
-    """Nové bloky předlohy se musí objevit i ve starších uložených nabídkách,
-    aniž by se přepsaly texty, které si k nim OZ napsal."""
+class TestNactiKonfiguraci:
+    """Uložené rozvržení se bere jen v modelu v2; cokoli staršího dostane
+    výchozí předlohu (Dan zvolil čistý start, staré se nemigruje)."""
 
-    ULOZENA = {
-        "bloky": [
-            {"id": "hlavicka", "druh": "hlavicka", "viditelny": True, "nadpis": "Moje nabídka"},
-            {"id": "uvod", "druh": "text", "viditelny": True, "nadpis": "Úvod",
-             "text": "Vlastní text obchodníka."},
-            {"id": "uspora", "druh": "udaje", "viditelny": True, "nadpis": "Úspora",
-             "pole": ["rocni_uspora_2026_kc"]},
-            {"id": "zaver", "druh": "text", "viditelny": False, "nadpis": "Závěr", "text": "…"},
-        ]
-    }
+    def test_verze2_se_vrati_beze_zmeny(self):
+        ulozena = sk.vychozi_sablona("ppa")
+        ulozena["stranky"][0]["prvky"][0]["html"] = "<p>moje</p>"
+        k, je_vychozi = sk.nacti_konfiguraci("ppa", ulozena)
+        assert je_vychozi is False
+        assert k["stranky"][0]["prvky"][0]["html"] == "<p>moje</p>"
 
-    def test_doplni_chybejici_bloky(self):
-        k = sk.doplnene_bloky("peak_shaving", self.ULOZENA)
-        ids = [b["id"] for b in k["bloky"]]
-        assert "uspora_2027" in ids and "obchod" in ids and "graf" in ids
+    def test_stary_model_dostane_predlohu(self):
+        stara = {"bloky": [{"id": "uvod", "druh": "text", "nadpis": "Úvod"}]}
+        k, je_vychozi = sk.nacti_konfiguraci("ppa", stara)
+        assert je_vychozi is True
+        assert k["verze"] == 2 and k["stranky"]
 
-    def test_neprepise_vlastni_texty_ani_viditelnost(self):
-        k = sk.doplnene_bloky("peak_shaving", self.ULOZENA)
-        podle_id = {b["id"]: b for b in k["bloky"]}
-        assert podle_id["uvod"]["text"] == "Vlastní text obchodníka."
-        assert podle_id["hlavicka"]["nadpis"] == "Moje nabídka"
-        assert podle_id["zaver"]["viditelny"] is False
-        assert podle_id["uspora"]["pole"] == ["rocni_uspora_2026_kc"]
+    def test_prazdna_konfigurace_dostane_predlohu(self):
+        for prazdna in (None, {}, {"stranky": []}):
+            k, je_vychozi = sk.nacti_konfiguraci("ppa", prazdna)
+            assert je_vychozi is True and k["stranky"]
 
-    def test_vlozi_na_misto_z_predlohy(self):
-        # V předloze jde `uspora_2027` hned za `uspora` – tam má přijít i tady.
-        ids = [b["id"] for b in sk.doplnene_bloky("peak_shaving", self.ULOZENA)["bloky"]]
-        assert ids.index("uspora_2027") == ids.index("uspora") + 1
-        assert ids.index("obchod") == ids.index("uspora_2027") + 1
-        # a `zaver`, který si OZ vypnul, zůstává na svém místě (poslední)
-        assert ids[-1] == "zaver"
-
-    def test_nic_nechybi_nic_se_nemeni(self):
-        vychozi = sk.vychozi_sablona("peak_shaving")
-        assert sk.doplnene_bloky("peak_shaving", vychozi)["bloky"] == vychozi["bloky"]
-
-    def test_prazdna_konfigurace_da_predlohu(self):
-        assert sk.doplnene_bloky("peak_shaving", None)["bloky"] == \
-            sk.vychozi_sablona("peak_shaving")["bloky"]
-        assert sk.doplnene_bloky("peak_shaving", {"bloky": []})["bloky"]
-
-    def test_doplnene_pole_jsou_ve_whitelistu(self):
-        # Pojistka: doplněné bloky nesmí odkazovat na pole, které PUT odmítne.
-        for typ in sk.PODPOROVANE_TYPY:
-            k = sk.doplnene_bloky(typ, {"bloky": [{"id": "hlavicka", "druh": "hlavicka",
-                                                   "viditelny": True}]})
-            for b in k["bloky"]:
-                if b["druh"] == "udaje":
-                    assert set(b.get("pole") or []) <= sk.platne_klice(typ), (typ, b["id"])
-                elif b["druh"] == "tabulka":
-                    assert set(b.get("pole") or []) <= sk.platne_sloupce(typ), (typ, b["id"])
+    def test_je_verze2(self):
+        assert sk.je_verze2({"verze": 2}) is True
+        assert sk.je_verze2({"bloky": []}) is False
+        assert sk.je_verze2(None) is False
 
 
-class TestMrizkaAPolozky:
-    """Nové vlastnosti prvku: šířka v mřížce a dlaždice s jednou hodnotou."""
+class TestSchemaPrvku:
+    """Meze modelu: papír je A4 a vnoření je jednoúrovňové."""
 
-    def test_blok_ma_vychozi_sirku_celou(self):
-        from app.nabidkovac.schemas import SIRKA_PLNA, VystupBlok
+    def test_vychozi_prvek(self):
+        from app.nabidkovac.schemas import VystupPrvek
 
-        b = VystupBlok(id="a", druh="text")
-        assert b.sirka == SIRKA_PLNA and b.klic == ""
+        p = VystupPrvek(id="a", druh="text")
+        assert p.viditelny and p.auto_vyska and p.styl.sloupce == 1
 
-    def test_starsi_ulozena_konfigurace_projde(self):
-        # Bloky bez `sirka`/`klic` (uložené před mřížkou) musí zůstat platné.
-        from app.nabidkovac.schemas import VystupKonfigurace
-
-        k = VystupKonfigurace(
-            bloky=[{"id": "uvod", "druh": "text", "viditelny": True, "nadpis": "Úvod"}]
-        )
-        assert k.bloky[0].sirka == 12
-
-    def test_sirka_mimo_rozsah_neprojde(self):
+    def test_kontejner_v_kontejneru_neprojde(self):
         from pydantic import ValidationError
 
-        from app.nabidkovac.schemas import VystupBlok
+        from app.nabidkovac.schemas import VystupPrvek
 
-        for spatna in (0, -3, 13, 100):
+        with pytest.raises(ValidationError):
+            VystupPrvek(
+                id="a",
+                druh="kontejner",
+                deti=[{"id": "b", "druh": "kontejner"}],
+            )
+
+    def test_prvek_v_kontejneru_projde(self):
+        from app.nabidkovac.schemas import VystupPrvek
+
+        k = VystupPrvek(id="a", druh="kontejner", deti=[{"id": "b", "druh": "text"}])
+        assert k.deti[0].druh == "text"
+
+    def test_souradnice_mimo_papir_neprojdou(self):
+        from pydantic import ValidationError
+
+        from app.nabidkovac.schemas import VystupPrvek
+
+        for spatna in (-500, 5000):
             with pytest.raises(ValidationError):
-                VystupBlok(id="a", druh="udaj", klic="nazev", sirka=spatna)
+                VystupPrvek(id="a", druh="text", x=spatna)
 
-    def test_druhy_bloku_znaji_dlazdici_i_zlom(self):
-        from app.nabidkovac.schemas import VystupBlok
+    def test_nulova_sirka_neprojde(self):
+        from pydantic import ValidationError
 
-        assert VystupBlok(id="a", druh="udaj", klic="nazev").druh == "udaj"
-        assert VystupBlok(id="z", druh="zlom").druh == "zlom"
+        from app.nabidkovac.schemas import VystupPrvek
+
+        with pytest.raises(ValidationError):
+            VystupPrvek(id="a", druh="text", sirka=0)
+
+    def test_barva_musi_byt_hex_nebo_prazdna(self):
+        from pydantic import ValidationError
+
+        from app.nabidkovac.schemas import VystupStyl
+
+        assert VystupStyl(pozadi="").pozadi == ""
+        assert VystupStyl(pozadi="#ff0000").pozadi == "#ff0000"
+        for spatna in ("red", "#fff", "javascript:x", "#gggggg"):
+            with pytest.raises(ValidationError):
+                VystupStyl(pozadi=spatna)
+
+    def test_konfigurace_chce_verzi_2(self):
+        from pydantic import ValidationError
+
+        from app.nabidkovac.schemas import VystupKonfigurace
+
+        assert VystupKonfigurace().verze == 2
+        with pytest.raises(ValidationError):
+            VystupKonfigurace(verze=1)
 
 
 class TestPojistkaKonfigurace:
-    """POJISTKA „jen zákaznická data" musí platit i pro dlaždice (druh `udaj`)
-    a pro pojmenované šablony – obojí končí ve stejném vykreslení."""
+    """POJISTKA „jen zákaznická data" musí platit i pro prvky uvnitř
+    kontejnerů – jinak by se interní číslo propašovalo o úroveň níž."""
 
-    def _konfigurace(self, **kw):
+    def _konfigurace(self, *prvky):
         from app.nabidkovac.schemas import VystupKonfigurace
 
-        return VystupKonfigurace(bloky=[{"id": "x", "viditelny": True, **kw}])
+        return VystupKonfigurace(
+            stranky=[{"id": "s1", "prvky": [{"id": f"p{i}", **p} for i, p in enumerate(prvky)]}]
+        )
 
     def test_dlazdice_se_zakaznickym_polem_projde(self):
         from app.nabidkovac.routes import _over_konfiguraci
 
-        _over_konfiguraci("peak_shaving", self._konfigurace(druh="udaj", klic="rocni_uspora_2027_kc"))
+        _over_konfiguraci(
+            "peak_shaving",
+            self._konfigurace({"druh": "udaj", "klic": "rocni_uspora_2027_kc"}),
+        )
 
     def test_dlazdice_s_internim_cislem_neprojde(self):
         from fastapi import HTTPException
@@ -395,8 +449,24 @@ class TestPojistkaKonfigurace:
 
         for interni in ("npv_kc", "irr", "prinos_baterie", "capex_kc"):
             with pytest.raises(HTTPException) as e:
-                _over_konfiguraci("peak_shaving", self._konfigurace(druh="udaj", klic=interni))
+                _over_konfiguraci(
+                    "peak_shaving", self._konfigurace({"druh": "udaj", "klic": interni})
+                )
             assert e.value.status_code == 422
+
+    def test_interni_cislo_v_kontejneru_taky_neprojde(self):
+        from fastapi import HTTPException
+
+        from app.nabidkovac.routes import _over_konfiguraci
+
+        with pytest.raises(HTTPException) as e:
+            _over_konfiguraci(
+                "peak_shaving",
+                self._konfigurace(
+                    {"druh": "kontejner", "deti": [{"id": "x", "druh": "udaj", "klic": "npv_kc"}]}
+                ),
+            )
+        assert e.value.status_code == 422
 
     def test_dlazdice_bez_klice_neprojde(self):
         from fastapi import HTTPException
@@ -404,7 +474,7 @@ class TestPojistkaKonfigurace:
         from app.nabidkovac.routes import _over_konfiguraci
 
         with pytest.raises(HTTPException) as e:
-            _over_konfiguraci("peak_shaving", self._konfigurace(druh="udaj"))
+            _over_konfiguraci("peak_shaving", self._konfigurace({"druh": "udaj"}))
         assert e.value.status_code == 422
 
     def test_pole_z_jineho_typu_reseni_neprojde(self):
@@ -414,15 +484,149 @@ class TestPojistkaKonfigurace:
         from app.nabidkovac.routes import _over_konfiguraci
 
         with pytest.raises(HTTPException):
-            _over_konfiguraci("peak_shaving", self._konfigurace(druh="udaj", klic="kwp"))
+            _over_konfiguraci("peak_shaving", self._konfigurace({"druh": "udaj", "klic": "kwp"}))
         with pytest.raises(HTTPException):
-            _over_konfiguraci("ppa", self._konfigurace(druh="udaj", klic="zisk_spot_kc"))
+            _over_konfiguraci("ppa", self._konfigurace({"druh": "udaj", "klic": "zisk_spot_kc"}))
 
-    def test_zlom_a_text_pojistku_nepotrebuji(self):
+    def test_sloupec_tabulky_mimo_whitelist_neprojde(self):
+        from fastapi import HTTPException
+
         from app.nabidkovac.routes import _over_konfiguraci
 
-        _over_konfiguraci("peak_shaving", self._konfigurace(druh="zlom"))
-        _over_konfiguraci("peak_shaving", self._konfigurace(druh="text", text="cokoli"))
+        with pytest.raises(HTTPException):
+            _over_konfiguraci(
+                "peak_shaving", self._konfigurace({"druh": "tabulka", "pole": ["oam_kc"]})
+            )
+
+    def test_text_a_grafika_pojistku_nepotrebuji(self):
+        from app.nabidkovac.routes import _over_konfiguraci
+
+        _over_konfiguraci(
+            "peak_shaving",
+            self._konfigurace(
+                {"druh": "text", "html": "<p>cokoli</p>"},
+                {"druh": "cara"},
+                {"druh": "obdelnik"},
+                {"druh": "cislo_stranky"},
+            ),
+        )
+
+    def test_predloha_projde_vlastni_pojistkou(self):
+        from app.nabidkovac.routes import _over_konfiguraci
+        from app.nabidkovac.schemas import VystupKonfigurace
+
+        for typ in sk.PODPOROVANE_TYPY:
+            _over_konfiguraci(typ, VystupKonfigurace(**sk.vychozi_sablona(typ)))
+
+
+class TestSanitizaceHtml:
+    """Formátovaný text z papíru se čistí whitelistem – i uvnitř kontejnerů."""
+
+    def test_vycisti_cely_strom(self):
+        from app.nabidkovac.routes import _sanituj_konfiguraci
+        from app.nabidkovac.schemas import VystupKonfigurace
+
+        k = VystupKonfigurace(
+            stranky=[
+                {
+                    "id": "s1",
+                    "prvky": [
+                        {
+                            "id": "k",
+                            "druh": "kontejner",
+                            "html": "<h2>Nadpis</h2><script>zlo()</script>",
+                            "deti": [
+                                {
+                                    "id": "t",
+                                    "druh": "text",
+                                    "html": '<p onclick="zlo()">Text</p>',
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        )
+        c = _sanituj_konfiguraci(k)
+        kontejner = c.stranky[0].prvky[0]
+        assert kontejner.html == "<h2>Nadpis</h2>"
+        assert kontejner.deti[0].html == "<p>Text</p>"
+
+    def test_puvodni_model_zustane_nedotceny(self):
+        from app.nabidkovac.routes import _sanituj_konfiguraci
+        from app.nabidkovac.schemas import VystupKonfigurace
+
+        k = VystupKonfigurace(
+            stranky=[{"id": "s1", "prvky": [{"id": "t", "druh": "text", "html": "<b>a"}]}]
+        )
+        _sanituj_konfiguraci(k)
+        assert k.stranky[0].prvky[0].html == "<b>a"
+
+
+class TestVystupHtmlWhitelist:
+    """Vlastní sanitizér (`vystup_html`) – poslední slovo před uložením."""
+
+    def test_formatovani_projde(self):
+        from app.nabidkovac.vystup_html import vycisti_html
+
+        vstup = '<p style="text-align: center">Ahoj <strong>světe</strong> <em>a</em></p>'
+        assert vycisti_html(vstup) == vstup
+
+    def test_script_zmizi_i_s_obsahem(self):
+        from app.nabidkovac.vystup_html import vycisti_html
+
+        assert vycisti_html("<script>alert(1)</script><p>text</p>") == "<p>text</p>"
+        assert "alert" not in vycisti_html("<style>x{}</style><p>a</p>")
+
+    def test_atributy_krome_stylu_zmizi(self):
+        from app.nabidkovac.vystup_html import vycisti_html
+
+        assert vycisti_html('<p onclick="zlo()" class="x">a</p>') == "<p>a</p>"
+
+    def test_odkaz_prijde_o_znacku_ale_ne_o_text(self):
+        # Vložený odstavec z webu má přijít o formátování, ne o obsah.
+        from app.nabidkovac.vystup_html import vycisti_html
+
+        assert vycisti_html('<a href="http://zlo.cz">klikni</a>') == "klikni"
+
+    def test_nebezpecne_styly_zmizi(self):
+        from app.nabidkovac.vystup_html import vycisti_html
+
+        for zly in (
+            '<span style="background: url(http://zlo.cz/x)">a</span>',
+            '<span style="width: expression(alert(1))">a</span>',
+            '<span style="position: fixed">a</span>',
+        ):
+            assert "style" not in vycisti_html(zly)
+
+    def test_cizi_pismo_se_zahodi(self):
+        # Písmo omezené na to, co umíme vytisknout – jinak PDF vypadá jinde jinak.
+        from app.nabidkovac.vystup_html import vycisti_html
+
+        assert "font-family" not in vycisti_html(
+            '<span style="font-family: Comic Sans MS">a</span>'
+        )
+        assert "font-family" in vycisti_html('<span style="font-family: Arial">a</span>')
+
+    def test_nezavrene_tagy_se_dozavrou(self):
+        from app.nabidkovac.vystup_html import vycisti_html
+
+        assert vycisti_html("<p><b>text") == "<p><b>text</b></p>"
+
+    def test_prazdny_vstup(self):
+        from app.nabidkovac.vystup_html import vycisti_html
+
+        assert vycisti_html(None) == "" and vycisti_html("") == ""
+
+    def test_delka_je_omezena(self):
+        from app.nabidkovac.vystup_html import MAX_DELKA_HTML, vycisti_html
+
+        assert len(vycisti_html("a" * (MAX_DELKA_HTML * 2))) <= MAX_DELKA_HTML
+
+    def test_ostre_zavorky_v_textu_se_escapuji(self):
+        from app.nabidkovac.vystup_html import vycisti_html
+
+        assert vycisti_html("<p>5 < 7 & 8 > 3</p>") == "<p>5 &lt; 7 &amp; 8 &gt; 3</p>"
 
 
 class TestSkupinyVPalete:
@@ -440,15 +644,3 @@ class TestSkupinyVPalete:
                 if not videne or videne[-1] != p["skupina"]:
                     videne.append(p["skupina"])
             assert len(videne) == len(set(videne)), (typ, videne)
-
-    def test_doplnene_bloky_zachovaji_sirku_a_klic(self):
-        ulozena = {
-            "bloky": [
-                {"id": "hlavicka", "druh": "hlavicka", "viditelny": True},
-                {"id": "d1", "druh": "udaj", "klic": "rocni_uspora_2026_kc", "sirka": 4,
-                 "viditelny": True},
-            ]
-        }
-        k = sk.doplnene_bloky("peak_shaving", ulozena)
-        dlazdice = next(b for b in k["bloky"] if b["id"] == "d1")
-        assert dlazdice["sirka"] == 4 and dlazdice["klic"] == "rocni_uspora_2026_kc"

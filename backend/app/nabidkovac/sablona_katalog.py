@@ -511,78 +511,6 @@ _ZAVER_PS = (
     "Kontaktujte nás – těšíme se na spolupráci."
 )
 
-VYCHOZI_SABLONA: dict[str, dict] = {
-    "ppa": {
-        "bloky": [
-            {"id": "hlavicka", "druh": "hlavicka", "viditelny": True,
-             "nadpis": "Nabídka dodávky elektřiny z fotovoltaické elektrárny",
-             "text": "Řešení PPA – bez počáteční investice"},
-            {"id": "uvod", "druh": "text", "viditelny": True,
-             "nadpis": "Co vám nabízíme", "text": _UVOD_PPA},
-            {"id": "klicove", "druh": "udaje", "viditelny": True,
-             "nadpis": "Klíčové údaje",
-             "pole": ["kwp", "vyroba_rok1_kwh", "pokryti_spotreby_fve",
-                      "delka_kontraktu_roky", "cena_ppa_rok1_kc_mwh",
-                      "vyhnutelna_cena_rok1_kc_mwh"]},
-            {"id": "uspora", "druh": "udaje", "viditelny": True,
-             "nadpis": "Vaše úspora",
-             "text": "Kolik ušetříte oproti současné ceně elektřiny.",
-             "pole": ["uspora_rok1_kc", "uspora_kum_kc"]},
-            {"id": "graf", "druh": "graf", "viditelny": True,
-             "nadpis": "Výroba elektrárny vs. vaše spotřeba (rok 1)"},
-            {"id": "tabulka", "druh": "tabulka", "viditelny": False,
-             "nadpis": "Vývoj úspory po letech",
-             "pole": ["rok", "cena_ppa_kc_mwh", "cena_dodavatel_kc_mwh",
-                      "uspora_klient_kc", "uspora_klient_kum_kc"]},
-            {"id": "zaver", "druh": "text", "viditelny": True,
-             "nadpis": "Závěrem", "text": _ZAVER_PPA},
-        ]
-    },
-    "peak_shaving": {
-        "bloky": [
-            {"id": "hlavicka", "druh": "hlavicka", "viditelny": True,
-             "nadpis": "Nabídka bateriového úložiště (peak shaving)",
-             "text": "Snížení rezervované kapacity a plateb distributorovi"},
-            {"id": "uvod", "druh": "text", "viditelny": True,
-             "nadpis": "Co vám nabízíme", "text": _UVOD_PS},
-            {"id": "klicove", "druh": "udaje", "viditelny": True,
-             "nadpis": "Navržené řešení",
-             "pole": ["nazev", "pocet_kusu", "celkovy_vykon_kw",
-                      "celkova_kapacita_kwh", "cena_celkem_kc"]},
-            {"id": "kapacita", "druh": "udaje", "viditelny": True,
-             "nadpis": "Snížení rezervované kapacity",
-             "text": "Baterie sráží špičky, takže vám stačí nižší sjednaná kapacita.",
-             "pole": ["rezervovana_kapacita_kw", "nova_rezervovana_kapacita_kw",
-                      "strop_kw"]},
-            {"id": "uspora", "druh": "udaje", "viditelny": True,
-             "nadpis": "Vaše úspora v roce 2026",
-             "pole": ["soucasny_naklad_celkem", "rocni_uspora_2026_kc",
-                      "navratnost_roky"]},
-            # Bloky níž se v tisku samy skryjí, když pro ně data nejsou:
-            # 2027 bez oficiálních sazeb ERÚ, obchod u čistého peak shavingu.
-            {"id": "uspora_2027", "druh": "udaje", "viditelny": True,
-             "nadpis": "Vaše úspora podle nových tarifů (od roku 2027)",
-             "text": "Od roku 2027 se platí i za naměřenou špičku odběru, takže baterie "
-                     "ušetří jinou částku než letos – uvádíme ji zvlášť.",
-             "pole": ["rezervovany_prikon_kw", "novy_rezervovany_prikon_kw",
-                      "soucasny_naklad_2027_kc", "novy_naklad_2027_kc",
-                      "rocni_uspora_2027_kc", "navratnost_2027_roky"]},
-            {"id": "obchod", "druh": "udaje", "viditelny": True,
-             "nadpis": "Obchod s elektřinou",
-             "text": "Když baterie nemusí srážet špičku, může nakupovat elektřinu levně "
-                     "a dodávat ji zpět dráž. Tohle je odhad ročního výnosu.",
-             "pole": ["rezim", "zisk_spot_kc"]},
-            {"id": "graf", "druh": "graf", "viditelny": True,
-             "nadpis": "Měsíční špičky odběru – dnes vs. s baterií"},
-            {"id": "tabulka", "druh": "tabulka", "viditelny": False,
-             "nadpis": "Vývoj úspory po letech",
-             "pole": ["rok", "prinos_kc", "cf_kum_kc"]},
-            {"id": "zaver", "druh": "text", "viditelny": True,
-             "nadpis": "Závěrem", "text": _ZAVER_PS},
-        ]
-    },
-}
-
 _UVOD_KOMB = (
     "Děkujeme za váš zájem o kombinaci dvou opatření: fotovoltaické elektrárny "
     "na vaší střeše a bateriového úložiště pro srážení špiček odběru. Elektrárnu "
@@ -596,78 +524,328 @@ _ZAVER_KOMB = (
     "na míru. Kontaktujte nás – těšíme se na spolupráci."
 )
 
-VYCHOZI_SABLONA["kombinace"] = {
-    "bloky": [
-        {"id": "hlavicka", "druh": "hlavicka", "viditelny": True,
-         "nadpis": "Nabídka kombinace opatření: elektrárna + baterie",
-         "text": "Fotovoltaika bez investice a baterie pro srážení špiček"},
-        {"id": "uvod", "druh": "text", "viditelny": True,
-         "nadpis": "Co vám nabízíme", "text": _UVOD_KOMB},
-        {"id": "spolu", "druh": "udaje", "viditelny": True,
-         "nadpis": "Dohromady",
-         "text": "Co vám obě opatření přinesou společně.",
-         "pole": ["investice_zakaznika", "uspora_rok1_celkem", "uspora_kum_celkem",
-                  "navratnost_baterie"]},
-        {"id": "elektrarna", "druh": "udaje", "viditelny": True,
-         "nadpis": "Fotovoltaická elektrárna",
-         "pole": ["ppa_kwp", "ppa_vyroba_rok1_kwh", "ppa_pokryti", "delka_kontraktu_roky",
-                  "ppa_cena_rok1", "ppa_dnesni_cena", "uspora_ppa_rok1"]},
-        {"id": "baterie", "druh": "udaje", "viditelny": True,
-         "nadpis": "Bateriové úložiště",
-         "pole": ["ps_nazev", "ps_vykon_kw", "ps_kapacita_kwh",
-                  "ps_rezervovana_kapacita", "ps_nova_rezervovana", "uspora_ps_rok1"]},
-        {"id": "graf", "druh": "graf", "viditelny": True,
-         "nadpis": "Výroba elektrárny a špičky odběru"},
-        {"id": "tabulka", "druh": "tabulka", "viditelny": True,
-         "nadpis": "Vývoj úspory po letech",
-         "pole": ["rok", "uspora_ppa_kc", "uspora_ps_kc", "uspora_celkem_kc",
-                  "uspora_kum_kc"]},
-        {"id": "zaver", "druh": "text", "viditelny": True,
-         "nadpis": "Závěrem", "text": _ZAVER_KOMB},
-    ]
-}
 
-DRUHY_BLOKU = ("hlavicka", "text", "udaje", "graf", "tabulka")
+# ---- Rozvržení výchozí předlohy (model v2) -----------------------------------
+# Papír je natvrdo A4 na výšku a prvky na něm leží na milimetrových
+# souřadnicích. Předlohu proto nepíšeme ručně po souřadnicích – popíšeme
+# sekce a rozvržení dopočítá generátor níž: skládá je pod sebe a jakmile by
+# sekce přetekla přes spodní mez, založí novou stránku.
+#
+# Hodnoty odpovídají CSS v `frontend/src/styles/vystup.css`: 16 mm boční
+# okraje, nahoře pruh se značkou, dole kontaktní zápatí.
+OKRAJ_BOK_MM = 16.0
+OBSAH_SIRKA_MM = 210.0 - 2 * OKRAJ_BOK_MM  # 178
+OBSAH_OD_MM = 34.0  # pod pruhem se značkou
+OBSAH_DO_MM = 266.0  # nad zápatím
+MEZERA_SEKCI_MM = 7.0
+
+# Odhady výšek. Nemusí sedět na milimetr – prvky s `auto_vyska` si po
+# vykreslení výšku dopočítají v prohlížeči; tohle jen rozmisťuje předlohu,
+# aby po otevření vypadala složeně a ne na sobě.
+_VYSKA_RADKU_MM = 4.6
+_ZNAKU_NA_RADEK = 96
+_VYSKA_NADPISU_MM = 9.0
+_VYSKA_DLAZDICE_MM = 24.0
+_VYSKA_GRAFU_MM = 82.0
+_VYSKA_RADKU_TABULKY_MM = 7.0
+
+
+def _vyska_textu(text: str, s_nadpisem: bool) -> float:
+    radku = max(1, -(-len(text) // _ZNAKU_NA_RADEK))  # zaokrouhlení nahoru
+    return radku * _VYSKA_RADKU_MM + (_VYSKA_NADPISU_MM if s_nadpisem else 0) + 3
+
+
+def _escape(text: str) -> str:
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def _html_text(nadpis: str | None, text: str | None) -> str:
+    """Formátovaný obsah textového prvku – nadpis a odstavec, jak je uvidí
+    obchodník v editoru (a smí je tam přepsat i přeformátovat)."""
+    kusy = []
+    if nadpis:
+        kusy.append(f"<h2>{_escape(nadpis)}</h2>")
+    if text:
+        kusy.append(f"<p>{_escape(text)}</p>")
+    return "".join(kusy)
+
+
+def _styl(**kw) -> dict:
+    """Styl prvku s výchozími hodnotami shodnými se schématem."""
+    zaklad = {
+        "pozadi": "",
+        "barva_ramecku": "",
+        "sirka_ramecku": 0,
+        "zaobleni": 0,
+        "odsazeni": 4,
+        "mezera": 4,
+        "pruhlednost": 1,
+        "sloupce": 1,
+    }
+    zaklad.update(kw)
+    return zaklad
+
+
+def _prvek(id_: str, druh: str, **kw) -> dict:
+    """Prvek s kompletní sadou polí, ať předloha projde schématem beze změn."""
+    p = {
+        "id": id_,
+        "druh": druh,
+        "viditelny": True,
+        "x": OKRAJ_BOK_MM,
+        "y": OBSAH_OD_MM,
+        "sirka": OBSAH_SIRKA_MM,
+        "vyska": 20.0,
+        "auto_vyska": True,
+        "z": 0,
+        "zamceno": False,
+        "styl": _styl(),
+        "html": "",
+        "klic": "",
+        "pole": [],
+        "obrazek": "",
+        "popis": "",
+        "deti": [],
+    }
+    p.update(kw)
+    return p
+
+
+def _sekce_nadpis(id_: str, nadpis: str, podnadpis: str) -> tuple[dict, float]:
+    html = f"<h1>{_escape(nadpis)}</h1>"
+    if podnadpis:
+        html += f'<p style="color: #6a7570">{_escape(podnadpis)}</p>'
+    vyska = 13.0 + (6.0 if podnadpis else 0)
+    return _prvek(id_, "text", html=html, vyska=vyska, auto_vyska=True), vyska
+
+
+def _sekce_text(id_: str, nadpis: str, text: str) -> tuple[dict, float]:
+    vyska = _vyska_textu(text, bool(nadpis))
+    return _prvek(id_, "text", html=_html_text(nadpis, text), vyska=vyska), vyska
+
+
+def _sekce_dlazdice(
+    id_: str, nadpis: str, uvod: str, klice: list[str], sloupce: int
+) -> tuple[dict, float]:
+    """Kontejner s dlaždicemi údajů. Nadpis kontejneru je jeho `html`,
+    dlaždice jsou děti a tečou do mřížky o `sloupce` sloupcích."""
+    radku = max(1, -(-len(klice) // sloupce))
+    vnitrni_sirka = (OBSAH_SIRKA_MM - 2 * 4 - (sloupce - 1) * 4) / sloupce
+    deti = [
+        _prvek(
+            f"{id_}-{k}",
+            "udaj",
+            klic=k,
+            sirka=vnitrni_sirka,
+            vyska=_VYSKA_DLAZDICE_MM,
+            auto_vyska=False,
+            styl=_styl(pozadi="#f4f6f5", zaobleni=2, odsazeni=3),
+        )
+        for k in klice
+    ]
+    html = _html_text(nadpis, uvod)
+    vyska_hlavicky = (
+        (_VYSKA_NADPISU_MM if nadpis else 0)
+        + (_vyska_textu(uvod, False) if uvod else 0)
+    )
+    vyska = 8 + vyska_hlavicky + radku * _VYSKA_DLAZDICE_MM + (radku - 1) * 4
+    kontejner = _prvek(
+        id_,
+        "kontejner",
+        html=html,
+        vyska=vyska,
+        auto_vyska=True,
+        styl=_styl(sloupce=sloupce, odsazeni=4, mezera=4),
+        deti=deti,
+    )
+    return kontejner, vyska
+
+
+def _sekce_graf(id_: str, nadpis: str) -> tuple[dict, float]:
+    vyska = _VYSKA_GRAFU_MM + (_VYSKA_NADPISU_MM if nadpis else 0)
+    kontejner = _prvek(
+        id_,
+        "kontejner",
+        html=_html_text(nadpis, None),
+        vyska=vyska,
+        auto_vyska=True,
+        deti=[
+            _prvek(
+                f"{id_}-obsah",
+                "graf",
+                sirka=OBSAH_SIRKA_MM - 8,
+                vyska=_VYSKA_GRAFU_MM,
+                auto_vyska=False,
+            )
+        ],
+    )
+    return kontejner, vyska
+
+
+def _sekce_tabulka(
+    id_: str, nadpis: str, sloupce: list[str], viditelny: bool
+) -> tuple[dict, float]:
+    vyska_tab = 10 * _VYSKA_RADKU_TABULKY_MM
+    vyska = vyska_tab + (_VYSKA_NADPISU_MM if nadpis else 0) + 8
+    kontejner = _prvek(
+        id_,
+        "kontejner",
+        viditelny=viditelny,
+        html=_html_text(nadpis, None),
+        vyska=vyska,
+        auto_vyska=True,
+        deti=[
+            _prvek(
+                f"{id_}-obsah",
+                "tabulka",
+                pole=list(sloupce),
+                sirka=OBSAH_SIRKA_MM - 8,
+                vyska=vyska_tab,
+                auto_vyska=True,
+            )
+        ],
+    )
+    return kontejner, vyska
+
+
+# Popis předlohy: seznam sekcí, ze kterých generátor poskládá stránky.
+# ("nadpis"|"text"|"dlazdice"|"graf"|"tabulka", id, …parametry)
+def _slozky(typ: str) -> list[tuple]:
+    if typ == "ppa":
+        return [
+            ("nadpis", "hlavicka", "Nabídka dodávky elektřiny z fotovoltaické elektrárny",
+             "Řešení PPA – bez počáteční investice"),
+            ("text", "uvod", "Co vám nabízíme", _UVOD_PPA),
+            ("dlazdice", "klicove", "Klíčové údaje", "",
+             ["kwp", "vyroba_rok1_kwh", "pokryti_spotreby_fve",
+              "delka_kontraktu_roky", "cena_ppa_rok1_kc_mwh",
+              "vyhnutelna_cena_rok1_kc_mwh"], 3),
+            ("dlazdice", "uspora", "Vaše úspora",
+             "Kolik ušetříte oproti současné ceně elektřiny.",
+             ["uspora_rok1_kc", "uspora_kum_kc"], 2),
+            ("graf", "graf", "Výroba elektrárny vs. vaše spotřeba (rok 1)"),
+            ("tabulka", "tabulka", "Vývoj úspory po letech",
+             ["rok", "cena_ppa_kc_mwh", "cena_dodavatel_kc_mwh",
+              "uspora_klient_kc", "uspora_klient_kum_kc"], False),
+            ("text", "zaver", "Závěrem", _ZAVER_PPA),
+        ]
+    if typ == "peak_shaving":
+        return [
+            ("nadpis", "hlavicka", "Nabídka bateriového úložiště (peak shaving)",
+             "Snížení rezervované kapacity a plateb distributorovi"),
+            ("text", "uvod", "Co vám nabízíme", _UVOD_PS),
+            ("dlazdice", "klicove", "Navržené řešení", "",
+             ["nazev", "pocet_kusu", "celkovy_vykon_kw",
+              "celkova_kapacita_kwh", "cena_celkem_kc"], 3),
+            ("dlazdice", "kapacita", "Snížení rezervované kapacity",
+             "Baterie sráží špičky, takže vám stačí nižší sjednaná kapacita.",
+             ["rezervovana_kapacita_kw", "nova_rezervovana_kapacita_kw", "strop_kw"], 3),
+            ("dlazdice", "uspora", "Vaše úspora v roce 2026", "",
+             ["soucasny_naklad_celkem", "rocni_uspora_2026_kc", "navratnost_roky"], 3),
+            ("dlazdice", "uspora_2027",
+             "Vaše úspora podle nových tarifů (od roku 2027)",
+             "Od roku 2027 se platí i za naměřenou špičku odběru, takže baterie "
+             "ušetří jinou částku než letos – uvádíme ji zvlášť.",
+             ["rezervovany_prikon_kw", "novy_rezervovany_prikon_kw",
+              "soucasny_naklad_2027_kc", "novy_naklad_2027_kc",
+              "rocni_uspora_2027_kc", "navratnost_2027_roky"], 3),
+            ("dlazdice", "obchod", "Obchod s elektřinou",
+             "Když baterie nemusí srážet špičku, může nakupovat elektřinu levně "
+             "a dodávat ji zpět dráž. Tohle je odhad ročního výnosu.",
+             ["rezim", "zisk_spot_kc"], 2),
+            ("graf", "graf", "Měsíční špičky odběru – dnes vs. s baterií"),
+            ("tabulka", "tabulka", "Vývoj úspory po letech",
+             ["rok", "prinos_kc", "cf_kum_kc"], False),
+            ("text", "zaver", "Závěrem", _ZAVER_PS),
+        ]
+    if typ == "kombinace":
+        return [
+            ("nadpis", "hlavicka", "Nabídka kombinace opatření: elektrárna + baterie",
+             "Fotovoltaika bez investice a baterie pro srážení špiček"),
+            ("text", "uvod", "Co vám nabízíme", _UVOD_KOMB),
+            ("dlazdice", "spolu", "Dohromady",
+             "Co vám obě opatření přinesou společně.",
+             ["investice_zakaznika", "uspora_rok1_celkem", "uspora_kum_celkem",
+              "navratnost_baterie"], 2),
+            ("dlazdice", "elektrarna", "Fotovoltaická elektrárna", "",
+             ["ppa_kwp", "ppa_vyroba_rok1_kwh", "ppa_pokryti", "delka_kontraktu_roky",
+              "ppa_cena_rok1", "ppa_dnesni_cena", "uspora_ppa_rok1"], 3),
+            ("dlazdice", "baterie", "Bateriové úložiště", "",
+             ["ps_nazev", "ps_vykon_kw", "ps_kapacita_kwh",
+              "ps_rezervovana_kapacita", "ps_nova_rezervovana", "uspora_ps_rok1"], 3),
+            ("graf", "graf", "Výroba elektrárny a špičky odběru"),
+            ("tabulka", "tabulka", "Vývoj úspory po letech",
+             ["rok", "uspora_ppa_kc", "uspora_ps_kc", "uspora_celkem_kc",
+              "uspora_kum_kc"], True),
+            ("text", "zaver", "Závěrem", _ZAVER_KOMB),
+        ]
+    return []
+
+
+def _postav_predlohu(typ: str) -> dict:
+    """Poskládá sekce pod sebe na A4 stránky."""
+    stranky: list[dict] = [{"id": "s1", "prvky": []}]
+    y = OBSAH_OD_MM
+    for slozka in _slozky(typ):
+        druh = slozka[0]
+        if druh == "nadpis":
+            prvek, vyska = _sekce_nadpis(slozka[1], slozka[2], slozka[3])
+        elif druh == "text":
+            prvek, vyska = _sekce_text(slozka[1], slozka[2], slozka[3])
+        elif druh == "dlazdice":
+            prvek, vyska = _sekce_dlazdice(
+                slozka[1], slozka[2], slozka[3], slozka[4], slozka[5]
+            )
+        elif druh == "graf":
+            prvek, vyska = _sekce_graf(slozka[1], slozka[2])
+        elif druh == "tabulka":
+            prvek, vyska = _sekce_tabulka(slozka[1], slozka[2], slozka[3], slozka[4])
+        else:
+            continue
+
+        # Nevejde se na zbytek stránky? Založ novou. Sekce se nikdy netrhá –
+        # nadpis a jeho obsah patří k sobě.
+        if y + vyska > OBSAH_DO_MM and stranky[-1]["prvky"]:
+            stranky.append({"id": f"s{len(stranky) + 1}", "prvky": []})
+            y = OBSAH_OD_MM
+
+        prvek["y"] = round(y, 1)
+        prvek["z"] = len(stranky[-1]["prvky"])
+        stranky[-1]["prvky"].append(prvek)
+        y += vyska + MEZERA_SEKCI_MM
+
+    return {
+        "verze": 2,
+        "stranky": stranky,
+        "hlavicka": {"zobrazit": True, "text": ""},
+        "zapati": {"zobrazit": True, "text": ""},
+        "vodoznak": {"zobrazit": True, "pruhlednost": 0.07},
+    }
 
 
 def vychozi_sablona(typ: str) -> dict:
-    """Vrátí kopii výchozí předlohy pro daný typ (nová nabídka startuje odtud)."""
-    import copy
-
-    return copy.deepcopy(VYCHOZI_SABLONA.get(typ, {"bloky": []}))
+    """Výchozí předloha pro daný typ – nová nabídka startuje odtud."""
+    return _postav_predlohu(typ)
 
 
-def doplnene_bloky(typ: str, konfigurace: dict | None) -> dict:
-    """Doplní do uložené konfigurace bloky, které předloha zná a ona ještě ne.
+def je_verze2(konfigurace: dict | None) -> bool:
+    """Pozná uloženou konfiguraci v novém modelu (stránky + prvky v mm)."""
+    return bool(konfigurace) and konfigurace.get("verze") == 2
 
-    Když do předlohy přibude blok (třeba úspora podle tarifů od 2027), starší
-    uložené nabídky by ho bez tohohle nikdy neukázaly – OZ by musel *Obnovit
-    výchozí* a přišel by o vlastní texty. Bloky se vkládají na místo, kam patří
-    v předloze (za nejbližší předchozí známý blok), a nic existujícího se
-    nepřepisuje. Ukládá se to až na explicitní *Uložit*.
+
+def nacti_konfiguraci(typ: str, ulozene: dict | None) -> tuple[dict, bool]:
+    """Vrátí (konfigurace, je_vychozi) pro editor i tisk.
+
+    Konfigurace ze starého modelu (plochý seznam bloků v mřížce 12 sloupců)
+    se nemigruje – v době přepisu byly v provozu tři a Dan zvolil čistý start.
+    Bez `verze: 2` se tedy vrací výchozí předloha, uložený záznam zůstane
+    v DB nedotčený, dokud ho obchodník nepřepíše tlačítkem *Uložit*.
     """
-    import copy
-
-    vychozi = VYCHOZI_SABLONA.get(typ, {}).get("bloky", [])
-    bloky = list((konfigurace or {}).get("bloky") or [])
-    if not bloky:
-        return vychozi_sablona(typ)
-    znama = {b.get("id") for b in bloky}
-    kotva: str | None = None  # poslední blok předlohy, který konfigurace zná
-    for vb in vychozi:
-        if vb["id"] in znama:
-            kotva = vb["id"]
-            continue
-        kam = len(bloky)
-        if kotva is not None:
-            kam = next(
-                (i + 1 for i, b in enumerate(bloky) if b.get("id") == kotva), len(bloky)
-            )
-        else:
-            kam = 0
-        bloky.insert(kam, copy.deepcopy(vb))
-        znama.add(vb["id"])
-        kotva = vb["id"]
-    out = dict(konfigurace or {})
-    out["bloky"] = bloky
-    return out
+    if je_verze2(ulozene):
+        return ulozene, False
+    return vychozi_sablona(typ), True

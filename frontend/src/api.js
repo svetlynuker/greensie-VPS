@@ -463,6 +463,52 @@ export function nabidkaVystupSablonaSmaz(typReseni, sablonaId) {
   return zavolej(`/nabidkovac/vystup-sablony/${typReseni}/${sablonaId}`, { method: "DELETE" });
 }
 
+// ---- Obrázky vložené do nabídkového výstupu ----
+// Nahrávají se zvlášť, do rozvržení jde jen cesta – JSON v DB tak zůstane
+// malý a stejný obrázek se dá na papír položit vícekrát.
+export async function nahrajObrazekVystupu(nabidkaId, soubor) {
+  const token = getToken();
+  const formular = new FormData();
+  formular.append("soubor", soubor);
+  const res = await fetch(`${API_BASE}/nabidkovac/nabidky/${nabidkaId}/vystup-obrazky`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formular,
+  });
+  if (!res.ok) {
+    const telo = await res.json().catch(() => ({}));
+    throw new Error(telo.detail || `Obrázek se nepodařilo nahrát (chyba ${res.status})`);
+  }
+  return res.json();
+}
+
+// Načtené obrázky si držíme podle cesty: stejná fotka bývá na papíře i
+// vícekrát a při každém překreslení ji stahovat znovu by blikalo.
+// Cache žije po dobu záložky – obrázky jsou neměnné (v názvu mají uuid),
+// takže zastarat nemůže.
+const obrazkyVystupu = new Map();
+
+/** Blob URL obrázku výstupu. Endpoint chce token, `<img src>` ho neumí poslat. */
+export function nactiObrazekVystupu(cesta) {
+  if (!cesta) return Promise.resolve(null);
+  if (obrazkyVystupu.has(cesta)) return obrazkyVystupu.get(cesta);
+  const token = getToken();
+  const nacitani = fetch(`${API_BASE}/nabidkovac/vystup-obrazky/${cesta}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error(`Obrázek se nepodařilo načíst (chyba ${res.status})`);
+      return res.blob();
+    })
+    .then((blob) => URL.createObjectURL(blob))
+    .catch((chyba) => {
+      obrazkyVystupu.delete(cesta); // ať se po chybě zkusí znovu
+      throw chyba;
+    });
+  obrazkyVystupu.set(cesta, nacitani);
+  return nacitani;
+}
+
 // ---- Uživatelská nastavení (pohledy + vzhled, uložená v DB) ----
 export function nactiNastaveni() {
   return zavolej("/nastaveni");

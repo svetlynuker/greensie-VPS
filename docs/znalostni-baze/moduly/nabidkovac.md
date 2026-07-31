@@ -59,12 +59,17 @@ načíst profil a technologii vybrat z katalogu.
    dokumentem se koncept posune do stavu *Data nahrána*.
 5. **Spočítej řešení** – u PPA a Peak shavingu v panelu v detailu nabídky (viz samostatné návody).
 6. **Sestav nabídku pro zákazníka** – tlačítko „Nabídka pro zákazníka" v hlavičce detailu (jen u PPA a
-   Peak shavingu): v editoru zapneš/vypneš bloky, upravíš texty a vybereš zobrazená pole.
-   Prvky se **přetahují z palety na papír** a skládají do mřížky (¼ / ⅓ / ½ / ⅔ / celá šířka).
+   Peak shavingu). Otevře se editor se třemi panely: vlevo **paleta**, uprostřed **papír**
+   (pevná A4 na výšku), vpravo **vlastnosti** vybraného prvku.
+   Prvky se **přetahují z palety na papír** a dál se po něm volně posouvají myší; při tažení se
+   přichytávají k mřížce a k hranám sousedů. **Text se píše přímo na papíře** (dvojklik) a dá se
+   formátovat plovoucí lištou (tučné, kurzíva, velikost, barva, zarovnání, odrážky).
+   Stránek si můžeš založit, kolik potřebuješ; když prvek přeteče pod okraj, editor to zvýrazní
+   a nabídne přesun na další stránku.
    Hotové rozvržení si můžeš uložit jako **šablonu** a příště ji jen vybrat.
    U peak shavingu jsou v nabídce čísla roku 2026 i **modelu od roku 2027** (nové tarify) a
    u obchodních režimů i **výnos z obchodu s elektřinou** – tedy totéž, co ukazuje panel výsledku.
-   Bloky, pro které data nejsou, se do PDF netisknou.
+   Prvky, pro které data nejsou, se do PDF netisknou.
 7. **Ulož do PDF** – tlačítko „Uložit do PDF" otevře tiskový dialog prohlížeče (tisk / uložit jako PDF).
 
 ### Stavy nabídky
@@ -101,12 +106,16 @@ Formulář s údaji zákazníka a karta Podklady se rozbalují na vyžádání; 
 (bez názvu zákazníka, resp. bez dokumentů) se otevřou samy. Důvod: do obojího se sahá jednou na
 začátku, zbytek času tam patří výpočet.
 
-**D) Nabídka pro zákazníka `/nabidkovac/nabidka/:id/vystup/:typ`** – nahoře lišta s tlačítky
-(Zpět, Obnovit výchozí, Uložit, Uložit do PDF), pod ní vlevo **editor bloků**, vpravo **živý
-náhled** tiskové A4 stránky.
+**D) Nabídka pro zákazníka `/nabidkovac/nabidka/:id/vystup/:typ`** – nahoře dvouřádková lišta
+(zpět, historie ↶↷, zvětšení, uložení a PDF; ve druhém řádku stránky a šablony), pod ní tři
+panely: vlevo **paleta**, uprostřed **papír** (pevné A4 stránky pod sebou), vpravo **vlastnosti**
+vybraného prvku. Postranní panely se dají zabalit šipkou, aby byl papír větší.
+
+Papír není náhled vedle editoru – **je to přímo dokument**, který se vytiskne. Co je na něm
+vidět, to vyjede v PDF.
 
 > 📸 SCREENSHOT: detail nabídky – hlavička zákazníka, sbalené Podklady a pod nimi panel řešení
-> 📸 SCREENSHOT: obrazovka „Nabídka pro zákazníka" – vlevo editor bloků, vpravo náhled
+> 📸 SCREENSHOT: obrazovka „Nabídka pro zákazníka" – tři panely, uprostřed A4 s prvky
 
 ### Ovládací prvky — políčko po políčku
 
@@ -146,27 +155,43 @@ Legenda „kdo vidí": **(vše)** = každý, kdo Nabídkovač otevře (právo `n
 | Prvek | Kde | Co dělá | Kdo vidí |
 |---|---|---|---|
 | **← Zpět na nabídku** | lišta | Návrat do detailu nabídky | vše |
-| **Obnovit výchozí** | lišta | Načte kódovou výchozí předlohu (přepíše se až po Uložit; ptá se na potvrzení) | vše |
-| **Uložit** | lišta | Uloží šablonu výstupu této nabídky (per typ řešení) | vše |
+| **↶ / ↷** | lišta | Krok zpět a vpřed (Ctrl+Z / Ctrl+Y). Tažení nebo psaní je jeden krok, ne stovky | vše |
+| **− 100 % +** | lišta | Zvětšení papíru (50–150 %). Rozměry dokumentu to nemění, jen se na něj líp vidí | vše |
+| **• neuloženo** | lišta | Upozornění, že rozvržení má neuložené změny. Při zavření karty se appka ještě zeptá | vše |
+| **Uložit** | lišta | Uloží rozvržení této nabídky (per typ řešení) | vše |
 | **Uložit do PDF** | lišta | Otevře tiskový dialog prohlížeče (tisk / uložit jako PDF) | vše |
-| **Šablona** | panel, nahoře | Vybere hotové rozvržení: výchozí předlohu, uloženou šablonu, nebo rozvržení jiné nabídky téhož typu | vše |
-| **Uložit jako šablonu…** | panel | Uloží současné rozvržení pod názvem pro další nabídky (stejný název přepíše) | vše |
-| **✕ u uložené šablony** | panel | Smaže šablonu (nabídky, které z ní vznikly, to neovlivní) | vše |
-| **Paleta – Text / Skupina údajů / Graf / Tabulka / Zlom stránky** | panel | Přetáhne prvek na papír. Náhled ukazuje, jak prvek vypadá na papíře (zmenšený výřez) | vše |
-| **Paleta – sekce s údaji** | panel | Skupiny zákaznických hodnot (Navržené řešení, Rezervovaná kapacita, Úspora 2026, Úspora od 2027, Obchod). Každá položka je **hotová dlaždice s reálnou hodnotou** té nabídky – přetažením se přenese na papír. Ztlumená = na papíře už je. Otevřená je první sekce, ostatní se rozbalí kliknutím | vše |
-| **⠿ na papíře** | papír | Uchopení prvku a přesun na jiné místo | vše |
-| **Klik na prvek** | papír | Vybere prvek (zelený rámeček) a otevře jeho vlastnosti | vše |
-| **Šířka ¼ ⅓ ½ ⅔ celá** | vlastnosti | Kolik z 12 sloupců prvek zabere; co se vejde, stojí na jednom řádku | vše |
-| **Nadpis / Text** | vlastnosti | Nadpis a text prvku (u hlavičky titulek + podnadpis, u dlaždice popisek – prázdný = z katalogu) | vše |
-| **Zobrazit v nabídce** | vlastnosti | Vypne prvek; přesune se do sekce **Vypnuté prvky** a netiskne se | vše |
-| **Odebrat** | vlastnosti | Odebere prvek z nabídky | vše |
-| **Přidat/odebrat údaj + ↑↓** | vlastnosti (Skupina údajů) | Vybere zobrazená zákaznická pole a jejich pořadí | vše |
-| **Sloupce tabulky** | vlastnosti (Tabulka) | Zaškrtne sloupce roční tabulky | vše |
+| **Čísla stránek** | lišta, 2. řádek | Skok na stránku. Vykřičník = na stránce něco přetéká | vše |
+| **+ stránka / Duplikovat / ↑ ↓ / Smazat stránku** | lišta, 2. řádek | Správa stránek dokumentu (max 50). Poslední stránka se nemaže, jen vyprázdní | vše |
+| **Použít šablonu…** | lišta, 2. řádek | Nahradí rozvržení: výchozí předlohou, uloženou šablonou, nebo rozvržením jiné nabídky téhož typu | vše |
+| **Uložit jako šablonu…** | lišta, 2. řádek | Uloží současné rozvržení pod názvem pro další nabídky (stejný název přepíše) | vše |
+| **Smazat šablonu…** | lišta, 2. řádek | Smaže uloženou šablonu (nabídky, které z ní vznikly, to neovlivní) | vše |
+| **Pruh „přetéká"** | pod lištou | Kolik prvků leze pod okraj sazby, s prokliky na ně. V PDF by se ořízly | vše |
+| **Paleta – Prvky** | vlevo | Kontejner, Text, Graf, Tabulka, Obrázek, Čára, Obdélník, Číslo stránky. Chyť a přetáhni na papír | vše |
+| **Paleta – sekce s údaji** | vlevo | Skupiny zákaznických hodnot (Navržené řešení, Rezervovaná kapacita, Úspora 2026, Úspora od 2027, Obchod). Každá položka je **hotová dlaždice s reálnou hodnotou** té nabídky. Ztlumená = na papíře už je (další kopii přidat můžeš) | vše |
+| **Tažení po papíře** | papír | Chyť prvek kdekoli a posuň. Přichytává se k mřížce po 5 mm a k hranám sousedů – oranžová linka ukazuje, na co se chytil | vše |
+| **Puštění nad kontejnerem** | papír | Vloží prvek dovnitř kontejneru. Oranžová značka ukazuje, mezi které dva prvky spadne | vše |
+| **Osm úchytů kolem prvku** | papír | Změna velikosti. Tažením za horní/dolní hranu se zároveň vypne „výška podle obsahu" | vše |
+| **Dvojklik na text** | papír | Otevře psaní přímo v prvku. Nad ním se objeví lišta s formátováním | vše |
+| **Formátovací lišta** | papír | Tučné, kurzíva, podtržené, přeškrtnuté, velikost písma (7–32 b), barva, zarovnání, odrážky, číslování, zrušení formátu | vše |
+| **Šipky / Shift+šipky** | papír | Posun vybraného prvku po 1 mm, se Shiftem po 5 mm | vše |
+| **Delete / Ctrl+D / Escape** | papír | Smazat prvek · duplikovat · zrušit výběr (a při tažení vrátit prvek zpátky) | vše |
+| **Obsah** | vpravo | Podle druhu: výběr údaje a vlastní popisek, sloupce tabulky, nahrání obrázku. Přepínač **Tisknout** prvek skryje z PDF, ale nechá ho v editoru | vše |
+| **Uspořádání uvnitř** | vpravo (Kontejner) | Kolik prvků vedle sebe (1–6 sloupců) a mezera mezi nimi | vše |
+| **Umístění a velikost** | vpravo | Přesná čísla v milimetrech, „výška podle obsahu" a zámek proti posunu | vše |
+| **Vzhled** | vpravo | Pozadí, rámeček a jeho tloušťka, zaoblení rohů, vnitřní okraj | vše |
+| **Pořadí a akce** | vpravo | Dopředu/dozadu ve vrstvách, duplikovat, smazat, přesun na sousední stránku | vše |
+| **Nastavení dokumentu** | vpravo (bez výběru) | Pruh s logem, kontaktní zápatí, vodoznak a jeho sytost; přepínač přichytávání k mřížce | vše |
 
-Papír je WYSIWYG: je na něm právě to, co se vytiskne. Vypnuté prvky proto na papíře nejsou,
-najdeš je v sekci *Vypnuté prvky* a zaškrtnutím se vrátí.
+Papír je WYSIWYG: je na něm právě to, co se vytiskne. Prvek s vypnutým **Tisknout** je v editoru
+ztlumený a označený, do PDF nejde.
 
-> 📸 SCREENSHOT: editor nabídky – vlevo šablona a paleta ve skupinách, vpravo papír s dlaždicemi
+Prvek může ležet přímo na papíře, nebo v **kontejneru**. Kontejner je rámeček, ve kterém prvky
+stojí pod sebou (nebo v mřížce o několika sloupcích) – hodí se na skupiny dlaždic, které mají
+držet pohromadě. Přetahováním se mění jejich pořadí uvnitř i mezi kontejnery. Kontejner do
+kontejneru vložit nejde.
+
+> 📸 SCREENSHOT: editor nabídky – vlevo paleta, uprostřed A4 s vybraným prvkem, vpravo vlastnosti
+> 📸 SCREENSHOT: psaní textu na papíře s plovoucí formátovací lištou
 
 ### Práce s katalogem a vlastními sloupci
 Katalog technologií je **společný** (jeden pro celý Nabídkovač) a najdeš ho přes **⚙ Katalog
@@ -243,33 +268,52 @@ tyhle údaje nevynucují; do simulace se nedostanou právě proto, že je nemaj�
 > popsané v návodech [nabidkovac-ppa-fve.md](nabidkovac-ppa-fve.md) a
 > [nabidkovac-peak-shaving.md](nabidkovac-peak-shaving.md).
 
-### Editor bloků nabídkového výstupu
-Nabídka pro zákazníka se skládá z **bloků**. Každý blok má typ (druh), zapnutí (`viditelný`),
-nadpis, text a případně výběr polí. Druhy bloků:
+### Z čeho se skládá nabídkový výstup
+Dokument je seznam **pevných A4 stránek na výšku**. Na stránce leží **prvky** na milimetrových
+souřadnicích – tam, kam je obchodník posadil. Druhy prvků:
 
 | Druh | Co zobrazí |
 |---|---|
-| **Hlavička** | Místo pro logo, titulek nabídky, podnadpis a příjemce (jméno, adresa, datum) |
-| **Text** | Volný odstavec (např. úvod „Co vám nabízíme", závěr) |
-| **Údaje** | Karty s vybranými zákaznickými hodnotami (např. velikost elektrárny, úspora) |
+| **Kontejner** | Rámeček s vlastním nadpisem; uvnitř stojí prvky pod sebou nebo v mřížce o 1–6 sloupcích |
+| **Text** | Formátovaný odstavec – píše se přímo na papíře, včetně tučného, barev a velikostí |
+| **Údaj** | Dlaždice s jednou zákaznickou hodnotou z výpočtu (např. roční úspora) |
 | **Graf** | Graf dle typu řešení (PPA: výroba vs. spotřeba; Peak shaving: měsíční špičky) |
 | **Tabulka** | Roční tabulka (jen zákaznické sloupce) |
+| **Obrázek** | Nahraná fotka, schéma nebo logo |
+| **Čára / Obdélník / Číslo stránky** | Grafické drobnosti na dotažení vzhledu |
 
-Nová nabídka startuje z **kódové výchozí předlohy** (jiné bloky pro PPA a jiné pro Peak shaving).
-Jakmile klikneš **Uložit**, uloží se úprava jako šablona konkrétní nabídky. Není žádná globální
-master šablona – **každá nabídka má vlastní**. V editoru jsou **dostupná jen zákaznická pole**;
-interní čísla se nenabízejí.
+Prvek leží buď přímo na stránce, nebo v kontejneru. **Vnoření je jednoúrovňové** – kontejner do
+kontejneru nepatří; jedna úroveň stačí a chová se při tažení předvídatelně.
+
+Nová nabídka startuje z **kódové výchozí předlohy** (jiná pro PPA, Peak shaving a Kombinaci).
+Předloha se negeneruje ručně po souřadnicích: `sablona_katalog.py` popisuje sekce a rozvržení
+dopočítá – skládá je pod sebe a při přetečení založí novou stránku. Jakmile klikneš **Uložit**,
+uloží se rozvržení konkrétní nabídky. Není žádná globální master šablona – **každá nabídka má
+vlastní**; sdílet se dají přes pojmenované šablony. V editoru jsou **dostupná jen zákaznická
+pole**; interní čísla se nenabízejí.
 
 > V editoru se prázdná pole (bez spočítané hodnoty) ukazují se zástupným „—", ať je vidět, co
-> se doplní po výpočtu. **V tisku/PDF se pole a bloky bez dat automaticky skryjí.**
+> se doplní po výpočtu. **V tisku/PDF se prvky bez dat automaticky skryjí.**
+
+#### Přetečení stránky
+Papír je pevná A4, takže se obsah sám nikam nepřelije. Když prvek přeleze pod spodní okraj sazby
+(266 mm), editor ho **orámuje červeně** a nahoře se objeví pruh s prokliky na všechna taková
+místa. V panelu vlastností je pak tlačítko *Přesunout na další stránku*. Je to schválně ruční:
+u volného umísťování by automatické přeskakování prvků mezi stránkami rozvržení rozhazovalo
+pod rukama.
 
 ### Jak na…
 - **Založit novou nabídku:** rozcestník → vyber linii → *+ Nová nabídka* → vyplň zákazníka → *Uložit*.
 - **Nahrát fakturu / diagram spotřeby:** detail nabídky → rozbal *Podklady* → vyber typ → přetáhni
   soubor. (Soubor se zatím jen uloží, automatické čtení se připravuje.)
-- **Sestavit nabídku do PDF:** detail (PPA/Peak shaving) → *Nabídka pro zákazníka* →
-  zapni/vypni bloky, uprav texty a vyber údaje → *Uložit* → *Uložit do PDF* (dialog tisku prohlížeče).
-- **Vrátit se k výchozí předloze:** v editoru výstupu *Obnovit výchozí* (přepíše se až po *Uložit*).
+- **Sestavit nabídku do PDF:** detail (PPA/Peak shaving) → *Nabídka pro zákazníka* → přetáhni
+  prvky z palety na papír, rozmísti je myší, dvojklikem napiš texty → *Uložit* → *Uložit do PDF*
+  (dialog tisku prohlížeče).
+- **Vrátit se k výchozí předloze:** v editoru výstupu *Použít šablonu… → Výchozí předloha*
+  (přepíše se až po *Uložit*).
+- **Přesunout prvek do kontejneru:** chyť ho a pusť nad kontejnerem – oranžová značka ukáže,
+  mezi které dva prvky spadne. Ven se dostane stejně, jen ho pustíš na volné místo papíru.
+- **Vrátit omyl:** Ctrl+Z (nebo ↶ v liště). Celé přetažení je jeden krok zpět.
 - **Přidat technologii do katalogu:** *Katalog a výpočty* → záložka *Produkty* → *+ Produkt* → vyplň a *Uložit*.
 - **Přidat vlastní sloupec katalogu:** *Katalog a výpočty* → záložka *Produkty* → *+ Vlastní sloupec* → název + typ (text/číslo).
 - **Najít produkt v dlouhém katalogu:** záložka *Produkty* → napiš část názvu do hledání, případně zvol typ. Přepínačem **Okno** si nastavíš, jak vysoký výřez seznamu chceš.
@@ -337,29 +381,63 @@ interní čísla se nenabízejí.
   - `GET/POST /katalog-sloupce`, `PUT/DELETE /katalog-sloupce/{id}` — vlastní sloupce katalogu.
   - `GET /nabidky/{id}/vystup/{typ_reseni}?vychozi=` — podklad pro editor i náhled (konfigurace,
     katalog polí, resolvnuté zákaznické hodnoty, tabulka, graf). `vychozi=1` vrátí kódovou předlohu.
-  - `PUT /nabidky/{id}/vystup/{typ_reseni}` — uloží šablonu výstupu (s validací whitelistu).
+  - `PUT /nabidky/{id}/vystup/{typ_reseni}` — uloží rozvržení (validace whitelistu + sanitizace
+    formátovaného textu).
   - `GET /vystup-sablony/{typ_reseni}?krome_nabidky=` — pojmenované šablony + rozvržení jiných
     nabídek stejného typu (k výběru v editoru).
   - `POST /vystup-sablony/{typ_reseni}` — uloží rozvržení pod názvem (stejný název přepíše),
     `DELETE /vystup-sablony/{typ_reseni}/{id}` — smaže šablonu.
+  - `POST /nabidky/{id}/vystup-obrazky` — nahraje obrázek k vložení do nabídky (max 10 MB,
+    png/jpg/webp/svg), vrátí cestu do konfigurace.
+    `GET /vystup-obrazky/{cesta}` — vydá ho zpátky (kontroluje tvar cesty i úložiště).
   - Výpočtové endpointy (`.../peak-shaving/*`, `.../ppa/*`), `vypoctova-nastaveni`, `sazby` —
     patří kalkulátorům (viz jejich návody).
-- **PDF / tisk (jak vzniká):** žádné serverové generování. Komponenta `NabidkaVystup.jsx`
-  vykreslí nabídku z konfigurace bloků + resolvnutých hodnot **dvakrát** – jako živý náhled a
-  jako tisková A4 stránka. Tlačítko „Uložit do PDF" spustí `window.print()`; layout řeší
-  `frontend/src/styles/vystup.css`. V tisku se skrývají prázdné bloky a pole bez hodnoty.
-- **Záhlaví, zápatí a vodoznak na každé stránce (proč to tak je):** u víc než jedné stránky
-  prohlížeč sám nic neopakuje, takže:
-  - **pás se značkou** (logo + zákazník a datum vpravo) je v `<thead>` nosné tabulky
-    `.vy-list` – `<thead>` prohlížeč opakuje na každé stránce;
-  - **zápatí s kontaktem** je `position: fixed` u spodního okraje (tím se vykreslí na každé
-    stránce) a místo pod textem mu na každé stránce drží prázdný `<tfoot>`
-    (`.vy-zapati-mezera`), aby text nikdy nenaběhl do zápatí;
-  - **vodoznak** je taky `position: fixed`, na střed – souřadnice se počítají od plochy
-    stránky, proto jsou svislé okraje `@page` symetrické (jinak by nebyl na středu papíru).
-  - Pozor na dvě věci: `position: fixed` s **negativními** offsety (kreslení do okrajů stránky)
-    Chrome umísťuje nespolehlivě, a `overflow: hidden` na listu musí být v tisku vypnutý,
-    jinak odřízne všechno za první stránkou.
+- **PDF / tisk (jak vzniká):** žádné serverové generování. Komponenta
+  `frontend/src/components/vystup/Papir.jsx` vykreslí dokument z konfigurace + resolvnutých
+  hodnot **dvakrát** – jednou jako editovatelný papír a jednou jako skrytá tisková kopie bez
+  ovládání (`.vystup-tisk`). Tlačítko „Uložit do PDF" spustí `window.print()`; v `@media print`
+  se editor schová a vytiskne se ta kopie. V tisku se skrývají prvky bez dat a prvky s vypnutým
+  *Tisknout*.
+- **Proč pevná A4 a mm souřadnice:** stránka má natvrdo 210 × 297 mm a `@page` má `margin: 0`,
+  takže **milimetr na obrazovce = milimetr na papíře**. Okraje sazby si drží samy prvky. Kdyby
+  okraje řešil `@page`, obsah by se v PDF posunul a souřadnice z editoru by přestaly sedět.
+  Zvětšení v editoru je `transform: scale()` na stránce plus obal, který za ni drží místo v
+  rozvržení – bez obalu by se při zoomu nad 100 % stránky překrývaly.
+- **Záhlaví, zápatí a vodoznak na každé stránce:** protože každá stránka dokumentu je vlastní
+  element o rozměru A4, jsou to prostě prvky `position: absolute` uvnitř ní – žádné triky
+  s `<thead>` a `position: fixed`, které tenhle výstup potřeboval, dokud byl jedním nekonečným
+  listem. Zapínají se v panelu vlastností (bez vybraného prvku).
+- **Tažení (proč pointer events, ne HTML5 drag & drop):** `frontend/src/vystup/tazeni.js`.
+  HTML5 tažení neumí průběžně hlásit pozici v milimetrech, nejde u něj kreslit vodicí linky a
+  v každém prohlížeči se chová jinak. Pozice se proto počítá sama: poměr px/mm se měří na
+  skutečné šířce vykreslené stránky, takže se do něj **automaticky promítne i zoom**. Snap míří
+  nejdřív na hrany sousedů (do 2 mm), teprve pak na mřížku po 5 mm. Tažený prvek dostane
+  `pointer-events: none`, jinak by `elementsFromPoint` neviděl, co je pod ním, a cíl puštění by
+  byl vždycky on sám.
+- **Formátovaný text:** `TextPole.jsx` staví na `contentEditable` a `document.execCommand`.
+  execCommand je sice zastaralý, ale ve všech prohlížečích funguje, zachová kurzor a výběr a
+  nepotřebuje k tomu 150 kB knihovny (ProseMirror/TipTap). Zásada: **dokud se píše, React do
+  obsahu nesahá** – přepis `innerHTML` při každém stisku by shodil kurzor na začátek. Do modelu
+  se přitom ukládá pročištěná podoba.
+- **Sanitizace HTML (bezpečnost):** text z papíru je uživatelský vstup, který se znovu vykresluje
+  jako HTML. Čistí se dvakrát: v prohlížeči hned při psaní a vkládání
+  (`frontend/src/vystup/sanitizace.js`) a na serveru před uložením
+  (`backend/app/nabidkovac/vystup_html.py`). Autorita je server – klientovi se nevěří, protože
+  `PUT` na API pošle kdokoli s přihlášením. Whitelist: povolené značky formátování, jediný
+  atribut `style` a v něm jen povolené vlastnosti; `url()`, `expression()` ani cizí písma
+  neprojdou, `<script>` se zahodí i s obsahem. **Whitelisty na obou stranách musí zůstat
+  shodné**, jinak se text po uložení „sám přeformátuje".
+- **Obrázky:** nahrávají se zvlášť (`POST /nabidky/{id}/vystup-obrazky`) do
+  `vystup_obrazky/<nabidka_id>/`, do konfigurace jde jen cesta. Endpoint pro výdej ověřuje tvar
+  cesty i to, že nevede mimo úložiště – cesta totiž chodí od klienta jako součást konfigurace.
+  Protože výdej chce token v hlavičce (a `<img src>` ho poslat neumí), stahují se přes `fetch`
+  do blob URL, které si `api.js` cachuje podle cesty.
+- **Model v2 a starší data:** konfigurace nese `verze: 2`. Původní model (plochý seznam bloků
+  v mřížce 12 sloupců) se **nemigruje** – v době přepisu byla v provozu tři rozvržení a Dan
+  zvolil čistý start. Konfigurace bez `verze: 2` se ignoruje a vrátí se výchozí předloha; uložený
+  záznam v DB zůstane, dokud ho obchodník nepřepíše tlačítkem *Uložit*. Staré pojmenované
+  šablony se vracejí s `pouzitelna: false` – nejdou použít, ale jdou smazat (jinak by v databázi
+  uvízly bez cesty ven).
 - **Whitelist dat v PDF (pojistka „jen zákaznická data"):** jediné místo, kudy se hodnoty do
   výstupu dostanou, je `backend/app/nabidkovac/sablona_katalog.py`. Vyjmenovává **pouze
   zákaznická pole** (`_POLE_PPA`, `_POLE_PS`) a jejich extraktory z `navrhovana_reseni.popis_json`.
@@ -422,11 +500,17 @@ interní čísla se nenabízejí.
 - **Klíčové soubory:**
   - Backend: `routes.py` (API), `models.py` (tabulky), `schemas.py` (vstupy/výstupy),
     `sablona_katalog.py` (whitelist polí + výchozí předlohy + resolver + formátování),
-    `soubory.py` (ukládání souborů), `permissions.py` (`vyzaduj_nabidkovac`, `vyzaduj_katalog`).
+    `vystup_html.py` (sanitizace formátovaného textu), `vystup_obrazky.py` (úložiště obrázků
+    do nabídky), `soubory.py` (ukládání podkladů), `permissions.py` (`vyzaduj_nabidkovac`,
+    `vyzaduj_katalog`).
   - Frontend: `pages/Nabidkovac.jsx`, `NabidkovacSekce.jsx`, `NabidkaDetail.jsx`,
-    `NabidkaVystupStranka.jsx`, `NabidkovacKatalog.jsx`; `components/NabidkaVystup.jsx`,
-    `NabidkaVystupEditor.jsx`, `DokumentUpload.jsx`, `PridatDialog.jsx`; sdílené konstanty
-    `nabidkovac.js`; API funkce `api.js`; routy `App.jsx`.
+    `NabidkaVystupStranka.jsx`, `NabidkovacKatalog.jsx`; `components/DokumentUpload.jsx`,
+    `PridatDialog.jsx`; API funkce `api.js`; routy `App.jsx`.
+  - Nabídkový výstup má vlastní složky: logika v `frontend/src/vystup/` (`model.js` – data a
+    operace nad nimi, `editor.js` – stav a interakce, `tazeni.js` – snap a pointer events,
+    `historie.js` – undo/redo, `sanitizace.js` – čištění HTML) a komponenty v
+    `frontend/src/components/vystup/` (`Papir.jsx`, `PrvekObsah.jsx`, `TextPole.jsx`,
+    `Paleta.jsx`, `Vlastnosti.jsx`, `Lista.jsx`). Styly `styles/vystup.css`.
 
 ### Časté potíže / co dělat, když…
 - **„Na Nabídkovač nemáš oprávnění" (403)** → uživateli chybí právo `nabidkovac`; přiděl skupině
