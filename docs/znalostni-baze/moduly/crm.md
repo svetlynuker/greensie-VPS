@@ -108,10 +108,35 @@ u každého sloupce. Tvar filtru se řídí typem: text (obsahuje), číslo a da
 stav a typ (rozbalovací nabídka jen s hodnotami, které se v datech skutečně vyskytují),
 ano/ne. Počet aktivních filtrů je vidět na tlačítku a jde je zrušit jedním kliknutím.
 
+**2b. Které sloupce vidíš.** Tlačítko **⋮⋮ Sloupce** rozbalí seznam všech sloupců tabulky.
+Zaškrtnutím se sloupec skryje nebo vrátí, šipkami **←** a **→** se mění jeho pořadí.
+Nastavení se ukládá **k tvému účtu**, takže platí i na jiném počítači, a je **jen tvoje** —
+kolegům se tabulka nepřerovná. Tlačítkem *Vrátit výchozí* se to smaže.
+
+> Skrytý sloupec se dá **pořád filtrovat**. Ve filtru se nabízejí všechny sloupce, i ty,
+> které v tabulce vidět nejsou — jinak by skrytí sloupce potichu zrušilo i možnost hledat
+> podle něj.
+
+**2c. Kolik řádků naráz.** Pod tabulkou je volba **Řádků na stránku** (25 / 50 / 100 / vše)
+a šipky mezi stránkami. Stránkuje se **až po filtru**, takže filtr vždycky prohledá celý
+seznam, ne jen tu stránku, na kterou zrovna koukáš. Na rozdíl od sloupců se tahle volba
+pamatuje **v prohlížeči**, ne v profilu: na notebooku chce člověk jiný počet řádků než
+na velkém monitoru.
+
 **3. Vlastní filtry (uložené pohledy).** Nad seznamem je lišta **Filtry** s tlačítkem
-**+ Vlastní filtr**. Filtr je několik **podmínek**, které musí platit všechny, a
-**víceúrovňové řazení**. Například *„kategorie obsahuje PPA, hodnota ≥ 1 000 000, stav není
-Prohráno"* řazené podle stavu a pak podle čísla.
+**+ Vlastní filtr**. Filtr je několik **podmínek** a **víceúrovňové řazení**. Například
+*„kategorie obsahuje PPA, hodnota ≥ 1 000 000, stav není Prohráno"* řazené podle stavu
+a pak podle čísla.
+
+**„a" nebo „nebo".** Mezi podmínkami je přepínač:
+
+- **a** — musí platit obě (výchozí),
+- **nebo** — stačí jedna z nich.
+
+Sousední podmínky spojené přes **nebo** tvoří jeden blok. Platí, že **všechny bloky musí
+vyjít, ale uvnitř bloku stačí jedna podmínka**. Tím se dá napsat i *„stav je Nabídka
+**nebo** Vyjednávání, **a zároveň** hodnota nad milion"* — první dvě podmínky spojíš přes
+„nebo", třetí přes „a".
 
 Uložený filtr má tři přepínače:
 
@@ -120,6 +145,10 @@ Uložený filtr má tři přepínače:
 | **Nasdílet ostatním** | filtr uvidí i kolegové (jako pilulku se tvým jménem) |
 | **Použít po otevření sekce** | tenhle filtr se aktivuje sám; výchozí může být jen jeden |
 | *(bez volby)* | filtr je jen tvůj |
+
+Čtvrtá volba **Uložit i rozvržení sloupců** přibalí k filtru i to, které sloupce jsou
+vidět a v jakém pořadí — kdo sleduje jiná čísla, chce obvykle i jinou tabulku. Bez ní
+filtr rozvržení neřeší a zůstane to, co máš nastavené.
 
 Cizí nasdílený filtr **můžeš použít, ale ne přepsat** — kdo si ho chce upravit, dá
 *Uložit jako nový* a vznikne mu vlastní kopie. Jinak by si lidé měnili pohledy pod rukama.
@@ -427,6 +456,15 @@ Všechno je uložené u tvého účtu, ne v prohlížeči, takže to platí i na
 
 > Nastavení firmy (stavy pipeline, kategorie, práva, uživatelé) je jinde — v **Admin
 > nastavení**. Sem patří jen to, co je osobní.
+
+### Oblíbené a naposledy otevřené
+V poli hledání (**Ctrl+K**) se hned po otevření — ještě než začneš psát — ukáže, s čím jsi
+naposledy pracoval, a nahoře **★ Oblíbené**. Je to nejrychlejší cesta zpátky k rozdělané
+zakázce.
+
+Přišpendlit se dá **hvězdičkou u nadpisu** na kartě zákazníka, obchodního případu nebo
+projektu. Klik na plnou hvězdičku ji zase odebere. Naposledy otevřených se pamatuje
+posledních patnáct; oblíbené tam zůstávají, dokud je sám neodebereš.
 
 ### Notifikace: zvoneček a e-maily
 Vpravo nahoře v liště je **zvoneček**. Číslo u něj říká, kolik máš nepřečtených zpráv;
