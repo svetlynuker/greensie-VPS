@@ -121,6 +121,8 @@ def _nabidka_detail(n: Nabidka) -> NabidkaDetailOut:
     return NabidkaDetailOut(
         id=n.id,
         typ=n.typ,
+        cislo=n.cislo,
+        obchodni_pripad_id=n.obchodni_pripad_id,
         zakaznik_nazev=n.zakaznik_nazev,
         zakaznik_adresa=n.zakaznik_adresa or "",
         zakaznik_gps_lat=_num(n.zakaznik_gps_lat),

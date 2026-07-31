@@ -53,6 +53,11 @@ class NabidkaRadekOut(BaseModel):
 class NabidkaDetailOut(BaseModel):
     id: int
     typ: TypNabidky
+    # Číslo z řady CRM a případ, pod který nabídka patří. V modelu to bylo od
+    # zavedení CRM, ale detail to neposílal — takže frontend nepoznal, jestli má
+    # nabídka zákazníka s odběrnými místy, nebo je to samostatný výpočet.
+    cislo: Optional[str] = None
+    obchodni_pripad_id: Optional[int] = None
     zakaznik_nazev: str
     zakaznik_adresa: str = ""
     zakaznik_gps_lat: Optional[float] = None
