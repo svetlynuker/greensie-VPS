@@ -383,6 +383,35 @@
   padding-top: 12px;
 }
 
+/* ---- odběrná místa (CRM-46) ---- */
+/* Stejný tvar jako seznam kontaktů; navíc se vyznačuje místo, kterého se
+   otevřený obchodní případ týká — z něj si nabídka bere diagram a sazby. */
+.crm-om-seznam {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+}
+.crm-om-seznam li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.crm-om-seznam li.vybrane {
+  border-left: 3px solid var(--st-ok);
+  padding-left: 8px;
+  margin-left: -11px;
+}
+.crm-om-nazev {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 /* ---- kanban ---- */
 .crm-kanban {
   display: flex;

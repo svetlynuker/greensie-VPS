@@ -188,6 +188,33 @@ def _lehka_migrace():
             )
         )
 
+        # CRM-46: obchodní případ ví, kterého odběrného místa se týká. Tabulka
+        # `crm_odberna_mista` je nová (vytvoří ji create_all výš), ale sloupec
+        # na existující `crm_obchodni_pripady` se musí doplnit ručně. Cizí klíč
+        # jen když ještě není – opakovaný start by na duplicitním spadl.
+        conn.execute(
+            text(
+                "ALTER TABLE crm_obchodni_pripady ADD COLUMN IF NOT EXISTS "
+                "odberne_misto_id INTEGER"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_crm_obchodni_pripady_odberne_misto_id "
+                "ON crm_obchodni_pripady (odberne_misto_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "DO $$ BEGIN "
+                "IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+                "WHERE conname = 'fk_crm_op_odberne_misto') THEN "
+                "ALTER TABLE crm_obchodni_pripady ADD CONSTRAINT fk_crm_op_odberne_misto "
+                "FOREIGN KEY (odberne_misto_id) REFERENCES crm_odberna_mista(id) "
+                "ON DELETE SET NULL; END IF; END $$;"
+            )
+        )
+
         # CRM: navázání nabídky na obchodní případ + viditelné číslo nabídky.
         # `nabidky` je existující tabulka, takže create_all nové sloupce nepřidá.
         # Cizí klíč zakládáme až po vytvoření CRM tabulek (create_all výš), a jen

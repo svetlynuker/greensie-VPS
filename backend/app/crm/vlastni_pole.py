@@ -26,12 +26,13 @@ from app.crm.models import (
     TYPY_VLASTNIHO_POLE,
     CrmVlastniPole,
     ObchodniPripad,
+    OdberneMisto,
     Zakaznik,
 )
 
 # Entita → model, na kterém žije `extra`. Přidání další obrazovky = jeden řádek
 # (a klíč v ENTITY_VLASTNICH_POLI).
-MODELY = {"zakaznik": Zakaznik, "op": ObchodniPripad}
+MODELY = {"zakaznik": Zakaznik, "op": ObchodniPripad, "om": OdberneMisto}
 
 # Lidské názvy typů pro chybová hlášení.
 NAZVY_TYPU = {

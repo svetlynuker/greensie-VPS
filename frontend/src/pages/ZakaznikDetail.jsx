@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import Aktivity from "../components/Aktivity";
 import KontaktyPanel from "../components/KontaktyPanel";
+import OdbernaMistaPanel from "../components/OdbernaMistaPanel";
 import PripadFormular from "../components/PripadFormular";
 import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
 import VlastniPoleVypis from "../components/VlastniPoleVypis";
@@ -222,6 +223,11 @@ export default function ZakaznikDetail() {
                 onSprava={() => setSpravaPoli(true)}
               />
               <KontaktyPanel zakaznik={z} onZmena={setZ} />
+              <OdbernaMistaPanel
+                entita="zakaznik"
+                zaznamId={z.id}
+                muzeSpravovatPole={me.prava?.includes("crm_nastaveni")}
+              />
               <div className="fm-card crm-blok">
                 <DiskSlozka entita="zakaznik" zaznamId={z.id} popisZaznamu="klientovi" />
               </div>
