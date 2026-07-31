@@ -907,6 +907,31 @@ class UlozenyFiltrVstup(BaseModel):
 # Distributor a hladina jsou tu `str`, ne Literal: seznamy patří nabídkovači
 # (`nabidkovac.models.DISTRIBUTORI` / `NAPETOVE_HLADINY`) a validují se proti
 # nim v `odberna_mista.over_distribuci`. Dvě kopie stejného enumu by se rozešly.
+class DiagramOut(BaseModel):
+    """15minutový diagram odběru u místa. Souhrn je z parsování při nahrání —
+    proto je v seznamu vidět, jestli soubor pokrývá celý rok, ještě než se
+    z něj začne počítat."""
+
+    id: int
+    odberne_misto_id: int
+    puvodni_nazev: str = ""
+    popis: str = ""
+    velikost_bajtu: Optional[int] = None
+    stav: str = "zpracovano"  # "zpracovano" | "chyba"
+    chyba_text: str = ""
+    obdobi_od: Optional[str] = None
+    obdobi_do: Optional[str] = None
+    pocet_intervalu: Optional[int] = None
+    interval_min: Optional[int] = None
+    spotreba_mwh: Optional[float] = None
+    max_kw: Optional[float] = None
+    # Kolik dní období pokrývá – roční diagram má ~365. Dopočítává backend, ať
+    # se ve dvou frontendech nepočítá dvakrát jinak.
+    dnu: Optional[int] = None
+    nahral_jmeno: Optional[str] = None
+    nahrano_at: Optional[str] = None
+
+
 class OdberneMistoOut(BaseModel):
     id: int
     zakaznik_id: int
@@ -926,9 +951,10 @@ class OdberneMistoOut(BaseModel):
     poznamka: str = ""
     aktivni: bool = True
     extra: dict = {}
-    # Kolik 15min diagramů na místě visí (etapa 2). Ať je z karty klienta hned
-    # vidět, ke kterému místu podklady pro výpočet jsou a ke kterému chybí.
+    # Kolik 15min diagramů na místě visí. Ať je z karty klienta hned vidět,
+    # ke kterému místu podklady pro výpočet jsou a ke kterému chybí.
     diagramu: int = 0
+    diagramy: list[DiagramOut] = []
     # Je tohle místo to, kterého se otevřený obchodní případ týká?
     vybrane_pro_pripad: bool = False
 

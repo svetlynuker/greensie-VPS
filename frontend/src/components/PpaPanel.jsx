@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import GrafVyrobaSpotreba from "./GrafVyrobaSpotreba";
 import GrafPrubehuPpa from "./GrafPrubehuPpa";
-import { ppaPrubeh, ppaProfilSouhrn, ppaVypocet, profilZpracuj } from "../api";
+import {
+  crmOdbernaMistaNabidky,
+  crmPouzijDiagramProNabidku,
+  ppaPrubeh,
+  ppaProfilSouhrn,
+  ppaVypocet,
+  profilZpracuj,
+} from "../api";
 
 // Panel PPA (výpočet v2 – docs/METODIKA-ppa-v2.md).
 //
@@ -70,6 +77,9 @@ export default function PpaPanel({ nabidka }) {
   const [zalozka, setZalozka] = useState("ekonomika");
   const [chyba, setChyba] = useState(null);
   const [zprava, setZprava] = useState(null);
+  // Odběrná místa klienta a jejich diagramy (CRM-46); prázdné u nabídky bez případu.
+  const [mistaKlienta, setMistaKlienta] = useState([]);
+  const [beremeDiagramId, setBeremeDiagramId] = useState(null);
   const [pocita, setPocita] = useState(false);
   // Průběh se tahá zvlášť (na vyžádání), ať se ~35 tis. hodnot nenosí v každé
   // odpovědi výpočtu. Klíč = varianta, aby se přepnutím nezobrazila cizí data.
@@ -77,11 +87,51 @@ export default function PpaPanel({ nabidka }) {
   const [prubehChyba, setPrubehChyba] = useState(null);
   const [prubehNacita, setPrubehNacita] = useState(false);
 
+  // Podpis dokumentů (id + stav zpracování) je v závislostech schválně: profil
+  // se od 31. 7. 2026 parsuje hned při nahrání, takže po přidání souboru musí
+  // panel souhrn dotáhnout znovu. Bez toho ukazoval „profil chybí“, dokud
+  // uživatel stránku nereloadoval — a nabídka se počítala bez dat spotřeby.
+  const dokPodpis = (nabidka.dokumenty || [])
+    .map((d) => `${d.id}:${d.stav_zpracovani}`)
+    .join(",");
+
   useEffect(() => {
     ppaProfilSouhrn(nabidka.id)
       .then(setSouhrn)
       .catch(() => setSouhrn({ pocet: 0 }));
-  }, [nabidka.id]);
+    crmOdbernaMistaNabidky(nabidka.id)
+      .then((d) => setMistaKlienta(d.mista || []))
+      .catch(() => setMistaKlienta([]));
+  }, [nabidka.id, dokPodpis]);
+
+  // Zpracované diagramy míst klienta; místo případu první.
+  const diagramyMist = [...mistaKlienta]
+    .sort((a, b) => Number(b.vybrane_pro_pripad) - Number(a.vybrane_pro_pripad))
+    .flatMap((misto) =>
+      (misto.diagramy || [])
+        .filter((diagram) => diagram.stav === "zpracovano")
+        .map((diagram) => ({ misto, diagram }))
+    );
+
+  /** Vezme diagram z odběrného místa do profilu téhle nabídky. */
+  async function vezmiZMista(diagramId) {
+    setBeremeDiagramId(diagramId);
+    setChyba(null);
+    setZprava(null);
+    try {
+      const v = await crmPouzijDiagramProNabidku(nabidka.id, diagramId);
+      setSouhrn(await ppaProfilSouhrn(nabidka.id));
+      setZprava(
+        `Profil načten z místa „${v.odberne_misto}": ` +
+          `${(v.pocet || 0).toLocaleString("cs-CZ")} intervalů.` +
+          (v.gps_doplneno ? " Doplněna i GPS provozovny." : "")
+      );
+    } catch (e) {
+      setChyba(e.message);
+    } finally {
+      setBeremeDiagramId(null);
+    }
+  }
 
   // Průběh se načte teprve při otevření záložky (a znovu po přepnutí varianty),
   // ať se celoroční řady netahají zbytečně.
@@ -203,10 +253,13 @@ export default function PpaPanel({ nabidka }) {
               <div>Profil zatím není načtený — bez něj výpočet nejde spustit.</div>
             </div>
           )}
-          {profilDoklady.length === 0 ? (
+          {profilDoklady.length === 0 && diagramyMist.length === 0 ? (
             <div className="nb-warn" style={{ margin: "8px 0 0" }}>
               <span>⚠️</span>
-              <span>Nejdřív nahraj soubor se spotřebou (sekce Podklady výše).</span>
+              <span>
+                Nejdřív nahraj soubor se spotřebou (sekce Podklady výše), nebo diagram
+                k odběrnému místu na kartě klienta.
+              </span>
             </div>
           ) : (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
@@ -222,6 +275,31 @@ export default function PpaPanel({ nabidka }) {
                   {zpracovavaId === d.id ? "Načítám…" : `Načíst: ${d.puvodni_nazev}`}
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* Diagramy odběrných míst klienta (CRM-46). U PPA se z místa navíc
+              doplní GPS provozovny, pokud nabídka žádnou nemá — výroba FVE se
+              počítá z polohy odběru, ne z fakturační adresy firmy. */}
+          {diagramyMist.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div className="gs-step-sub">Diagramy odběrných míst klienta:</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+                {diagramyMist.map(({ misto, diagram }) => (
+                  <button
+                    key={diagram.id}
+                    className="fm-btn"
+                    style={{ padding: "4px 10px", fontSize: 12 }}
+                    onClick={() => vezmiZMista(diagram.id)}
+                    disabled={beremeDiagramId === diagram.id}
+                    title={`${diagram.puvodni_nazev} · ${misto.nazev}. Nahradí celý dosavadní profil nabídky.`}
+                  >
+                    {beremeDiagramId === diagram.id
+                      ? "Beru…"
+                      : `${misto.nazev}: ${diagram.puvodni_nazev}`}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </section>

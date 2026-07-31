@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import GrafOdberu from "./GrafOdberu";
 import GrafPrubehu from "./GrafPrubehu";
 import {
+  crmOdbernaMistaNabidky,
+  crmPouzijDiagramProNabidku,
   sazbySeznam,
   peakShavingProfilSouhrn,
   peakShavingPrubeh,
@@ -587,6 +589,10 @@ export default function PeakShavingPanel({ nabidka }) {
   const [zprava, setZprava] = useState(null);
   const [pocita, setPocita] = useState(false);
   const [zpracovavaId, setZpracovavaId] = useState(null);
+  // Odběrná místa klienta a jejich diagramy (CRM-46). Prázdné u nabídky bez
+  // obchodního případu — nabídkovač jde otevřít i samostatně jako kalkulačka.
+  const [mistaKlienta, setMistaKlienta] = useState([]);
+  const [beremeDiagramId, setBeremeDiagramId] = useState(null);
   // Varianta vybraná kliknutím ve srovnání (0 = doporučená).
   const [vybranyIdx, setVybranyIdx] = useState(0);
   // Srovnání: false = 3 nejlepší, true = celý katalog (manažerské rozhodnutí).
@@ -624,6 +630,12 @@ export default function PeakShavingPanel({ nabidka }) {
   // Řazení srovnání variant: klic = null → pořadí ze serveru (dle NPV sestupně).
   const [razeni, setRazeni] = useState({ klic: null, smer: "asc" });
 
+  // Profil se parsuje hned při nahrání souboru — podpis dokumentů v závislostech
+  // zajistí, že panel po nahrání souhrn dotáhne a nezůstane u „profil chybí“.
+  const dokPodpis = (nabidka.dokumenty || [])
+    .map((d) => `${d.id}:${d.stav_zpracovani}`)
+    .join(",");
+
   useEffect(() => {
     sazbySeznam().then(setSazby).catch((e) => setChyba(e.message));
     peakShavingProfilSouhrn(nabidka.id).then(setSouhrn).catch(() => setSouhrn({ pocet: 0 }));
@@ -640,7 +652,20 @@ export default function PeakShavingPanel({ nabidka }) {
         )
       )
       .catch(() => setKatalogBaterii([]));
-  }, [nabidka.id]);
+    crmOdbernaMistaNabidky(nabidka.id)
+      .then((d) => setMistaKlienta(d.mista || []))
+      .catch(() => setMistaKlienta([]));
+  }, [nabidka.id, dokPodpis]);
+
+  // Zpracované diagramy všech míst klienta, plocho a s vlastníkem u sebe.
+  // Místo, kterého se případ týká, jde první — obvykle je to to správné.
+  const diagramyMist = [...mistaKlienta]
+    .sort((a, b) => Number(b.vybrane_pro_pripad) - Number(a.vybrane_pro_pripad))
+    .flatMap((misto) =>
+      (misto.diagramy || [])
+        .filter((diagram) => diagram.stav === "zpracovano")
+        .map((diagram) => ({ misto, diagram }))
+    );
 
   // Ruční vstupy si pamatujeme, ať je OZ nemusí psát znovu (bez zamykání).
   useEffect(() => {
@@ -700,12 +725,41 @@ export default function PeakShavingPanel({ nabidka }) {
   const nazevDistributora = DISTRIB.find((d) => d.klic === distributor)?.nazev;
   const vsePripraveno = profilOk && rezOk && sazbaOk && vyberBateriiOk;
 
+  /** Vezme diagram z odběrného místa klienta a přenese i parametry místa.
+   *
+   * Parametry se přepisují jen tam, kde místo hodnotu má — prázdné pole na
+   * místě nesmí smazat to, co OZ v panelu zadal ručně (backend proto posílá
+   * jen vyplněné, viz `odberna_mista.parametry_pro_vypocet`).
+   */
+  async function vezmiZMista(diagramId) {
+    setBeremeDiagramId(diagramId);
+    setChyba(null);
+    setZprava(null);
+    try {
+      const v = await crmPouzijDiagramProNabidku(nabidka.id, diagramId);
+      setSouhrn(await peakShavingProfilSouhrn(nabidka.id));
+      const p = v.parametry_mista || {};
+      if (p.distributor) setDistributor(p.distributor);
+      if (p.napetova_hladina) setHladina(p.napetova_hladina);
+      if (p.rezervovana_kapacita_kw != null) setRezKap(String(p.rezervovana_kapacita_kw));
+      if (p.rezervovany_prikon_kw != null) setRezPrikon(String(p.rezervovany_prikon_kw));
+      const prevzato = Object.keys(p).length
+        ? ` Z místa „${v.odberne_misto}" převzato: ${Object.keys(p).length} parametrů.`
+        : "";
+      setZprava(`Profil načten: ${(v.pocet || 0).toLocaleString("cs-CZ")} intervalů.${prevzato}`);
+    } catch (e) {
+      setChyba(e.message);
+    } finally {
+      setBeremeDiagramId(null);
+    }
+  }
+
   async function nactiProfil(dokId) {
     setZpracovavaId(dokId);
     setChyba(null);
     setZprava(null);
     try {
-      const s = await profilZpracuj(dokId);
+      const s = await profilZpracuj(nabidka.id, dokId);
       setSouhrn(s);
       setZprava(`Profil načten: ${s.pocet.toLocaleString("cs-CZ")} intervalů.`);
     } catch (e) {
@@ -979,10 +1033,13 @@ export default function PeakShavingPanel({ nabidka }) {
               <div>Profil zatím není načtený — bez něj výpočet nejde spustit.</div>
             </div>
           )}
-          {profilDoklady.length === 0 ? (
+          {profilDoklady.length === 0 && diagramyMist.length === 0 ? (
             <div className="nb-warn" style={{ margin: "8px 0 0" }}>
               <span>⚠️</span>
-              <span>Nejdřív nahraj soubor se spotřebou (sekce Podklady výše).</span>
+              <span>
+                Nejdřív nahraj soubor se spotřebou (sekce Podklady výše), nebo diagram
+                k odběrnému místu na kartě klienta.
+              </span>
             </div>
           ) : (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
@@ -998,6 +1055,34 @@ export default function PeakShavingPanel({ nabidka }) {
                   {zpracovavaId === d.id ? "Načítám…" : `Načíst: ${d.puvodni_nazev}`}
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* Diagramy z odběrných míst zákazníka (CRM-46). Nahrané u klienta,
+              použitelné pro každou nabídku té provozovny — a s nimi se
+              předvyplní i distributor, hladina a rezervovaná kapacita. */}
+          {diagramyMist.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div className="gs-step-sub">
+                Diagramy odběrných míst klienta — použitím se z místa převezme i distributor,
+                hladina a rezervovaná kapacita:
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+                {diagramyMist.map(({ misto, diagram }) => (
+                  <button
+                    key={diagram.id}
+                    className="fm-btn"
+                    style={{ padding: "4px 10px", fontSize: 12 }}
+                    onClick={() => vezmiZMista(diagram.id)}
+                    disabled={beremeDiagramId === diagram.id}
+                    title={`${diagram.puvodni_nazev} · ${misto.nazev}. Nahradí celý dosavadní profil nabídky.`}
+                  >
+                    {beremeDiagramId === diagram.id
+                      ? "Beru…"
+                      : `${misto.nazev}: ${diagram.puvodni_nazev}`}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </section>

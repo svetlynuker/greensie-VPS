@@ -15,10 +15,13 @@ const TYPY = [
 // Vše, co jde nahrát (zrcadlí backend TYP_PODLE_PRIPONY) – typ si odvodí backend z přípony.
 const VSECHNY_PRIPONY = ".pdf,.csv,.xlsx,.xls,.png,.jpg,.jpeg";
 
+// Profil spotřeby (CSV/XLS) se od 31. 7. 2026 parsuje hned při nahrání, takže
+// „extrahovano" u něj znamená, že výpočet má data. U faktur se extrakce z PDF
+// zatím nedělá — proto u nich zůstává „nahráno" bez slibů.
 const STAV_DOKUMENTU = {
-  nahrano: "Čeká na zpracování (funkce se připravuje)",
-  extrahovano: "Zpracováno",
-  chyba_extrakce: "Chyba zpracování",
+  nahrano: "Nahráno",
+  extrahovano: "Data spotřeby načtena ✓",
+  chyba_extrakce: "Soubor se nepodařilo přečíst — zkontroluj export",
   rucne_doplneno: "Ručně doplněno",
 };
 

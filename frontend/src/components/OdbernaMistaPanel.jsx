@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  crmDiagramNahraj,
+  crmDiagramSmaz,
+  crmDiagramStahni,
   crmOdbernaMista,
   crmOdberneMistoPridej,
   crmOdberneMistoSmaz,
   crmOdberneMistoUprav,
   crmPripadOdberneMisto,
 } from "../api";
+import { fmtDatum } from "../crm";
 import VlastniPoleNastaveni from "./VlastniPoleNastaveni";
 import VlastniPoleVstupy from "./VlastniPoleVstupy";
 
@@ -71,6 +75,27 @@ function nazevDistrib(klic) {
   return DISTRIB.find((d) => d.klic === klic)?.nazev || klic;
 }
 
+function velikost(b) {
+  if (!b) return "";
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${Math.round(b / 1024)} kB`;
+  return `${(b / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** Souhrn diagramu: období, kolik dní pokrývá, spotřeba a špička. */
+function popisDiagramu(d) {
+  if (d.stav !== "zpracovano") return null;
+  const casti = [];
+  if (d.obdobi_od && d.obdobi_do) {
+    casti.push(`${fmtDatum(d.obdobi_od)} – ${fmtDatum(d.obdobi_do)}`);
+  }
+  if (d.dnu) casti.push(`${d.dnu} dní`);
+  if (d.interval_min) casti.push(`${d.interval_min} min`);
+  if (d.spotreba_mwh != null) casti.push(`${d.spotreba_mwh.toLocaleString("cs-CZ")} MWh`);
+  if (d.max_kw != null) casti.push(`špička ${d.max_kw.toLocaleString("cs-CZ")} kW`);
+  return casti.join(" · ");
+}
+
 /** Souhrn místa na jeden řádek — co je vyplněné, to se ukáže. */
 function popisMista(m) {
   const casti = [];
@@ -97,6 +122,11 @@ export default function OdbernaMistaPanel({ entita, zaznamId, onZmenaVazby, muze
   const [uklada, setUklada] = useState(false);
   const [spravaPoli, setSpravaPoli] = useState(false);
   const [chyba, setChyba] = useState(null);
+  const [nahravaMisto, setNahravaMisto] = useState(null); // id místa, ke kterému se nahrává
+  const [zprava, setZprava] = useState(null);
+  // Jeden skrytý input na místo – ať kliknutí u druhého místa neotevře soubor
+  // pro první (jeden společný ref by držel poslední vykreslený).
+  const vstupy = useRef({});
 
   const nacti = useCallback(async () => {
     try {
@@ -184,6 +214,46 @@ export default function OdbernaMistaPanel({ entita, zaznamId, onZmenaVazby, muze
     }
   }
 
+  /** Nahraje diagram k místu. Parsuje ho backend hned, takže odpověď nese souhrn. */
+  async function nahrajDiagram(m, file) {
+    if (!file) return;
+    setNahravaMisto(m.id);
+    setChyba(null);
+    setZprava(null);
+    try {
+      const d = await crmDiagramNahraj(m.id, file, {
+        pripadId: entita === "op" ? zaznamId : null,
+      });
+      await nacti();
+      if (d.stav === "zpracovano") {
+        setZprava(
+          `Diagram načten: ${(d.pocet_intervalu || 0).toLocaleString("cs-CZ")} intervalů` +
+            (d.max_kw != null ? `, špička ${d.max_kw.toLocaleString("cs-CZ")} kW` : "") +
+            "."
+        );
+      } else {
+        setChyba(`Soubor se nepodařilo přečíst: ${d.chyba_text}`);
+      }
+    } catch (e) {
+      setChyba(e.message);
+    } finally {
+      setNahravaMisto(null);
+      if (vstupy.current[m.id]) vstupy.current[m.id].value = "";
+    }
+  }
+
+  async function smazDiagram(d) {
+    if (!window.confirm(`Smazat diagram ${d.puvodni_nazev}?\n\nNabídky, které z něj už počítaly, si svá čísla drží.`))
+      return;
+    setChyba(null);
+    try {
+      await crmDiagramSmaz(d.id);
+      await nacti();
+    } catch (e) {
+      setChyba(e.message);
+    }
+  }
+
   /** Vazba případu na místo (jen na kartě případu). */
   async function prepniVazbu(m) {
     setChyba(null);
@@ -221,6 +291,7 @@ export default function OdbernaMistaPanel({ entita, zaznamId, onZmenaVazby, muze
       </div>
 
       {chyba && <div className="crm-chyba">{chyba}</div>}
+      {zprava && <div className="crm-tise crm-barva-ok">{zprava}</div>}
       {data === null && !chyba && <p className="crm-tise">Načítám…</p>}
 
       {data !== null && mista.length === 0 && !otevreny && (
@@ -235,52 +306,114 @@ export default function OdbernaMistaPanel({ entita, zaznamId, onZmenaVazby, muze
         <ul className="crm-om-seznam">
           {mista.map((m) => (
             <li key={m.id} className={m.vybrane_pro_pripad ? "vybrane" : undefined}>
-              <div style={{ minWidth: 0 }}>
-                <div className="crm-om-nazev">
-                  {m.nazev}
-                  {m.vybrane_pro_pripad && (
-                    <span className="crm-znacka crm-barva-ok">tohoto se případ týká</span>
-                  )}
-                  {!m.aktivni && <span className="crm-znacka crm-barva-warn">neaktivní</span>}
-                  {m.diagramu > 0 ? (
-                    <span className="crm-znacka crm-barva-info">
-                      {m.diagramu} {m.diagramu === 1 ? "diagram" : m.diagramu < 5 ? "diagramy" : "diagramů"}
-                    </span>
-                  ) : (
-                    <span className="crm-znacka">bez diagramu</span>
-                  )}
+              <div className="crm-om-radek">
+                <div style={{ minWidth: 0 }}>
+                  <div className="crm-om-nazev">
+                    {m.nazev}
+                    {m.vybrane_pro_pripad && (
+                      <span className="crm-znacka crm-barva-ok">tohoto se případ týká</span>
+                    )}
+                    {!m.aktivni && <span className="crm-znacka crm-barva-warn">neaktivní</span>}
+                    {m.diagramu > 0 ? (
+                      <span className="crm-znacka crm-barva-info">
+                        {m.diagramu}{" "}
+                        {m.diagramu === 1 ? "diagram" : m.diagramu < 5 ? "diagramy" : "diagramů"}
+                      </span>
+                    ) : (
+                      <span className="crm-znacka">bez diagramu</span>
+                    )}
+                  </div>
+                  <div className="crm-tise">{popisMista(m)}</div>
+                  {m.poznamka && <div className="crm-tise">{m.poznamka}</div>}
                 </div>
-                <div className="crm-tise">{popisMista(m)}</div>
-                {m.poznamka && <div className="crm-tise">{m.poznamka}</div>}
-              </div>
-              <span className="crm-mezera" />
-              {entita === "op" && muze && (
-                <button
-                  className="fm-btn crm-btn-maly"
-                  onClick={() => prepniVazbu(m)}
-                  title={
-                    m.vybrane_pro_pripad
-                      ? "Zrušit vazbu případu na tohle místo"
-                      : "Případ se týká tohoto místa"
-                  }
-                >
-                  {m.vybrane_pro_pripad ? "Odpojit" : "Vybrat pro případ"}
-                </button>
-              )}
-              {muze && (
-                <>
-                  <button className="fm-btn crm-btn-maly" onClick={() => zacniUpravu(m)}>
-                    Upravit
-                  </button>
+                <span className="crm-mezera" />
+                {entita === "op" && muze && (
                   <button
-                    className="fm-btn crm-btn-maly crm-btn-smazat"
-                    onClick={() => smaz(m)}
-                    title="Smazat místo"
+                    className="fm-btn crm-btn-maly"
+                    onClick={() => prepniVazbu(m)}
+                    title={
+                      m.vybrane_pro_pripad
+                        ? "Zrušit vazbu případu na tohle místo"
+                        : "Případ se týká tohoto místa"
+                    }
                   >
-                    ✕
+                    {m.vybrane_pro_pripad ? "Odpojit" : "Vybrat pro případ"}
                   </button>
-                </>
-              )}
+                )}
+                {muze && (
+                  <>
+                    <button className="fm-btn crm-btn-maly" onClick={() => zacniUpravu(m)}>
+                      Upravit
+                    </button>
+                    <button
+                      className="fm-btn crm-btn-maly crm-btn-smazat"
+                      onClick={() => smaz(m)}
+                      title="Smazat místo"
+                    >
+                      ✕
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* 15minutové diagramy odběru. Nahrávají se k MÍSTU, takže je
+                  použijí všechny nabídky té provozovny — stahovat je z portálu
+                  distributora ke každé nabídce znovu už není potřeba. */}
+              <div className="crm-om-diagramy">
+                {(m.diagramy || []).map((d) => (
+                  <div key={d.id} className="crm-om-diagram">
+                    <span aria-hidden="true">{d.stav === "zpracovano" ? "📈" : "⚠️"}</span>
+                    <span className="crm-om-diagram-nazev" title={d.puvodni_nazev}>
+                      {d.puvodni_nazev}
+                    </span>
+                    {d.stav === "zpracovano" ? (
+                      <span className="crm-tise">{popisDiagramu(d)}</span>
+                    ) : (
+                      <span className="crm-barva-crit">{d.chyba_text || "nepodařilo se přečíst"}</span>
+                    )}
+                    <span className="crm-mezera" />
+                    <span className="crm-tise">{velikost(d.velikost_bajtu)}</span>
+                    <button
+                      className="fm-btn crm-btn-maly"
+                      onClick={() => crmDiagramStahni(d.id, d.puvodni_nazev).catch((e) => setChyba(e.message))}
+                      title="Stáhnout původní soubor"
+                    >
+                      ↓
+                    </button>
+                    {muze && (
+                      <button
+                        className="fm-btn crm-btn-maly crm-btn-smazat"
+                        onClick={() => smazDiagram(d)}
+                        title="Smazat diagram"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
+
+                {muze && (
+                  <>
+                    <input
+                      ref={(el) => {
+                        vstupy.current[m.id] = el;
+                      }}
+                      type="file"
+                      accept=".csv,.xls,.xlsx"
+                      style={{ display: "none" }}
+                      onChange={(e) => nahrajDiagram(m, e.target.files?.[0])}
+                    />
+                    <button
+                      className="fm-btn crm-btn-maly"
+                      onClick={() => vstupy.current[m.id]?.click()}
+                      disabled={nahravaMisto === m.id}
+                      title="Nahrát 15minutový diagram odběru (XLS/XLSX/CSV z portálu distributora)"
+                    >
+                      {nahravaMisto === m.id ? "Nahrávám a čtu…" : "+ Diagram odběru"}
+                    </button>
+                  </>
+                )}
+              </div>
             </li>
           ))}
         </ul>

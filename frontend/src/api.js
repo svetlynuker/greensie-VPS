@@ -408,8 +408,13 @@ export function peakShavingProfilSouhrn(nabidkaId) {
   return zavolej(`/nabidkovac/nabidky/${nabidkaId}/peak-shaving/profil-souhrn`);
 }
 
-export function profilZpracuj(dokumentId) {
-  return zavolej(`/nabidkovac/dokumenty/${dokumentId}/zpracuj-profil`, { method: "POST" });
+// Nabídka je v cestě schválně: backend ověří, že dokument opravdu patří jí.
+// Dřív se posílalo jen id dokumentu a záměna id (nabídka vs. dokument) tiše
+// zapsala profil do cizí nabídky — viz komentář u endpointu.
+export function profilZpracuj(nabidkaId, dokumentId) {
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/dokumenty/${dokumentId}/zpracuj-profil`, {
+    method: "POST",
+  });
 }
 
 // ---- PPA pro FVE ----
@@ -1296,4 +1301,64 @@ export function crmPripadOdberneMisto(pripadId, mistoId) {
     method: "PUT",
     body: JSON.stringify({ odberne_misto_id: mistoId }),
   });
+}
+
+// ---- CRM: 15minutové diagramy odběru u odběrného místa (CRM-46) ----
+// Diagram patří místu, ne nabídce: nahraje se jednou a použije se pro všechny
+// nabídky té provozovny. Backend ho parsuje hned při nahrání, takže odpověď už
+// nese souhrn (období, počet intervalů, spotřebu, maximum).
+export async function crmDiagramNahraj(mistoId, file, { popis = "", pripadId = null } = {}) {
+  const token = getToken();
+  const fd = new FormData();
+  fd.append("soubor", file);
+  if (popis) fd.append("popis", popis);
+  if (pripadId) fd.append("obchodni_pripad_id", String(pripadId));
+  const res = await fetch(`${API_BASE}/crm/odberna-mista/${mistoId}/diagramy`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: fd,
+  });
+  if (!res.ok) {
+    let hlaska = `Nahrání selhalo (chyba ${res.status})`;
+    try {
+      const d = await res.json();
+      if (d.detail) hlaska = d.detail;
+    } catch {
+      /* odpověď nebyla JSON – zůstane obecná hláška */
+    }
+    throw new Error(hlaska);
+  }
+  return res.json();
+}
+
+export function crmDiagramSmaz(diagramId) {
+  return zavolej(`/crm/diagramy/${diagramId}`, { method: "DELETE" });
+}
+
+// Stažení původního souboru (token jde v hlavičce, proto přes fetch + blob).
+export async function crmDiagramStahni(diagramId, nazev) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/crm/diagramy/${diagramId}/soubor`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Soubor se nepodařilo stáhnout (chyba ${res.status})`);
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nazev || "diagram";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+// Zapíše řadu z diagramu do profilu spotřeby nabídky (nabídka si drží kopii).
+export function crmPouzijDiagramProNabidku(nabidkaId, diagramId) {
+  return zavolej(`/crm/nabidky/${nabidkaId}/pouzij-diagram/${diagramId}`, { method: "POST" });
+}
+
+// Odběrná místa a jejich diagramy použitelné pro tuhle nabídku. Nabídka bez
+// obchodního případu vrátí prázdný seznam (nabídkovač jde otevřít i samostatně).
+export function crmOdbernaMistaNabidky(nabidkaId) {
+  return zavolej(`/crm/nabidky/${nabidkaId}/odberna-mista`);
 }

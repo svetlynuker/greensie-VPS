@@ -31,6 +31,7 @@ from app.crm import (
     statistiky as statistiky_modul,
     kalendar,
     opakovani as opakovani_modul,
+    diagramy as diagramy_modul,
     kategorie as kategorie_modul,
     nabidky_pipeline,
     odberna_mista as om_modul,
@@ -50,6 +51,7 @@ from app.crm.models import (
     TYPY_ZAKAZNIKA,
     CiselnaRada,
     CrmAktivita,
+    CrmDiagram,
     CrmKategorie,
     CrmKategorieAktivity,
     CrmProjekt,
@@ -79,6 +81,7 @@ from app.crm.schemas import (
     AktivitaUprava,
     AktivitaVstup,
     AresOut,
+    DiagramOut,
     KanbanOut,
     KanbanSloupec,
     NabidkaKanbanOut,
@@ -2718,9 +2721,40 @@ def navrh_startu(
 # případ, má v CRM i právo na zákazníky (viz tabulka práv v Dodelavky_CRM.md).
 
 
+def _diagram_out(db: Session, d) -> DiagramOut:
+    dnu = None
+    if d.obdobi_od is not None and d.obdobi_do is not None:
+        dnu = max(1, round((d.obdobi_do - d.obdobi_od).total_seconds() / 86400))
+    uz = db.get(User, d.nahral_user_id) if d.nahral_user_id else None
+    return DiagramOut(
+        id=d.id,
+        odberne_misto_id=d.odberne_misto_id,
+        puvodni_nazev=d.puvodni_nazev or "",
+        popis=d.popis or "",
+        velikost_bajtu=d.velikost_bajtu,
+        stav=d.stav,
+        chyba_text=d.chyba_text or "",
+        obdobi_od=_iso(d.obdobi_od),
+        obdobi_do=_iso(d.obdobi_do),
+        pocet_intervalu=d.pocet_intervalu,
+        interval_min=d.interval_min,
+        spotreba_mwh=float(d.spotreba_mwh) if d.spotreba_mwh is not None else None,
+        max_kw=float(d.max_kw) if d.max_kw is not None else None,
+        dnu=dnu,
+        nahral_jmeno=_jmeno(uz),
+        nahrano_at=_iso(d.nahrano_at),
+    )
+
+
 def _misto_out(
     db: Session, m: OdberneMisto, vybrane_id: int | None = None, zakaznik_nazev: str = ""
 ) -> OdberneMistoOut:
+    diagramy = (
+        db.query(CrmDiagram)
+        .filter(CrmDiagram.odberne_misto_id == m.id)
+        .order_by(CrmDiagram.obdobi_do.desc().nullslast(), CrmDiagram.id.desc())
+        .all()
+    )
     return OdberneMistoOut(
         id=m.id,
         zakaznik_id=m.zakaznik_id,
@@ -2744,7 +2778,8 @@ def _misto_out(
         poznamka=m.poznamka or "",
         aktivni=bool(m.aktivni),
         extra=m.extra or {},
-        diagramu=om_modul.pocet_diagramu(db, m.id),
+        diagramu=len(diagramy),
+        diagramy=[_diagram_out(db, d) for d in diagramy],
         vybrane_pro_pripad=(vybrane_id is not None and m.id == vybrane_id),
     )
 
@@ -2919,4 +2954,179 @@ def nastav_odberne_misto_pripadu(
             )
         p.odberne_misto_id = m.id
     db.commit()
+    return seznam_odbernych_mist("op", p.id, user, db)
+
+
+# ---- diagramy odběru u odběrného místa (CRM-46, etapa 2) ---------------------
+# Diagram patří MÍSTU, ne nabídce: stáhne se z portálu distributora jednou
+# a použije se pro všechny nabídky té provozovny. Parsuje se hned při nahrání,
+# takže se v seznamu pozná nepoužitelný export dřív, než na něm někdo postaví
+# výpočet (viz `crm/diagramy.py`).
+
+
+@router.post("/odberna-mista/{misto_id}/diagramy", response_model=DiagramOut)
+async def nahraj_diagram(
+    misto_id: int,
+    soubor: UploadFile = File(...),
+    popis: str = Form(default=""),
+    obchodni_pripad_id: int | None = Form(default=None),
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Nahraje 15minutový diagram k odběrnému místu a hned ho naparsuje.
+
+    Když se soubor přečíst nedá, nahrání NESELŽE: diagram se uloží se stavem
+    „chyba“ a důvodem, aby OZ viděl, co je špatně, a nemusel export stahovat
+    z portálu znovu.
+    """
+    m = om_modul.vyzaduj_misto(db, misto_id, user)
+    z = db.get(Zakaznik, m.zakaznik_id)
+    if not smi_menit(z, user):
+        raise HTTPException(status_code=403, detail="Na úpravu tohoto zákazníka nemáš právo.")
+
+    if obchodni_pripad_id is not None:
+        p = db.get(ObchodniPripad, obchodni_pripad_id)
+        if p is None or p.zakaznik_id != m.zakaznik_id:
+            raise HTTPException(
+                status_code=422, detail="Obchodní případ patří jinému zákazníkovi."
+            )
+
+    data = await soubor.read()
+    d = diagramy_modul.nahraj(
+        db,
+        m,
+        soubor.filename or "diagram",
+        data,
+        user.id,
+        pripad_id=obchodni_pripad_id,
+        popis=popis,
+    )
+    return _diagram_out(db, d)
+
+
+@router.get("/diagramy/{diagram_id}/soubor")
+def stahni_diagram(
+    diagram_id: int,
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Stažení původního souboru – ať OZ nemusí zpátky do portálu distributora."""
+    from fastapi.responses import FileResponse
+
+    from app.nabidkovac import soubory as soubory_modul
+
+    d = diagramy_modul.vyzaduj_diagram(db, diagram_id)
+    m = om_modul.vyzaduj_misto(db, d.odberne_misto_id, user)  # kontrola práv přes zákazníka
+    cesta = soubory_modul.UPLOAD_DIR / d.soubor_cesta
+    if not cesta.exists():
+        raise HTTPException(status_code=404, detail="Soubor diagramu už na disku není.")
+    return FileResponse(
+        str(cesta),
+        filename=d.puvodni_nazev or f"diagram-{m.nazev}",
+        media_type="application/octet-stream",
+    )
+
+
+@router.delete("/diagramy/{diagram_id}")
+def smaz_diagram(
+    diagram_id: int,
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Smaže diagram i jeho soubor.
+
+    Profily nabídek, které z něj počítaly, ZŮSTÁVAJÍ: nabídka si drží čísla,
+    se kterými odešla zákazníkovi, a nemá se změnit tím, že někdo uklidil
+    podklad.
+    """
+    d = diagramy_modul.vyzaduj_diagram(db, diagram_id)
+    m = om_modul.vyzaduj_misto(db, d.odberne_misto_id, user)
+    z = db.get(Zakaznik, m.zakaznik_id)
+    if not smi_menit(z, user):
+        raise HTTPException(status_code=403, detail="Na úpravu tohoto zákazníka nemáš právo.")
+    diagramy_modul.smaz(db, d)
+    return {"smazano": diagram_id}
+
+
+@router.post("/nabidky/{nabidka_id}/pouzij-diagram/{diagram_id}")
+def pouzij_diagram_pro_nabidku(
+    nabidka_id: int,
+    diagram_id: int,
+    user: User = Depends(vyzaduj_nabidkovac_crm),
+    db: Session = Depends(get_db),
+):
+    """Zapíše řadu z diagramu do profilu spotřeby nabídky.
+
+    Tohle je ta „kopie", na které stojí rozhodnutí Dana: nabídka si drží svá
+    čísla. Novější diagram se do už spočítané nabídky nedostane sám — je na
+    obchodníkovi ho použít znovu.
+
+    Diagram musí patřit zákazníkovi, pod kterým nabídka visí. Bez té kontroly
+    by šlo nabídce podstrčit odběr cizí firmy a na výsledku by to nikdo nepoznal.
+    """
+    from app.nabidkovac.models import Nabidka
+
+    n = db.get(Nabidka, nabidka_id)
+    if n is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    d = diagramy_modul.vyzaduj_diagram(db, diagram_id)
+    m = om_modul.vyzaduj_misto(db, d.odberne_misto_id, user)
+
+    if n.obchodni_pripad_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Nabídka není navázaná na obchodní případ, takže nejde ověřit, "
+                "že diagram patří témuž zákazníkovi. Nahraj profil přímo k nabídce."
+            ),
+        )
+    p = vyzaduj_zaznam(db.get(ObchodniPripad, n.obchodni_pripad_id), user, "Obchodní případ")
+    if p.zakaznik_id != m.zakaznik_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Diagram patří jinému zákazníkovi než nabídka.",
+        )
+
+    vysledek = diagramy_modul.pouzij_pro_nabidku(db, d, nabidka_id)
+    # Nahrané podklady posunou koncept dál – stejně jako nahrání dokumentu.
+    if n.stav == "koncept":
+        n.stav = "data_nahrana"
+    # GPS provozovny doplníme jen když na nabídce žádná není. Výroba FVE se
+    # počítá z polohy MÍSTA, ne z fakturační adresy firmy — ale vyplněnou
+    # hodnotu nepřepisujeme, mohl ji tam někdo dát ručně a přesněji.
+    if n.zakaznik_gps_lat is None and n.zakaznik_gps_lng is None:
+        if m.gps_lat is not None and m.gps_lng is not None:
+            n.zakaznik_gps_lat = m.gps_lat
+            n.zakaznik_gps_lng = m.gps_lng
+            vysledek["gps_doplneno"] = True
+    db.commit()
+    vysledek["odberne_misto"] = m.nazev
+    vysledek["parametry_mista"] = om_modul.parametry_pro_vypocet(m)
+    return vysledek
+
+
+@router.get("/nabidky/{nabidka_id}/odberna-mista", response_model=OdbernaMistaOut)
+def odberna_mista_nabidky(
+    nabidka_id: int,
+    user: User = Depends(vyzaduj_nabidkovac_crm),
+    db: Session = Depends(get_db),
+):
+    """Odběrná místa (a jejich diagramy) použitelná pro tuhle nabídku.
+
+    Panel výpočtu z toho nabídne „vzít diagram z odběrného místa". Nabídka bez
+    obchodního případu vrací prázdný seznam, ne chybu: nabídkovač jde pořád
+    otevřít samostatně jako výpočtový nástroj a tam se profil nahrává k nabídce.
+
+    Právo je Nabídkovač (ne Zákazníci): kdo smí nabídku počítat, musí vidět
+    podklady jejího případu. Viditelnost samotného případu se stejně ověřuje
+    přes `vyzaduj_zaznam`, takže cizí zakázka se přes tuhle cestu neotevře.
+    """
+    from app.nabidkovac.models import Nabidka
+
+    n = db.get(Nabidka, nabidka_id)
+    if n is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    if n.obchodni_pripad_id is None:
+        return OdbernaMistaOut(zakaznik_id=0, zakaznik_nazev="", mista=[], muze_editovat=False)
+    p = vyzaduj_zaznam(db.get(ObchodniPripad, n.obchodni_pripad_id), user, "Obchodní případ")
     return seznam_odbernych_mist("op", p.id, user, db)

@@ -487,6 +487,65 @@ class OdberneMisto(Base):
     )
 
     zakaznik = relationship("Zakaznik", back_populates="odberna_mista")
+    diagramy = relationship(
+        "CrmDiagram", back_populates="odberne_misto", cascade="all, delete-orphan"
+    )
+
+
+class CrmDiagram(Base):
+    """15minutový diagram odběru nahraný k odběrnému místu (CRM-46, etapa 2).
+
+    Diagram patří MÍSTU, ne nabídce: OZ ho stáhne z portálu distributora jednou
+    a použije ho pro všechny nabídky té provozovny. Dřív visel na nabídce
+    (`nabidka_dokumenty` + `spotreba_profil`), takže se tentýž soubor nahrával
+    ke každé nabídce znovu.
+
+    SOUBOR SE PARSUJE HNED při nahrání a souhrn (`obdobi_od`…`max_kw`) se uloží
+    sem. Důvod: dokud se parsovalo až na kliknutí v panelu výpočtu, dal se nahrát
+    nepoužitelný export a poznalo se to teprve u výpočtu — nebo vůbec, a nabídka
+    se spočítala bez dat spotřeby (nahlásil Dan 31. 7. 2026). Souhrn je zároveň
+    to, co se ukazuje v seznamu, aby OZ viděl, že soubor pokrývá celý rok.
+
+    Samotná časová řada se sem NEKOPÍRUJE. Zůstává uložený soubor a při použití
+    pro nabídku se z něj naplní `spotreba_profil` té nabídky — nabídka si tak
+    drží čísla, se kterými odešla zákazníkovi (rozhodnutí Dana 31. 7. 2026),
+    a novější diagram jí je nepřepíše sám.
+    """
+
+    __tablename__ = "crm_diagramy"
+
+    id = Column(Integer, primary_key=True, index=True)
+    odberne_misto_id = Column(
+        Integer, ForeignKey("crm_odberna_mista.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # U kterého případu byl diagram nahraný. Jen informace „odkud přišel“ —
+    # použitelný je pro všechny případy toho zákazníka, proto SET NULL.
+    obchodni_pripad_id = Column(
+        Integer, ForeignKey("crm_obchodni_pripady.id", ondelete="SET NULL"), nullable=True
+    )
+
+    soubor_cesta = Column(String, nullable=False)  # relativní k UPLOAD_DIR
+    puvodni_nazev = Column(String, nullable=False, default="", server_default="")
+    velikost_bajtu = Column(Integer, nullable=True)
+    popis = Column(String, nullable=False, default="", server_default="")
+
+    # "zpracovano" = řada se načetla a souhrn níž platí; "chyba" = soubor zůstal
+    # uložený, ale přečíst se nedal (`chyba_text` říká proč).
+    stav = Column(String, nullable=False, default="zpracovano", server_default="zpracovano")
+    chyba_text = Column(Text, nullable=False, default="", server_default="")
+
+    # Souhrn z parsování. Bez časové zóny – „místní čas“, stejně jako profil.
+    obdobi_od = Column(DateTime(timezone=False), nullable=True)
+    obdobi_do = Column(DateTime(timezone=False), nullable=True)
+    pocet_intervalu = Column(Integer, nullable=True)
+    interval_min = Column(Integer, nullable=True)  # 15 (u hodinových exportů 60)
+    spotreba_mwh = Column(Numeric(14, 3), nullable=True)
+    max_kw = Column(Numeric(12, 3), nullable=True)
+
+    nahral_user_id = Column(Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True)
+    nahrano_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    odberne_misto = relationship("OdberneMisto", back_populates="diagramy")
 
 
 class ZakaznikKontakt(Base):
