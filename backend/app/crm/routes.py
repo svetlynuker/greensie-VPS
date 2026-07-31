@@ -1584,6 +1584,95 @@ def smaz_stav(
     return {"ok": True}
 
 
+# ---- dokumenty na Disku (CRM-05) --------------------------------------------
+# Jeden pár endpointů pro zákazníka i případ — práva a překlad chyb tak žijí na
+# jednom místě. Zakládání je POST (mění stav na Disku), čtení GET.
+
+def _slozka_zaznam(db: Session, entita: str, zaznam_id: int, user: User):
+    """Ověří přístup a vrátí (klíč entity konektoru, záznam, zákazník)."""
+    from app.konektor.crm_slozky import ENTITA_OP, ENTITA_ZAKAZNIK
+
+    if entita == "zakaznik":
+        z = vyzaduj_zaznam(db.get(Zakaznik, zaznam_id), user, "Zákazník")
+        return ENTITA_ZAKAZNIK, z, z
+    if entita == "op":
+        p = vyzaduj_zaznam(db.get(ObchodniPripad, zaznam_id), user, "Obchodní případ")
+        return ENTITA_OP, p, db.get(Zakaznik, p.zakaznik_id)
+    raise HTTPException(
+        status_code=422, detail="Složku lze vést jen u zákazníka nebo obchodního případu."
+    )
+
+
+@router.get("/slozka/{entita}/{zaznam_id}")
+def slozka_zaznamu(
+    entita: str,
+    zaznam_id: int,
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Odkaz na složku na Disku a její obsah.
+
+    Když složka není, vrací `existuje: false` — appka ji nezakládá sama, protože
+    u případu, který za dva dny skončí jako „nezajímavé", by na Disku zůstala
+    prázdná složka, kterou nikdo neuklidí (rozhodnutí Dana).
+
+    Obsah se čte z Disku při každém zobrazení. Kopie v naší DB by tvrdila, že
+    tam soubor je, i když ho někdo mezitím smazal.
+    """
+    from app.konektor import crm_slozky
+
+    klic, _, _ = _slozka_zaznam(db, entita, zaznam_id, user)
+    ef = crm_slozky.najdi_slozku(db, klic, zaznam_id)
+    if ef is None:
+        return {"existuje": False, "url": "", "nazev": "", "soubory": []}
+    try:
+        soubory = crm_slozky.soubory(db, ef)
+        chyba = ""
+    except Exception as e:  # noqa: BLE001 – odkaz má fungovat i když výpis ne
+        soubory, chyba = [], str(e)
+    return {
+        "existuje": True,
+        "url": ef.drive_folder_url or "",
+        "nazev": ef.name or "",
+        "soubory": soubory,
+        "chyba": chyba,
+    }
+
+
+@router.post("/slozka/{entita}/{zaznam_id}")
+def zaloz_slozku_zaznamu(
+    entita: str,
+    zaznam_id: int,
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Založí složku na Disku (kopií vzoru) a vrátí na ni odkaz.
+
+    Trvá to několik sekund a desítky volání na Disk, proto se to spouští
+    tlačítkem. Chyba se hlásí konkrétně — tichý polovytvořený strom složek by
+    byl horší než chybová zpráva.
+    """
+    from app.konektor import crm_slozky
+    from app.konektor.logika import NastaveniNepripraveno
+
+    klic, zaznam, zakaznik = _slozka_zaznam(db, entita, zaznam_id, user)
+    if zakaznik is None:
+        raise HTTPException(status_code=422, detail="Případ nemá navázaného zákazníka.")
+    try:
+        if klic == crm_slozky.ENTITA_ZAKAZNIK:
+            n = crm_slozky._nastaveni(db)
+            ef = crm_slozky.zajisti_slozku_zakaznika(
+                db, crm_slozky._drive_klient(n), n, zakaznik
+            )
+        else:
+            ef = crm_slozky.zajisti_slozku_pripadu(db, zaznam, zakaznik)
+    except NastaveniNepripraveno as e:
+        raise HTTPException(status_code=409, detail=f"Konektor na Disk není připravený: {e}")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Disk odmítl založení složky: {e}")
+    return {"existuje": True, "url": ef.drive_folder_url or "", "nazev": ef.name or ""}
+
+
 # ---- statistiky obchodu (grafy pro vedení) ----------------------------------
 @router.get("/statistiky")
 def statistiky_obchodu(

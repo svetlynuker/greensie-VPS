@@ -8,6 +8,7 @@ import PripadNabidky from "../components/PripadNabidky";
 import PripadRealizace from "../components/PripadRealizace";
 import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
 import VlastniPoleVypis from "../components/VlastniPoleVypis";
+import DiskSlozka from "../components/DiskSlozka";
 import {
   crmKategorie,
   crmPripadDetail,
@@ -274,6 +275,9 @@ export default function ObchodniPripadDetail() {
                 muzeSpravovat={me.prava?.includes("crm_nastaveni")}
                 onSprava={() => setSpravaPoli(true)}
               />
+              <div className="fm-card crm-blok">
+                <DiskSlozka entita="op" zaznamId={p.id} popisZaznamu="případu" />
+              </div>
               <div className="fm-card crm-blok">
               <h3>Co dál</h3>
               <p className="crm-tise">

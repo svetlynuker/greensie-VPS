@@ -686,6 +686,15 @@ export function crmUdalostPridej(data) {
 // jen právo crm_nastaveni.
 // Souhrny pro Přehled obchodu (funnel, forecast, důvody proher, KPI).
 // Můj den: úkoly po termínu, dnešní, zanedbané případy, nabídky bez reakce.
+// Dokumenty na Disku (CRM-05). `entita` je "zakaznik" nebo "op".
+export function crmSlozka(entita, zaznamId) {
+  return zavolej(`/crm/slozka/${entita}/${zaznamId}`);
+}
+
+export function crmSlozkuZaloz(entita, zaznamId) {
+  return zavolej(`/crm/slozka/${entita}/${zaznamId}`, { method: "POST" });
+}
+
 export function crmMujDen() {
   return zavolej("/crm/muj-den");
 }

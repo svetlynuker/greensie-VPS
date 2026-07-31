@@ -1075,3 +1075,46 @@
   color: var(--st-crit);
   font-weight: 600;
 }
+
+/* ---- dokumenty na Disku (CRM-05) ---- */
+.ds-hlava {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.ds-cesta {
+  margin: 0 0 8px;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  word-break: break-all;
+}
+.ds-seznam {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+  /* Dlouhý seznam se scrolluje uvnitř karty, ať kartu nenafoukne. */
+  max-height: 230px;
+  overflow: auto;
+}
+.ds-seznam a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 7px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-seznam a:hover {
+  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 8%, transparent);
+}
+.ds-ikona {
+  flex: 0 0 auto;
+}
