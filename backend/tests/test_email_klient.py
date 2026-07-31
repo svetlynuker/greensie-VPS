@@ -545,3 +545,110 @@ def test_preposlani_ma_fwd_prefix_a_zadneho_prijemce():
 def test_preposlani_upozorni_na_neprenesene_prilohy():
     v = priprav_preposlani(FalesnaZprava(ma_prilohy=True))
     assert "přílohy" in v["telo"].lower()
+
+
+# ============================================================================
+# Názvy IMAP příkazů (regrese z 31. 7. 2026)
+#
+# Reálná chyba z produkce: kód volal `examine`, protože IMAP příkaz EXAMINE
+# existuje — jenže `imaplib` metodu `examine` NEMÁ. Read-only otevření složky
+# se dělá přes `select(mailbox, readonly=True)`. Připojení ke schránce spadlo
+# hláškou „Unknown IMAP4 command: 'examine'" až u živého serveru, protože
+# žádný test IMAP spojení nenavazuje.
+#
+# Tyhle dva testy tu třídu chyb chytí bez sítě: první ověří, že každý název
+# předaný `_prikaz` je skutečná metoda `imaplib.IMAP4`, druhý zakáže skládat
+# název příkazu do proměnné (přesně to první kontrolu tehdy obešlo).
+# ============================================================================
+import imaplib
+import pathlib
+import re
+
+ZDROJE_IMAP = ["app/crm/email_imap.py", "app/crm/email_pool.py"]
+
+
+def _zdroj(cesta):
+    return pathlib.Path(cesta).read_text(encoding="utf-8")
+
+
+def test_vsechny_imap_prikazy_existuji_v_imaplib():
+    """Každý název v `_prikaz("…")` musí být metoda imaplib.IMAP4."""
+    nalezene = set()
+    for cesta in ZDROJE_IMAP:
+        nalezene |= set(re.findall(r'_prikaz\(\s*"([a-z_]+)"', _zdroj(cesta)))
+
+    assert nalezene, "Nenašel jsem žádné volání _prikaz – změnila se konvence?"
+    chybi = sorted(j for j in nalezene if not hasattr(imaplib.IMAP4, j))
+    assert not chybi, (
+        "Tyhle názvy nejsou metody imaplib.IMAP4, takže spojení spadne na "
+        "„Unknown IMAP4 command“: "
+        + ", ".join(chybi)
+        + ". Pozor hlavně na `examine` – dělá se přes select(readonly=True)."
+    )
+
+
+def test_nazev_imap_prikazu_se_neskalda_dynamicky():
+    """`_prikaz(promenna, …)` je zakázané – obešlo by to kontrolu výš.
+
+    Právě takhle chyba s `examine` vznikla: název se vybíral ternárním výrazem,
+    takže v kódu nebyl jako literál a nikdo ho neporovnal s `imaplib`.
+    """
+    prohresky = []
+    for cesta in ZDROJE_IMAP:
+        for cislo, radek in enumerate(_zdroj(cesta).splitlines(), start=1):
+            volani = re.search(r'_prikaz\(\s*([^"\s)])', radek)
+            # `self._prikaz(` uvnitř definice metody samotné neřešíme.
+            if volani and "def _prikaz" not in radek:
+                prohresky.append(f"{cesta}:{cislo}: {radek.strip()}")
+    assert not prohresky, (
+        "Název IMAP příkazu se musí psát jako literál, ne skládat do proměnné:\n"
+        + "\n".join(prohresky)
+    )
+
+
+def test_read_only_otevreni_jde_pres_select_readonly():
+    """Kontrola konkrétního místa, kde chyba byla."""
+    zdroj = _zdroj("app/crm/email_imap.py")
+    assert '_prikaz("select", self._uvozovky(imap_nazev), jen_cteni)' in zdroj, (
+        "`vyber()` musí volat select s příznakem readonly, ne examine."
+    )
+    assert '_prikaz("examine"' not in zdroj, "imaplib metodu `examine` nemá."
+
+
+def test_vyber_slozky_posle_select_s_readonly():
+    """Behaviorální test: `vyber()` musí zavolat select(nazev, readonly).
+
+    Kontrola zdrojáku podle řetězce je křehká — tenhle test ověří skutečné
+    volání proti podvrženému imaplib objektu, takže projde jen když se
+    read-only otevření opravdu dělá přes `select`.
+    """
+    from app.crm.email_imap import ImapSpojeni
+
+    class FalesnyImap:
+        def __init__(self):
+            self.volani = []
+
+        def select(self, mailbox="INBOX", readonly=False):
+            self.volani.append(("select", mailbox, readonly))
+            return "OK", [b"42"]
+
+        def response(self, _co):
+            return "OK", [b"UIDVALIDITY 12345"]
+
+        # Kdyby kód sáhl po neexistující metodě (jako kdysi `examine`),
+        # spadne to tady stejně jako u opravdového imaplib.
+        def __getattr__(self, jmeno):
+            raise AttributeError(f"Unknown IMAP4 command: '{jmeno}'")
+
+    s = ImapSpojeni("imap.seznam.cz", 993, "a@b.cz", "heslo")
+    falesny = FalesnyImap()
+    s._m = falesny
+
+    stav = s.vyber("INBOX", jen_cteni=True)
+    assert falesny.volani == [("select", '"INBOX"', True)], falesny.volani
+    assert stav["pocet"] == 42
+    assert stav["uidvalidity"] == 12345
+
+    # Zápisový režim musí poslat readonly=False, jinak by nešlo měnit příznaky.
+    s.vyber("INBOX", jen_cteni=False)
+    assert falesny.volani[-1] == ("select", '"INBOX"', False)
