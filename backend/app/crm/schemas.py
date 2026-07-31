@@ -33,9 +33,12 @@ class StavOut(BaseModel):
     poradi: int
     barva: str = ""
     druh: DruhStavu
+    # Klíče polí povinných pro přechod do tohoto stavu (CRM-30).
+    povinna_pole: list[str] = []
 
 
 class StavVstup(BaseModel):
+    povinna_pole: Optional[list[str]] = None
     nazev: str
     barva: str = ""
     druh: DruhStavu = "otevreny"
