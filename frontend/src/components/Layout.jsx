@@ -5,6 +5,7 @@ import { popisStranky, strankaManualu } from "../navigace";
 import Ikona from "./Ikona";
 import Sidebar from "./Sidebar";
 import UserMenu from "./UserMenu";
+import GlobalniHledani from "./GlobalniHledani";
 
 // Zúžení panelu si pamatujeme lokálně — je to volba zařízení (malý notebook),
 // ne uživatele, takže se do DB neposílá.
@@ -88,7 +89,12 @@ export default function Layout({ uzivatel, children }) {
             </button>
           )}
 
-          {kdo && <UserMenu uzivatel={kdo} prava={prava} />}
+          {kdo && (
+            <>
+              <GlobalniHledani />
+              <UserMenu uzivatel={kdo} prava={prava} />
+            </>
+          )}
         </header>
 
         <main className="gs-obsah">{children}</main>

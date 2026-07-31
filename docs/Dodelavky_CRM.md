@@ -271,7 +271,15 @@ jinak přidělení nic neudělá.
 - [ ] **CRM-23 · Swimlanes v kanbanu** — Velikost **M** · Dopad **★**
   Řádky podle vlastníka (nebo kategorie) — vedení hned vidí, kdo má co rozjeté.
 
-- [ ] **CRM-24 · Globální hledání** — Velikost **M** · Dopad **★★**
+- [x] **CRM-24 · Globální hledání** — **hotovo 31. 7. 2026** (dávka C)
+  Pole v horní liště (+ **Ctrl+K** odkudkoli) prohledá zákazníky, případy, nabídky,
+  objednávky i projekty. Podle zadání Dana: názvy a čísla záznamů + IČO, telefon, e-mail
+  a město. Text aktivit ne — výsledků by bylo mnoho a hledání by zpomalilo.
+  *Hledá i bez diakritiky* („kovarna" najde „Kovárna") přes `translate()` v SQL, aby to
+  nezáviselo na rozšíření `unaccent`. Klávesy ↑ ↓ Enter, dotaz se posílá se zpožděním
+  250 ms a starší odpověď nepřepíše novější.
+  *Práva:* každá entita jde přes filtr viditelnosti — bez toho by hledání bylo obchvat
+  práv a nejjednodušší způsob, jak zjistit, na čem pracují ostatní.
   Jedno pole, které prohledá zákazníky, případy, nabídky, objednávky i projekty. Dnes se hledá
   v každé sekci zvlášť.
 

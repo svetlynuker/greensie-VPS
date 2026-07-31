@@ -743,6 +743,11 @@ export function crmHromadnaAktivita(data) {
   return zavolej("/crm/hromadne/aktivita", { method: "POST", body: JSON.stringify(data) });
 }
 
+// Globální hledání napříč CRM (CRM-24). Od dvou znaků.
+export function crmHledat(dotaz) {
+  return zavolej(`/crm/hledat?q=${encodeURIComponent(dotaz)}`);
+}
+
 export function crmMujDen() {
   return zavolej("/crm/muj-den");
 }

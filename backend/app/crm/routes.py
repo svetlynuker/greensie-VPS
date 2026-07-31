@@ -23,6 +23,7 @@ from app.auth.permissions import get_current_user, muze_otevrit
 from app.crm import ares as ares_modul
 from app.crm import (
     ciselne_rady,
+    hledani as hledani_modul,
     hromadne as hromadne_modul,
     povinna_pole as povinna_pole_modul,
     nastaveni_crm,
@@ -1626,6 +1627,21 @@ def smaz_stav(
     db.delete(s)
     db.commit()
     return {"ok": True}
+
+
+# ---- globální hledání (CRM-24) ----------------------------------------------
+@router.get("/hledat")
+def globalni_hledani(
+    q: str = Query(default="", description="Hledaný text (aspoň 2 znaky)"),
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Jedno pole pro zákazníky, případy, nabídky, objednávky i projekty.
+
+    Každá entita jde přes filtr viditelnosti — bez toho by hledání bylo obchvat
+    práv a nejjednodušší způsob, jak zjistit, na čem pracují ostatní.
+    """
+    return hledani_modul.hledej(db, user, q)
 
 
 # ---- hromadné akce nad seznamem (CRM-19) ------------------------------------
