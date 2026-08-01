@@ -441,10 +441,18 @@
 }
 
 /* ---- kanban ---- */
+/* Pole má výšku okna a roluje se v něm — do stran celé pole, svisle každý
+   sloupec zvlášť. Výšku dopočítá Kanban.jsx do --kanban-v (v CSS to nejde,
+   nad kanbanem je na každé stránce jinak vysoký obsah); hodnota tady je
+   záloha pro první vykreslení, než měření doběhne. */
 .crm-kanban {
   display: flex;
   gap: 10px;
+  height: var(--kanban-v, min(70vh, 760px));
   overflow-x: auto;
+  overflow-y: hidden;
+  /* Doskrolovaný kanban už nesmí posouvat stránku pod sebou. */
+  overscroll-behavior-x: contain;
   padding-bottom: 8px;
   align-items: stretch;
 }
@@ -452,6 +460,9 @@
   flex: 0 0 260px;
   display: flex;
   flex-direction: column;
+  /* Bez min-height: 0 by flex položka odmítla být nižší než její obsah
+     a tělo sloupce by se nikdy nezačalo rolovat — jen by přetekl. */
+  min-height: 0;
   /* Zapuštěná plocha: sloupec leží pod úrovní stránky, karty v něm
      vystupují stínem. Tři vrstvy udělají hierarchii bez další barvy. */
   background: var(--sunken);
@@ -459,7 +470,6 @@
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   padding: 8px;
-  min-height: 220px;
 }
 /* V tmavém režimu musí být zapuštění hlubší, jinak není vidět vůbec. */
 :root[data-theme="dark"] .crm-kanban-sloupec {
@@ -494,11 +504,32 @@
   color: var(--muted);
   padding: 2px 6px 6px;
 }
+/* Hlava a součet zůstávají stát, roluje se jen tělo — v odrolovaném sloupci
+   tak pořád vidíš, který stav to je a kolik v něm je peněz. */
 .crm-kanban-telo {
   display: flex;
   flex-direction: column;
   gap: 8px;
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  /* Místo na posuvník, ať nepřekrývá pravý okraj dlaždic. */
+  padding-right: 3px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+/* Tenký posuvník i ve WebKitu (scrollbar-width umí jen Firefox a novější
+   Chrome); bez toho ukrojí ze sloupce 15 px na širokou systémovou lištu. */
+.crm-kanban-telo::-webkit-scrollbar {
+  width: 8px;
+}
+.crm-kanban-telo::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 4px;
+}
+.crm-kanban-telo::-webkit-scrollbar-track {
+  background: transparent;
 }
 .crm-kanban-prazdno {
   font-size: 12px;
