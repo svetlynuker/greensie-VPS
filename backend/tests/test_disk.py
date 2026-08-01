@@ -468,6 +468,28 @@ def test_sdileni_se_da_pridat(disk):
     v = disk_prochazeni.pridej_pravo(None, "op", " kdo@greensie.cz ", "writer", False, "dan@x.cz")
     assert disk.sdilene == [("op", "kdo@greensie.cz", "writer", False)]
     assert v["novy"] is False, "Disk ho zná, tedy nic k varování."
+    assert v["pozadovana_role"] == "writer" and v["role"] == "writer"
+
+
+def test_vyssi_role_ze_disku_se_neprepise_a_appka_to_rekne(disk, monkeypatch):
+    """Reálný případ: kolega má ze sdíleného disku „upravovat", dostane „číst".
+
+    Google vrátí stávající (vyšší) oprávnění a nic nepřepíše. Kdyby appka
+    tvrdila „nasdíleno jako může číst", byla by to lež, kterou nikdo neodhalí,
+    dokud na tom nezáleží.
+    """
+    monkeypatch.setattr(
+        disk,
+        "pridej_pravo",
+        lambda file_id, email, role, oznamit=False: {
+            "id": "p-existing",
+            "emailAddress": email,
+            "role": "writer",  # Disk vrátí, co tam už je
+        },
+    )
+    v = disk_prochazeni.pridej_pravo(None, "op", "tomas@greensie.cz", "reader")
+    assert v["role"] == "writer"
+    assert v["pozadovana_role"] == "reader", "Prohlížeč z rozdílu pozná, že má říct pravdu."
 
 
 def test_neplatna_adresa_a_role_neprojdou(disk):

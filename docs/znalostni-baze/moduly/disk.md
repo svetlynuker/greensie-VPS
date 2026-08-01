@@ -98,6 +98,8 @@ Tři věci, které je u sdílení potřeba vědět:
    Když zaškrtnutí zrušíš, appka to u takové adresy pozná a napíše, ať pozvánku pošleš.
 3. **„Kdokoli s odkazem" appka neumí** a je to záměr — veřejný odkaz na firemní dokument nikdo nevzal
    zpět. Když ho někdo opravdu potřebuje, udělá ho na Disku vědomě.
+4. **Vyšší přístup se nepřepisuje.** Když má kolega ze sdíleného disku „může upravovat" a dáš mu tady
+   „může číst", Google mu upravování nechá — appka to po přidání napíše, ať to není překvapení.
 
 Přístupy z řádku **Přístup ze sdíleného disku a nadřazených složek** jsou sbalené a odebrat se tady
 nedají — dal je někdo výš, tam se musí i sebrat. Přístup konektoru odebrat nejde vůbec: bez něj
