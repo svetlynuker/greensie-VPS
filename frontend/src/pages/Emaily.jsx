@@ -5,6 +5,7 @@ import EmailNastaveni from "../components/EmailNastaveni";
 import EmailPsani from "../components/EmailPsani";
 import EmailPravidla from "../components/EmailPravidla";
 import {
+  emailHromadne,
   emailPripravPreposlani,
   emailPriprevOdpoved,
   emailSlozkaPrepniSync,
@@ -82,6 +83,9 @@ export default function Emaily() {
   // `null` = zavřeno. Jinak předvyplněná data okna psaní (přijdou z backendu).
   const [psani, setPsani] = useState(null);
   const [pravidla, setPravidla] = useState(false);
+  // Hromadný výběr. Množina id, ne pole – přidávání a mazání je časté
+  // a u dvou set zpráv by hledání v poli bylo znát.
+  const [vybrane, setVybrane] = useState(() => new Set());
   const [hlaska, setHlaska] = useState("");
   const [chyba, setChyba] = useState(null);
 
@@ -240,6 +244,41 @@ export default function Emaily() {
     }
   }
 
+  function prepniVyber(id) {
+    setVybrane((p) => {
+      const n = new Set(p);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
+
+  function prepniVse() {
+    setVybrane((p) =>
+      p.size === zpravy.length ? new Set() : new Set(zpravy.map((z) => z.id)),
+    );
+  }
+
+  async function hromadnaAkce(akce, slozkaCil = null) {
+    if (vybrane.size === 0) return;
+    if (akce === "do_kose" && !window.confirm(`Přesunout ${vybrane.size} zpráv do koše?`)) {
+      return;
+    }
+    setChyba(null);
+    setHlaska("");
+    try {
+      const v = await emailHromadne([...vybrane], akce, slozkaCil);
+      if (!zivy.current) return;
+      setHlaska(v.zprava);
+      setVybrane(new Set());
+      setOtevrena(null);
+      await nactiZpravy();
+      await nactiSlozky();
+    } catch (e) {
+      if (zivy.current) setChyba(e.message);
+    }
+  }
+
   async function otevriPsani(pripravit) {
     setChyba(null);
     try {
@@ -315,9 +354,9 @@ export default function Emaily() {
         {hlaska && <span className="em-tise">{hlaska}</span>}
         <span style={{ flex: 1 }} />
         <button
-          className="fm-btn"
+          className="fm-btn fm-primary"
           onClick={() =>
-            setPsani({ komu: [], kopie: [], predmet: "", telo: "" })
+            setPsani({ komu: [], kopie: [], predmet: "", telo: "", telo_html: "" })
           }
         >
           ✎ Napsat
@@ -364,6 +403,9 @@ export default function Emaily() {
                   setSlozkaId(s.id);
                   setStrana(1);
                   setOtevrena(null);
+                  // Výběr platí pro to, co je vidět – po přepnutí složky by
+                  // hromadná akce sáhla na zprávy, které už na obrazovce nejsou.
+                  setVybrane(new Set());
                 }}
                 onDoubleClick={() => prepniSyncSlozky(s)}
                 title={
@@ -413,10 +455,77 @@ export default function Emaily() {
               ●
             </button>
           </div>
+
+          {/* Lišta hromadných akcí se ukáže, až je něco vybrané – jinak by
+              zabírala místo a mátla („co to na mě kliklo?"). */}
+          {vybrane.size > 0 && (
+            <div className="em-hromadne">
+              <span className="em-hromadne-pocet">Vybráno {vybrane.size}</span>
+              <button className="fm-btn" onClick={() => hromadnaAkce("precteno")}>
+                Přečtené
+              </button>
+              <button className="fm-btn" onClick={() => hromadnaAkce("neprecteno")}>
+                Nepřečtené
+              </button>
+              <button className="fm-btn" onClick={() => hromadnaAkce("oznacit")} title="Vlaječka">
+                ★
+              </button>
+              <select
+                className="em-hledat"
+                style={{ width: "auto" }}
+                defaultValue=""
+                aria-label="Přesunout vybrané do složky"
+                onChange={(e) => {
+                  const id = Number(e.target.value);
+                  e.target.value = "";
+                  if (id) hromadnaAkce("presun", id);
+                }}
+              >
+                <option value="">Přesunout do…</option>
+                {slozky
+                  .filter((s) => s.id !== slozkaId)
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.nazev}
+                    </option>
+                  ))}
+              </select>
+              <button className="fm-btn" onClick={() => hromadnaAkce("do_kose")}>
+                Do koše
+              </button>
+              <span className="em-mezera" />
+              <button className="fm-btn" onClick={() => setVybrane(new Set())}>
+                Zrušit výběr
+              </button>
+            </div>
+          )}
+
+          {zpravy.length > 0 && (
+            <label className="em-vybrat-vse">
+              <input
+                type="checkbox"
+                checked={vybrane.size === zpravy.length && zpravy.length > 0}
+                /* Částečný výběr má mít „pomlčku", ne prázdný čtvereček –
+                   jinak není poznat, že je něco vybráno mimo obrazovku. */
+                ref={(el) => {
+                  if (el) el.indeterminate = vybrane.size > 0 && vybrane.size < zpravy.length;
+                }}
+                onChange={prepniVse}
+              />
+              <span>Vybrat vše na stránce</span>
+            </label>
+          )}
           <div className="em-panel-telo">
             {zpravy.map((z) => (
+              <div key={z.id} className="em-zprava-obal">
+                <input
+                  type="checkbox"
+                  className="em-zprava-vyber"
+                  checked={vybrane.has(z.id)}
+                  onChange={() => prepniVyber(z.id)}
+                  aria-label={`Vybrat zprávu ${z.predmet || "(bez předmětu)"}`}
+                />
               <button
-                key={z.id}
                 className={`em-zprava ${z.precteno ? "" : "em-zprava-neprectena"}`}
                 aria-current={otevrena?.id === z.id}
                 onClick={() => otevri(z)}
@@ -443,6 +552,7 @@ export default function Emaily() {
                   </div>
                 )}
               </button>
+              </div>
             ))}
             {zpravy.length === 0 && (
               <div className="em-prazdno">

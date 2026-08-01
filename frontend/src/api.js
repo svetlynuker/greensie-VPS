@@ -1625,6 +1625,7 @@ export async function emailOdeslat({
   skrytaKopie = [],
   predmet = "",
   telo = "",
+  teloHtml = "",
   odpovedNaId = null,
   zakaznikId = null,
   pripadId = null,
@@ -1637,6 +1638,7 @@ export async function emailOdeslat({
   form.append("skryta_kopie", skrytaKopie.join(","));
   form.append("predmet", predmet);
   form.append("telo", telo);
+  form.append("telo_html", teloHtml);
   if (odpovedNaId) form.append("odpoved_na_id", odpovedNaId);
   if (zakaznikId) form.append("zakaznik_id", zakaznikId);
   if (pripadId) form.append("pripad_id", pripadId);
@@ -1696,4 +1698,26 @@ export function nactiProfil() {
 
 export function ulozProfil(data) {
   return zavolej("/auth/profil", { method: "PUT", body: JSON.stringify(data) });
+}
+
+// ---- hromadné akce a napojení pošty na CRM (CRM-33) ----
+// Akce: precteno | neprecteno | oznacit | odznacit | presun | do_kose
+export function emailHromadne(ids, akce, slozkaId = null) {
+  return zavolej("/crm/emaily/hromadne", {
+    method: "POST",
+    body: JSON.stringify({ ids, akce, slozka_id: slozkaId }),
+  });
+}
+
+// Historie komunikace na kartě zákazníka („zakaznik") nebo případu („op").
+// Vrací jen hlavičky a náhled — obsah zprávy zůstává majiteli schránky.
+export function emailHistorie(entita, zaznamId, limit = 50) {
+  return zavolej(`/crm/emaily/historie/${entita}/${zaznamId}?limit=${limit}`);
+}
+
+export function emailVazba(zpravaId, data) {
+  return zavolej(`/crm/emaily/zpravy/${zpravaId}/vazba`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
 }

@@ -30,7 +30,7 @@ from email.utils import formataddr, formatdate, make_msgid
 from sqlalchemy.orm import Session
 
 from app.auth.models import User
-from app.crm import adresar, email_pool, email_sync
+from app.crm import adresar, email_html, email_pool, email_sync
 from app.crm.email_imap import ImapChyba
 from app.crm.models import (
     CrmAktivita,
@@ -86,6 +86,7 @@ def sestav_zpravu(
     odpoved_na: CrmEmailZprava | None = None,
     prilohy: list[dict] | None = None,
     profil=None,
+    telo_html: str = "",
 ) -> EmailMessage:
     """Postaví MIME zprávu.
 
@@ -124,11 +125,20 @@ def sestav_zpravu(
         html_podpis = email_podpis.sestav_html(profil, ucet.adresa)
         text_podpis = email_podpis.sestav_text(profil, ucet.adresa)
 
-    if html_podpis:
-        # HTML podpis z profilu vyhrává nad prostým textovým podpisem schránky.
-        # Přidávat oba by znamenalo dva podpisy pod sebou.
-        msg.set_content(_spoj_text(telo, text_podpis))
-        msg.add_alternative(_html_telo(telo, html_podpis), subtype="html")
+    # Tělo z formátovacího editoru přichází jako HTML. Vyčistí se **na serveru**
+    # (prohlížeči se věřit nedá – požadavek jde přes HTTP) a textová varianta
+    # se z něj odvodí, aby ji nemusel posílat frontend a nemohly se rozejít.
+    cisté_html = ""
+    if telo_html and not email_html.je_prazdne(telo_html):
+        cisté_html = email_html.vycisti(telo_html)
+        if not (telo or "").strip():
+            telo = email_html.na_text(cisté_html)
+
+    if cisté_html or html_podpis:
+        msg.set_content(_spoj_text(telo, text_podpis or (ucet.podpis or "").strip()))
+        msg.add_alternative(
+            _html_telo(telo, html_podpis, hotove_html=cisté_html), subtype="html"
+        )
     else:
         msg.set_content(_pridej_podpis(telo, ucet.podpis))
 
@@ -153,19 +163,24 @@ def _spoj_text(telo: str, podpis: str) -> str:
     return f"{text}\n\n--\n{podpis}\n"
 
 
-def _html_telo(telo: str, podpis_html: str) -> str:
-    """HTML část: napsaný text (escapovaný) + HTML podpis.
+def _html_telo(telo: str, podpis_html: str, hotove_html: str = "") -> str:
+    """HTML část zprávy: tělo + podpis.
 
-    Text se **escapuje** a teprve pak se zalomení řádků převedou na `<br>`.
-    Kdyby se vkládal syrový, stačilo by napsat do e-mailu `<b>` a rozbil by
-    zbytek zprávy — a hůř, dalo by se tudy do odchozí pošty propašovat cizí HTML.
+    `hotove_html` je **už vyčištěné** HTML z formátovacího editoru. Když chybí
+    (starší cesta, prostý text), vezme se `telo`, **escapuje se** a zalomení
+    se převedou na `<br>`. Escapování tam musí být: bez něj by stačilo napsat
+    do e-mailu `<b>` a rozbil by zbytek zprávy — a hůř, dala by se tudy do
+    odchozí pošty propašovat cizí značka.
     """
-    bezpecny = html_modul.escape(telo or "", quote=False).replace("\r\n", "\n")
-    odstavce = bezpecny.replace("\n", "<br>")
+    if hotove_html:
+        obsah = hotove_html
+    else:
+        bezpecny = html_modul.escape(telo or "", quote=False).replace("\r\n", "\n")
+        obsah = bezpecny.replace("\n", "<br>")
     return (
         '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;'
-        f'color:rgb(0,0,0);line-height:1.5;">{odstavce}</div>'
-        f'<div style="margin-top:18px;">{podpis_html}</div>'
+        f'color:rgb(0,0,0);line-height:1.5;">{obsah}</div>'
+        + (f'<div style="margin-top:18px;">{podpis_html}</div>' if podpis_html else "")
     )
 
 
@@ -195,6 +210,7 @@ def odesli(
     prilohy: list[dict] | None = None,
     zakaznik_id: int | None = None,
     pripad_id: int | None = None,
+    telo_html: str = "",
 ) -> dict:
     """Odešle zprávu, uloží kopii do Odeslaných a zapíše aktivitu do CRM.
 
@@ -210,7 +226,10 @@ def odesli(
     predmet = (predmet or "").strip()
     if not predmet:
         raise SmtpChyba("E-mail musí mít předmět.")
-    if not (telo or "").strip():
+    # Prázdné tělo se pozná z toho, co reálně přijde: buď text, nebo HTML
+    # z editoru. `<p><br></p>` z prázdného editoru se za obsah nepočítá.
+    ma_html = bool(telo_html) and not email_html.je_prazdne(telo_html)
+    if not (telo or "").strip() and not ma_html:
         raise SmtpChyba("E-mail nemůže být prázdný.")
     if len(prilohy or []) > MAX_PRILOH:
         raise SmtpChyba(f"Najednou jde poslat nejvýš {MAX_PRILOH} příloh.")
@@ -241,7 +260,7 @@ def odesli(
     msg = sestav_zpravu(
         ucet, user, komu_a, predmet, telo,
         kopie=kopie_a, skryta_kopie=skryta_a, odpoved_na=odpoved_na, prilohy=prilohy,
-        profil=profil,
+        profil=profil, telo_html=telo_html,
     )
     surova = msg.as_bytes()
     if len(surova) > MAX_ZPRAVA_B:
@@ -274,8 +293,11 @@ def odesli(
         zakaznik_id = vazba["zakaznik_id"]
         pripad_id = vazba["pripad_id"]
 
+    # Do timeline patří čitelný text, ne HTML – jinak by v aktivitě u zákazníka
+    # byly značky místo zprávy.
+    telo_do_aktivity = telo or (email_html.na_text(telo_html) if ma_html else "")
     aktivita_id = _zapis_aktivitu(
-        db, user, predmet, telo, komu_a, zakaznik_id, pripad_id
+        db, user, predmet, telo_do_aktivity, komu_a, zakaznik_id, pripad_id
     )
     db.commit()
 
@@ -398,15 +420,29 @@ def priprav_odpoved(zprava: CrmEmailZprava, vsem: bool, moje_adresa: str) -> dic
     predmet = zprava.predmet or ""
     if not predmet.lower().startswith("re:"):
         predmet = f"Re: {predmet}"
+    kdy = zprava.datum_at.strftime("%d.%m.%Y %H:%M") if zprava.datum_at else ""
+    kdo = f"{zprava.od_jmeno or zprava.od_adresa} <{zprava.od_adresa}>"
+    # Prázdný odstavec nad citací = místo, kam se rovnou píše odpověď.
+    puvodni_html = zprava.telo_html or (
+        "<p>" + escape_text(zprava.telo_text or "").replace("\n", "<br>") + "</p>"
+    )
     return {
         "komu": [k for k in komu if k],
         "kopie": kopie,
         "predmet": predmet,
         "telo": _citace(zprava),
+        "telo_html": "<p><br></p>" + email_html.citace_html(kdo, kdy, puvodni_html),
         "odpoved_na_id": zprava.id,
         "zakaznik_id": zprava.zakaznik_id,
         "pripad_id": zprava.pripad_id,
     }
+
+
+def escape_text(text: str) -> str:
+    """Text původní zprávy do HTML citace – vždy escapovaný."""
+    import html as _h
+
+    return _h.escape(text or "", quote=False)
 
 
 def priprav_preposlani(zprava: CrmEmailZprava) -> dict:
@@ -436,11 +472,32 @@ def priprav_preposlani(zprava: CrmEmailZprava) -> dict:
         "\n[Pozor: původní zpráva měla přílohy. Přeposláním se nepřenesou – "
         "stáhni si je a připoj ručně.]\n" if mel_prilohy else ""
     )
+    hlavicka_html = (
+        '<div style="margin-top:16px;color:#4b5852;">'
+        "---------- Přeposlaná zpráva ----------<br>"
+        f"Od: {escape_text(zprava.od_jmeno or '')} &lt;{escape_text(zprava.od_adresa)}&gt;<br>"
+        f"Datum: {zprava.datum_at.strftime('%d.%m.%Y %H:%M') if zprava.datum_at else ''}<br>"
+        f"Předmět: {escape_text(zprava.predmet or '')}"
+        "</div>"
+    )
+    pozn_html = (
+        '<div style="color:#cf8a00;">[Původní zpráva měla přílohy. '
+        "Přeposláním se nepřenesou – stáhni si je a připoj ručně.]</div>"
+        if mel_prilohy
+        else ""
+    )
+    puvodni_html = zprava.telo_html or (
+        "<p>" + escape_text(telo).replace("\n", "<br>") + "</p>"
+    )
     return {
         "komu": [],
         "kopie": [],
         "predmet": predmet,
         "telo": f"{hlavicka}{pozn}\n{telo}\n",
+        "telo_html": (
+            "<p><br></p>" + hlavicka_html + pozn_html
+            + f'<div style="margin-top:8px;">{email_html.vycisti(puvodni_html)}</div>'
+        ),
         "odpoved_na_id": None,
         "zakaznik_id": None,
         "pripad_id": None,

@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 from app import crypto
 from app.auth.models import User
 from app.auth.permissions import get_current_user, muze_otevrit
-from app.crm import adresar, email_pool, email_smtp, email_sync
+from app.crm import adresar, email_pool, email_smtp, email_sync, pristup
 from app.crm.email_imap import (
     VYCHOZI_IMAP_HOST,
     VYCHOZI_IMAP_PORT,
@@ -54,6 +54,11 @@ from app.crm.models import (
 from app.crm.novinky import ma_novinky
 from app.crm.schemas import (
     EmailAdresaOut,
+    EmailHistorieOut,
+    EmailHromadneOut,
+    EmailHromadneVstup,
+    EmailKZaznamuOut,
+    EmailVazbaVstup,
     EmailAutomatikaVstup,
     EmailPravidloOut,
     EmailPravidloVstup,
@@ -759,7 +764,10 @@ def priprav_preposlani(
 async def odeslat(
     komu: str = Form(..., description="Adresy oddělené čárkou"),
     predmet: str = Form(...),
-    telo: str = Form(...),
+    # Prostý text. Nepovinný, když přijde `telo_html` z formátovacího editoru –
+    # textová varianta se pak odvodí z HTML na serveru.
+    telo: str = Form(""),
+    telo_html: str = Form("", description="Tělo z formátovacího editoru"),
     kopie: str = Form(""),
     skryta_kopie: str = Form(""),
     odpoved_na_id: int | None = Form(None),
@@ -795,7 +803,7 @@ async def odeslat(
     try:
         vysledek = email_smtp.odesli(
             db, ucet, user,
-            komu=komu, predmet=predmet, telo=telo,
+            komu=komu, predmet=predmet, telo=telo, telo_html=telo_html,
             kopie=kopie, skryta_kopie=skryta_kopie,
             odpoved_na_id=odpoved_na_id,
             prilohy=nactene,
@@ -1044,3 +1052,230 @@ def _na_datum(hodnota: str | None) -> date | None:
         return date.fromisoformat(str(hodnota)[:10])
     except ValueError:
         raise HTTPException(status_code=422, detail=f"Neplatné datum: {hodnota}")
+
+
+# ---- hromadné akce nad vybranými zprávami ------------------------------------
+@router.post("/hromadne", response_model=EmailHromadneOut)
+def hromadne(
+    vstup: EmailHromadneVstup,
+    user: User = Depends(vyzaduj_emaily),
+    db: Session = Depends(get_db),
+):
+    """Jedna akce nad víc zprávami najednou (přečteno, vlaječka, přesun, koš).
+
+    Zpracovává se **po jedné**, ne jedním IMAP příkazem na celý výběr. Důvod:
+    vybrané zprávy můžou být z různých složek a IMAP pracuje vždy nad jednou
+    otevřenou složkou. Za cenu pár desítek milisekund navíc to funguje i pro
+    výběr napříč pohledy.
+
+    Když jedna zpráva selže, ostatní se dokončí a v odpovědi je počet
+    neúspěchů — hromadná akce nemá padat celá kvůli jedné přesunuté zprávě.
+    """
+    ucet = _muj_ucet(db, user)
+    ids = list(dict.fromkeys(vstup.ids or []))[:500]
+    if not ids:
+        raise HTTPException(status_code=422, detail="Nevybral jsi žádnou zprávu.")
+
+    cil = None
+    if vstup.akce == "presun":
+        if not vstup.slozka_id:
+            raise HTTPException(status_code=422, detail="Vyber složku, kam se má přesunout.")
+        cil = _moje_slozka(db, user, vstup.slozka_id)
+    elif vstup.akce == "do_kose":
+        cil = email_sync.slozka_druhu(db, ucet.id, "kos")
+        if cil is None:
+            raise HTTPException(
+                status_code=422, detail="Schránka nemá složku Koš, není kam přesunout."
+            )
+
+    zpracovano, selhalo = 0, 0
+    for zprava_id in ids:
+        z = (
+            db.query(CrmEmailZprava)
+            .filter(CrmEmailZprava.id == zprava_id, CrmEmailZprava.ucet_id == ucet.id)
+            .first()
+        )
+        if z is None:
+            selhalo += 1
+            continue
+        try:
+            if vstup.akce in ("precteno", "neprecteno"):
+                chtene = vstup.akce == "precteno"
+                if z.precteno != chtene:
+                    email_sync.nastav_precteno(db, z, chtene)
+            elif vstup.akce in ("oznacit", "odznacit"):
+                chtene = vstup.akce == "oznacit"
+                if z.oznaceno != chtene:
+                    email_sync.nastav_oznaceno(db, z, chtene)
+            elif cil is not None:
+                if z.slozka_id == cil.id:
+                    continue  # už tam je, není co dělat
+                email_sync.presun_zpravu(db, z, cil)
+            zpracovano += 1
+        except ImapChyba:
+            db.rollback()
+            selhalo += 1
+
+    popisy = {
+        "precteno": "označeno jako přečtené",
+        "neprecteno": "označeno jako nepřečtené",
+        "oznacit": "označeno vlaječkou",
+        "odznacit": "vlaječka odebrána",
+        "presun": f"přesunuto do „{cil.nazev}“" if cil else "přesunuto",
+        "do_kose": "přesunuto do koše",
+    }
+    zprava = f"{zpracovano} {popisy.get(vstup.akce, 'zpracováno')}."
+    if selhalo:
+        zprava += f" {selhalo} se nepodařilo."
+    return EmailHromadneOut(ok=True, zpracovano=zpracovano, selhalo=selhalo, zprava=zprava)
+
+
+# ---- historie komunikace na kartě zákazníka / případu ------------------------
+def vyzaduj_emaily_ctenar(user: User = Depends(get_current_user)) -> User:
+    """Pro čtení historie na kartě stačí novinky – vlastní schránku mít nemusí.
+
+    Kdyby se vyžadovalo právo `emaily`, kolega bez připojené schránky by na
+    kartě zákazníka historii komunikace neviděl. A právě o to celé jde.
+    """
+    if not ma_novinky(user):
+        raise HTTPException(status_code=404, detail="Nenalezeno")
+    return user
+
+
+@router.get("/historie/{entita}/{zaznam_id}", response_model=EmailHistorieOut)
+def historie_komunikace(
+    entita: str,
+    zaznam_id: int,
+    limit: int = Query(50, ge=1, le=200),
+    user: User = Depends(vyzaduj_emaily_ctenar),
+    db: Session = Depends(get_db),
+):
+    """Pošta napojená na zákazníka („zakaznik") nebo obchodní případ („op").
+
+    POZOR na viditelnost: tohle je **jediné místo, kde se cizí pošta ukazuje**.
+    Zpráva se sem dostane jen tehdy, když se její adresa přesně shodovala se
+    záznamem v CRM — osobní pošta od neznámých adres se do CRM nedostane vůbec.
+    Kdo záznam vidět nesmí, nedostane ani historii (kontroluje se přes
+    `pristup.vyzaduj_zaznam`, stejně jako u zbytku karty).
+
+    Obsah zprávy se odsud **nevrací** — jen hlavička a náhled. Kdo chce číst
+    celou zprávu, musí být majitel schránky a otevřít si ji v E-mailu.
+    """
+    from app.crm.models import CrmEmailVazba, ZakaznikKontakt
+
+    if entita == "zakaznik":
+        zaznam = pristup.vyzaduj_zaznam(db.get(Zakaznik, zaznam_id), user, "Zákazník")
+        podminka = CrmEmailVazba.zakaznik_id == zaznam.id
+    elif entita == "op":
+        pripad = db.get(ObchodniPripad, zaznam_id)
+        if pripad is None:
+            raise HTTPException(status_code=404, detail="Případ neexistuje")
+        pristup.vyzaduj_zaznam(db.get(Zakaznik, pripad.zakaznik_id), user, "Zákazník")
+        # U případu bereme i poštu firmy bez konkrétního případu – jinak by
+        # karta případu byla prázdná, dokud někdo nepřiřadí ručně.
+        podminka = (CrmEmailVazba.pripad_id == pripad.id) | (
+            (CrmEmailVazba.zakaznik_id == pripad.zakaznik_id)
+            & (CrmEmailVazba.pripad_id.is_(None))
+        )
+    else:
+        raise HTTPException(status_code=422, detail="Neznámý typ záznamu.")
+
+    q = (
+        db.query(CrmEmailVazba, CrmEmailZprava, CrmEmailUcet)
+        .join(CrmEmailZprava, CrmEmailVazba.zprava_id == CrmEmailZprava.id)
+        .join(CrmEmailUcet, CrmEmailZprava.ucet_id == CrmEmailUcet.id)
+        .filter(podminka, CrmEmailVazba.skryta.is_(False))
+        .order_by(CrmEmailZprava.datum_at.desc())
+    )
+    celkem = q.count()
+    radky = q.limit(limit).all()
+
+    kontakty = {
+        k.id: k.jmeno
+        for k in db.query(ZakaznikKontakt).filter(
+            ZakaznikKontakt.id.in_([v.kontakt_id for v, _z, _u in radky if v.kontakt_id] or [0])
+        )
+    }
+    cisla = {
+        p.id: p.cislo
+        for p in db.query(ObchodniPripad).filter(
+            ObchodniPripad.id.in_([v.pripad_id for v, _z, _u in radky if v.pripad_id] or [0])
+        )
+    }
+    jmena = {
+        u.id: (u.jmeno or u.email)
+        for u in db.query(User).filter(
+            User.id.in_([u.user_id for _v, _z, u in radky] or [0])
+        )
+    }
+
+    return EmailHistorieOut(
+        celkem=celkem,
+        zpravy=[
+            EmailKZaznamuOut(
+                id=z.id,
+                predmet=z.predmet,
+                od_jmeno=z.od_jmeno,
+                od_adresa=z.od_adresa,
+                komu=_adresy_out(z.komu),
+                datum_at=_cas(z.datum_at) or "",
+                smer=z.smer,
+                vypis=z.vypis,
+                ma_prilohy=z.ma_prilohy,
+                kdo=jmena.get(ucet.user_id, ""),
+                moje=ucet.user_id == user.id,
+                kontakt_jmeno=kontakty.get(v.kontakt_id, ""),
+                pripad_cislo=cisla.get(v.pripad_id, ""),
+            )
+            for v, z, ucet in radky
+        ],
+    )
+
+
+@router.post("/zpravy/{zprava_id}/vazba")
+def uprav_vazbu(
+    zprava_id: int,
+    vstup: EmailVazbaVstup,
+    user: User = Depends(vyzaduj_emaily),
+    db: Session = Depends(get_db),
+):
+    """Ruční napojení zprávy na firmu, nebo její schování z historie.
+
+    Schování **nemaže** vazbu, jen ji označí — smazaná by ji automatika při
+    příští synchronizaci vyrobila znovu a zpráva by se na kartu vrátila.
+    """
+    from app.crm.models import CrmEmailVazba
+
+    z = _moje_zprava(db, user, zprava_id)
+
+    if vstup.skryt:
+        pocet = (
+            db.query(CrmEmailVazba)
+            .filter(CrmEmailVazba.zprava_id == z.id)
+            .update({"skryta": True, "zdroj": "rucne"}, synchronize_session=False)
+        )
+        db.commit()
+        return {"ok": True, "skryto": pocet}
+
+    if not vstup.zakaznik_id:
+        raise HTTPException(status_code=422, detail="Vyber firmu, ke které zprávu připojit.")
+    zakaznik = pristup.vyzaduj_zaznam(db.get(Zakaznik, vstup.zakaznik_id), user, "Zákazník")
+
+    vazba = (
+        db.query(CrmEmailVazba)
+        .filter(
+            CrmEmailVazba.zprava_id == z.id,
+            CrmEmailVazba.zakaznik_id == zakaznik.id,
+        )
+        .first()
+    )
+    if vazba is None:
+        vazba = CrmEmailVazba(zprava_id=z.id, zakaznik_id=zakaznik.id, kdy=z.datum_at)
+        db.add(vazba)
+    vazba.pripad_id = vstup.pripad_id
+    vazba.zdroj = "rucne"
+    vazba.skryta = False
+    if z.zakaznik_id is None:
+        z.zakaznik_id = zakaznik.id
+    db.commit()
+    return {"ok": True}

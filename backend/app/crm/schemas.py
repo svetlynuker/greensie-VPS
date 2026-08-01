@@ -1460,6 +1460,8 @@ class EmailPsaniOut(BaseModel):
     kopie: list[str] = []
     predmet: str = ""
     telo: str = ""
+    # Totéž jako `telo`, ale pro formátovací editor (citace jako blockquote).
+    telo_html: str = ""
     odpoved_na_id: Optional[int] = None
     zakaznik_id: Optional[int] = None
     pripad_id: Optional[int] = None
@@ -1537,3 +1539,61 @@ class EmailAutomatikaVstup(BaseModel):
     preposilani_zapnuto: bool = False
     preposilani_komu: str = ""
     preposilani_nechat_kopii: bool = True
+
+
+# ---- hromadné akce a napojení pošty na CRM (CRM-33) --------------------------
+AkceNadZpravami = Literal[
+    "precteno", "neprecteno", "oznacit", "odznacit", "presun", "do_kose"
+]
+
+
+class EmailHromadneVstup(BaseModel):
+    """Akce nad vybranými zprávami. `slozka_id` jen u přesunu."""
+
+    ids: list[int]
+    akce: AkceNadZpravami
+    slozka_id: Optional[int] = None
+
+
+class EmailHromadneOut(BaseModel):
+    ok: bool = True
+    zpracovano: int = 0
+    selhalo: int = 0
+    zprava: str = ""
+
+
+class EmailKZaznamuOut(BaseModel):
+    """Jedna zpráva v historii komunikace na kartě zákazníka nebo případu.
+
+    Je to zúžený pohled: co je vidět kolegům, kteří na záznam mají právo, ale
+    do cizí schránky jinak nevidí. Proto je tu `kdo` (čí schránkou to prošlo).
+    """
+
+    id: int
+    predmet: str = ""
+    od_jmeno: str = ""
+    od_adresa: str = ""
+    komu: list[EmailAdresaOut] = []
+    datum_at: str = ""
+    smer: SmerZpravy = "prichozi"
+    vypis: str = ""
+    ma_prilohy: bool = False
+    # Čí schránkou zpráva prošla – u sdílené historie je to podstatný údaj.
+    kdo: str = ""
+    # Vidí přihlášený uživatel i obsah? (Jen majitel schránky.)
+    moje: bool = False
+    kontakt_jmeno: str = ""
+    pripad_cislo: str = ""
+
+
+class EmailHistorieOut(BaseModel):
+    zpravy: list[EmailKZaznamuOut] = []
+    celkem: int = 0
+
+
+class EmailVazbaVstup(BaseModel):
+    """Ruční napojení zprávy na firmu, nebo schování z historie."""
+
+    zakaznik_id: Optional[int] = None
+    pripad_id: Optional[int] = None
+    skryt: bool = False

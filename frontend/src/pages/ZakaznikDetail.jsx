@@ -11,6 +11,7 @@ import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
 import VlastniPoleVypis from "../components/VlastniPoleVypis";
 import DiskSlozka from "../components/DiskSlozka";
 import EmailOkno from "../components/EmailOkno";
+import EmailHistorie from "../components/EmailHistorie";
 import RychleAkce from "../components/RychleAkce";
 import Timeline from "../components/Timeline";
 import ZakaznikFormular from "../components/ZakaznikFormular";
@@ -289,7 +290,12 @@ export default function ZakaznikDetail() {
         )}
 
         {zalozka === "aktivity" && (
-          <Aktivity key={aktivityKlic} entita="zakaznik" zaznamId={z.id} />
+          <>
+            <Aktivity key={aktivityKlic} entita="zakaznik" zaznamId={z.id} />
+            {/* Komunikace e-mailem hned pod aktivitami: obojí odpovídá na
+                otázku „co jsme s klientem řešili". */}
+            {me.novinky && <EmailHistorie entita="zakaznik" zaznamId={z.id} />}
+          </>
         )}
 
         {zalozka === "historie" && (

@@ -259,3 +259,52 @@ def _otevreny_pripad(db: Session, zakaznik_id: int) -> int | None:
         .first()
     )
     return pripad.id if pripad is not None else None
+
+
+def dohledaj_vsechny(db: Session, adresy: list[str]) -> list[dict]:
+    """Ke každé adrese najde záznam v CRM. Duplicitní firmy sloučí.
+
+    Tohle je základ „rejnetování" (párování pošty na záznamy po vzoru Raynetu):
+    zpráva se netýká jen odesílatele, ale **všech** adres, které v ní jsou.
+    Když je v kopii kontaktní osoba jiné firmy, patří zpráva i k ní.
+
+    Vrací `[{adresa, role, zakaznik_id, kontakt_id, pripad_id}]` jen pro adresy,
+    kde se něco našlo. Pořadí zachovává vstup, takže odesílatel je první.
+    """
+    vysledek: list[dict] = []
+    # Jedna firma se ve zprávě objeví klidně třikrát (osoba, obecná adresa,
+    # kopie). Do historie patří jednou – jinak by karta ukazovala trojmo totéž.
+    videne_dvojice: set[tuple] = set()
+
+    for polozka in adresy:
+        adresa = (polozka.get("adresa") or "").strip().lower()
+        role = polozka.get("role") or "od"
+        if not adresa or "@" not in adresa:
+            continue
+        nalez = dohledaj_podle_adresy(db, adresa)
+        if nalez["zakaznik_id"] is None:
+            continue
+        klic = (nalez["zakaznik_id"], nalez["kontakt_id"])
+        if klic in videne_dvojice:
+            continue
+        videne_dvojice.add(klic)
+        vysledek.append(
+            {
+                "adresa": adresa,
+                "role": role,
+                "zakaznik_id": nalez["zakaznik_id"],
+                "kontakt_id": nalez["kontakt_id"],
+                "pripad_id": nalez["pripad_id"],
+            }
+        )
+    return vysledek
+
+
+def adresy_ze_zpravy(zprava) -> list[dict]:
+    """Všechny adresy zprávy s rolí: odesílatel, příjemci, kopie."""
+    seznam = [{"adresa": zprava.od_adresa or "", "role": "od"}]
+    for pole, role in (("komu", "komu"), ("kopie", "kopie")):
+        for a in getattr(zprava, pole, None) or []:
+            if isinstance(a, dict) and a.get("adresa"):
+                seznam.append({"adresa": a["adresa"], "role": role})
+    return seznam

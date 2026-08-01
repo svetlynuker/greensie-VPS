@@ -1726,3 +1726,67 @@ class CrmEmailAutoOdpoved(Base):
     )
     adresa = Column(String, nullable=False)
     odeslano_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+# Kým je adresa ve zprávě: odesílatel, příjemce, kopie.
+ROLE_ADRESY = ["od", "komu", "kopie"]
+# Jak vazba vznikla. `rucne` nikdy nepřepíše automatika (a naopak).
+ZDROJE_VAZBY = ["auto", "rucne"]
+
+
+class CrmEmailVazba(Base):
+    """Napojení zprávy na záznam CRM – „rejnetování" po vzoru Raynetu.
+
+    Jedna zpráva se běžně týká **víc** záznamů: odesílatel je kontaktní osoba
+    firmy A, v kopii je někdo z firmy B. Proto vlastní tabulka a ne dva sloupce
+    u zprávy. `CrmEmailZprava.zakaznik_id` zůstává jako „hlavní" firma pro
+    štítek v seznamu pošty; tady je úplný obrázek.
+
+    ---- Co to znamená pro soukromí ----------------------------------------
+    ZMĚNA OPROTI PŮVODNÍMU STAVU, vědomá (zadání Dana, 1. 8. 2026): schránka
+    je sice pořád soukromá a **seznam pošty vidí jen její majitel**, ale zpráva
+    napojená na zákazníka se ukáže v historii toho zákazníka — tedy i kolegům,
+    kteří na daný záznam mají právo. Bez toho by celá funkce postrádala smysl
+    („ať to nikde nezapadne").
+
+    Pojistky: napojí se jen zpráva, u které se adresa **přesně** shoduje se
+    záznamem v CRM (viz `adresar.dohledaj_podle_adresy`), takže osobní pošta
+    od neznámých adres se do CRM nikdy nedostane. A vazbu jde kdykoli zrušit
+    ručně (`zdroj="rucne"`, `skryta=True`).
+    """
+
+    __tablename__ = "crm_email_vazby"
+    __table_args__ = (
+        Index("ix_crm_email_vazba_zakaznik", "zakaznik_id", "kdy"),
+        Index("ix_crm_email_vazba_pripad", "pripad_id", "kdy"),
+        Index("ix_crm_email_vazba_zprava", "zprava_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    zprava_id = Column(
+        Integer, ForeignKey("crm_email_zpravy.id", ondelete="CASCADE"), nullable=False
+    )
+    zakaznik_id = Column(
+        Integer, ForeignKey("crm_zakaznici.id", ondelete="CASCADE"), nullable=True
+    )
+    kontakt_id = Column(
+        Integer, ForeignKey("crm_zakaznik_kontakty.id", ondelete="SET NULL"), nullable=True
+    )
+    pripad_id = Column(
+        Integer, ForeignKey("crm_obchodni_pripady.id", ondelete="CASCADE"), nullable=True
+    )
+
+    # Adresa, přes kterou vazba vznikla – ať je dohledatelné, proč tu zpráva je.
+    adresa = Column(String, nullable=False, default="", server_default="")
+    role = Column(String, nullable=False, default="od", server_default="od")
+    zdroj = Column(String, nullable=False, default="auto", server_default="auto")
+    # Ručně schovaná vazba: zpráva zůstane ve schránce, ale z karty zmizí.
+    # Maže se schválně „schováním" a ne smazáním – jinak by ji automatika
+    # při příští synchronizaci vytvořila znovu.
+    skryta = Column(Boolean, nullable=False, default=False, server_default="false")
+
+    # Kopie data zprávy, aby řazení historie nemuselo joinovat na zprávy.
+    kdy = Column(DateTime(timezone=True), nullable=True, index=True)
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    zprava = relationship("CrmEmailZprava", backref="vazby")

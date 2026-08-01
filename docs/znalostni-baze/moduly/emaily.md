@@ -123,6 +123,49 @@ v CRM.
 Přílohy: **📎 Připojit soubor**. Strop je 18 MB na celou zprávu včetně příloh — nad to zprávu
 poštovní server odmítne, takže velké soubory posílej odkazem na Disk.
 
+### Psaní s formátováním
+
+Tělo zprávy se píše ve **formátovacím editoru** — tučné, kurzíva, podtržení, přeškrtnutí,
+písmo a jeho velikost, barva textu i zvýraznění, odrážky, číslování, odsazení, zarovnání,
+odkazy a vodorovná čára. Funguje i Ctrl+B / Ctrl+I / Ctrl+U.
+
+Vkládání z Wordu je ošetřené: `mso-` styly a wordovský balast se při vložení zahodí, aby se
+zpráva nerozsypala v Outlooku. **Ctrl+Shift+V** vloží bez formátování.
+
+> 💡 Formátování je záměrně jednoduché (tabulky, inline styly). Poštovní klienti nejsou
+> prohlížeče — Outlook renderuje přes Word, takže moderní HTML by se rozpadlo.
+
+### Hromadné akce
+
+Vlevo u každé zprávy je **zaškrtávátko**. Jakmile něco vybereš, nad seznamem se objeví zelená
+lišta: **Přečtené**, **Nepřečtené**, **★** (vlaječka), **Přesunout do…** a **Do koše**.
+Nahoře je „Vybrat vše na stránce".
+
+Akce se provede po jedné zprávě, takže když jedna selže (třeba ji mezitím někdo přesunul),
+ostatní se dokončí a v hlášce je počet neúspěchů.
+
+### Párování pošty na záznamy CRM
+
+Zpráva, ve které figuruje adresa někoho z CRM — **odesílatel, příjemce nebo kopie** — se
+sama napojí na jeho firmu, kontaktní osobu a otevřený obchodní případ. Raynet tomu říká
+„rejnetování" a dělá to stejně.
+
+Napojená komunikace je pak vidět:
+
+- na **kartě zákazníka** v záložce *Aktivity a úkoly*, v sekci „Komunikace e-mailem",
+- na **kartě obchodního případu** tamtéž (bere i poštu firmy bez konkrétního případu),
+- v **timeline** zákazníka mezi ostatními událostmi.
+
+> ⚠️ **Co to znamená pro soukromí — přečti si to.** Tohle je jediné místo, kde se ukazuje
+> pošta z cizí schránky. Seznam pošty v E-mailu vidí pořád jen její majitel, ale zpráva
+> **napojená na zákazníka se ukáže i kolegům**, kteří na ten záznam mají právo. Bez toho by
+> celá funkce neměla smysl (komunikace by dál zapadala v cizí schránce).
+>
+> Pojistky: napojí se **jen zpráva, jejíž adresa přesně sedí** na záznam v CRM, takže osobní
+> pošta od neznámých adres se do CRM nedostane vůbec. Veřejné domény (`seznam.cz`,
+> `gmail.com`…) se k určení firmy nepoužívají. A na kartě je vidět **jen předmět a náhled** —
+> celou zprávu si otevře jenom majitel schránky.
+
 ### Pravidla, oznámení o nepřítomnosti a přeposílání
 
 Tlačítko **Pravidla a automatika** v horní liště.
@@ -237,6 +280,7 @@ zkoušet každou minutu — Seznam by nás mohl začít blokovat.
 | `crm_email_zpravy` | Hlavičky a náhled; těla se dotahují až při otevření (`telo_stazeno`) |
 | `crm_email_prilohy` | Jen popis přílohy. **Obsah se neukládá** — tahá se z IMAPu na vyžádání |
 | `crm_email_pravidla` | Pravidla pro příchozí poštu (sortování, přeposlání) |
+| `crm_email_vazby` | Napojení zprávy na firmu / kontakt / případ („rejnetování") |
 | `crm_email_auto_odpovedi` | Komu už odešla OOO odpověď — pojistka proti smyčce |
 
 Dvě věci, které se snadno popletou:

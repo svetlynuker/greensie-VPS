@@ -9,6 +9,7 @@ import PripadFormular from "../components/PripadFormular";
 import PripadNabidky from "../components/PripadNabidky";
 import PripadRealizace from "../components/PripadRealizace";
 import EmailOkno from "../components/EmailOkno";
+import EmailHistorie from "../components/EmailHistorie";
 import RychleAkce from "../components/RychleAkce";
 import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
 import VlastniPoleVypis from "../components/VlastniPoleVypis";
@@ -353,7 +354,15 @@ export default function ObchodniPripadDetail() {
           <PripadRealizace pripad={p} me={me} onZmena={nactiZnovu} />
         )}
 
-        {zalozka === "aktivity" && <Aktivity entita="op" zaznamId={p.id} />}
+        {zalozka === "aktivity" && (
+          <>
+            <Aktivity entita="op" zaznamId={p.id} />
+            {/* Pošta spárovaná na případ i na jeho firmu (viz backend:
+                u případu se berou i zprávy firmy bez konkrétního případu,
+                jinak by karta zela prázdnotou). */}
+            {me.novinky && <EmailHistorie entita="op" zaznamId={p.id} />}
+          </>
+        )}
 
         {zalozka === "historie" && (
           <div className="fm-card crm-blok">

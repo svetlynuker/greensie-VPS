@@ -841,3 +841,135 @@ def test_zalomeni_radku_se_prevede_na_br():
     msg = _sestav(FalesnyProfil(), telo="prvni\ndruhy")
     html = msg.get_body(preferencelist=("html",)).get_content()
     assert "prvni<br>druhy" in html
+
+
+# ============================================================================
+# Čištění HTML z formátovacího editoru (CRM-33)
+#
+# Tělo zprávy se posílá jako HTML, takže do něj propadá všechno, co člověk
+# vloží z Wordu, z webu nebo z jiného mailu. Čistí se na serveru, protože
+# prohlížeči se věřit nedá — požadavek jde přes HTTP.
+# ============================================================================
+from app.crm import email_html
+
+
+@pytest.mark.parametrize(
+    "vstup,nesmi_obsahovat",
+    [
+        ("<p>Ahoj</p><script>zlo()</script>", "zlo()"),
+        ('<img src="x" onerror="zlo()">', "onerror"),
+        ('<a href="javascript:zlo()">klik</a>', "javascript"),
+        ('<a href="java\nscript:zlo()">klik</a>', "script:"),
+        ('<div style="background:url(http://zlo.cz/x)">t</div>', "url("),
+        ("<style>p{color:red}</style><p>t</p>", "color:red"),
+        ("<iframe src='https://zlo.cz'></iframe><p>t</p>", "iframe"),
+    ],
+)
+def test_cistic_zahodi_nebezpecne(vstup, nesmi_obsahovat):
+    assert nesmi_obsahovat not in email_html.vycisti(vstup)
+
+
+def test_cistic_zachova_formatovani():
+    """Co editor umí, musí projít – jinak by formátování mizelo při odeslání."""
+    vstup = (
+        '<p><b>tučně</b> <i>kurzíva</i> <u>podtrženo</u></p>'
+        '<ul><li>odrážka</li></ul><ol><li>číslo</li></ol>'
+        '<p style="text-align:center"><span style="color:#ff0000">červeně</span></p>'
+    )
+    v = email_html.vycisti(vstup)
+    for kus in ["<b>", "<i>", "<u>", "<ul>", "<ol>", "<li>", "text-align:center", "color:#ff0000"]:
+        assert kus in v, kus
+
+
+def test_cistic_vyhodi_wordovsky_balast():
+    vstup = '<!--[if mso]><p>x</p><![endif]--><o:p></o:p><p style="mso-x:1;color:blue">text</p>'
+    v = email_html.vycisti(vstup)
+    assert "mso" not in v
+    assert "o:p" not in v
+    assert "color:blue" in v and "text" in v
+
+
+def test_cistic_doplni_bezpecny_odkaz():
+    v = email_html.vycisti('<a href="https://greensie.cz">web</a>')
+    assert 'href="https://greensie.cz"' in v
+    assert 'rel="noopener noreferrer"' in v and 'target="_blank"' in v
+
+
+def test_cistic_uzavre_rozbite_znacky():
+    """Word a vkládání z webu produkují nedovřené značky běžně."""
+    v = email_html.vycisti("<b>tučné <i>kurzíva</b> konec")
+    assert v.count("<b>") == v.count("</b>")
+    assert v.count("<i>") == v.count("</i>")
+
+
+def test_prevod_na_text_zachova_strukturu():
+    t = email_html.na_text(
+        "<p>Dobrý den,</p><ul><li>první</li><li>druhá</li></ul><p>Konec</p>"
+    )
+    assert "Dobrý den," in t and "- první" in t and "- druhá" in t and "Konec" in t
+    assert "<" not in t
+
+
+def test_prevod_na_text_doplni_adresu_odkazu():
+    """V textové verzi by jinak odkaz zmizel a zbyl by jen popisek."""
+    t = email_html.na_text('<a href="https://greensie.cz">náš web</a>')
+    assert "náš web" in t and "https://greensie.cz" in t
+    # U mailto stejného jako popisek se adresa neopakuje.
+    assert email_html.na_text('<a href="mailto:a@b.cz">a@b.cz</a>') == "a@b.cz"
+
+
+@pytest.mark.parametrize(
+    "html,prazdne",
+    [("<p><br></p>", True), ("<div></div>", True), ("", True),
+     ("<p>&nbsp;</p>", True), ("<p>text</p>", False), ("<ul><li>x</li></ul>", False)],
+)
+def test_prazdne_telo_se_pozna(html, prazdne):
+    """`<p><br></p>` z prázdného editoru není obsah."""
+    assert email_html.je_prazdne(html) is prazdne
+
+
+def test_zprava_z_editoru_zachova_formatovani_a_vycisti_script():
+    """Celý řetěz: HTML z editoru → sestavená zpráva."""
+    msg = _sestav(
+        FalesnyProfil(),
+        telo="",
+    )
+    from app.crm.email_smtp import sestav_zpravu
+
+    msg = sestav_zpravu(
+        FalesnyUcetSmtp(), FalesnyUser(), ["a@b.cz"], "P", "",
+        profil=FalesnyProfil(),
+        telo_html="<p>Dobrý den,</p><ul><li><b>první</b></li></ul><script>zlo()</script>",
+    )
+    html = msg.get_body(preferencelist=("html",)).get_content()
+    text = msg.get_body(preferencelist=("plain",)).get_content()
+    assert "<ul>" in html and "<b>" in html
+    assert "zlo()" not in html
+    # Textová varianta se odvodí z HTML, takže obsah nezmizí.
+    assert "Dobrý den," in text and "- první" in text
+
+
+# ============================================================================
+# Párování pošty na záznamy CRM („rejnetování")
+# ============================================================================
+def test_adresy_ze_zpravy_maji_role():
+    from app.crm import adresar
+
+    class Z:
+        od_adresa = "jan@firma.cz"
+        komu = [{"adresa": "dan@greensie.cz"}]
+        kopie = [{"adresa": "sef@firma.cz"}]
+
+    adresy = adresar.adresy_ze_zpravy(Z())
+    assert adresy[0] == {"adresa": "jan@firma.cz", "role": "od"}
+    role = {a["adresa"]: a["role"] for a in adresy}
+    assert role["dan@greensie.cz"] == "komu"
+    assert role["sef@firma.cz"] == "kopie"
+
+
+def test_verejne_domeny_neparuji_firmu():
+    """Podle `seznam.cz` se firma určit nedá – přiřadilo by to náhodně."""
+    from app.crm.adresar import VEREJNE_DOMENY
+
+    for d in ["seznam.cz", "gmail.com", "email.cz", "centrum.cz", "outlook.com"]:
+        assert d in VEREJNE_DOMENY

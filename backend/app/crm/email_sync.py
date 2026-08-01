@@ -271,6 +271,20 @@ def _uloz_hlavicky(db: Session, s: ImapSpojeni, slozka: CrmEmailSlozka, uidy: li
 
     slozka.posledni_uid = max(slozka.posledni_uid, max(uidy))
     db.commit()
+
+    # Napojení na CRM až po commitu – vazby potřebují id zpráv. Chyba tady
+    # nesmí shodit stahování: pošta je stažená, jen se nepropojí.
+    try:
+        for z in (
+            db.query(CrmEmailZprava)
+            .filter(CrmEmailZprava.slozka_id == slozka.id, CrmEmailZprava.uid.in_(ke_stazeni))
+            .all()
+        ):
+            zaloz_vazby(db, z, komitni=False)
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+
     return pocet
 
 
@@ -488,3 +502,51 @@ def slozka_druhu(db: Session, ucet_id: int, druh: str) -> CrmEmailSlozka | None:
 def stara_nez(hodin: int) -> datetime:
     """Pomocník pro plánovač – hranice „starší než N hodin"."""
     return _ted() - timedelta(hours=hodin)
+
+
+# ---- napojení zprávy na záznamy CRM („rejnetování") --------------------------
+def zaloz_vazby(db: Session, zprava: CrmEmailZprava, komitni: bool = True) -> int:
+    """Napojí zprávu na všechny firmy a kontakty, které v ní figurují.
+
+    Volá se při stažení zprávy. Vazby označené `zdroj="rucne"` se **nesahají** —
+    ruční rozhodnutí člověka nemá automatika přepisovat (ani obnovovat vazbu,
+    kterou někdo schoval).
+    """
+    from app.crm import adresar
+    from app.crm.models import CrmEmailVazba
+
+    nalezy = adresar.dohledaj_vsechny(db, adresar.adresy_ze_zpravy(zprava))
+    if not nalezy:
+        return 0
+
+    existujici = {
+        (v.zakaznik_id, v.kontakt_id)
+        for v in db.query(CrmEmailVazba).filter(CrmEmailVazba.zprava_id == zprava.id)
+    }
+    pridano = 0
+    for n in nalezy:
+        if (n["zakaznik_id"], n["kontakt_id"]) in existujici:
+            continue
+        db.add(
+            CrmEmailVazba(
+                zprava_id=zprava.id,
+                zakaznik_id=n["zakaznik_id"],
+                kontakt_id=n["kontakt_id"],
+                pripad_id=n["pripad_id"],
+                adresa=n["adresa"][:255],
+                role=n["role"],
+                zdroj="auto",
+                kdy=zprava.datum_at,
+            )
+        )
+        pridano += 1
+
+    # Hlavní firma u zprávy = ta od odesílatele (u odchozí pošty od příjemce).
+    # Drží se kvůli štítku v seznamu pošty, kde je místo na jednu.
+    if zprava.zakaznik_id is None and nalezy:
+        zprava.zakaznik_id = nalezy[0]["zakaznik_id"]
+        zprava.pripad_id = nalezy[0]["pripad_id"]
+
+    if komitni and pridano:
+        db.commit()
+    return pridano

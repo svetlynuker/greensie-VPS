@@ -185,7 +185,64 @@ def pro_zakaznika(db: Session, user: User, zakaznik: Zakaznik) -> list[dict]:
                 }
             )
 
+    # --- e-maily napojené na firmu („rejnetované", CRM-33) ---
+    # Tohle je celý smysl párování pošty: komunikace se zákazníkem má být
+    # v ději, ne schovaná v cizí schránce. Do osy jde jen hlavička a náhled —
+    # obsah zůstává majiteli schránky.
+    udalosti.extend(_emaily_zakaznika(db, zakaznik.id, pripad_ids, cisla))
+
     # Nejnovější první. Události bez datumu (nemělo by nastat) na konec, aby
     # nerozhodily řazení nahoře.
     udalosti.sort(key=lambda u: u["kdy"] or "", reverse=True)
     return udalosti[:LIMIT]
+
+
+def _emaily_zakaznika(db: Session, zakaznik_id: int, pripad_ids: list[int], cisla: dict) -> list[dict]:
+    """E-maily napojené na firmu nebo její případy, jako události do osy.
+
+    Selhání se polyká schválně: e-mailový klient je novinka a rozbitá pošta
+    nesmí shodit celou historii zákazníka, která fungovala dřív než on.
+    """
+    try:
+        from app.crm.models import CrmEmailVazba, CrmEmailZprava
+
+        radky = (
+            db.query(CrmEmailVazba, CrmEmailZprava)
+            .join(CrmEmailZprava, CrmEmailVazba.zprava_id == CrmEmailZprava.id)
+            .filter(
+                CrmEmailVazba.skryta.is_(False),
+                (CrmEmailVazba.zakaznik_id == zakaznik_id)
+                | (CrmEmailVazba.pripad_id.in_(pripad_ids or [0])),
+            )
+            .order_by(CrmEmailZprava.datum_at.desc())
+            .limit(LIMIT)
+            .all()
+        )
+    except Exception:  # noqa: BLE001 - viz docstring
+        return []
+
+    udalosti = []
+    videne = set()
+    for vazba, z in radky:
+        # Jedna zpráva může mít víc vazeb (osoba i firma) – do osy patří jednou.
+        if z.id in videne:
+            continue
+        videne.add(z.id)
+        smer = "Odesláno" if z.smer == "odchozi" else "Přijato"
+        protistrana = (
+            (z.komu or [{}])[0].get("adresa", "") if z.smer == "odchozi" else z.od_adresa
+        )
+        udalosti.append(
+            {
+                "kdy": _iso(z.datum_at),
+                "druh": "email",
+                "titulek": f"{smer}: {z.predmet or '(bez předmětu)'}"[:120],
+                "popis": f"{protistrana}{' · ' + z.vypis if z.vypis else ''}"[:200],
+                "cesta": (
+                    f"/pripady/detail/{vazba.pripad_id}"
+                    if vazba.pripad_id and vazba.pripad_id in cisla
+                    else ""
+                ),
+            }
+        )
+    return udalosti
