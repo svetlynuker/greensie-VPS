@@ -1,7 +1,7 @@
 # Zákazníci a Obchodní případy (CRM)
 
-> **Sekce v nabídce:** `zakaznici`, `obchodni_pripady`, `nabidky`, `objednavky`, `projekty` · **Adresy (routy):** `/zakaznici/lead`, `/zakaznici/klient`, `/zakaznici/detail/:id`, `/pripady`, `/pripady/detail/:id`, `/nabidky` · **Kdo smí otevřít:** právo `zakaznici` resp. `obchodni_pripady`; sekce Nabídky jede pod právem `nabidkovac` (bez práva se sekce v nabídce vůbec nezobrazí; admin vždy)
-> **Kód:** frontend `frontend/src/pages/Zakaznici.jsx`, `ZakaznikDetail.jsx`, `ObchodniPripady.jsx`, `ObchodniPripadDetail.jsx`, `Nabidky.jsx`, backend `backend/app/crm/`
+> **Sekce v nabídce:** `zakaznici`, `kontakty`, `obchodni_pripady`, `nabidky`, `objednavky`, `projekty` · **Adresy (routy):** `/zakaznici/lead`, `/zakaznici/klient`, `/zakaznici/detail/:id`, `/kontakty`, `/kontakty/detail/:id`, `/pripady`, `/pripady/detail/:id`, `/nabidky` · **Kdo smí otevřít:** právo `zakaznici` resp. `obchodni_pripady`; sekce Nabídky jede pod právem `nabidkovac` (bez práva se sekce v nabídce vůbec nezobrazí; admin vždy)
+> **Kód:** frontend `frontend/src/pages/Zakaznici.jsx`, `ZakaznikDetail.jsx`, `KontaktniOsoby.jsx`, `KontaktDetail.jsx`, `ObchodniPripady.jsx`, `ObchodniPripadDetail.jsx`, `Nabidky.jsx`, backend `backend/app/crm/`
 
 Evidence obchodu: **zákazník → obchodní případ → nabídka** (a dál objednávka a projekt, které
 se připravují). Cílem je, aby obchodní zástupce nemusel chodit do samotného nabídkovače —
@@ -70,6 +70,51 @@ Tři záložky:
 3. **Aktivity a úkoly** — log práce (viz níže).
 
 Nahoře vpravo je **„+ Obchodní případ"** — odtud se zakládá zakázka.
+
+### Kontaktní osoby (číselník)
+
+> **Sekce v nabídce:** `Kontaktní osoby` (v Obchodu hned pod Zákazníky) · **Adresa:** `/kontakty`
+> · **Kdo smí otevřít:** kdo má právo `zakaznici` · **Kód:** `frontend/src/pages/KontaktniOsoby.jsx`,
+> `frontend/src/pages/KontaktDetail.jsx`, backend `backend/app/crm/routes.py`.
+
+Seznam **všech kontaktních osob napříč firmami** — leadů i klientů. Je to druhý pohled na tatáž
+data, která jsou na kartě zákazníka: **osoba se zakládá u své firmy**, tady se prochází, hledá,
+filtruje a exportuje. Druhá tabulka lidí by znamenala, že se opravený telefon objeví jen na jednom
+místě.
+
+Umí to, co ostatní seznamy CRM: **hledání** (jméno, firma, funkce, telefon, e-mail), **filtry**,
+**řazení**, **skrývání a přesouvání sloupců**, uložené pohledy a **export**.
+
+| Sloupec | Co znamená |
+|---|---|
+| Jméno | klik na řádek otevře kartu osoby |
+| Firma | proklik přímo na kartu zákazníka |
+| Funkce, Telefon, E-mail | údaje osoby |
+| Hlavní kontakt | koho appka u té firmy nabídne první |
+| Typ firmy | Lead / Klient |
+| Město, Vlastník firmy | podle firmy, ke které osoba patří |
+| **Poslední e-mail**, **E-mailů** | reálná komunikace z pošty navázané na tu osobu, ne datum založení |
+
+Nad tabulkou jsou **ukazatele**: kolik osob, u kolika firem, kolik osob **bez e-mailu** (těm nejde
+napsat) a kolik **firem bez hlavního kontaktu** (tam appka nenapoví, komu volat první).
+
+**Viditelnost se dědí z firmy:** kdo nevidí zákazníka, nevidí ani jeho lidi. Kdo nemá `crm_vse`,
+má v číselníku jen osoby u svých firem.
+
+#### Karta kontaktní osoby
+
+Otevře se klikem na řádek. Je na ní:
+
+- **Údaje osoby** — jméno, funkce, telefon a e-mail s proklikem na volání a psaní, poznámka.
+  Tlačítkem **Upravit** se mění přímo tady (stejná změna jako v panelu na kartě zákazníka, včetně
+  pravidla, že hlavní kontakt může být jen jeden).
+- **Firma** — název s proklikem, město, telefon a e-mail firmy.
+- **Obchodní případy firmy** — kontext „o čem s ním je řeč", s proklikem na případ.
+- **E-mailová komunikace** — zprávy navázané právě na tuhle osobu. Napojuje se automaticky podle
+  adresy, takže u osoby bez e-mailu zůstane prázdná.
+
+> **Aktivity a úkoly na kartě osoby schválně nejsou.** V datech visí na firmě nebo na obchodním
+> případu, ne na člověku — karta by tedy jen opisovala kartu zákazníka. Aktivity se vedou tam.
 
 ### Obchodní případy: kanban a tabulka
 Sekce se otevře v **kanbanu**, protože hlavní denní práce je posouvat případy fázemi:

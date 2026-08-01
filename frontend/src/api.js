@@ -732,6 +732,42 @@ export function crmKontaktSmaz(id) {
   return zavolej(`/crm/kontakty/${id}`, { method: "DELETE" });
 }
 
+// ---- číselník Kontaktní osoby ----
+// Pohled na tatáž data jako panel kontaktů na kartě zákazníka, jen napříč
+// firmami. Viditelnost se dědí z firmy – řeší ji backend.
+
+export function crmKontakty({ typ, hledat } = {}) {
+  const p = new URLSearchParams();
+  if (typ) p.set("typ", typ);
+  if (hledat) p.set("hledat", hledat);
+  const q = p.toString();
+  return zavolej(`/crm/kontakty${q ? `?${q}` : ""}`);
+}
+
+export function crmKontaktDetail(id) {
+  return zavolej(`/crm/kontakty/detail/${id}`);
+}
+
+// Úprava z karty osoby. Vrací kartu osoby (na rozdíl od `crmKontaktUprav`,
+// který vrací kartu firmy, protože ho volá panel u zákazníka).
+export function crmKontaktUpravZKarty(id, data) {
+  return zavolej(`/crm/kontakty/detail/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+// ---- naše firma (Admin nastavení → Firma) ----
+
+export function crmFirma() {
+  return zavolej("/crm/firma");
+}
+
+export function crmFirmaUloz(data) {
+  return zavolej("/crm/firma", { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function crmInterniKontakty() {
+  return zavolej("/crm/firma/interni-kontakty");
+}
+
 export function crmPripady({ stav, zakaznikId, hledat } = {}) {
   const p = new URLSearchParams();
   if (stav) p.set("stav", stav);

@@ -12,6 +12,8 @@ import NabidkaVystupStranka from "./pages/NabidkaVystupStranka";
 import NabidkovacKatalog from "./pages/NabidkovacKatalog";
 import Zakaznici from "./pages/Zakaznici";
 import ZakaznikDetail from "./pages/ZakaznikDetail";
+import KontaktniOsoby from "./pages/KontaktniOsoby";
+import KontaktDetail from "./pages/KontaktDetail";
 import ObchodniPripady from "./pages/ObchodniPripady";
 import Nabidky from "./pages/Nabidky";
 import Objednavky from "./pages/Objednavky";
@@ -129,6 +131,24 @@ export default function App() {
           element={
             <VyzadujePrihlaseni>
               <Zakaznici />
+            </VyzadujePrihlaseni>
+          }
+        />
+        {/* Číselník kontaktních osob – „detail" v cestě ze stejného důvodu
+            jako u zákazníků. */}
+        <Route
+          path="/kontakty"
+          element={
+            <VyzadujePrihlaseni>
+              <KontaktniOsoby />
+            </VyzadujePrihlaseni>
+          }
+        />
+        <Route
+          path="/kontakty/detail/:id"
+          element={
+            <VyzadujePrihlaseni>
+              <KontaktDetail />
             </VyzadujePrihlaseni>
           }
         />

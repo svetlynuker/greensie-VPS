@@ -37,6 +37,17 @@ export const NABIDKA = [
     skupina: "Obchod",
     polozky: [
       { klic: "zakaznici", nazev: "Zákazníci", ikona: "zakaznici", cesta: "/zakaznici", pravo: "zakaznici" },
+      // Číselník lidí u zákazníků. Hned pod Zákazníky schválně: je to druhý
+      // pohled na tatáž data (osoba se zakládá na kartě firmy), ne vlastní
+      // agenda. Jede pod stejným právem — kdo vidí firmy, vidí i jejich lidi.
+      {
+        klic: "kontakty",
+        nazev: "Kontaktní osoby",
+        ikona: "zakaznici",
+        cesta: "/kontakty",
+        pravo: "zakaznici",
+        novinka: true,
+      },
       {
         klic: "obchodni_pripady",
         nazev: "Obchodní případy",
@@ -150,6 +161,7 @@ export function aktivniKlic(pathname) {
 const POPISY = {
   "/rozcestnik": ["Rozcestník", "Přehled dne"],
   "/zakaznici": ["Zákazníci", "Leady a klienti"],
+  "/kontakty": ["Kontaktní osoby", "Lidé u leadů i klientů"],
   "/pripady": ["Obchodní případy", "Pipeline zakázek"],
   "/nabidky": ["Nabídky", "Co je odesláno a co zákazník přijal"],
   "/prehled-projektu": ["Přehled projektů", "Matice úkolů a fází"],
@@ -189,6 +201,7 @@ export function popisStranky(pathname) {
 /** Která stránka manuálu patří ke které adrese (kontextová nápověda „?"). */
 export function strankaManualu(pathname) {
   if (pathname.startsWith("/zakaznici") || pathname.startsWith("/pripady")) return "crm";
+  if (pathname.startsWith("/kontakty")) return "crm";
   if (pathname.startsWith("/nabidky") || pathname.startsWith("/objednavky")) return "crm";
   if (pathname.startsWith("/projekty")) return "crm";
   if (pathname.startsWith("/kalendar")) return "crm";

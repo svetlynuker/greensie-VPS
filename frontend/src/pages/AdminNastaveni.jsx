@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
+import FirmaNastaveni from "../components/FirmaNastaveni";
 import {
   nactiMe,
   logout,
@@ -21,7 +22,11 @@ import {
 // Záložky = jedno nastavení na záložku. Uživatelé a skupiny jsou systémové,
 // synchronizace s Freelem patří modulu Přehled projektů. Až přijdou nastavení
 // dalších modulů, přidají se sem jako další záložka.
+//
+// „Firma" je první schválně: je to identita, ze které vychází všechno ostatní
+// (nabídky, podpis pošty, adresa u schůzek).
 const ZALOZKY = [
+  { klic: "firma", nazev: "Firma" },
   { klic: "uzivatele", nazev: "Uživatelé" },
   { klic: "skupiny", nazev: "Skupiny a práva" },
   { klic: "projekty", nazev: "Přehled projektů" },
@@ -460,7 +465,7 @@ export default function AdminNastaveni() {
   const [editSkupina, setEditSkupina] = useState(null);
   const [resetUzivatel, setResetUzivatel] = useState(null);
   const [hesloVysledek, setHesloVysledek] = useState(null);
-  const [zalozka, setZalozka] = useState("uzivatele");
+  const [zalozka, setZalozka] = useState("firma");
   const navigate = useNavigate();
 
   const nazvyPrav = (klice) => {
@@ -573,6 +578,13 @@ export default function AdminNastaveni() {
             </button>
           ))}
         </div>
+
+        {/* ---------- záložka: firma (údaje o nás) ---------- */}
+        {zalozka === "firma" && (
+          <div role="tabpanel">
+            <FirmaNastaveni onUzivatele={() => setZalozka("uzivatele")} />
+          </div>
+        )}
 
         {/* ---------- záložka: uživatelé ---------- */}
         {zalozka === "uzivatele" && (

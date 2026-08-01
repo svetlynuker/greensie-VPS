@@ -590,6 +590,44 @@ def _lehka_migrace():
                     )
                 )
 
+        # Záložka „Firma" v Admin nastavení (1. 8. 2026): údaje o Greensie.
+        # `crm_nastaveni` existuje od dřívějška (držela jen `nase_adresa`),
+        # takže create_all nové sloupce do ní nedoplní.
+        if inspect(engine).has_table("crm_nastaveni"):
+            for sloupec, definice in (
+                ("nazev", "VARCHAR NOT NULL DEFAULT ''"),
+                ("ico", "VARCHAR NOT NULL DEFAULT ''"),
+                ("dic", "VARCHAR NOT NULL DEFAULT ''"),
+                ("platce_dph", "BOOLEAN NOT NULL DEFAULT true"),
+                ("or_soud", "VARCHAR NOT NULL DEFAULT ''"),
+                ("or_spisova_znacka", "VARCHAR NOT NULL DEFAULT ''"),
+                ("adresa_ulice", "VARCHAR NOT NULL DEFAULT ''"),
+                ("adresa_mesto", "VARCHAR NOT NULL DEFAULT ''"),
+                ("adresa_psc", "VARCHAR NOT NULL DEFAULT ''"),
+                ("adresa_stat", "VARCHAR NOT NULL DEFAULT 'Česko'"),
+                ("koresp_stejna", "BOOLEAN NOT NULL DEFAULT true"),
+                ("koresp_ulice", "VARCHAR NOT NULL DEFAULT ''"),
+                ("koresp_mesto", "VARCHAR NOT NULL DEFAULT ''"),
+                ("koresp_psc", "VARCHAR NOT NULL DEFAULT ''"),
+                ("koresp_stat", "VARCHAR NOT NULL DEFAULT ''"),
+                ("telefon", "VARCHAR NOT NULL DEFAULT ''"),
+                ("email", "VARCHAR NOT NULL DEFAULT ''"),
+                ("web", "VARCHAR NOT NULL DEFAULT ''"),
+                ("datova_schranka", "VARCHAR NOT NULL DEFAULT ''"),
+                ("banka_nazev", "VARCHAR NOT NULL DEFAULT ''"),
+                ("cislo_uctu", "VARCHAR NOT NULL DEFAULT ''"),
+                ("iban", "VARCHAR NOT NULL DEFAULT ''"),
+                ("swift", "VARCHAR NOT NULL DEFAULT ''"),
+                ("statutar_jmeno", "VARCHAR NOT NULL DEFAULT ''"),
+                ("statutar_funkce", "VARCHAR NOT NULL DEFAULT ''"),
+                ("poznamka", "TEXT NOT NULL DEFAULT ''"),
+            ):
+                conn.execute(
+                    text(
+                        f"ALTER TABLE crm_nastaveni ADD COLUMN IF NOT EXISTS {sloupec} {definice}"
+                    )
+                )
+
         if inspect(engine).has_table("crm_email_zpravy"):
             for sloupec, definice in (
                 ("zpracovano_at", "TIMESTAMPTZ"),
