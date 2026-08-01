@@ -1,11 +1,11 @@
 # Admin nastavení
 
 > **Sekce v nabídce:** `admin` · **Adresa (routa):** `/admin` · **Kdo smí otevřít:** jen kdo má právo `admin` (supersprávce ho má vždy). Bez práva se sekce v nabídce vlevo vůbec nezobrazí.
-> **Kód:** frontend `frontend/src/pages/AdminNastaveni.jsx`, backend `backend/app/admin/` (+ `backend/app/auth/permissions.py`, `backend/app/auth/models.py`); nastavení synchronizace `backend/app/matice/routes.py`.
+> **Kód:** frontend `frontend/src/pages/AdminNastaveni.jsx` (+ `frontend/src/components/FirmaNastaveni.jsx`), backend `backend/app/admin/` (+ `backend/app/auth/permissions.py`, `backend/app/auth/models.py`); údaje o firmě `backend/app/crm/nastaveni_crm.py`; nastavení synchronizace `backend/app/matice/routes.py`.
 
-Centrální správa **uživatelů, skupin a práv** celé appky, **reset hesel** a **nastavení automatické synchronizace s Freelem**. Slouží správci systému (supersprávci nebo komukoli s právem `admin`).
+Evidence **naší firmy**, centrální správa **uživatelů, skupin a práv** celé appky, **reset hesel** a **nastavení automatické synchronizace s Freelem**. Slouží správci systému (supersprávci nebo komukoli s právem `admin`).
 
-> 📸 SCREENSHOT: Admin nastavení se záložkami Uživatelé / Skupiny a práva / Přehled projektů
+> 📸 SCREENSHOT: Admin nastavení se záložkami Firma / Uživatelé / Skupiny a práva / Přehled projektů
 
 ---
 
@@ -22,9 +22,52 @@ sebou a stránka se musela rolovat; teď se přepíná nahoře a vidí se jen to
 
 | Záložka | Co v ní je |
 |---|---|
+| **Firma** | údaje o nás jako o Greensie + automatický seznam interních kontaktů |
 | **Uživatelé** (s počtem) | tabulka všech účtů ve vlastním okně se scrollem, tlačítko *+ Přidat uživatele* |
 | **Skupiny a práva** (s počtem) | seznam skupin s jejich právy, tlačítko *+ Přidat skupinu* |
 | **Přehled projektů** | nastavení automatické synchronizace s Freelem (viz Pro admina / provoz) |
+
+**Firma je první schválně** — je to identita, ze které vychází všechno ostatní (nabídky, podpis
+pošty, adresa u schůzek), takže se otevírá jako výchozí záložka.
+
+### Záložka Firma — údaje o nás
+
+Jedno místo, kde je evidovaná **naše firma**. Údaje jsou rozdělené do sekcí:
+
+| Sekce | Co se vyplňuje |
+|---|---|
+| **Identifikace** | název, IČO, DIČ, plátce DPH, soud a spisová značka zápisu v OR |
+| **Adresa sídla** | ulice a číslo, PSČ, město, stát |
+| **Korespondenční adresa** | zaškrtávátko *Stejná jako sídlo*; když se odškrtne, objeví se vlastní políčka |
+| **Kontakt** | telefon, e-mail, web, datová schránka |
+| **Bankovní spojení** | banka, číslo účtu, IBAN, SWIFT/BIC |
+| **Statutární orgán** | jméno a funkce |
+| **Poznámka** | volný text |
+
+U Identifikace je tlačítko **„Doplnit z ARES podle IČO"** — vyplní název, DIČ a sídlo z veřejného
+registru, takže se nic nepřepisuje ručně. Když ARES neodpoví, napíše to jako poznámku (ne jako
+červenou chybu) a údaje se dají dopsat rukou.
+
+**Adresa sídla je zároveň to, co nabídne tlačítko „U nás"** u místa konání schůzky v kalendáři —
+appka si z ní skládá jednořádkovou adresu. Proto se ta adresa nepíše na dvou místech: opraví se
+tady a všude jinde se to projeví samo.
+
+**Kdo to smí měnit:** vedení s právem `crm_nastaveni` nebo supersprávce. Kdo právo nemá, údaje
+**vidí** (potřebuje je appka i pro nabídky), ale políčka má zamčená a tlačítko Uložit nevidí.
+
+> **Proč Greensie není záznam v Zákaznících:** vlastní firma by lezla do každého filtru, do
+> statistik pipeline i do výběru „komu nabídku". Naše identita je konfigurace appky, ne obchodní
+> záznam — proto má vlastní záložku a ne kartu klienta.
+
+### Záložka Firma — interní kontakty
+
+Pod údaji je tabulka **našich lidí**: jméno, funkce, telefon, e-mail a skupina. Seznam se plní
+**sám z uživatelů appky** — nic se do něj nezadává. Kdo přijde nebo odejde, řeší se v záložce
+Uživatelé (je tam na to i tlačítko) a Firma to hned ukáže.
+
+Funkce a telefon se berou z **osobního profilu** (ten, který si člověk vyplňuje pro podpis do
+e-mailu, viz Nastavení → Podpis). Prázdná funkce nebo telefon tedy znamená „ten člověk si profil
+ještě nevyplnil", ne chybu. Druhá, ruční evidence lidí tu schválně není — rozešla by se s tou první.
 
 Nad záložkami je jen odkaz **„← Zpět na rozcestník"**; nadpis stránky nese horní lišta appky, tak
 se tu nedubluje. Až přijdou nastavení dalších modulů, přidají se jako další záložka — proto se

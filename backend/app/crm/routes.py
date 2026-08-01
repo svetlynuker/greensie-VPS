@@ -61,6 +61,8 @@ from app.crm.models import (
     CiselnaRada,
     CrmAktivita,
     CrmDiagram,
+    CrmEmailVazba,
+    CrmEmailZprava,
     CrmKategorie,
     CrmKategorieAktivity,
     CrmProjekt,
@@ -103,6 +105,8 @@ from app.crm.schemas import (
     DiagramOut,
     EmailOut,
     EmailVstup,
+    FirmaOut,
+    FirmaVstup,
     HromadnaAktivitaVstup,
     HromadnyStavVstup,
     HromadnyVlastnikVstup,
@@ -114,7 +118,12 @@ from app.crm.schemas import (
     KategorieAktivityVstup,
     KategorieOut,
     KategorieVstup,
+    InterniKontaktOut,
+    KontaktDetailOut,
+    KontaktEmailOut,
     KontaktOut,
+    KontaktPripadOut,
+    KontaktRadekOut,
     KontaktVstup,
     NabidkaKanbanOut,
     NabidkaKanbanSloupec,
@@ -511,7 +520,208 @@ def smaz_zakaznika(
     return {"ok": True}
 
 
+# ---- číselník kontaktních osob ----------------------------------------------
+# Pohled napříč firmami. Data jsou tatáž (`crm_zakaznik_kontakty`) jako v panelu
+# na kartě zákazníka — druhá tabulka lidí by znamenala, že se opravený telefon
+# objeví jen na jednom místě.
+#
+# VIDITELNOST se dědí z firmy: kdo nevidí zákazníka, nevidí ani jeho lidi.
+# Proto jde dotaz přes `omez_na_moje(..., Zakaznik, user)` a ne přes vlastní
+# pravidlo, které by se s tím prvním mohlo rozejít.
+def _emailova_statistika(db: Session, kontakt_ids: list[int]) -> dict[int, tuple[int, str | None]]:
+    """{kontakt_id: (počet zpráv, kdy naposledy)} — jedním dotazem, ne N+1.
+
+    Bere se z vazeb pošty na CRM (`crm_email_vazby`), takže „poslední kontakt"
+    znamená reálnou komunikaci, ne datum založení záznamu. Ručně schované vazby
+    se nepočítají — pro uživatele ta zpráva k osobě nepatří.
+    """
+    if not kontakt_ids:
+        return {}
+    radky = (
+        db.query(
+            CrmEmailVazba.kontakt_id,
+            func.count(CrmEmailVazba.id),
+            func.max(CrmEmailVazba.kdy),
+        )
+        .filter(CrmEmailVazba.kontakt_id.in_(kontakt_ids))
+        .filter(CrmEmailVazba.skryta.is_(False))
+        .group_by(CrmEmailVazba.kontakt_id)
+        .all()
+    )
+    return {kid: (int(pocet or 0), _iso(kdy)) for kid, pocet, kdy in radky}
+
+
+@router.get("/kontakty", response_model=list[KontaktRadekOut])
+def seznam_kontaktu(
+    typ: str | None = Query(default=None, description="lead / klient – typ firmy"),
+    hledat: str | None = Query(default=None),
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Číselník kontaktních osob napříč firmami, profiltrovaný právy."""
+    if typ is not None and typ not in TYPY_ZAKAZNIKA:
+        raise HTTPException(status_code=422, detail=f"Neznámý typ zákazníka: {typ}")
+
+    q = db.query(ZakaznikKontakt, Zakaznik).join(
+        Zakaznik, ZakaznikKontakt.zakaznik_id == Zakaznik.id
+    )
+    if typ is not None:
+        q = q.filter(Zakaznik.typ == typ)
+    if hledat:
+        vzor = f"%{hledat.strip()}%"
+        q = q.filter(
+            or_(
+                ZakaznikKontakt.jmeno.ilike(vzor),
+                ZakaznikKontakt.email.ilike(vzor),
+                ZakaznikKontakt.telefon.ilike(vzor),
+                ZakaznikKontakt.funkce.ilike(vzor),
+                Zakaznik.nazev.ilike(vzor),
+            )
+        )
+    q = omez_na_moje(q, Zakaznik, user)
+    dvojice = q.order_by(ZakaznikKontakt.jmeno).all()
+
+    statistika = _emailova_statistika(db, [k.id for k, _ in dvojice])
+    return [
+        KontaktRadekOut(
+            id=k.id,
+            jmeno=k.jmeno,
+            funkce=k.funkce or "",
+            email=k.email or "",
+            telefon=k.telefon or "",
+            hlavni=bool(k.hlavni),
+            zakaznik_id=z.id,
+            zakaznik_nazev=z.nazev,
+            zakaznik_typ=z.typ,
+            zakaznik_mesto=z.adresa_mesto or "",
+            vlastnik_jmeno=_jmeno(z.vlastnik),
+            pocet_emailu=statistika.get(k.id, (0, None))[0],
+            posledni_email_at=statistika.get(k.id, (0, None))[1],
+            vytvoreno_at=_iso(k.vytvoreno_at),
+        )
+        for k, z in dvojice
+    ]
+
+
+def _kontakt_detail(db: Session, k: ZakaznikKontakt, z: Zakaznik, user: User) -> KontaktDetailOut:
+    """Karta osoby: její údaje, firma jako kontext a co s ní reálně proběhlo.
+
+    Aktivity tu schválně nejsou: v datech visí na firmě nebo případu, ne na
+    člověku, takže by karta jen opisovala kartu zákazníka.
+    """
+    stavy = _mapa_stavu(db, "op")
+    pripady = (
+        db.query(ObchodniPripad)
+        .filter(ObchodniPripad.zakaznik_id == z.id)
+        .order_by(ObchodniPripad.id.desc())
+        .limit(20)
+        .all()
+    )
+    # E-mailová historie právě téhle osoby (vazby pošty na CRM, CRM-33).
+    zpravy = (
+        db.query(CrmEmailZprava, CrmEmailVazba)
+        .join(CrmEmailVazba, CrmEmailVazba.zprava_id == CrmEmailZprava.id)
+        .filter(CrmEmailVazba.kontakt_id == k.id)
+        .filter(CrmEmailVazba.skryta.is_(False))
+        .order_by(CrmEmailVazba.kdy.desc().nullslast())
+        .limit(30)
+        .all()
+    )
+    return KontaktDetailOut(
+        id=k.id,
+        jmeno=k.jmeno,
+        funkce=k.funkce or "",
+        email=k.email or "",
+        telefon=k.telefon or "",
+        hlavni=bool(k.hlavni),
+        poznamka=k.poznamka or "",
+        vytvoreno_at=_iso(k.vytvoreno_at),
+        zakaznik_id=z.id,
+        zakaznik_nazev=z.nazev,
+        zakaznik_typ=z.typ,
+        zakaznik_mesto=z.adresa_mesto or "",
+        zakaznik_telefon=z.telefon or "",
+        zakaznik_email=z.email or "",
+        vlastnik_jmeno=_jmeno(z.vlastnik),
+        pripady=[
+            KontaktPripadOut(
+                id=p.id,
+                cislo=p.cislo or "",
+                nazev=p.nazev or "",
+                # Stav je klíč do `crm_stavy`; když stav mezitím někdo smazal,
+                # ukáže se aspoň klíč – prázdno by vypadalo jako chyba.
+                stav=(stavy[p.stav].nazev if p.stav in stavy else (p.stav or "")),
+            )
+            for p in pripady
+        ],
+        emaily=[
+            KontaktEmailOut(
+                zprava_id=zprava.id,
+                predmet=zprava.predmet or "(bez předmětu)",
+                od_adresa=zprava.od_adresa or "",
+                smer=zprava.smer or "",
+                kdy=_iso(vazba.kdy),
+            )
+            for zprava, vazba in zpravy
+        ],
+        muze_editovat=smi_menit(z, user),
+    )
+
+
+@router.get("/kontakty/detail/{kontakt_id}", response_model=KontaktDetailOut)
+def detail_kontaktu(
+    kontakt_id: int,
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    k = db.get(ZakaznikKontakt, kontakt_id)
+    if k is None:
+        raise HTTPException(status_code=404, detail="Kontakt neexistuje")
+    z = vyzaduj_zaznam(db.get(Zakaznik, k.zakaznik_id), user, "Zákazník")
+    return _kontakt_detail(db, k, z, user)
+
+
+@router.put("/kontakty/detail/{kontakt_id}", response_model=KontaktDetailOut)
+def uprav_kontakt_z_karty(
+    kontakt_id: int,
+    vstup: KontaktVstup,
+    user: User = Depends(vyzaduj_zakazniky),
+    db: Session = Depends(get_db),
+):
+    """Úprava z karty osoby. Tatáž změna jako v panelu na kartě zákazníka,
+    jen odpověď je karta osoby, ne karta firmy."""
+    k = db.get(ZakaznikKontakt, kontakt_id)
+    if k is None:
+        raise HTTPException(status_code=404, detail="Kontakt neexistuje")
+    z = vyzaduj_zaznam(db.get(Zakaznik, k.zakaznik_id), user, "Zákazník")
+    _preber_kontakt(k, z, vstup)
+    db.commit()
+    db.refresh(k)
+    return _kontakt_detail(db, k, z, user)
+
+
 # ---- kontaktní osoby --------------------------------------------------------
+def _preber_kontakt(k: ZakaznikKontakt, z: Zakaznik, vstup: KontaktVstup) -> None:
+    """Přepíše kontakt hodnotami z formuláře (bez commitu).
+
+    Jedno místo pro dva endpointy (panel u zákazníka a karta osoby), aby se
+    pravidlo „hlavní kontakt je jen jeden" nemuselo psát dvakrát.
+    """
+    jmeno = (vstup.jmeno or "").strip()
+    if not jmeno:
+        raise HTTPException(status_code=422, detail="Jméno kontaktu je povinné.")
+    if vstup.hlavni:
+        for jiny in z.kontakty:
+            if jiny.id != k.id:
+                jiny.hlavni = False
+    k.jmeno = jmeno
+    k.funkce = (vstup.funkce or "").strip()
+    k.email = (vstup.email or "").strip()
+    k.telefon = (vstup.telefon or "").strip()
+    k.hlavni = bool(vstup.hlavni)
+    k.poznamka = vstup.poznamka or ""
+
+
 @router.post("/zakaznici/{zakaznik_id}/kontakty", response_model=ZakaznikDetailOut)
 def pridej_kontakt(
     zakaznik_id: int,
@@ -554,20 +764,7 @@ def uprav_kontakt(
     if k is None:
         raise HTTPException(status_code=404, detail="Kontakt neexistuje")
     z = vyzaduj_zaznam(db.get(Zakaznik, k.zakaznik_id), user, "Zákazník")
-
-    jmeno = (vstup.jmeno or "").strip()
-    if not jmeno:
-        raise HTTPException(status_code=422, detail="Jméno kontaktu je povinné.")
-    if vstup.hlavni:
-        for jiny in z.kontakty:
-            if jiny.id != k.id:
-                jiny.hlavni = False
-    k.jmeno = jmeno
-    k.funkce = (vstup.funkce or "").strip()
-    k.email = (vstup.email or "").strip()
-    k.telefon = (vstup.telefon or "").strip()
-    k.hlavni = bool(vstup.hlavni)
-    k.poznamka = vstup.poznamka or ""
+    _preber_kontakt(k, z, vstup)
     db.commit()
     db.refresh(z)
     return _zakaznik_detail(z, user, db)
@@ -2303,6 +2500,74 @@ def uloz_nastaveni_crm(
         n.nase_adresa = str(vstup["nase_adresa"] or "").strip()
     db.commit()
     return {"nase_adresa": n.nase_adresa or ""}
+
+
+# ---- naše firma (Admin nastavení → Firma) -----------------------------------
+def _firma_out(n, user: User) -> FirmaOut:
+    return FirmaOut(
+        nazev=n.nazev or "",
+        ico=n.ico or "",
+        dic=n.dic or "",
+        platce_dph=bool(n.platce_dph),
+        or_soud=n.or_soud or "",
+        or_spisova_znacka=n.or_spisova_znacka or "",
+        adresa_ulice=n.adresa_ulice or "",
+        adresa_mesto=n.adresa_mesto or "",
+        adresa_psc=n.adresa_psc or "",
+        adresa_stat=n.adresa_stat or "",
+        koresp_stejna=bool(n.koresp_stejna),
+        koresp_ulice=n.koresp_ulice or "",
+        koresp_mesto=n.koresp_mesto or "",
+        koresp_psc=n.koresp_psc or "",
+        koresp_stat=n.koresp_stat or "",
+        telefon=n.telefon or "",
+        email=n.email or "",
+        web=n.web or "",
+        datova_schranka=n.datova_schranka or "",
+        banka_nazev=n.banka_nazev or "",
+        cislo_uctu=n.cislo_uctu or "",
+        iban=n.iban or "",
+        swift=n.swift or "",
+        statutar_jmeno=n.statutar_jmeno or "",
+        statutar_funkce=n.statutar_funkce or "",
+        poznamka=n.poznamka or "",
+        nase_adresa=n.nase_adresa or "",
+        aktualizovano_at=_iso(n.aktualizovano_at),
+        muze_editovat=muze_otevrit(user, "crm_nastaveni") or muze_otevrit(user, "admin"),
+    )
+
+
+@router.get("/firma", response_model=FirmaOut)
+def nacti_firmu(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Údaje o nás. Čte je každý přihlášený — název a adresa firmy patří do
+    nabídek, do podpisu pošty i na tlačítko „U nás" u schůzek. Měnit je smí
+    jen vedení (`crm_nastaveni`) nebo supersprávce."""
+    return _firma_out(nastaveni_crm.nacti(db), user)
+
+
+@router.put("/firma", response_model=FirmaOut)
+def uloz_firmu(
+    vstup: FirmaVstup,
+    user: User = Depends(vyzaduj_nastaveni),
+    db: Session = Depends(get_db),
+):
+    # `exclude_unset` schválně: formulář posílá jen svoje pole a nevyplněné
+    # nesmí přepsat na prázdno to, co už v konfiguraci je.
+    n = nastaveni_crm.uloz(db, vstup.model_dump(exclude_unset=True))
+    return _firma_out(n, user)
+
+
+@router.get("/firma/interni-kontakty", response_model=list[InterniKontaktOut])
+def seznam_internich_kontaktu(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Naši lidé = uživatelé appky. Firemní telefonní seznam, vidí ho každý
+    přihlášený (stejně jako našeptávač adres v poště)."""
+    return [InterniKontaktOut(**k) for k in nastaveni_crm.interni_kontakty(db)]
 
 
 @router.get("/kategorie-aktivit", response_model=list[KategorieAktivityOut])

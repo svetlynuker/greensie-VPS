@@ -235,6 +235,23 @@ export const SLOUPCE_PROJEKTY = [
   S("vlastnik_jmeno", "Vlastník"),
 ];
 
+// Číselník kontaktních osob. „Firma" je tu druhá hned za jménem: bez ní se
+// řádek nedá zařadit, protože seznam je napříč všemi zákazníky.
+export const SLOUPCE_KONTAKTY = [
+  S("jmeno", "Jméno"),
+  S("zakaznik_nazev", "Firma"),
+  S("funkce", "Funkce"),
+  S("telefon", "Telefon"),
+  S("email", "E-mail"),
+  S("hlavni", "Hlavní kontakt", "ano_ne"),
+  S("zakaznik_typ_nazev", "Typ firmy", "vyber"),
+  S("zakaznik_mesto", "Město"),
+  S("vlastnik_jmeno", "Vlastník firmy"),
+  S("posledni_email_at", "Poslední e-mail", "datum"),
+  S("pocet_emailu", "E-mailů", "cislo", { vpravo: true }),
+  S("vytvoreno_at", "Vytvořeno", "datum"),
+];
+
 /** Sloupce podle entity + vlastní (admin definovaná) pole označená „v seznamu". */
 export function sloupceEntity(entita, vlastniPole = []) {
   const zaklad =
@@ -244,6 +261,7 @@ export function sloupceEntity(entita, vlastniPole = []) {
       nab: SLOUPCE_NABIDKY,
       obj: SLOUPCE_OBJEDNAVKY,
       pro: SLOUPCE_PROJEKTY,
+      kontakt: SLOUPCE_KONTAKTY,
     }[entita] || [];
   // Vlastní pole se filtrují jako text nad naformátovanou hodnotou – uložená
   // hodnota může být číslo i datum, ale v řádku je vždy jako `extra_text`.
@@ -256,6 +274,8 @@ export function sloupceEntity(entita, vlastniPole = []) {
 /** Výchozí řazení: podle čísla záznamu (OP/NAB/OBJ/PRO), nejnovější první. */
 export function vychoziRazeni(entita) {
   if (entita === "zakaznik") return [{ pole: "nazev", smer: "asc" }];
+  // Lidé ani firmy číslo nemají – abecedně podle jména, jako v telefonu.
+  if (entita === "kontakt") return [{ pole: "jmeno", smer: "asc" }];
   return [{ pole: "cislo", smer: "desc" }];
 }
 

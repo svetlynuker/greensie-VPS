@@ -149,6 +149,165 @@ class KontaktVstup(BaseModel):
     poznamka: str = ""
 
 
+class KontaktRadekOut(BaseModel):
+    """Řádek v číselníku Kontaktní osoby (osoba + firma, ke které patří).
+
+    Proti `KontaktOut` je tu firma navíc: číselník je pohled napříč firmami,
+    takže bez názvu firmy by řádek nešlo zařadit.
+    """
+
+    id: int
+    jmeno: str
+    funkce: str = ""
+    email: str = ""
+    telefon: str = ""
+    hlavni: bool = False
+    zakaznik_id: int
+    zakaznik_nazev: str
+    zakaznik_typ: TypZakaznika
+    zakaznik_mesto: str = ""
+    vlastnik_jmeno: Optional[str] = None
+    # Kdy s tou osobou naposledy proběhla e-mailová komunikace (z vazeb pošty
+    # na CRM). Prázdné = zatím nikdy.
+    posledni_email_at: Optional[str] = None
+    pocet_emailu: int = 0
+    vytvoreno_at: Optional[str] = None
+
+
+class KontaktEmailOut(BaseModel):
+    """Jedna zpráva v historii kontaktní osoby."""
+
+    zprava_id: int
+    predmet: str = ""
+    od_adresa: str = ""
+    smer: str = ""
+    kdy: Optional[str] = None
+
+
+class KontaktPripadOut(BaseModel):
+    """Obchodní případ firmy — kontext na kartě osoby, ne její vlastní data."""
+
+    id: int
+    cislo: str = ""
+    nazev: str = ""
+    stav: str = ""
+
+
+class KontaktDetailOut(BaseModel):
+    """Karta kontaktní osoby."""
+
+    id: int
+    jmeno: str
+    funkce: str = ""
+    email: str = ""
+    telefon: str = ""
+    hlavni: bool = False
+    poznamka: str = ""
+    vytvoreno_at: Optional[str] = None
+
+    zakaznik_id: int
+    zakaznik_nazev: str
+    zakaznik_typ: TypZakaznika
+    zakaznik_mesto: str = ""
+    zakaznik_telefon: str = ""
+    zakaznik_email: str = ""
+    vlastnik_jmeno: Optional[str] = None
+
+    pripady: list[KontaktPripadOut] = []
+    emaily: list[KontaktEmailOut] = []
+    muze_editovat: bool = True
+
+
+# ---- naše firma (Admin nastavení → Firma) -----------------------------------
+class FirmaOut(BaseModel):
+    """Údaje o nás jako o Greensie. Jeden řádek konfigurace, ne seznam."""
+
+    nazev: str = ""
+    ico: str = ""
+    dic: str = ""
+    platce_dph: bool = True
+    or_soud: str = ""
+    or_spisova_znacka: str = ""
+
+    adresa_ulice: str = ""
+    adresa_mesto: str = ""
+    adresa_psc: str = ""
+    adresa_stat: str = ""
+
+    koresp_stejna: bool = True
+    koresp_ulice: str = ""
+    koresp_mesto: str = ""
+    koresp_psc: str = ""
+    koresp_stat: str = ""
+
+    telefon: str = ""
+    email: str = ""
+    web: str = ""
+    datova_schranka: str = ""
+
+    banka_nazev: str = ""
+    cislo_uctu: str = ""
+    iban: str = ""
+    swift: str = ""
+
+    statutar_jmeno: str = ""
+    statutar_funkce: str = ""
+    poznamka: str = ""
+
+    # Sídlo na jeden řádek – to, co appka nabízí u místa konání schůzky.
+    nase_adresa: str = ""
+    aktualizovano_at: Optional[str] = None
+    muze_editovat: bool = False
+
+
+class FirmaVstup(BaseModel):
+    """Uložení údajů o firmě. Všechno nepovinné – formulář posílá jen to své."""
+
+    nazev: Optional[str] = None
+    ico: Optional[str] = None
+    dic: Optional[str] = None
+    platce_dph: Optional[bool] = None
+    or_soud: Optional[str] = None
+    or_spisova_znacka: Optional[str] = None
+
+    adresa_ulice: Optional[str] = None
+    adresa_mesto: Optional[str] = None
+    adresa_psc: Optional[str] = None
+    adresa_stat: Optional[str] = None
+
+    koresp_stejna: Optional[bool] = None
+    koresp_ulice: Optional[str] = None
+    koresp_mesto: Optional[str] = None
+    koresp_psc: Optional[str] = None
+    koresp_stat: Optional[str] = None
+
+    telefon: Optional[str] = None
+    email: Optional[str] = None
+    web: Optional[str] = None
+    datova_schranka: Optional[str] = None
+
+    banka_nazev: Optional[str] = None
+    cislo_uctu: Optional[str] = None
+    iban: Optional[str] = None
+    swift: Optional[str] = None
+
+    statutar_jmeno: Optional[str] = None
+    statutar_funkce: Optional[str] = None
+    poznamka: Optional[str] = None
+
+
+class InterniKontaktOut(BaseModel):
+    """Náš člověk = uživatel appky. Jen ke čtení, mění se v záložce Uživatelé."""
+
+    user_id: int
+    jmeno: str
+    email: str = ""
+    funkce: str = ""
+    telefon: str = ""
+    skupina: str = ""
+    je_admin: bool = False
+
+
 # ---- zákazníci --------------------------------------------------------------
 class ZakaznikRadekOut(BaseModel):
     """Řádek v seznamu leadů/klientů."""

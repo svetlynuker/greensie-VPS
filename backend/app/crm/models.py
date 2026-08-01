@@ -154,20 +154,75 @@ class CiselnaRada(Base):
 
 
 class CrmNastaveni(Base):
-    """Firemní nastavení CRM — jeden řádek (id=1).
+    """Naše firma (Greensie) a firemní nastavení CRM — jeden řádek (id=1).
 
-    Zatím drží jen naši adresu pro tlačítko „U nás“ u místa konání schůzky.
-    Vlastní tabulka, a ne konstanta v kódu: adresa se mění (přestěhování) a je
-    to údaj firmy, ne uživatele, takže nepatří do `uzivatelska_nastaveni`.
+    Vlastní tabulka, a ne konstanta v kódu: údaje se mění (přestěhování, změna
+    účtu) a je to údaj firmy, ne uživatele, takže nepatří do
+    `uzivatelska_nastaveni`.
 
     Jeden řádek je schválně — je to konfigurace, ne seznam. `nacti()`
     v `nastaveni_crm.py` ho vyrobí, když ještě není.
+
+    ---- Proč Greensie NENÍ záznam v `crm_zakaznici` -------------------------
+    Vlastní firma by v seznamu zákazníků lezla do každého filtru, do statistik
+    pipeline i do výběru „komu nabídku". Naše identita je konfigurace appky,
+    ne obchodní záznam — proto sedí tady (rozhodnutí Dana, 1. 8. 2026).
+
+    `nase_adresa` zůstává vedle adresních polí schválně: je to JEDEN řádek
+    textu pro tlačítko „U nás" u místa konání schůzky. Dopočítává se ze sídla
+    (viz `nastaveni_crm.slozena_adresa`), takže dvě pravdy nevzniknou.
+
+    INTERNÍ KONTAKTY tu nejsou žádné: jsou to uživatelé appky (`uzivatele`
+    + `uzivatel_profil`). Druhá ruční evidence by se rozešla s tou první.
     """
 
     __tablename__ = "crm_nastaveni"
 
     id = Column(Integer, primary_key=True, index=True)
     nase_adresa = Column(String, nullable=False, default="", server_default="")
+
+    # ---- identifikace ----
+    nazev = Column(String, nullable=False, default="", server_default="")
+    ico = Column(String, nullable=False, default="", server_default="")
+    dic = Column(String, nullable=False, default="", server_default="")
+    platce_dph = Column(Boolean, nullable=False, default=True, server_default="true")
+    # Zápis v obchodním registru – patří na fakturu i do smlouvy.
+    or_soud = Column(String, nullable=False, default="", server_default="")
+    or_spisova_znacka = Column(String, nullable=False, default="", server_default="")
+
+    # ---- adresa sídla ----
+    adresa_ulice = Column(String, nullable=False, default="", server_default="")
+    adresa_mesto = Column(String, nullable=False, default="", server_default="")
+    adresa_psc = Column(String, nullable=False, default="", server_default="")
+    adresa_stat = Column(String, nullable=False, default="Česko", server_default="Česko")
+
+    # ---- korespondenční adresa ----
+    # `koresp_stejna` = ber korespondenční adresu ze sídla. Příznak, a ne
+    # kopie hodnot: po přestěhování by se kopie tiše rozešla se sídlem.
+    koresp_stejna = Column(Boolean, nullable=False, default=True, server_default="true")
+    koresp_ulice = Column(String, nullable=False, default="", server_default="")
+    koresp_mesto = Column(String, nullable=False, default="", server_default="")
+    koresp_psc = Column(String, nullable=False, default="", server_default="")
+    koresp_stat = Column(String, nullable=False, default="", server_default="")
+
+    # ---- kontakt ----
+    telefon = Column(String, nullable=False, default="", server_default="")
+    email = Column(String, nullable=False, default="", server_default="")
+    web = Column(String, nullable=False, default="", server_default="")
+    datova_schranka = Column(String, nullable=False, default="", server_default="")
+
+    # ---- banka ----
+    banka_nazev = Column(String, nullable=False, default="", server_default="")
+    cislo_uctu = Column(String, nullable=False, default="", server_default="")
+    iban = Column(String, nullable=False, default="", server_default="")
+    swift = Column(String, nullable=False, default="", server_default="")
+
+    # ---- statutární orgán ----
+    statutar_jmeno = Column(String, nullable=False, default="", server_default="")
+    statutar_funkce = Column(String, nullable=False, default="", server_default="")
+
+    poznamka = Column(Text, nullable=False, default="", server_default="")
+
     aktualizovano_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
@@ -1037,7 +1092,7 @@ class ProjektKrok(Base):
 # (uživatelé, typy, kategorie, přepínače) do TÉŽE tabulky, takže sdílení filtru
 # a výchozí pohled fungují bez druhého mechanismu. Podmínky u něj nemají formát
 # pole/operátor/hodnota — je to jedna položka s JSON stavem, viz Kalendar.jsx.
-ENTITY_FILTRU = ("zakaznik", "op", "nab", "obj", "pro", "kalendar")
+ENTITY_FILTRU = ("zakaznik", "op", "nab", "obj", "pro", "kalendar", "kontakt")
 
 # Operátory podmínek. Držíme je jako data, protože je zná i frontend (crm_filtry.js)
 # a musí se shodovat – jinak by uložený filtr znamenal jinde něco jiného.
