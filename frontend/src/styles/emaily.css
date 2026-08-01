@@ -548,3 +548,210 @@
   font-family: inherit;
   line-height: 1.5;
 }
+
+/* ---- formátovací editor těla zprávy ----------------------------------- */
+.te-obal {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.te-lista {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 6px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  /* Lišta zůstává vidět i při delší zprávě – jinak se k formátování musí
+     scrollovat nahoru. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.te-tlacitko {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.te-tlacitko:hover { background: var(--surface); border-color: var(--line); }
+
+.te-tlacitko[aria-pressed="true"] {
+  background: var(--brand-wash);
+  border-color: var(--brand);
+  color: var(--brand-strong);
+}
+
+.te-tlacitko:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+.te-vyber {
+  height: 28px;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+  max-width: 120px;
+}
+
+.te-oddelovac {
+  width: 1px;
+  height: 20px;
+  background: var(--line);
+  margin: 0 4px;
+  flex: 0 0 auto;
+}
+
+/* Psací plocha. Bílé pozadí i v tmavém režimu: píše se e-mail, který příjemce
+   uvidí na bílém, takže barvy písma se musí posuzovat proti bílé. */
+.te-plocha {
+  padding: 12px 14px;
+  background: #fff;
+  color: #16211c;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  outline: none;
+  overflow-y: auto;
+  max-height: min(48vh, 520px);
+}
+
+.te-plocha:focus { outline: none; }
+.te-plocha p { margin: 0 0 10px; }
+.te-plocha ul, .te-plocha ol { margin: 0 0 10px; padding-left: 26px; }
+.te-plocha li { margin: 2px 0; }
+.te-plocha a { color: #237a34; }
+.te-plocha blockquote {
+  margin: 8px 0;
+  padding-left: 12px;
+  border-left: 2px solid #c4cdc7;
+  color: #4b5852;
+}
+
+.te-napoveda {
+  padding: 5px 10px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* ---- hromadný výběr zpráv --------------------------------------------- */
+.em-zprava-obal {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.em-zprava-obal .em-zprava {
+  border-bottom: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.em-zprava-vyber {
+  flex: 0 0 auto;
+  margin: 12px 0 0 10px;
+  cursor: pointer;
+}
+
+.em-vybrat-vse {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+/* Lišta akcí nad seznamem. Zelené pozadí, aby bylo na první pohled jasné,
+   že se teď pracuje s výběrem a ne s jednou zprávou. */
+.em-hromadne {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--brand-wash);
+  border-bottom: 1px solid var(--brand);
+  flex: 0 0 auto;
+}
+
+.em-hromadne-pocet {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--brand-strong);
+}
+
+/* ---- historie komunikace na kartě záznamu ----------------------------- */
+.eh-seznam { display: flex; flex-direction: column; }
+
+.eh-radek {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.eh-radek:first-child { border-top: 0; }
+
+.eh-smer {
+  flex: 0 0 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.eh-dovnitr { background: var(--brand-wash); color: var(--brand-strong); }
+.eh-ven { background: var(--surface-2); color: var(--ink-2); }
+
+.eh-telo { flex: 1 1 auto; min-width: 0; }
+
+.eh-hlava { display: flex; align-items: baseline; gap: 6px; }
+
+.eh-predmet {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eh-datum { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+.eh-vypis {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -575,6 +575,21 @@ def _lehka_migrace():
                     )
                 )
 
+        # Napojení pošty na záznamy CRM („rejnetování", CRM-33).
+        if inspect(engine).has_table("crm_email_vazby"):
+            for sloupec, definice in (
+                ("adresa", "VARCHAR NOT NULL DEFAULT ''"),
+                ("role", "VARCHAR NOT NULL DEFAULT 'od'"),
+                ("zdroj", "VARCHAR NOT NULL DEFAULT 'auto'"),
+                ("skryta", "BOOLEAN NOT NULL DEFAULT false"),
+                ("kdy", "TIMESTAMPTZ"),
+            ):
+                conn.execute(
+                    text(
+                        f"ALTER TABLE crm_email_vazby ADD COLUMN IF NOT EXISTS {sloupec} {definice}"
+                    )
+                )
+
         if inspect(engine).has_table("crm_email_zpravy"):
             for sloupec, definice in (
                 ("zpracovano_at", "TIMESTAMPTZ"),

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import AdresarNaseptavac from "./AdresarNaseptavac";
+import TextovyEditor from "./TextovyEditor";
 import { emailOdeslat } from "../api";
 
 /**
@@ -19,7 +20,14 @@ export default function EmailPsani({ vychozi, podpis = "", onZavri, onOdeslano }
   const [kopie, setKopie] = useState(vychozi?.kopie || []);
   const [skrytaKopie, setSkrytaKopie] = useState([]);
   const [predmet, setPredmet] = useState(vychozi?.predmet || "");
-  const [telo, setTelo] = useState(vychozi?.telo || "");
+  // Tělo je nově HTML z formátovacího editoru. `vychozi.telo_html` chodí
+  // z backendu (citace u odpovědi); prostý `telo` je záloha pro jistotu.
+  const [telo, setTelo] = useState(
+    vychozi?.telo_html ||
+      (vychozi?.telo
+        ? `<p>${String(vychozi.telo).replace(/[&<>]/g, (z) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[z]).replace(/\n/g, "<br>")}</p>`
+        : ""),
+  );
   const [prilohy, setPrilohy] = useState([]);
   const [ukazKopie, setUkazKopie] = useState(
     (vychozi?.kopie || []).length > 0,
@@ -28,17 +36,8 @@ export default function EmailPsani({ vychozi, podpis = "", onZavri, onOdeslano }
   const [chyba, setChyba] = useState(null);
   const souborVstup = useRef(null);
 
-  // U odpovědi je kurzor nahoře nad citací – tam se píše.
-  const teloRef = useRef(null);
-  useEffect(() => {
-    const el = teloRef.current;
-    if (!el) return;
-    el.focus();
-    el.setSelectionRange(0, 0);
-    el.scrollTop = 0;
-  }, []);
-
-  const rozepsano = predmet.trim() || telo.trim() !== (vychozi?.telo || "").trim();
+  const puvodniTelo = vychozi?.telo_html || "";
+  const rozepsano = predmet.trim() || telo.trim() !== puvodniTelo.trim();
 
   function zavri() {
     if (
@@ -65,7 +64,9 @@ export default function EmailPsani({ vychozi, podpis = "", onZavri, onOdeslano }
         kopie,
         skrytaKopie,
         predmet,
-        telo,
+        // Prostý text se neposílá – server si ho odvodí z HTML, aby nemohly
+        // vzniknout dvě různé verze téhož.
+        teloHtml: telo,
         odpovedNaId: vychozi?.odpoved_na_id || null,
         zakaznikId: vychozi?.zakaznik_id || null,
         pripadId: vychozi?.pripad_id || null,
@@ -79,8 +80,10 @@ export default function EmailPsani({ vychozi, podpis = "", onZavri, onOdeslano }
   }
 
   const celkemB = prilohy.reduce((s, f) => s + (f.size || 0), 0);
-  const muzeOdeslat =
-    komu.length > 0 && predmet.trim() && telo.trim() && !odesila;
+  // `<p><br></p>` z prázdného editoru není obsah – bez tohohle by šlo odeslat
+  // prázdnou zprávu, která na pohled prázdná není.
+  const maObsah = telo.replace(/<[^>]*>/g, "").replace(/&nbsp;|\s/g, "").length > 0;
+  const muzeOdeslat = komu.length > 0 && predmet.trim() && maObsah && !odesila;
 
   return (
     <div className="crm-okno-plast" onClick={(e) => e.stopPropagation()}>
@@ -143,17 +146,11 @@ export default function EmailPsani({ vychozi, podpis = "", onZavri, onOdeslano }
           </div>
 
           <div className="em-pole">
-            <label htmlFor="ep-telo">Text *</label>
-            <textarea
-              id="ep-telo"
-              ref={teloRef}
-              rows={14}
-              value={telo}
-              onChange={(e) => setTelo(e.target.value)}
-            />
+            <label>Text *</label>
+            <TextovyEditor hodnota={telo} onZmena={setTelo} />
             {podpis && (
               <p className="em-tise">
-                Pod text se přidá tvůj podpis ze Nastavení schránky.
+                Pod text se přidá tvůj podpis z Nastavení.
               </p>
             )}
           </div>
