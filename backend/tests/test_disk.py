@@ -278,12 +278,15 @@ def test_nahrani_se_zaloguje(monkeypatch):
             (uroven, kod, zprava, detail)
         )
     )
-    disk_prochazeni.nahraj(None, "op", "smlouva.pdf", b"x", "application/pdf")
+    disk_prochazeni.nahraj(None, "op", "smlouva.pdf", b"x", "application/pdf", "dan@greensie.cz")
     assert len(zapsano) == 1
     uroven, kod, zprava, detail = zapsano[0]
     assert (uroven, kod) == ("info", "disk_nahrani")
     assert "smlouva.pdf" in zprava
     assert detail["folder_id"] == "op"
+    assert detail["uzivatel"] == "dan@greensie.cz", (
+        "Zápis na firemní Disk musí nést, kdo ho udělal – `konektor_log` na to sloupec nemá."
+    )
 
 
 # ---- práva a přepínač novinek ------------------------------------------------

@@ -110,7 +110,9 @@ ID do adresy.
 Jen **Google Drive API v3** (přes service account konektoru, `DriveClient`). Appka **čte a nahrává**,
 nic nemaže a nepřejmenovává. Soubory se u nás neukládají ani po cestě — projdou do Disku a v appce
 zůstane jen odkaz, aby neexistovaly dvě kopie téhož dokumentu. Každé nahrání se zapisuje do logu
-konektoru (`disk_nahrani`), takže je dohledatelné, kdo co přidal.
+konektoru jako `disk_nahrani` — v kontextu záznamu je e-mail toho, kdo soubor nahrál, ID složky a ID
+souboru, takže je dohledatelné, kdo co kam přidal (tabulka `konektor_log` sloupec pro uživatele nemá,
+píše do ní jinak jen automatika).
 
 ### Jak to funguje uvnitř (stručně technicky)
 - **Datový model:** žádný vlastní. Nastavení se čte z `konektor_nastaveni`.
