@@ -768,8 +768,35 @@
   padding: 4px 8px;
   font-size: 12px;
 }
-.crm-btn-smazat {
+/* Hlavní mazací tlačítko ve formuláři je plná červená rovnou, ne až po
+   najetí — ať je vidět, do čeho člověk kliká, dřív než tam najede.
+   Dvojitý selektor kvůli specifitě: `.fm-btn` z global.css nastavuje
+   plochu i obrys, samotné `.crm-btn-smazat` by ji nepřebilo. */
+.fm-btn.crm-btn-smazat {
+  background: var(--st-crit);
+  border-color: var(--st-crit);
+  color: #fff;
+}
+
+.fm-btn.crm-btn-smazat:hover {
+  filter: brightness(0.92);
+  color: #fff;
+}
+
+/* Drobné mazání v řádcích seznamu ale plné zůstat nesmí: u deseti
+   kontaktů pod sebou by bylo deset červených ploch a obrazovka by
+   křičela. Tam stačí červený text s obrysem. */
+.fm-btn.crm-btn-smazat.crm-btn-maly {
+  background: var(--surface-2);
+  border-color: color-mix(in srgb, var(--st-crit) 40%, var(--line-strong));
   color: var(--st-crit);
+}
+
+.fm-btn.crm-btn-smazat.crm-btn-maly:hover {
+  filter: none;
+  background: var(--st-crit);
+  border-color: var(--st-crit);
+  color: #fff;
 }
 
 /* ---- automatizace (CRM-31) ---- */
