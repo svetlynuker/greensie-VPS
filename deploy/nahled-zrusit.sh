@@ -3,7 +3,7 @@
 #  Greensie – zrušení náhledu (deploy/nahled.sh)
 #  Spouštět jako root:  sudo bash deploy/nahled-zrusit.sh
 #
-#  Odstraní adresu, službu, statický frontend, kopii databáze a vstupní heslo.
+#  Odstraní adresu, službu, statický frontend a kopii databáze.
 #  Ostré appky na app.greensie.cz se to nijak netýká.
 #
 #  Klon kódu v /home/dan/projects/greensie-nahled se NEMAŽE (může tam být
@@ -16,6 +16,8 @@ WEB="/var/www/greensie-nahled"
 SLUZBA="greensie-nahled"
 VHOST="/etc/caddy/sites/greensie-nahled.caddy"
 DB_NAHLED="greensie_nahled"
+# Náhledy už vstupní heslo nemají (viz nahled.sh), tohle je jen úklid
+# po starších instalacích, kde soubor s heslem ještě zůstal ležet.
 HESLO_SOUBOR="/etc/greensie-nahled.heslo"
 
 if [[ $EUID -ne 0 ]]; then
@@ -39,7 +41,7 @@ rm -rf "${WEB}"
 echo "==> Mažu kopii databáze ${DB_NAHLED}…"
 sudo -u postgres psql -q -c "DROP DATABASE IF EXISTS ${DB_NAHLED};"
 
-echo "==> Mažu vstupní heslo…"
+echo "==> Uklízím případné staré vstupní heslo…"
 rm -f "${HESLO_SOUBOR}"
 
 cat <<EOF

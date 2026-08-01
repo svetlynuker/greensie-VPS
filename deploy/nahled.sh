@@ -4,12 +4,13 @@
 #  Spouštět jako root:
 #      sudo bash deploy/nahled.sh                 # vše (kód, data, web, adresa)
 #      sudo bash deploy/nahled.sh nazev-vetve     # náhled jiné větve
-#      sudo bash deploy/nahled.sh --jen-adresa    # jen adresa a heslo (rychlé)
+#      sudo bash deploy/nahled.sh --jen-adresa    # jen vypsat adresu (rychlé)
 #
 #  Postaví samostatnou instanci appky, na kterou se dá poslat odkaz:
 #
 #    https://nahled.167-235-254-188.sslip.io
-#      ↑ HTTPS od Caddy, na vstupu společné heslo (vypíše se na konci)
+#      ↑ HTTPS od Caddy, bez vstupního hesla — chrání se přihlášením
+#        do appky, stejně jako ostrá appka na app.greensie.cz
 #
 #  Náhled je od ostré appky oddělený ve všem, co může škodit:
 #    • vlastní KOPIE databáze (greensie_nahled) — editace se do ostrých dat
@@ -19,9 +20,8 @@
 #    • vypnutá automatická synchronizace a vyprázdněná fronta úloh konektoru
 #    • vlastní SECRET_KEY — přihlášení z náhledu neplatí v ostré appce
 #
-#  Opakované spuštění je bezpečné: kód i frontend se aktualizují, databáze se
-#  přelije znovu z ostré (tedy zahodí, co kdo v náhledu naklikal) a vstupní
-#  heslo zůstane stejné.
+#  Opakované spuštění je bezpečné: kód i frontend se aktualizují a databáze se
+#  přelije znovu z ostré (tedy zahodí, co kdo v náhledu naklikal).
 #
 #  Zrušení:  sudo bash deploy/nahled-zrusit.sh
 # ============================================================
@@ -48,9 +48,11 @@ DB_NAHLED="greensie_nahled"
 DB_UZIVATEL="greensie_user"
 DOMENA="nahled.167-235-254-188.sslip.io"
 VHOST="/etc/caddy/sites/greensie-nahled.caddy"
-HESLO_SOUBOR="/etc/greensie-nahled.heslo"        # ať se heslo mezi běhy nemění
 
-VETEV="worktree-crm-layout-redesign"
+# Výchozí větev: ta, na které klon právě stojí — opakované spuštění tak
+# náhled obnoví, místo aby ho přehodilo jinam. Když klon ještě není, main.
+VETEV="$(git -C "${KLON}" branch --show-current 2>/dev/null || true)"
+VETEV="${VETEV:-main}"
 JEN_ADRESA=0
 for ARG in "$@"; do
 	case "${ARG}" in
@@ -135,17 +137,7 @@ EOF
 	systemctl restart "${SLUZBA}"
 fi
 
-# ---------- 6. Caddy vhost s heslem na vstupu ----------
-if [[ -f "${HESLO_SOUBOR}" ]]; then
-	HESLO="$(cat "${HESLO_SOUBOR}")"
-	echo "==> Používám dosavadní vstupní heslo (${HESLO_SOUBOR})."
-else
-	HESLO="$(openssl rand -base64 12 | tr -d '/+=' | cut -c1-12)"
-	printf '%s' "${HESLO}" > "${HESLO_SOUBOR}"
-	chmod 600 "${HESLO_SOUBOR}"
-	echo "==> Vygeneroval jsem nové vstupní heslo."
-fi
-HASH="$(caddy hash-password --plaintext "${HESLO}")"
+# ---------- 6. Caddy vhost ----------
 
 cat > "${VHOST}" <<EOF
 # NÁHLED větve pro spolupracovníky – generuje deploy/nahled.sh.
@@ -163,13 +155,12 @@ ${DOMENA} {
 		reverse_proxy localhost:${PORT}
 	}
 
-	# Statický frontend za společným heslem: kdo heslo nezná, neuvidí ani
-	# přihlašovací obrazovku appky.
-	# Uživatelské jméno: nahled
+	# Statický frontend BEZ vstupního hesla — vědomé rozhodnutí z 1. 8. 2026,
+	# ne opomenutí. Dvě hesla za sebou (vstupní pop-up + přihlášení do appky)
+	# se ukázala jako překážka: pop-up chce jméno i heslo a člověk, který to
+	# neví, se nedostane dál. Data chrání přihlášení do appky stejně jako
+	# v ostré appce; veřejně je vidět jen přihlašovací obrazovka.
 	handle {
-		basic_auth {
-			nahled ${HASH}
-		}
 		root * ${WEB}
 		try_files {path} /index.html
 		file_server
@@ -195,7 +186,7 @@ done
 STAV_BACKEND="$(curl -fsS "http://127.0.0.1:${PORT}/health" 2>/dev/null || echo 'NEODPOVÍDÁ')"
 # API musí projít i BEZ vstupního hesla (jinak by se appka nepřihlásila).
 STAV_API="$(curl -fsS "https://${DOMENA}/api/health" 2>/dev/null || echo 'NEPROCHÁZÍ — appka se nepřihlásí!')"
-# Frontend naopak bez hesla projít nesmí.
+# Frontend musí projít rovnou (vstupní heslo tu záměrně není).
 KOD_WEB="$(curl -s -o /dev/null -w '%{http_code}' "https://${DOMENA}/" 2>/dev/null || echo '???')"
 
 cat <<EOF
@@ -204,22 +195,20 @@ cat <<EOF
  NÁHLED BĚŽÍ
 
    Adresa:            https://${DOMENA}
-   Uživatel:          nahled
-   Vstupní heslo:     ${HESLO}
 
- Kolegové zadají tohle heslo do okna prohlížeče a pak se přihlásí
- svým vlastním účtem do appky (účty i hesla jsou z kopie, tedy
- stejné jako v ostré appce).
+ Odkaz stačí poslat — žádné vstupní heslo. Kolegové se rovnou přihlásí
+ svým vlastním účtem do appky (účty i hesla jsou z kopie, tedy stejné
+ jako v ostré appce).
 
    Větev:             ${VETEV}
    Databáze:          ${DB_NAHLED} (kopie, ostrá data nedotčená)
    Backend:           port ${PORT}, stav ${STAV_BACKEND}
    API přes web:      ${STAV_API}
-   Frontend bez hesla: HTTP ${KOD_WEB}  (401 = správně, heslo drží)
+   Frontend:          HTTP ${KOD_WEB}  (200 = správně, bez hesla)
    Ostrá appka:       https://app.greensie.cz — nedotčená
 
  Znovu přelít kopii dat:  sudo bash deploy/nahled.sh
- Jen adresa a heslo:      sudo bash deploy/nahled.sh --jen-adresa
+ Jen vypsat adresu:       sudo bash deploy/nahled.sh --jen-adresa
  Zrušit náhled:           sudo bash deploy/nahled-zrusit.sh
 ════════════════════════════════════════════════════════════
 EOF
