@@ -103,6 +103,8 @@ export default function EmailCteni({
   onZavri,
   onOdpovedet,
   onPreposlat,
+  onPripojit,
+  onOdpojit,
 }) {
   const [pustitObrazky, setPustitObrazky] = useState(false);
   const [chybaPrilohy, setChybaPrilohy] = useState(null);
@@ -217,14 +219,42 @@ export default function EmailCteni({
         {(zprava.kopie || []).length > 0 && (
           <div className="em-cteni-radek">Kopie: {adresyText(zprava.kopie)}</div>
         )}
-        {zprava.zakaznik_nazev && (
-          <div className="em-cteni-radek">
-            <a href={`/zakaznici/detail/${zprava.zakaznik_id}`} className="em-firma">
-              {zprava.zakaznik_nazev}
-              {zprava.pripad_cislo ? ` · ${zprava.pripad_cislo}` : ""}
-            </a>
-          </div>
-        )}
+        {/* Napojení na CRM. Když se zpráva spárovala sama, je vidět firma
+            a dá se odpojit; když ne, nabídne se ruční připojení. */}
+        <div className="em-cteni-radek em-vazba-radek">
+          {zprava.zakaznik_nazev ? (
+            <>
+              <a href={`/zakaznici/detail/${zprava.zakaznik_id}`} className="em-firma">
+                {zprava.zakaznik_nazev}
+                {zprava.pripad_cislo ? ` · ${zprava.pripad_cislo}` : ""}
+              </a>
+              {onPripojit && (
+                <button
+                  className="fm-btn crm-btn-maly"
+                  onClick={() => onPripojit(zprava)}
+                  title="Připojit i k další firmě"
+                >
+                  🔗 Připojit jinam
+                </button>
+              )}
+              {onOdpojit && (
+                <button
+                  className="fm-btn crm-btn-maly"
+                  onClick={() => onOdpojit(zprava)}
+                  title="Odebrat zprávu z karet klientů"
+                >
+                  Odpojit
+                </button>
+              )}
+            </>
+          ) : (
+            onPripojit && (
+              <button className="fm-btn crm-btn-maly" onClick={() => onPripojit(zprava)}>
+                🔗 Připojit ke klientovi
+              </button>
+            )
+          )}
+        </div>
       </div>
 
       <div className="em-telo">

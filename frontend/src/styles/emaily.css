@@ -755,3 +755,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Řádek s napojením zprávy na CRM – firma a tlačítka na jedné lince. */
+.em-vazba-radek {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}

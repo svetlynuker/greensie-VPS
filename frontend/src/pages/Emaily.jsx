@@ -4,8 +4,10 @@ import EmailCteni from "../components/EmailCteni";
 import EmailNastaveni from "../components/EmailNastaveni";
 import EmailPsani from "../components/EmailPsani";
 import EmailPravidla from "../components/EmailPravidla";
+import VyberZakaznika from "../components/VyberZakaznika";
 import {
   emailHromadne,
+  emailHromadnaVazba,
   emailPripravPreposlani,
   emailPriprevOdpoved,
   emailSlozkaPrepniSync,
@@ -86,6 +88,9 @@ export default function Emaily() {
   // Hromadný výběr. Množina id, ne pole – přidávání a mazání je časté
   // a u dvou set zpráv by hledání v poli bylo znát.
   const [vybrane, setVybrane] = useState(() => new Set());
+  // Otevřený dialog „připojit ke klientovi". Drží seznam id, kterých se týká —
+  // stejný dialog slouží pro výběr v seznamu i pro jednu otevřenou zprávu.
+  const [pariZpravy, setPariZpravy] = useState(null);
   const [hlaska, setHlaska] = useState("");
   const [chyba, setChyba] = useState(null);
 
@@ -274,6 +279,40 @@ export default function Emaily() {
       setOtevrena(null);
       await nactiZpravy();
       await nactiSlozky();
+    } catch (e) {
+      if (zivy.current) setChyba(e.message);
+    }
+  }
+
+  async function pripojKeKlientovi(volba) {
+    const ids = pariZpravy || [];
+    setPariZpravy(null);
+    if (ids.length === 0) return;
+    setChyba(null);
+    try {
+      const v = await emailHromadnaVazba(ids, {
+        zakaznikId: volba.zakaznik_id,
+        pripadId: volba.pripad_id,
+      });
+      if (!zivy.current) return;
+      setHlaska(v.zprava);
+      setVybrane(new Set());
+      await nactiZpravy();
+    } catch (e) {
+      if (zivy.current) setChyba(e.message);
+    }
+  }
+
+  async function odpojOdKlienta(ids) {
+    if (!ids.length) return;
+    if (!window.confirm(`Odpojit ${ids.length} zpráv z karet klientů?`)) return;
+    setChyba(null);
+    try {
+      const v = await emailHromadnaVazba(ids, { odpojit: true });
+      if (!zivy.current) return;
+      setHlaska(v.zprava);
+      setVybrane(new Set());
+      await nactiZpravy();
     } catch (e) {
       if (zivy.current) setChyba(e.message);
     }
@@ -493,6 +532,22 @@ export default function Emaily() {
               <button className="fm-btn" onClick={() => hromadnaAkce("do_kose")}>
                 Do koše
               </button>
+              {/* Ruční párování: automatika zvládne jen adresy, které v CRM
+                  jsou — zbytek (nová firma, soukromá adresa) připojí člověk. */}
+              <button
+                className="fm-btn"
+                onClick={() => setPariZpravy([...vybrane])}
+                title="Připojit vybrané zprávy ke kartě klienta"
+              >
+                🔗 Ke klientovi
+              </button>
+              <button
+                className="fm-btn"
+                onClick={() => odpojOdKlienta([...vybrane])}
+                title="Odebrat vybrané zprávy z karet klientů"
+              >
+                Odpojit
+              </button>
               <span className="em-mezera" />
               <button className="fm-btn" onClick={() => setVybrane(new Set())}>
                 Zrušit výběr
@@ -600,6 +655,8 @@ export default function Emaily() {
             onPresun={presun}
             onDoKose={doKose}
             onZavri={() => setOtevrena(null)}
+            onPripojit={(z) => setPariZpravy([z.id])}
+            onOdpojit={(z) => odpojOdKlienta([z.id])}
             onOdpovedet={(z, vsem) =>
               otevriPsani(() => emailPriprevOdpoved(z.id, vsem))
             }
@@ -607,6 +664,14 @@ export default function Emaily() {
           />
         )}
       </div>
+
+      {pariZpravy && (
+        <VyberZakaznika
+          pocet={pariZpravy.length}
+          onVyber={pripojKeKlientovi}
+          onZavri={() => setPariZpravy(null)}
+        />
+      )}
 
       {pravidla && (
         <EmailPravidla

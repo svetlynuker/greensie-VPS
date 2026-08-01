@@ -973,3 +973,38 @@ def test_verejne_domeny_neparuji_firmu():
 
     for d in ["seznam.cz", "gmail.com", "email.cz", "centrum.cz", "outlook.com"]:
         assert d in VEREJNE_DOMENY
+
+
+# ============================================================================
+# Ruční párování zpráv na klienta (jednotlivě i hromadně)
+#
+# Automatika spáruje jen adresy, které v CRM jsou. Zbytek — nová firma, člověk
+# píšící ze soukromé adresy, přeposlaná poptávka — musí připojit člověk, a to
+# i po desítkách zpráv naráz.
+# ============================================================================
+def test_schema_hromadne_vazby_ma_vychozi_hodnoty():
+    from app.crm.schemas import EmailHromadnaVazbaVstup
+
+    v = EmailHromadnaVazbaVstup(ids=[1, 2, 3])
+    assert v.zakaznik_id is None and v.pripad_id is None
+    # Výchozí `odpojit=False` je důležité: překlep v požadavku nesmí omylem
+    # odpojit zprávy z karet.
+    assert v.odpojit is False
+
+
+def test_schema_hromadne_vazby_umi_odpojeni():
+    from app.crm.schemas import EmailHromadnaVazbaVstup
+
+    v = EmailHromadnaVazbaVstup(ids=[5], odpojit=True)
+    assert v.odpojit is True and v.zakaznik_id is None
+
+
+def test_vazba_ma_zdroj_a_priznak_skryti():
+    """`zdroj="rucne"` chrání ruční rozhodnutí před automatikou a `skryta`
+    je důvod, proč se odpojení neřeší smazáním."""
+    from app.crm.models import CrmEmailVazba
+
+    sloupce = {c.name for c in CrmEmailVazba.__table__.columns}
+    assert {"zdroj", "skryta", "zakaznik_id", "pripad_id", "kontakt_id"} <= sloupce
+    assert CrmEmailVazba.__table__.c.zdroj.default.arg == "auto"
+    assert CrmEmailVazba.__table__.c.skryta.default.arg is False

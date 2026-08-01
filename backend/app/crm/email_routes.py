@@ -54,6 +54,7 @@ from app.crm.models import (
 from app.crm.novinky import ma_novinky
 from app.crm.schemas import (
     EmailAdresaOut,
+    EmailHromadnaVazbaVstup,
     EmailHistorieOut,
     EmailHromadneOut,
     EmailHromadneVstup,
@@ -1279,3 +1280,90 @@ def uprav_vazbu(
         z.zakaznik_id = zakaznik.id
     db.commit()
     return {"ok": True}
+
+
+@router.post("/hromadne-vazba", response_model=EmailHromadneOut)
+def hromadna_vazba(
+    vstup: EmailHromadnaVazbaVstup,
+    user: User = Depends(vyzaduj_emaily),
+    db: Session = Depends(get_db),
+):
+    """Ruční připojení víc zpráv k jedné firmě naráz — nebo jejich odpojení.
+
+    Automatické párování zvládne jen adresy, které v CRM jsou. Zbytek (nová
+    firma, člověk píšící ze soukromé adresy, přeposlaná poptávka) musí připojit
+    člověk — a u desítek zpráv po jedné by to nikdo nedělal.
+
+    Ruční vazba se značí `zdroj="rucne"`, takže ji automatika nepřepíše.
+    Odpojení vazbu **schová, nemaže** — smazanou by synchronizace vyrobila znovu.
+    """
+    from app.crm.models import CrmEmailVazba
+
+    ucet = _muj_ucet(db, user)
+    ids = list(dict.fromkeys(vstup.ids or []))[:500]
+    if not ids:
+        raise HTTPException(status_code=422, detail="Nevybral jsi žádnou zprávu.")
+
+    zakaznik = None
+    if not vstup.odpojit:
+        if not vstup.zakaznik_id:
+            raise HTTPException(
+                status_code=422, detail="Vyber firmu, ke které se mají zprávy připojit."
+            )
+        zakaznik = pristup.vyzaduj_zaznam(
+            db.get(Zakaznik, vstup.zakaznik_id), user, "Zákazník"
+        )
+        # Případ musí patřit té samé firmě, jinak by zpráva visela u cizí zakázky.
+        if vstup.pripad_id:
+            pripad = db.get(ObchodniPripad, vstup.pripad_id)
+            if pripad is None or pripad.zakaznik_id != zakaznik.id:
+                raise HTTPException(
+                    status_code=422, detail="Vybraný případ nepatří téhle firmě."
+                )
+
+    zpravy = (
+        db.query(CrmEmailZprava)
+        .filter(CrmEmailZprava.id.in_(ids), CrmEmailZprava.ucet_id == ucet.id)
+        .all()
+    )
+    zpracovano = 0
+
+    for z in zpravy:
+        if vstup.odpojit:
+            db.query(CrmEmailVazba).filter(CrmEmailVazba.zprava_id == z.id).update(
+                {"skryta": True, "zdroj": "rucne"}, synchronize_session=False
+            )
+            zpracovano += 1
+            continue
+
+        vazba = (
+            db.query(CrmEmailVazba)
+            .filter(
+                CrmEmailVazba.zprava_id == z.id,
+                CrmEmailVazba.zakaznik_id == zakaznik.id,
+            )
+            .first()
+        )
+        if vazba is None:
+            vazba = CrmEmailVazba(
+                zprava_id=z.id, zakaznik_id=zakaznik.id, kdy=z.datum_at, adresa=z.od_adresa
+            )
+            db.add(vazba)
+        vazba.pripad_id = vstup.pripad_id
+        vazba.zdroj = "rucne"
+        vazba.skryta = False
+        if z.zakaznik_id is None:
+            z.zakaznik_id = zakaznik.id
+            z.pripad_id = vstup.pripad_id
+        zpracovano += 1
+
+    db.commit()
+    nenalezeno = len(ids) - len(zpravy)
+    zprava = (
+        f"{zpracovano} zpráv odpojeno z karet."
+        if vstup.odpojit
+        else f"{zpracovano} zpráv připojeno k firmě {zakaznik.nazev}."
+    )
+    return EmailHromadneOut(
+        ok=True, zpracovano=zpracovano, selhalo=nenalezeno, zprava=zprava
+    )
