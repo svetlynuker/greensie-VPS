@@ -1591,6 +1591,16 @@ class EmailHistorieOut(BaseModel):
     celkem: int = 0
 
 
+class EmailHromadnaVazbaVstup(BaseModel):
+    """Ruční připojení víc zpráv naráz k jedné firmě (nebo jejich odpojení)."""
+
+    ids: list[int]
+    zakaznik_id: Optional[int] = None
+    pripad_id: Optional[int] = None
+    # True = zprávy z karty odpojit (vazby se schovají, nemažou).
+    odpojit: bool = False
+
+
 class EmailVazbaVstup(BaseModel):
     """Ruční napojení zprávy na firmu, nebo schování z historie."""
 

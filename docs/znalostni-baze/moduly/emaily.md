@@ -156,6 +156,23 @@ Napojená komunikace je pak vidět:
 - na **kartě obchodního případu** tamtéž (bere i poštu firmy bez konkrétního případu),
 - v **timeline** zákazníka mezi ostatními událostmi.
 
+### Ruční dopárování
+
+Automatika spáruje jen zprávy, jejichž adresa už v CRM je. Zbytek — nová firma, člověk
+píšící ze soukromé adresy, přeposlaná poptávka — připojíš ručně:
+
+- **Jednu zprávu:** otevři ji a nad tělem klikni na **🔗 Připojit ke klientovi**. Když už
+  spárovaná je, je tam místo toho název firmy a tlačítka **Připojit jinam** a **Odpojit**.
+- **Víc zpráv naráz:** zaškrtni je v seznamu a v zelené liště klikni na **🔗 Ke klientovi**
+  (nebo **Odpojit**).
+
+V obou případech se vyhledá firma podle názvu, IČO nebo města a volitelně se vybere
+i konkrétní obchodní případ. Bez případu se zpráva ukáže na kartě firmy i u jejích případů.
+
+Ruční napojení má přednost: **automatika ho nikdy nepřepíše**. Odpojení vazbu neruší, jen ji
+schová — smazanou by synchronizace při dalším stažení vyrobila znovu a zpráva by se na kartu
+vrátila.
+
 > ⚠️ **Co to znamená pro soukromí — přečti si to.** Tohle je jediné místo, kde se ukazuje
 > pošta z cizí schránky. Seznam pošty v E-mailu vidí pořád jen její majitel, ale zpráva
 > **napojená na zákazníka se ukáže i kolegům**, kteří na ten záznam mají právo. Bez toho by

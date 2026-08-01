@@ -1721,3 +1721,17 @@ export function emailVazba(zpravaId, data) {
     body: JSON.stringify(data),
   });
 }
+
+// Ruční připojení víc zpráv k firmě naráz (nebo jejich odpojení z karet).
+// Automatika zvládne jen adresy, které v CRM jsou; zbytek připojí člověk.
+export function emailHromadnaVazba(ids, { zakaznikId = null, pripadId = null, odpojit = false } = {}) {
+  return zavolej("/crm/emaily/hromadne-vazba", {
+    method: "POST",
+    body: JSON.stringify({
+      ids,
+      zakaznik_id: zakaznikId,
+      pripad_id: pripadId,
+      odpojit,
+    }),
+  });
+}
