@@ -104,6 +104,11 @@ PRAVA = [
     # člověku, takže do cizí pošty nevidí nikdo, ani `crm_vse` a supersprávce
     # (viz app/crm/email_routes.py).
     {"klic": "emaily", "nazev": "Otevřít E-mail (vlastní schránka v appce)"},
+    # Modul „Disk" – procházení firemního Google Disku od kořenové složky
+    # konektoru. Vlastní právo schválně: kořen konektoru je strop viditelnosti,
+    # ale i tak je to jiná věc než vidět svoje zákazníky, takže o tom má
+    # rozhodovat přidělení, ne odvození z jiného práva.
+    {"klic": "disk", "nazev": "Otevřít Disk (procházení firemního Google Disku)"},
     {"klic": "projekty", "nazev": "Otevřít Přehled projektů"},
     {"klic": "finance", "nazev": "Otevřít Přehled financí"},
     {"klic": "zmeny", "nazev": "Otevřít Přehled změn"},

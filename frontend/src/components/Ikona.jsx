@@ -107,6 +107,13 @@ const CESTY = {
     </>
   ),
 
+  // modul Disk (procházení firemního Google Disku) – klasická složka
+  slozka: (
+    <>
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    </>
+  ),
+
   // rozcestník = domů (úvodní souhrn), katalog technologií
   domu: <path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" />,
   katalog: (

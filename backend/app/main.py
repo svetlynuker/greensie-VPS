@@ -23,6 +23,7 @@ from app.zmeny.routes import router as zmeny_router
 from app.admin.routes import router as admin_router
 from app.dashboard.routes import router as dashboard_router
 from app.konektor import models as konektor_models  # noqa: F401 - registrace modelů
+from app.konektor.disk_routes import router as disk_router
 from app.konektor.routes import router as konektor_router
 from app.crm import models as crm_models  # noqa: F401 - registrace modelů
 from app.crm.routes import router as crm_router
@@ -788,6 +789,9 @@ app.include_router(logy_router)
 app.include_router(zmeny_router)
 app.include_router(admin_router)
 app.include_router(konektor_router)
+# Modul „Disk" (procházení firemního Disku) – vlastní prefix `/disk` a vlastní
+# právo, proto samostatný router, ne endpoint pod `/konektor` (ten je pro správce).
+app.include_router(disk_router)
 app.include_router(crm_router)
 app.include_router(crm_realizace_router)
 app.include_router(crm_email_router)

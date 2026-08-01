@@ -1771,3 +1771,16 @@ export function emailHromadnaVazba(ids, { zakaznikId = null, pripadId = null, od
     }),
   });
 }
+
+// ---- modul Disk (procházení firemního Google Disku) ----
+// Kořen je složka nastavená v konektoru; ta je zároveň strop viditelnosti,
+// výš se z appky nedostaneš (backend to u každého požadavku ověřuje).
+export function diskKoren() {
+  return zavolej("/disk/koren");
+}
+
+// Obsah složky + cesta ke kořeni. Prázdné `folderId` = kořen konektoru.
+export function diskObsah(folderId = null) {
+  const q = folderId ? `?folder_id=${encodeURIComponent(folderId)}` : "";
+  return zavolej(`/disk/obsah${q}`);
+}
