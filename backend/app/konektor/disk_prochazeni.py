@@ -443,11 +443,17 @@ def pridej_pravo(
             "uzivatel": uzivatel or "?",
         },
     )
+    # Reálný případ: když člověk už na sdíleném disku roli má (třeba `writer`)
+    # a tady se mu dá `reader`, Google vrátí to STÁVAJÍCÍ oprávnění — vyšší
+    # přístup nepřepíše. Appka pak nesmí tvrdit „nasdíleno jako může číst";
+    # proto se posílá i to, co se žádalo, a prohlížeč rozdíl řekne nahlas.
+    skutecna = p.get("role") or role
     return {
         "id": p.get("id"),
         "email": p.get("emailAddress") or cisty,
         "jmeno": p.get("displayName") or "",
-        "role": p.get("role") or role,
+        "role": skutecna,
+        "pozadovana_role": role,
         "novy": novy,
     }
 

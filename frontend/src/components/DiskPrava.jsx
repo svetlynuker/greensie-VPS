@@ -57,6 +57,7 @@ export default function DiskPrava({ polozka, onZavri }) {
   const [oznamit, setOznamit] = useState(true);
   const [pracuje, setPracuje] = useState(false);
   const [ukazZdedena, setUkazZdedena] = useState(false);
+  const [zprava, setZprava] = useState("");
 
   const nacti = useCallback(async () => {
     try {
@@ -82,9 +83,21 @@ export default function DiskPrava({ polozka, onZavri }) {
     if (!komu) return;
     setPracuje(true);
     setChyba(null);
+    setZprava("");
     try {
-      await diskPravoPridej(polozka.id, komu, role, oznamit);
+      const v = await diskPravoPridej(polozka.id, komu, role, oznamit);
       setEmail("");
+      // Google vyšší přístup nepřepíše: kdo už má na sdíleném disku „upravovat",
+      // ten ho má dál, i když se mu tady dalo „číst". Tvrdit něco jiného by byla
+      // lež, kterou by nikdo neodhalil, dokud by na tom nezáleželo.
+      if (v.pozadovana_role && v.role !== v.pozadovana_role) {
+        setZprava(
+          `${v.email} má na Disku už roli „${POPIS_ROLE[v.role] || v.role}“ — ` +
+            `vyšší přístup zůstává, „${POPIS_ROLE[v.pozadovana_role] || v.pozadovana_role}“ ho nepřepíše.`
+        );
+      } else {
+        setZprava(`Nasdíleno: ${v.email}`);
+      }
       await nacti();
     } catch (e) {
       setChyba(e.message);
@@ -131,6 +144,7 @@ export default function DiskPrava({ polozka, onZavri }) {
 
         <div className="crm-okno-telo">
           {chyba && <div className="crm-chyba">{chyba}</div>}
+          {zprava && !chyba && <div className="dk-hlaska-radek">{zprava}</div>}
           {!data && !chyba && <p className="crm-tise">Zjišťuji na Disku…</p>}
 
           {data && (
