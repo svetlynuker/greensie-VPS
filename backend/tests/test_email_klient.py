@@ -652,3 +652,192 @@ def test_vyber_slozky_posle_select_s_readonly():
     # Zápisový režim musí poslat readonly=False, jinak by nešlo měnit příznaky.
     s.vyber("INBOX", jen_cteni=False)
     assert falesny.volani[-1] == ("select", '"INBOX"', False)
+
+
+# ============================================================================
+# HTML podpis z profilu (CRM-33)
+#
+# Podpis jde ven pod každou zprávou, takže chyba je vidět u každého zákazníka.
+# Hlídá se hlavně: volitelnost funkce (Danův požadavek), interaktivita
+# telefonu/mailu/webu, escapování a to, že se zpráva opravdu sestaví jako
+# multipart (text i HTML) — klient bez HTML nesmí dostat prázdnou zprávu.
+# ============================================================================
+from app.crm import email_podpis
+
+
+class FalesnyProfil:
+    def __init__(self, **kw):
+        self.jmeno = kw.get("jmeno", "Daniel")
+        self.prijmeni = kw.get("prijmeni", "Lupínek")
+        self.telefon = kw.get("telefon", "773492029")
+        self.funkce = kw.get("funkce", "")
+        self.pozdrav = kw.get("pozdrav", "S pozdravem")
+        self.podpis_zapnuty = kw.get("podpis_zapnuty", True)
+
+
+@pytest.mark.parametrize(
+    "vstup,ceka",
+    [
+        ("773492029", "+420 773 492 029"),
+        ("+420 773 492 029", "+420 773 492 029"),
+        ("00420773492029", "+420 773 492 029"),
+        ("773 492 029", "+420 773 492 029"),
+        ("", ""),
+        ("abc", ""),
+    ],
+)
+def test_telefon_se_normalizuje_na_jeden_tvar(vstup, ceka):
+    """Do pole se dá napsat cokoli, v datech i v podpisu je jeden tvar."""
+    assert email_podpis.formatuj_telefon(vstup) == ceka
+
+
+def test_telefon_pro_odkaz_je_bez_mezer():
+    assert email_podpis.telefon_pro_odkaz("773 492 029") == "+420773492029"
+    assert email_podpis.telefon_pro_odkaz("") == ""
+
+
+def test_podpis_bez_funkce_nema_radek_s_funkci():
+    """Danův požadavek: prázdná funkce = podpis bez ní, ne prázdné místo."""
+    html_bez = email_podpis.sestav_html(FalesnyProfil(funkce=""), "a@greensie.cz")
+    html_s = email_podpis.sestav_html(FalesnyProfil(funkce="Jednatel"), "a@greensie.cz")
+    assert "Jednatel" not in html_bez
+    assert "Jednatel" in html_s
+    # Zelená linka musí být pod posledním řádkem hlavičky – tedy pod jménem,
+    # když funkce chybí, a pod funkcí, když je. Nikdy dvakrát.
+    zelena = "border-bottom:2px solid rgb(114,193,70)"
+    assert html_bez.count(zelena) == 1
+    assert html_s.count(zelena) == 1
+
+
+def test_kontakty_v_podpisu_jsou_proklikavaci():
+    """Telefon, e-mail i web musí být odkazy (výslovné zadání Dana)."""
+    h = email_podpis.sestav_html(FalesnyProfil(), "daniel.lupinek@greensie.cz")
+    assert 'href="tel:+420773492029"' in h
+    assert 'href="mailto:daniel.lupinek@greensie.cz"' in h
+    assert 'href="https://www.greensie.cz/"' in h
+
+
+def test_podpis_bez_telefonu_radek_vynecha():
+    h = email_podpis.sestav_html(FalesnyProfil(telefon=""), "a@greensie.cz")
+    assert "tel:" not in h
+    # E-mail a web tam ale zůstávají.
+    assert "mailto:a@greensie.cz" in h
+    assert "www.greensie.cz" in h
+
+
+def test_prazdny_profil_negeneruje_podpis():
+    """Samotné logo bez jména by vypadalo jako chyba – radši nic."""
+    prazdny = FalesnyProfil(jmeno="", prijmeni="")
+    assert email_podpis.profil_je_vyplneny(prazdny) is False
+    assert email_podpis.sestav_html(prazdny, "a@b.cz") == ""
+    assert email_podpis.sestav_text(prazdny, "a@b.cz") == ""
+
+
+def test_podpis_escapuje_jmeno():
+    """Jméno jde do HTML – bez escapování by `&` nebo `<` rozbily podpis."""
+    h = email_podpis.sestav_html(
+        FalesnyProfil(jmeno="<script>", prijmeni="A&B"), "a@b.cz"
+    )
+    assert "<script>" not in h
+    assert "&lt;script&gt;" in h and "A&amp;B" in h
+
+
+def test_podpis_nepouziva_gmailovou_proxy():
+    """Předloha měla obrázky přes ci3.googleusercontent.com – mimo Gmail
+    nespolehlivé. Musí se používat skutečný zdroj na webu Greensie."""
+    h = email_podpis.sestav_html(FalesnyProfil(), "a@b.cz")
+    assert "googleusercontent" not in h
+    assert "greensie-fotovoltaika.cz/wp-content/uploads/logo_greensie.png" in h
+
+
+def test_pracovni_adresa_ze_jmena():
+    assert email_podpis.pracovni_adresa(FalesnyProfil()) == "daniel.lupinek@greensie.cz"
+    assert (
+        email_podpis.pracovni_adresa(FalesnyProfil(jmeno="Žofie", prijmeni="Čermák"))
+        == "zofie.cermak@greensie.cz"
+    )
+    assert email_podpis.pracovni_adresa(FalesnyProfil(jmeno="", prijmeni="")) == ""
+
+
+def test_textova_podoba_podpisu_ma_vse_podstatne():
+    t = email_podpis.sestav_text(FalesnyProfil(funkce="Jednatel"), "a@greensie.cz")
+    for kus in ["S pozdravem", "Daniel Lupínek", "Jednatel", "Greensie s.r.o.",
+                "+420 773 492 029", "a@greensie.cz", "www.greensie.cz"]:
+        assert kus in t, kus
+
+
+# ---- sestavení zprávy s podpisem ---------------------------------------------
+class FalesnyUcetSmtp:
+    adresa = "daniel.lupinek@greensie.cz"
+    jmeno_odesilatele = "Daniel Lupínek"
+    podpis = ""
+
+
+class FalesnyUser:
+    jmeno = "Daniel Lupínek"
+    id = 1
+
+
+def _sestav(profil=None, telo="Dobrý den,\nposílám nabídku.", prilohy=None, ucet=None):
+    from app.crm.email_smtp import sestav_zpravu
+
+    return sestav_zpravu(
+        ucet or FalesnyUcetSmtp(), FalesnyUser(), ["zakaznik@firma.cz"],
+        "Nabídka", telo, profil=profil, prilohy=prilohy,
+    )
+
+
+def test_zprava_s_podpisem_je_multipart_text_i_html():
+    """Klient bez HTML musí dostat text, ne prázdnou zprávu."""
+    msg = _sestav(FalesnyProfil(funkce="Jednatel"))
+    assert msg.get_content_type() == "multipart/alternative"
+    typy = [c.get_content_type() for c in msg.walk()]
+    assert "text/plain" in typy and "text/html" in typy
+
+    html = msg.get_body(preferencelist=("html",)).get_content()
+    text = msg.get_body(preferencelist=("plain",)).get_content()
+    assert "tel:+420773492029" in html
+    assert "posílám nabídku." in text
+    assert "Jednatel" in text and "Jednatel" in html
+
+
+def test_priloha_nerozbije_html_cast():
+    """S přílohou se struktura mění na multipart/mixed – HTML musí zůstat."""
+    msg = _sestav(
+        FalesnyProfil(),
+        prilohy=[{"nazev": "n.pdf", "mime": "application/pdf", "obsah": b"%PDF-1.4"}],
+    )
+    assert msg.get_content_type() == "multipart/mixed"
+    assert msg.get_body(preferencelist=("html",)) is not None
+    assert "application/pdf" in [c.get_content_type() for c in msg.walk()]
+
+
+def test_bez_profilu_zustava_prosty_text():
+    """Kdo profil nevyplnil, dostane starý textový podpis schránky."""
+    class UcetSPodpisem(FalesnyUcetSmtp):
+        podpis = "Daniel\nGreensie s.r.o."
+
+    msg = _sestav(profil=None, ucet=UcetSPodpisem())
+    assert msg.get_content_type() == "text/plain"
+    assert "Greensie s.r.o." in msg.get_content()
+
+
+def test_vypnuty_podpis_negeneruje_html():
+    msg = _sestav(FalesnyProfil(podpis_zapnuty=False))
+    assert msg.get_content_type() == "text/plain"
+
+
+def test_napsany_text_se_v_html_escapuje():
+    """Do HTML části nesmí propadnout syrové značky z napsaného textu."""
+    msg = _sestav(FalesnyProfil(), telo="<script>zlo()</script> a <b>tučně</b>")
+    html = msg.get_body(preferencelist=("html",)).get_content()
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+    # Text zůstane čitelný v textové části tak, jak ho člověk napsal.
+    assert "<script>zlo()</script>" in msg.get_body(preferencelist=("plain",)).get_content()
+
+
+def test_zalomeni_radku_se_prevede_na_br():
+    msg = _sestav(FalesnyProfil(), telo="prvni\ndruhy")
+    html = msg.get_body(preferencelist=("html",)).get_content()
+    assert "prvni<br>druhy" in html

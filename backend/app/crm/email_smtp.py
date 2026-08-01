@@ -20,6 +20,7 @@ klienti příjemce odpověď nespojí s původní zprávou a konverzace se rozsy
 samostatné maily.
 """
 
+import html as html_modul
 import smtplib
 import ssl
 from datetime import datetime, timezone
@@ -84,8 +85,14 @@ def sestav_zpravu(
     skryta_kopie: list[str] | None = None,
     odpoved_na: CrmEmailZprava | None = None,
     prilohy: list[dict] | None = None,
+    profil=None,
 ) -> EmailMessage:
-    """Postaví MIME zprávu. Podpis se přidá, pokud v textu ještě není."""
+    """Postaví MIME zprávu.
+
+    `profil` je `UzivatelProfil` odesílatele. Když je vyplněný a podpis zapnutý,
+    zpráva odejde jako **multipart/alternative** s HTML podpisem (a textovou
+    variantou téhož). Bez profilu se použije prostý textový podpis schránky.
+    """
     msg = EmailMessage()
     msg["From"] = _odesilatel(ucet, user)
     msg["To"] = ", ".join(komu)
@@ -106,8 +113,24 @@ def sestav_zpravu(
             f"{predchozi} {odpoved_na.message_id}".strip() if predchozi else odpoved_na.message_id
         )
 
-    telo_s_podpisem = _pridej_podpis(telo, ucet.podpis)
-    msg.set_content(telo_s_podpisem)
+    # ---- tělo: text vždy, HTML když je podpis z profilu ---------------------
+    # Zpráva odchází jako multipart/alternative (text + HTML). Textová část
+    # není formalita: klient, který HTML nezobrazí, by jinak dostal prázdno.
+    html_podpis = ""
+    text_podpis = ""
+    if profil is not None and getattr(profil, "podpis_zapnuty", False):
+        from app.crm import email_podpis
+
+        html_podpis = email_podpis.sestav_html(profil, ucet.adresa)
+        text_podpis = email_podpis.sestav_text(profil, ucet.adresa)
+
+    if html_podpis:
+        # HTML podpis z profilu vyhrává nad prostým textovým podpisem schránky.
+        # Přidávat oba by znamenalo dva podpisy pod sebou.
+        msg.set_content(_spoj_text(telo, text_podpis))
+        msg.add_alternative(_html_telo(telo, html_podpis), subtype="html")
+    else:
+        msg.set_content(_pridej_podpis(telo, ucet.podpis))
 
     for p in prilohy or []:
         obsah = p.get("obsah") or b""
@@ -120,6 +143,30 @@ def sestav_zpravu(
             obsah, maintype=hlavni, subtype=podtyp, filename=p.get("nazev") or "priloha"
         )
     return msg
+
+
+def _spoj_text(telo: str, podpis: str) -> str:
+    """Textová část: napsaný text + textová podoba podpisu, oddělené `--`."""
+    text = (telo or "").rstrip()
+    if not podpis:
+        return text + "\n"
+    return f"{text}\n\n--\n{podpis}\n"
+
+
+def _html_telo(telo: str, podpis_html: str) -> str:
+    """HTML část: napsaný text (escapovaný) + HTML podpis.
+
+    Text se **escapuje** a teprve pak se zalomení řádků převedou na `<br>`.
+    Kdyby se vkládal syrový, stačilo by napsat do e-mailu `<b>` a rozbil by
+    zbytek zprávy — a hůř, dalo by se tudy do odchozí pošty propašovat cizí HTML.
+    """
+    bezpecny = html_modul.escape(telo or "", quote=False).replace("\r\n", "\n")
+    odstavce = bezpecny.replace("\n", "<br>")
+    return (
+        '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;'
+        f'color:rgb(0,0,0);line-height:1.5;">{odstavce}</div>'
+        f'<div style="margin-top:18px;">{podpis_html}</div>'
+    )
 
 
 def _pridej_podpis(telo: str, podpis: str) -> str:
@@ -183,9 +230,18 @@ def odesli(
             .first()
         )
 
+    # Profil odesílatele = zdroj HTML podpisu. Načítá se tady, ne ve
+    # `sestav_zpravu`, aby ta zůstala bez dotazů do DB a šla testovat samotná.
+    from app.auth.models import UzivatelProfil
+
+    profil = (
+        db.query(UzivatelProfil).filter(UzivatelProfil.user_id == user.id).first()
+    )
+
     msg = sestav_zpravu(
         ucet, user, komu_a, predmet, telo,
         kopie=kopie_a, skryta_kopie=skryta_a, odpoved_na=odpoved_na, prilohy=prilohy,
+        profil=profil,
     )
     surova = msg.as_bytes()
     if len(surova) > MAX_ZPRAVA_B:

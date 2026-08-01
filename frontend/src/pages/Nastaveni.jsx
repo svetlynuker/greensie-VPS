@@ -4,6 +4,7 @@ import Layout from "../components/Layout";
 import AutomatizaceNastaveni from "../components/AutomatizaceNastaveni";
 import Ikona from "../components/Ikona";
 import NotifikaceNastaveni from "../components/NotifikaceNastaveni";
+import PodpisNastaveni from "../components/PodpisNastaveni";
 import SablonyTextuNastaveni from "../components/SablonyTextuNastaveni";
 import { logout, nactiMe, nactiNastaveni, ulozNastaveni } from "../api";
 import { getCvd, getTheme, setCvd, setTheme } from "../theme";
@@ -274,6 +275,11 @@ export default function Nastaveni() {
             </p>
           </section>
         )}
+
+        {/* ---- podpis do e-mailu (CRM-33) ----
+            Osobní věc každého, takže patří sem, ne do Admin nastavení.
+            Jede pod přepínačem novinek jako zbytek e-mailového klienta. */}
+        {me.novinky && <PodpisNastaveni />}
 
         {/* ---- účet ---- */}
         <section className="fm-card">

@@ -1,7 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth.models import LoginRequest, MeOut, Token, User, UserOut, ZmenaHeslaVstup
+from app.auth.models import (
+    LoginRequest,
+    MeOut,
+    ProfilOut,
+    ProfilVstup,
+    Token,
+    User,
+    UserOut,
+    UzivatelProfil,
+    ZmenaHeslaVstup,
+)
 from app.crm.novinky import ma_novinky
 from app.auth.permissions import (
     dlazdice_pro,
@@ -93,3 +103,98 @@ def zmen_heslo(
     user.musi_zmenit_heslo = False
     db.commit()
     return {"stav": "ok"}
+
+
+# ---- profil pro e-mailový podpis (CRM-33) ------------------------------------
+def _profil_nebo_novy(db: Session, user: User) -> UzivatelProfil:
+    """Profil uživatele; když ještě není, založí ho předvyplněný.
+
+    Předvyplnění z `User.jmeno`: appka celé jméno zná, takže po prvním otevření
+    karty už je rozdělené na křestní a příjmení a člověk jen dopíše telefon.
+    Rozdělí se na první mezeře — u dvou příjmení („Novák Dvořák") to zařadí
+    zbytek do příjmení, což je správně častěji než opak.
+    """
+    profil = db.query(UzivatelProfil).filter(UzivatelProfil.user_id == user.id).first()
+    if profil is not None:
+        return profil
+    casti = (user.jmeno or "").strip().split(" ", 1)
+    profil = UzivatelProfil(
+        user_id=user.id,
+        jmeno=casti[0] if casti and casti[0] else "",
+        prijmeni=casti[1].strip() if len(casti) > 1 else "",
+    )
+    db.add(profil)
+    db.commit()
+    db.refresh(profil)
+    return profil
+
+
+def _adresa_v_podpisu(db: Session, user: User) -> str:
+    """Adresa, která půjde do podpisu: schránka uživatele, jinak účet v appce.
+
+    Schránka má přednost schválně — do podpisu patří adresa, na kterou přijde
+    odpověď, ne ta, kterou se člověk hlásí do appky (může být jiná).
+    """
+    from app.crm.models import CrmEmailUcet
+
+    ucet = (
+        db.query(CrmEmailUcet)
+        .filter(CrmEmailUcet.user_id == user.id)
+        .order_by(CrmEmailUcet.id)
+        .first()
+    )
+    return (ucet.adresa if ucet is not None else user.email) or ""
+
+
+def _profil_out(db: Session, user: User, profil: UzivatelProfil) -> ProfilOut:
+    from app.crm import email_podpis
+
+    adresa = _adresa_v_podpisu(db, user)
+    return ProfilOut(
+        jmeno=profil.jmeno,
+        prijmeni=profil.prijmeni,
+        telefon=profil.telefon,
+        funkce=profil.funkce,
+        pozdrav=profil.pozdrav,
+        podpis_zapnuty=profil.podpis_zapnuty,
+        podpis_html=email_podpis.sestav_html(profil, adresa),
+        podpis_text=email_podpis.sestav_text(profil, adresa),
+        navrh_adresy=email_podpis.pracovni_adresa(profil),
+        adresa_v_podpisu=adresa,
+        pripraveny=email_podpis.profil_je_vyplneny(profil),
+    )
+
+
+@router.get("/profil", response_model=ProfilOut)
+def nacti_profil(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Můj profil pro podpis, včetně hotového náhledu podpisu."""
+    return _profil_out(db, user, _profil_nebo_novy(db, user))
+
+
+@router.put("/profil", response_model=ProfilOut)
+def uloz_profil(
+    vstup: ProfilVstup,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Uloží profil. Vrací rovnou přegenerovaný podpis, ať se náhled shoduje.
+
+    Telefon se normalizuje na devět číslic — do pole se dá napsat cokoli
+    („+420 773 492 029", „773492029"), ale v datech je jeden tvar. Jinak by
+    se tentýž člověk v exportech objevil pod třemi různými čísly.
+    """
+    from app.crm import email_podpis
+
+    profil = _profil_nebo_novy(db, user)
+    profil.jmeno = (vstup.jmeno or "").strip()
+    profil.prijmeni = (vstup.prijmeni or "").strip()
+    profil.telefon = email_podpis.cislice_telefonu(vstup.telefon)
+    profil.funkce = (vstup.funkce or "").strip()
+    profil.pozdrav = (vstup.pozdrav or "").strip()
+    profil.podpis_zapnuty = bool(vstup.podpis_zapnuty)
+    db.commit()
+    db.refresh(profil)
+    return _profil_out(db, user, profil)

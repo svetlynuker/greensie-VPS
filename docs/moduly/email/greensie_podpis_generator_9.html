@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Greensie — generátor podpisu</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f4f4; min-height: 100vh; padding: 2rem 1rem; }
+  .container { max-width: 740px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 600; color: #222; margin-bottom: 0.25rem; }
+  .subtitle { font-size: 14px; color: #666; margin-bottom: 2rem; }
+  .card { background: #fff; border-radius: 12px; border: 1px solid #e0e0e0; padding: 1.5rem; margin-bottom: 1.5rem; }
+  .section-title { font-size: 12px; font-weight: 600; color: #888; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group.full { grid-column: 1 / -1; }
+  label { font-size: 13px; color: #555; font-weight: 500; }
+  input[type="text"], input[type="email"], input[type="tel"], input[type="url"] {
+    padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px;
+    font-size: 14px; color: #222; outline: none; transition: border-color 0.2s;
+    font-family: Arial, sans-serif; width: 100%;
+  }
+  input:focus { border-color: #72c146; }
+  input[readonly] { background: #f7f7f7; color: #666; }
+  .toggle-row { display: flex; align-items: center; gap: 10px; margin-top: 2px; margin-bottom: 8px; }
+  .toggle { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #ccc; border-radius: 24px; transition: 0.3s; }
+  .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.3s; }
+  input:checked + .slider { background: #72c146; }
+  input:checked + .slider:before { transform: translateX(20px); }
+  .toggle-label { font-size: 14px; color: #333; }
+  .btn-row { display: flex; gap: 10px; align-items: center; }
+  button { padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; transition: background 0.2s, transform 0.1s; }
+  button:active { transform: scale(0.97); }
+  .btn-secondary { background: #f0f0f0; color: #333; border: 1px solid #ddd; }
+  .btn-secondary:hover { background: #e4e4e4; }
+  .btn-copy { background: #fff; color: #72c146; border: 2px solid #72c146; }
+  .btn-copy:hover { background: #f0fae8; }
+  .preview-label { font-size: 12px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+  .preview-box { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 8px; padding: 1.25rem; overflow-x: auto; }
+  .btn-seznam { background:#fff; color:#cc0000; border:2px solid #cc0000; border-radius:8px; padding:10px 16px; font-size:14px; font-weight:600; cursor:pointer; transition:background 0.2s; }
+  .btn-seznam:hover { background:#fff5f5; }
+  .copied-msg { font-size: 13px; color: #5ea835; font-weight: 500; display: none; }
+  .copied-msg.show { display: inline; }
+  .hint { font-size: 12px; color: #aaa; }
+  .divider { border: none; border-top: 1px solid #eee; margin: 1.25rem 0; }
+  .social-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .social-block { background: #fafafa; border: 1px solid #eee; border-radius: 8px; padding: 0.75rem; }
+  .social-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .social-icon-badge { width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: #72c146; flex-shrink: 0; }
+  .badge-fb { background: #1877F2; color: #72c146; }
+  .badge-ig { background: linear-gradient(45deg,#f09433,#e6683c 30%,#dc2743 55%,#cc2366 75%,#bc1888); color: #72c146; }
+  .badge-li { background: #0A66C2; color: #72c146; }
+  .social-name { font-size: 13px; font-weight: 600; color: #333; }
+  @media (max-width: 560px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .form-group.full { grid-column: 1; }
+    .social-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Greensie — generátor podpisu</h1>
+  <p class="subtitle">Vyplňte údaje a zkopírujte podpis do e-mailového klienta.</p>
+
+  <div class="card">
+    <div class="section-title">Základní údaje</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Úvodní pozdrav</label>
+        <div class="toggle-row">
+          <label class="toggle"><input type="checkbox" id="pozdrav-toggle" checked onchange="toggleField('pozdrav-toggle','pozdrav-input')"><span class="slider"></span></label>
+          <span class="toggle-label">Zobrazit pozdrav</span>
+        </div>
+        <input type="text" id="pozdrav-input" value="S pozdravem" oninput="renderPreview()">
+      </div>
+      <div class="form-group">
+        <label>Titul před jménem</label>
+        <input type="text" id="titul-pred" placeholder="Ing., Mgr., Bc. …" oninput="onJmenoChange()">
+      </div>
+      <div class="form-group">
+        <label>Titul za jménem</label>
+        <input type="text" id="titul-za" placeholder="MBA, Ph.D. …" oninput="renderPreview()">
+      </div>
+      <div class="form-group">
+        <label>Jméno</label>
+        <input type="text" id="jmeno" placeholder="Jan" oninput="onJmenoChange()">
+      </div>
+      <div class="form-group">
+        <label>Příjmení</label>
+        <input type="text" id="prijmeni" placeholder="Novák" oninput="onJmenoChange()">
+      </div>
+      <div class="form-group full">
+        <label>Funkce / pozice</label>
+        <div class="toggle-row">
+          <label class="toggle"><input type="checkbox" id="funkce-toggle" onchange="toggleField('funkce-toggle','funkce-input')"><span class="slider"></span></label>
+          <span class="toggle-label">Zobrazit funkci</span>
+        </div>
+        <input type="text" id="funkce-input" placeholder="Obchodní ředitel" oninput="renderPreview()" disabled style="opacity:0.4;">
+      </div>
+      <div class="form-group">
+        <label>Telefon</label>
+        <input type="tel" id="telefon" placeholder="773 492 029" maxlength="9" oninput="this.value=this.value.replace(/\D/g,'').slice(0,9);renderPreview()">
+        <span class="hint">9 číslic — +420 se doplní automaticky</span>
+      </div>
+      <div class="form-group">
+        <label>E-mail</label>
+        <input type="email" id="email" placeholder="jan.novak@greensie.cz" readonly>
+        <span class="hint">Generuje se automaticky z jména</span>
+      </div>
+    </div>
+
+    <hr class="divider">
+    <div class="section-title">Sociální sítě — ikony v podpisu</div>
+    <div class="social-row">
+      <div class="social-block">
+        <div class="social-header">
+          <div class="social-icon-badge badge-fb">f</div>
+          <span class="social-name">Facebook</span>
+          <label class="toggle" style="margin-left:auto;"><input type="checkbox" id="fb-toggle" checked onchange="renderPreview()"><span class="slider"></span></label>
+        </div>
+        <input type="url" id="fb-url" value="https://www.facebook.com/greensie.fotovoltaika" oninput="renderPreview()">
+      </div>
+      <div class="social-block">
+        <div class="social-header">
+          <div class="social-icon-badge badge-ig">ig</div>
+          <span class="social-name">Instagram</span>
+          <label class="toggle" style="margin-left:auto;"><input type="checkbox" id="ig-toggle" checked onchange="renderPreview()"><span class="slider"></span></label>
+        </div>
+        <input type="url" id="ig-url" value="https://www.instagram.com/greensie_fotovoltaika" oninput="renderPreview()">
+      </div>
+      <div class="social-block">
+        <div class="social-header">
+          <div class="social-icon-badge badge-li">in</div>
+          <span class="social-name">LinkedIn</span>
+          <label class="toggle" style="margin-left:auto;"><input type="checkbox" id="li-toggle" checked onchange="renderPreview()"><span class="slider"></span></label>
+        </div>
+        <input type="url" id="li-url" value="https://www.linkedin.com/company/greensie" oninput="renderPreview()">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="preview-label">Náhled podpisu</div>
+    <div class="preview-box" id="preview-box"></div>
+    <br>
+    <div class="btn-row" style="flex-wrap:wrap;gap:8px;">
+      <button class="btn-copy" onclick="copySignature()">📋 Kopírovat podpis</button>
+      <span class="copied-msg" id="copied-msg">✓ Zkopírováno!</span>
+      <button class="btn-secondary" onclick="downloadTxt()">⬇ TXT (PHP)</button>
+      <button class="btn-secondary" onclick="downloadOutlook()">⬇ Outlook (.htm)</button>
+      <button class="btn-secondary" onclick="downloadSeznam()">⬇ Seznam (.html)</button>
+    </div>
+    <div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <button class="btn-seznam" onclick="copyRawHTML()">📋 Kopírovat HTML kód <span style="font-size:12px;font-weight:400;">(pro Seznam — zachová odkazy)</span></button>
+      <span class="copied-msg" id="copied-html-msg">✓ HTML kód zkopírován!</span>
+    </div>
+    <div style="margin-top:1rem;border-top:1px solid #eee;padding-top:1rem;">
+      <div class="section-title" style="margin-bottom:0.6rem;">Jak použít exporty</div>
+      <div style="font-size:13px;color:#555;line-height:1.7;">
+        <div style="margin-bottom:12px;">
+          <strong style="color:#0078d4;">📧 Outlook (.htm)</strong><br>
+          Stažený soubor přesuňte do složky:<br>
+          <code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;font-size:12px;">C:\Users\<em>VašeJméno</em>\AppData\Roaming\Microsoft\Signatures\</code><br>
+          Poté v Outlooku: <em>Soubor → Možnosti → Pošta → Podpisy</em> — váš podpis se zobrazí v seznamu.
+        </div>
+        <div style="background:#fff8f0;border:1px solid #ffd199;border-radius:8px;padding:10px 12px;">
+          <strong style="color:#cc0000;">📧 Seznam — správný postup pro funkční odkazy</strong><br>
+          <ol style="margin:6px 0 0 16px;line-height:2;">
+            <li>Klikněte na <strong>📋 Kopírovat HTML kód</strong> výše</li>
+            <li>V Seznamu přejděte do <em>Nastavení → Psaní zpráv → Podpis</em></li>
+            <li>V editoru podpisu klikněte na ikonu <strong>&lt;/&gt; (HTML zdroj)</strong></li>
+            <li>Vložte zkopírovaný kód <strong>(Ctrl+V)</strong> a uložte</li>
+          </ol>
+          <div style="margin-top:6px;font-size:12px;color:#888;">⚠️ Při vložení přes vizuální editor (Ctrl+V přímo) se odkazy na sociální sítě ztratí.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const GREEN = '#ffffff';
+
+function removeDiacritics(s) { return s.normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+
+function onJmenoChange() {
+  const j = removeDiacritics(document.getElementById('jmeno').value.trim()).toLowerCase().replace(/[^a-z]/g,'');
+  const p = removeDiacritics(document.getElementById('prijmeni').value.trim()).toLowerCase().replace(/[^a-z]/g,'');
+  const parts = [j,p].filter(Boolean);
+  document.getElementById('email').value = parts.length ? parts.join('.')+'\@greensie.cz' : '';
+  renderPreview();
+}
+
+function toggleField(tid, iid) {
+  const cb=document.getElementById(tid), inp=document.getElementById(iid);
+  inp.disabled=!cb.checked; inp.style.opacity=cb.checked?'1':'0.4';
+  renderPreview();
+}
+
+function formatTelefon(raw) {
+  let d=raw.replace(/\D/g,'');
+  if (!d) return '';
+  if (d.startsWith('420')) d=d.slice(3);
+  if (d.startsWith('0')) d=d.slice(1);
+  const parts=[]; for (let i=0;i<d.length;i+=3) parts.push(d.slice(i,i+3));
+  return '+420 '+parts.join(' ');
+}
+
+// Build social icon as inline base64 PNG (32x32)
+// Background = platform color, symbol = Greensie green #72c146
+function makeSocialIcon(type) {
+  const c=document.createElement('canvas'); c.width=32; c.height=32;
+  const ctx=c.getContext('2d');
+  // rounded rect background
+  const r=6;
+  if (type==='ig') {
+    const g=ctx.createLinearGradient(0,32,32,0);
+    g.addColorStop(0,'#f09433'); g.addColorStop(0.3,'#e6683c');
+    g.addColorStop(0.55,'#dc2743'); g.addColorStop(0.75,'#cc2366'); g.addColorStop(1,'#bc1888');
+    ctx.fillStyle=g;
+  } else if (type==='li') {
+    ctx.fillStyle='#0A66C2';
+  } else {
+    ctx.fillStyle='#1877F2';
+  }
+  ctx.beginPath();
+  ctx.moveTo(r,0); ctx.lineTo(32-r,0); ctx.arcTo(32,0,32,r,r);
+  ctx.lineTo(32,32-r); ctx.arcTo(32,32,32-r,32,r);
+  ctx.lineTo(r,32); ctx.arcTo(0,32,0,32-r,r);
+  ctx.lineTo(0,r); ctx.arcTo(0,0,r,0,r);
+  ctx.closePath(); ctx.fill();
+
+  // symbol in Greensie green
+  ctx.fillStyle = GREEN;
+  ctx.strokeStyle = GREEN;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+
+  if (type==='fb') {
+    ctx.font='bold 20px Arial';
+    ctx.fillText('f', 17, 17);
+  } else if (type==='li') {
+    ctx.font='bold 14px Arial';
+    ctx.fillText('in', 16, 16);
+  } else {
+    // Instagram camera outline in green
+    ctx.lineWidth=2;
+    const iw=18, ih=14, ix=7, iy=9;
+    ctx.beginPath(); ctx.rect(ix,iy,iw,ih); ctx.stroke();
+    ctx.beginPath(); ctx.arc(16,16.5,4,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(22.5,11.5,1.5,0,Math.PI*2); ctx.fill();
+  }
+  return c.toDataURL('image/png');
+}
+
+function getSocialIconsRow() {
+  const items = [];
+  if (document.getElementById('fb-toggle').checked) {
+    const url = document.getElementById('fb-url').value.trim();
+    if (url) items.push({img: makeSocialIcon('fb'), url, label:'Facebook'});
+  }
+  if (document.getElementById('ig-toggle').checked) {
+    const url = document.getElementById('ig-url').value.trim();
+    if (url) items.push({img: makeSocialIcon('ig'), url, label:'Instagram'});
+  }
+  if (document.getElementById('li-toggle').checked) {
+    const url = document.getElementById('li-url').value.trim();
+    if (url) items.push({img: makeSocialIcon('li'), url, label:'LinkedIn'});
+  }
+  if (!items.length) return '';
+  const links = items.map(ic =>
+    `<a href="${ic.url}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-right:5px;text-decoration:none;" title="${ic.label}"><img src="${ic.img}" width="28" height="28" style="width:28px;height:28px;display:inline-block;vertical-align:middle;" alt="${ic.label}"></a>`
+  ).join('');
+  return `<tr><td colspan="2" style="padding-top:7px;"><div style="text-align:left;">${links}</div></td></tr>`;
+}
+
+function getSignatureHTML() {
+  const pozdravOn = document.getElementById('pozdrav-toggle').checked;
+  const pozdrav = document.getElementById('pozdrav-input').value.trim() || 'S pozdravem';
+  const pozdravBlock = pozdravOn
+    ? `<p style="text-align:left;text-indent:0px;background-color:rgb(255,255,255);margin:0 0 16px 0;"><span style="font-family:&quot;Times New Roman&quot;;font-size:12pt;color:rgb(0,0,0);">${pozdrav}</span></p>` : '';
+
+  const titulPred = document.getElementById('titul-pred').value.trim();
+  const jmeno = document.getElementById('jmeno').value.trim();
+  const prijmeni = document.getElementById('prijmeni').value.trim();
+  const titulZa = document.getElementById('titul-za').value.trim();
+  const funkceOn = document.getElementById('funkce-toggle').checked;
+  const funkce = document.getElementById('funkce-input').value.trim();
+  const tel = document.getElementById('telefon').value.trim();
+  const email = document.getElementById('email').value.trim();
+
+  const jmenoBase = [jmeno,prijmeni].filter(Boolean).join(' ') || 'Jméno Příjmení';
+  const jmenoFull = [titulPred,jmenoBase].filter(Boolean).join(' ') + (titulZa ? ', '+titulZa : '');
+  const emailVal = email || 'email@greensie.cz';
+  const telVal = tel ? formatTelefon(tel) : '+420 000 000 000';
+  const funkceBlock = (funkceOn && funkce)
+    ? `<div style="text-align:left;text-indent:0px;line-height:28px;margin:0;padding-bottom:4px;border-bottom:2px solid rgb(114,193,70);font-size:12pt;"><span style="font-family:Aptos,Calibri,Helvetica,sans-serif;color:rgb(0,0,0);">${funkce}</span><br></div>` : '';
+  const nameBorder = (!funkceOn||!funkce) ? 'border-bottom:2px solid rgb(114,193,70);' : '';
+  const socialRow = getSocialIconsRow();
+
+  return `${pozdravBlock}<div style="background-color:rgb(255,255,255);"><table border="0" cellspacing="0" cellpadding="0" style="text-align:left;text-indent:0px;"><tbody><tr>
+<td style="text-align:center;text-indent:0px;vertical-align:middle;">
+  <img src="https://ci3.googleusercontent.com/meips/ADKq_NZJRwYzqbXXohWjDyhk3uEpKTinhk_D4JeZwRmO7CyjWYyF5MRiQFU4qMxbcX-mMEzUkd5Azq5-XCmwkrP1Gvu8mQqAg432VPSAjsC-hPlLshLjTUib10jvC1-px9HY=s0-d-e1-ft#https://www.greensie-fotovoltaika.cz/wp-content/uploads/logo_greensie.png" width="100" style="width:100px;max-width:130px;display:block;">
+</td>
+<td style="width:15px;"></td>
+<td style="text-align:left;text-indent:0px;vertical-align:middle;">
+  <h2 style="text-align:left;text-indent:0px;line-height:28px;margin:0;padding-bottom:4px;${nameBorder}font-family:Arial;font-size:18px;color:rgb(0,0,0);">${jmenoFull}</h2>
+  ${funkceBlock}
+  <table border="0" cellspacing="0" cellpadding="0" style="text-align:left;text-indent:0px;line-height:1;"><tbody>
+  <tr>
+    <td style="vertical-align:middle;width:26px;height:28px;"><img src="https://ci3.googleusercontent.com/meips/ADKq_NZVWisVd6NV5wlPPOqUrGundTmm2HvdLWQfhS4_YH5unMHcAws-h0R9IBG7eTGzoY6JoKG0_sgMaD30UCdtFO85pfe812XWGuM__mZwpE7r7et2tMqnhw5kFHAII57UeXrNSCg=s0-d-e1-ft#https://www.greensie-fotovoltaika.cz/wp-content/uploads/phone-icon-dark-2x.png" alt="tel" width="18" style="width:18px;display:block;"></td>
+    <td style="line-height:1;height:28px;"><div style="font-family:Arial;font-size:14px;color:rgb(0,0,0);">${telVal}</div></td>
+  </tr>
+  <tr>
+    <td style="vertical-align:middle;width:26px;height:28px;"><img src="https://ci3.googleusercontent.com/meips/ADKq_NamxMgmeID-C2q4Jg601NpNkNgfm2Hwy-uF4KgVt8MCRUHD9AoiUNXepxrTfTbiVLhmMW63spt9vod_TtejjHXQ5Z9jkrRce8MwXjy_Zqrs8Oeso0bzxnIDEWLQwd5gBlI3iqo=s0-d-e1-ft#https://www.greensie-fotovoltaika.cz/wp-content/uploads/email-icon-dark-2x.png" alt="email" width="18" style="width:18px;display:block;"></td>
+    <td style="line-height:1;height:28px;"><div style="font-family:Arial;font-size:14px;color:rgb(0,0,0);"><a href="mailto:${emailVal}" target="_blank" style="color:rgb(0,0,0);text-decoration:none;">${emailVal}</a></div></td>
+  </tr>
+  <tr>
+    <td style="vertical-align:middle;width:26px;height:28px;"><img src="https://ci3.googleusercontent.com/meips/ADKq_NaZoWn25PFufjUxpUXxADNnJ8hhwHQCzlaWbzvOQsmL6ItOgUwzaufXUJt6RxuBjUSnCWI1TVzuMD5LKqkF2LAWTkJbSFsSy5NFeNAP65lV6CnMkZdbFJcVV9WUN40gjgIlvw=s0-d-e1-ft#https://www.greensie-fotovoltaika.cz/wp-content/uploads/link-icon-dark-2x.png" alt="web" width="18" style="width:18px;display:block;"></td>
+    <td style="line-height:1;height:28px;"><div style="font-family:Arial;font-size:14px;color:rgb(0,0,0);"><a href="https://www.greensie.cz/" target="_blank" style="color:rgb(0,0,0);text-decoration:none;">www.greensie.cz</a></div></td>
+  </tr>
+  ${socialRow}
+  </tbody></table>
+</td>
+</tr></tbody></table></div>`;
+}
+
+function renderPreview() {
+  document.getElementById('preview-box').innerHTML = getSignatureHTML();
+}
+
+function copyRawHTML() {
+  const html = getSignatureHTML();
+  navigator.clipboard.writeText(html).then(() => {
+    const m = document.getElementById('copied-html-msg');
+    m.classList.add('show'); setTimeout(() => m.classList.remove('show'), 2500);
+  });
+}
+
+function copySignature() {
+  const html = getSignatureHTML();
+  navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([html],{type:'text/html'})})]).then(showCopied).catch(()=>{
+    const ta=document.createElement('textarea'); ta.value=html; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); showCopied();
+  });
+}
+
+function showCopied() {
+  const m=document.getElementById('copied-msg'); m.classList.add('show'); setTimeout(()=>m.classList.remove('show'),2500);
+}
+
+function getFileStem() {
+  const j=removeDiacritics(document.getElementById('jmeno').value).replace(/\s/g,'').toLowerCase();
+  const p=removeDiacritics(document.getElementById('prijmeni').value).replace(/\s/g,'').toLowerCase();
+  return [j,p].filter(Boolean).join('_')||'podpis';
+}
+
+function downloadTxt() {
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([getSignatureHTML()],{type:'text/plain;charset=utf-8'}));
+  a.download='podpis_'+getFileStem()+'.txt'; a.click();
+}
+
+function downloadOutlook() {
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>${getSignatureHTML()}</body></html>`;
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([html],{type:'text/html;charset=utf-8'}));
+  a.download='podpis_'+getFileStem()+'.htm'; a.click();
+}
+
+function downloadSeznam() {
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:20px;font-family:Arial,sans-serif;">${getSignatureHTML()}</body></html>`;
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([html],{type:'text/html;charset=utf-8'}));
+  a.download='podpis_'+getFileStem()+'_seznam.html'; a.click();
+}
+
+renderPreview();
+</script>
+</body>
+</html>
