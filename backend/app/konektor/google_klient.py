@@ -180,6 +180,23 @@ class DriveClient:
             .execute(num_retries=DRIVE_RETRY)
         )
 
+    # ---- stažení obsahu (náhled souboru přímo v appce) ----
+    def stahni(self, file_id: str) -> bytes:
+        """Obsah běžného (binárního) souboru. Pro Google formáty použij `exportuj`."""
+        return self.service.files().get_media(fileId=file_id, supportsAllDrives=True).execute(
+            num_retries=DRIVE_RETRY
+        )
+
+    def exportuj(self, file_id: str, mime: str) -> bytes:
+        """Google formát (Docs/Sheets/Slides) převedený na `mime` — typicky PDF.
+
+        Google-native soubory `get_media` neumí: nemají binární obsah, jen
+        exportní podoby. Bez tohohle by se dokument v appce ukázat nedal vůbec.
+        """
+        return self.service.files().export_media(fileId=file_id, mimeType=mime).execute(
+            num_retries=DRIVE_RETRY
+        )
+
     def get_file(self, file_id: str) -> dict:
         """Detail souboru vč. rodičů a příznaku trashed."""
         return (

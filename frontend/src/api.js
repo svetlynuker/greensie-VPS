@@ -1786,6 +1786,37 @@ export function diskObsah(folderId = null) {
   return zavolej(`/disk/obsah${q}`);
 }
 
+// Nová podsložka v otevřené složce. Prázdné `folderId` = výchozí složka.
+export function diskZalozSlozku(nazev, folderId = null) {
+  return zavolej("/disk/slozka", {
+    method: "POST",
+    body: JSON.stringify({ nazev, folder_id: folderId }),
+  });
+}
+
+// Obsah souboru pro zobrazení v appce (ne přesměrování na Disk). Vrací Blob.
+//
+// Vlastní fetch, ne `zavolej`: ten čte odpověď jako JSON, což by binárku
+// rozbilo. Blob se pak zobrazí přes URL.createObjectURL — díky tomu jde obsah
+// do <iframe>/<img> i s přihlášením, které se posílá hlavičkou.
+export async function diskNahledSouboru(fileId) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/disk/soubor/${encodeURIComponent(fileId)}/nahled`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    let detail = `Chyba ${res.status}`;
+    try {
+      const chyba = await res.json();
+      if (chyba.detail) detail = chyba.detail;
+    } catch {
+      // ponech výchozí hlášku
+    }
+    throw new Error(detail);
+  }
+  return res.blob();
+}
+
 // Nahrání souboru do otevřené složky. Jde přes appku, ale neukládá se u nás —
 // zůstane jen odkaz. Vlastní fetch, ne `zavolej`: ten posílá Content-Type
 // application/json, což by multipart rozbilo (stejný vzor jako crmSlozkaNahraj).

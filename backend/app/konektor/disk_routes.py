@@ -15,7 +15,11 @@ tvar drží jedno místo (`disk_prochazeni`) a nová třída `*Out` by byla dal�
 kandidát na kolizi názvů.
 """
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth.models import User
@@ -26,6 +30,18 @@ from app.konektor import disk_prochazeni
 from app.konektor.logika import NastaveniNepripraveno
 
 router = APIRouter(prefix="/disk", tags=["disk"])
+
+
+class DiskSlozkaVstup(BaseModel):
+    """Nová podsložka. `folder_id` prázdné = výchozí složka modulu.
+
+    Vlastní název třídy s předponou `Disk` schválně – v projektu už `SlozkaOut`
+    existuje pro e-mailové složky a stejná jména se tiše přepisují
+    (viz `tests/test_kolize_cest.py`).
+    """
+
+    nazev: str
+    folder_id: str | None = None
 
 
 def vyzaduj_disk(user: User = Depends(get_current_user)) -> User:
@@ -53,6 +69,10 @@ def _osetri(volani, hlaska_502: str = "Disk neodpověděl"):
         raise HTTPException(status_code=409, detail=f"Konektor na Disk není připravený: {e}")
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        # Vstup, se kterým se nedá pracovat (prázdný název, složka místo souboru,
+        # příliš velký soubor) – to není chyba Disku, ale zadání.
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:  # noqa: BLE001 – chybu chceme ukázat čitelně
         raise HTTPException(status_code=502, detail=f"{hlaska_502}: {e}")
 
@@ -111,4 +131,45 @@ async def nahraj_soubor(
             user.email,
         ),
         "Disk soubor nepřijal",
+    )
+
+
+@router.post("/slozka")
+def zaloz_slozku(
+    vstup: DiskSlozkaVstup,
+    user: User = Depends(vyzaduj_disk),
+    db: Session = Depends(get_db),
+):
+    """Založí podsložku v právě otevřené složce."""
+    return _osetri(
+        lambda: disk_prochazeni.zaloz_slozku(db, vstup.folder_id, vstup.nazev, user.email),
+        "Disk složku nezaložil",
+    )
+
+
+@router.get("/soubor/{file_id}/nahled")
+def nahled_souboru(
+    file_id: str,
+    _user: User = Depends(vyzaduj_disk),
+    db: Session = Depends(get_db),
+):
+    """Obsah souboru k zobrazení **v appce**, ne přesměrováním na Disk.
+
+    Čte se přes service account konektoru, takže na tom, jestli má člověk vlastní
+    přístup ke Google Disku, nezáleží. Google dokumenty přijdou jako PDF.
+
+    `Content-Disposition: inline` — prohlížeč to má zobrazit, ne stáhnout. Název
+    se posílá i v `filename*` (RFC 5987), jinak by se české znaky v názvu
+    rozsypaly.
+    """
+    data, mime, nazev = _osetri(lambda: disk_prochazeni.nahled(db, file_id))
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={
+            "Content-Disposition": f"inline; filename*=UTF-8''{quote(nazev)}",
+            # Nechceme, aby náhled zůstal v cache prohlížeče: soubor na Disku se
+            # může kdykoli změnit a stará podoba by pak tvrdila, že je platná.
+            "Cache-Control": "no-store",
+        },
     )

@@ -47,6 +47,7 @@ class FakeDrive:
         self.polozky = polozky
         self.deti = deti
         self.nahrane: list[tuple[str, str, bytes, str]] = []
+        self.zalozene: list[tuple[str, str]] = []
 
     def get_file(self, file_id: str) -> dict:
         if file_id not in self.polozky:
@@ -63,6 +64,20 @@ class FakeDrive:
             "name": name,
             "webViewLink": f"https://drive/novy-{len(self.nahrane)}",
         }
+
+    def create_folder(self, name: str, parent_id: str) -> dict:
+        self.zalozene.append((name, parent_id))
+        return {
+            "id": f"slozka-{len(self.zalozene)}",
+            "name": name,
+            "webViewLink": f"https://drive/slozka-{len(self.zalozene)}",
+        }
+
+    def stahni(self, file_id: str) -> bytes:
+        return f"binarni obsah {file_id}".encode()
+
+    def exportuj(self, file_id: str, mime: str) -> bytes:
+        return f"export {file_id} jako {mime}".encode()
 
 
 def _slozka(id_: str, nazev: str, rodic: str | None, link: str | None = None) -> dict:
@@ -287,6 +302,90 @@ def test_nahrani_se_zaloguje(monkeypatch):
     assert detail["uzivatel"] == "dan@greensie.cz", (
         "Zápis na firemní Disk musí nést, kdo ho udělal – `konektor_log` na to sloupec nemá."
     )
+
+
+# ---- zakládání složek --------------------------------------------------------
+def test_slozka_vznikne_v_otevrene_slozce(disk):
+    v = disk_prochazeni.zaloz_slozku(None, "op", "5. revize", "dan@greensie.cz")
+    assert disk.zalozene == [("5. revize", "op")]
+    assert v["nazev"] == "5. revize" and v["url"]
+
+
+def test_slozka_bez_rodice_vznikne_ve_vychozi(disk):
+    disk_prochazeni.zaloz_slozku(None, None, "9. archiv")
+    assert disk.zalozene[0][1] == STROP
+
+
+def test_slozka_mimo_strop_nevznikne(disk):
+    with pytest.raises(PermissionError):
+        disk_prochazeni.zaloz_slozku(None, "mzdy", "moje")
+    assert disk.zalozene == []
+
+
+def test_slozka_bez_nazvu_neprojde(disk):
+    """Prázdný název by na Disku udělal složku „beze-jmena" – to nikdo nechtěl."""
+    for nazev in ("", "   ", "\t\n"):
+        with pytest.raises(ValueError):
+            disk_prochazeni.zaloz_slozku(None, "op", nazev)
+    assert disk.zalozene == []
+
+
+def test_nazev_slozky_nemuze_byt_cesta(disk):
+    """Lomítka jdou na „-", takže „a/b" je jedna složka, ne dvě zanořené."""
+    disk_prochazeni.zaloz_slozku(None, "op", "2026/revize")
+    assert disk.zalozene == [("2026-revize", "op")]
+
+
+# ---- náhled souboru v appce --------------------------------------------------
+def test_binarni_soubor_jde_tak_jak_je(disk):
+    data, mime, nazev = disk_prochazeni.nahled(None, "aa")
+    assert data == b"binarni obsah aa"
+    assert mime == "application/pdf"
+    assert nazev == "smlouva.pdf"
+
+
+def test_google_dokument_se_exportuje_do_pdf(disk):
+    """Google formáty binární obsah nemají – bez exportu by je appka neukázala."""
+    disk.polozky["gdoc"] = {
+        "id": "gdoc",
+        "name": "Zápis z jednání",
+        "mimeType": "application/vnd.google-apps.document",
+        "parents": ["op"],
+    }
+    disk.deti["op"].append("gdoc")
+    data, mime, nazev = disk_prochazeni.nahled(None, "gdoc")
+    assert mime == "application/pdf"
+    assert nazev == "Zápis z jednání.pdf", "Přípona musí odpovídat tomu, co se posílá."
+    assert b"export" in data
+
+
+def test_nahled_mimo_strop_neprojde(disk):
+    """Nejdůležitější kontrola modulu: bez ní by `file_id` z adresy stáhlo cokoli."""
+    disk.polozky["tajny"] = _soubor("tajny", "mzdy-2026.xlsx", "mzdy", "5000")
+    with pytest.raises(PermissionError):
+        disk_prochazeni.nahled(None, "tajny")
+
+
+def test_slozka_nahled_nema(disk):
+    with pytest.raises(ValueError):
+        disk_prochazeni.nahled(None, "pod")
+
+
+def test_velky_soubor_se_posila_na_disk(disk):
+    disk.polozky["velky"] = _soubor("velky", "video.mp4", "op", str(60 * 1024 * 1024))
+    with pytest.raises(ValueError):
+        disk_prochazeni.nahled(None, "velky")
+
+
+def test_vypis_rika_co_appka_umi_zobrazit(disk):
+    """Prohlížeč se nesmí rozhodovat podle přípony – ví to jen backend."""
+    disk.polozky["zip"] = _soubor("zip", "podklady.zip", "op", "9999")
+    disk.polozky["zip"]["mimeType"] = "application/zip"
+    disk.deti["op"].append("zip")
+    polozky = {p["nazev"]: p for p in disk_prochazeni.obsah(None, "op")["polozky"]}
+    assert polozky["smlouva.pdf"]["lze_nahled"] is True
+    assert polozky["podklady.zip"]["lze_nahled"] is False
+    assert polozky["3. nabidka"]["lze_nahled"] is False, "Do složky se vchází, nenahlíží."
 
 
 # ---- práva a přepínač novinek ------------------------------------------------

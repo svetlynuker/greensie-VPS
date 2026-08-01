@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import Ikona from "../components/Ikona";
-import { diskKoren, diskNahraj, diskObsah, logout, nactiMe } from "../api";
+import DiskNahled from "../components/DiskNahled";
+import { diskKoren, diskNahraj, diskObsah, diskZalozSlozku, logout, nactiMe } from "../api";
 import "../styles/crm.css";
 import "../styles/disk.css";
 
@@ -19,9 +20,12 @@ import "../styles/disk.css";
  * 1. **Na každé úrovni je odkaz na Disk** (výslovné Danovo zadání). V drobečkové
  *    navigaci má každý krok svoje ↗, každá složka i soubor v seznamu taky —
  *    takže odkud člověk chce odejít na Disk, odtud odejde, ne jen z kořene.
- * 2. **Nahrává se do právě otevřené složky** — tlačítkem nebo přetažením souboru
- *    na plochu. Soubor u nás nezůstane: projde do Disku a v appce je jen odkaz.
- *    Dvě kopie téhož dokumentu by znamenaly, že nikdo neví, která platí.
+ * 2. **Nahrává se a zakládá do právě otevřené složky** — tlačítkem nebo přetažením
+ *    souboru na plochu. Soubor u nás nezůstane: projde do Disku a v appce je jen
+ *    odkaz. Dvě kopie téhož dokumentu by znamenaly, že nikdo neví, která platí.
+ * 3. **Soubor se otevře v appce** (`DiskNahled`), ne přesměrováním na Disk —
+ *    u toho, co jde zobrazit. Zip nebo dwg se nepředstírá: takové položky vedou
+ *    na Disk, protože backend u nich `lze_nahled` nepošle.
  *
  * Strop viditelnosti drží backend: složka nad kořenem konektoru a nic nad ní
  * (`konektor/disk_prochazeni.py`), a to u čtení i u nahrání. Filtrování v liště
@@ -46,6 +50,9 @@ export default function Disk() {
   const [nahrava, setNahrava] = useState(false);
   const [hlaska, setHlaska] = useState("");
   const [nadSebou, setNadSebou] = useState(false); // přetahování souboru nad plochou
+  const [novaSlozka, setNovaSlozka] = useState(null); // rozepsaný název, null = neschované
+  const [zaklada, setZaklada] = useState(false);
+  const [otevreny, setOtevreny] = useState(null); // soubor v náhledu
   const vstup = useRef(null);
   const zivy = useRef(true);
   const navigate = useNavigate();
@@ -123,6 +130,25 @@ export default function Disk() {
     } finally {
       if (zivy.current) setNahrava(false);
       if (vstup.current) vstup.current.value = "";
+    }
+  }
+
+  /** Založí podsložku v právě otevřené složce. */
+  async function zalozSlozku() {
+    const nazev = (novaSlozka || "").trim();
+    if (!nazev || !obsah) return;
+    setZaklada(true);
+    setChyba(null);
+    try {
+      await diskZalozSlozku(nazev, obsah.je_koren ? null : obsah.folder_id);
+      if (!zivy.current) return;
+      setNovaSlozka(null);
+      setHlaska(`Založena složka ${nazev}`);
+      otevri(obsah.je_koren ? null : obsah.folder_id);
+    } catch (e) {
+      osetriChybu(e);
+    } finally {
+      if (zivy.current) setZaklada(false);
     }
   }
 
@@ -262,6 +288,14 @@ export default function Disk() {
               {nacita ? "Načítám…" : "Obnovit"}
             </button>
             <button
+              className="fm-btn crm-btn-maly"
+              onClick={() => setNovaSlozka(novaSlozka === null ? "" : null)}
+              disabled={!obsah || zaklada}
+              title="Založit podsložku v právě otevřené složce"
+            >
+              + Složka
+            </button>
+            <button
               className="fm-btn crm-btn-maly fm-primary"
               onClick={() => vstup.current?.click()}
               disabled={!obsah || nahrava}
@@ -289,6 +323,38 @@ export default function Disk() {
             style={{ display: "none" }}
             onChange={(e) => nahraj(e.target.files)}
           />
+
+          {/* Řádek na název nové složky. Ukazuje se až po kliknutí na „+ Složka",
+              aby lišta nebyla plná políček, která nikdo většinu času nepotřebuje. */}
+          {novaSlozka !== null && (
+            <div className="dk-nova-slozka">
+              <Ikona jmeno="slozka" velikost={15} />
+              <input
+                className="dk-filtr"
+                autoFocus
+                value={novaSlozka}
+                onChange={(e) => setNovaSlozka(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") zalozSlozku();
+                  if (e.key === "Escape") setNovaSlozka(null);
+                }}
+                placeholder="Název nové složky…"
+              />
+              <button
+                className="fm-btn crm-btn-maly fm-primary"
+                onClick={zalozSlozku}
+                disabled={!novaSlozka.trim() || zaklada}
+              >
+                {zaklada ? "Zakládám…" : "Založit"}
+              </button>
+              <button className="fm-btn crm-btn-maly" onClick={() => setNovaSlozka(null)}>
+                Zrušit
+              </button>
+              <span className="crm-tise">
+                Vznikne v {obsah?.nazev ? `„${obsah.nazev}“` : "otevřené složce"}.
+              </span>
+            </div>
+          )}
 
           {chyba && <div className="crm-chyba">{chyba}</div>}
           {hlaska && !chyba && <div className="dk-hlaska-radek">{hlaska}</div>}
@@ -320,19 +386,35 @@ export default function Disk() {
                         <span className="dk-nazev">{p.nazev}</span>
                         <span className="dk-sipka">›</span>
                       </button>
-                    ) : (
-                      <a
+                    ) : p.lze_nahled ? (
+                      /* Otevře se v appce. Backend řekl, že to zobrazit umí. */
+                      <button
                         className="dk-cil"
-                        href={p.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        title={p.nazev}
+                        onClick={() => setOtevreny(p)}
+                        title={`Otevřít ${p.nazev} v appce`}
                       >
                         <span className="dk-ikona" aria-hidden="true">
                           📄
                         </span>
                         <span className="dk-nazev">{p.nazev}</span>
                         <span className="crm-tise">{velikost(p.velikost)}</span>
+                      </button>
+                    ) : (
+                      /* Zip, dwg, video, nebo soubor nad 25 MB — appka by ho jen
+                         nabídla k uložení, takže rovnou na Disk. */
+                      <a
+                        className="dk-cil"
+                        href={p.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={`${p.nazev} — tenhle typ appka nezobrazí, otevře se na Disku`}
+                      >
+                        <span className="dk-ikona" aria-hidden="true">
+                          📄
+                        </span>
+                        <span className="dk-nazev">{p.nazev}</span>
+                        <span className="crm-tise">{velikost(p.velikost)}</span>
+                        <span className="dk-sipka">↗</span>
                       </a>
                     )}
                     {/* U složky vede řádek dovnitř, takže odkaz na Disk musí být
@@ -374,6 +456,8 @@ export default function Disk() {
               </div>
             )}
           </div>
+
+          {otevreny && <DiskNahled polozka={otevreny} onZavri={() => setOtevreny(null)} />}
         </div>
       )}
     </Layout>
