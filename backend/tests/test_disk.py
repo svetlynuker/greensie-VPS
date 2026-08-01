@@ -48,6 +48,10 @@ class FakeDrive:
         self.deti = deti
         self.nahrane: list[tuple[str, str, bytes, str]] = []
         self.zalozene: list[tuple[str, str]] = []
+        self.sdilene: list[tuple[str, str, str, bool]] = []
+        self.zrusene: list[tuple[str, str]] = []
+        # {id položky: [oprávnění ve tvaru Drive API]}
+        self.opravneni: dict[str, list[dict]] = {}
 
     def get_file(self, file_id: str) -> dict:
         if file_id not in self.polozky:
@@ -72,6 +76,16 @@ class FakeDrive:
             "name": name,
             "webViewLink": f"https://drive/slozka-{len(self.zalozene)}",
         }
+
+    def prava(self, file_id: str) -> list[dict]:
+        return self.opravneni.get(file_id, [])
+
+    def pridej_pravo(self, file_id: str, email: str, role: str, oznamit: bool = False) -> dict:
+        self.sdilene.append((file_id, email, role, oznamit))
+        return {"id": f"perm-{len(self.sdilene)}", "emailAddress": email, "role": role}
+
+    def smaz_pravo(self, file_id: str, permission_id: str) -> None:
+        self.zrusene.append((file_id, permission_id))
 
     def stahni(self, file_id: str) -> bytes:
         return f"binarni obsah {file_id}".encode()
@@ -134,10 +148,31 @@ def _drive() -> FakeDrive:
     return FakeDrive(polozky, deti)
 
 
+SLUZEBNI = "konektor@greensie.cz"
+
+
 @pytest.fixture
 def disk(monkeypatch):
     drive = _drive()
-    n = SimpleNamespace(google_root_folder_id=KOREN, google_shared_drive_id="sdileny")
+    # Typický stav u složky případu: náš člověk přidaný zvlášť, zákazník zvenčí,
+    # zděděné oprávnění z klienta a service account konektoru.
+    drive.opravneni["op"] = [
+        {"id": "p1", "type": "user", "role": "writer", "emailAddress": "tomas@greensie.cz"},
+        {"id": "p2", "type": "user", "role": "reader", "emailAddress": "klient@firma.cz"},
+        {
+            "id": "p3",
+            "type": "user",
+            "role": "reader",
+            "emailAddress": "vedeni@greensie.cz",
+            "permissionDetails": [{"inherited": True, "inheritedFrom": KOREN, "role": "reader"}],
+        },
+        {"id": "p4", "type": "user", "role": "writer", "emailAddress": SLUZEBNI},
+    ]
+    n = SimpleNamespace(
+        google_root_folder_id=KOREN,
+        google_shared_drive_id="sdileny",
+        google_subject_email=SLUZEBNI,
+    )
     monkeypatch.setattr(crm_slozky, "_nastaveni", lambda db: n)
     monkeypatch.setattr(crm_slozky, "_drive_klient", lambda nast: drive)
     # zaloguj by sahal na DB; obsah logu hlídá test níž zvlášť.
@@ -386,6 +421,139 @@ def test_vypis_rika_co_appka_umi_zobrazit(disk):
     assert polozky["smlouva.pdf"]["lze_nahled"] is True
     assert polozky["podklady.zip"]["lze_nahled"] is False
     assert polozky["3. nabidka"]["lze_nahled"] is False, "Do složky se vchází, nenahlíží."
+
+
+# ---- sdílení položek na Disku -------------------------------------------------
+def test_vypis_sdileni_oznaci_zdedene_sluzebni_i_noveho(disk):
+    """Tři příznaky, na kterých závisí, co appka nabídne odebrat a před čím varuje.
+
+    Kdyby zmizely, lidé by klikali na „odebrat" u zděděného oprávnění (Google to
+    odmítne) nebo by si odebrali konektor a rozbili synchronizaci.
+    """
+    d = disk_prochazeni.prava(None, "op")
+    podle = {c["email"]: c for c in d["lide"]}
+    assert podle["tomas@greensie.cz"]["zdedene"] is False
+    assert podle["klient@firma.cz"]["novy"] is True, "Na disku nikde jinde přístup nemá."
+    assert podle["vedeni@greensie.cz"]["zdedene"] is True
+    assert podle[SLUZEBNI]["sluzebni"] is True
+    assert d["role"] == ["reader", "commenter", "writer"], "Owner ani organizer appka nenabízí."
+
+
+def test_novy_clovek_se_nepozna_podle_domeny(disk):
+    """Tým používá vlastní gmaily – doménová kontrola označila 17 z 20 kolegů.
+
+    Varování, které svítí vždycky, si člověk odvykne čítat, takže rozhoduje
+    členství na Disku, ne text za zavináčem.
+    """
+    disk.opravneni[STROP] = [
+        {"id": "s1", "type": "user", "role": "writer", "emailAddress": "kolega@gmail.com"},
+    ]
+    d = disk_prochazeni.prava(None, "op")
+    podle = {c["email"]: c for c in d["lide"]}
+    assert podle["klient@firma.cz"]["novy"] is True
+    assert "kolega@gmail.com" in d["znami"], "Prohlížeč z toho pozná, koho už disk zná."
+
+    # Kolega z gmailu, který je členem disku, se za nového nepočítá.
+    disk.opravneni["op"].append(
+        {"id": "p9", "type": "user", "role": "reader", "emailAddress": "kolega@gmail.com"}
+    )
+    podle = {c["email"]: c for c in disk_prochazeni.prava(None, "op")["lide"]}
+    assert podle["kolega@gmail.com"]["novy"] is False
+
+
+def test_sdileni_se_da_pridat(disk):
+    disk.opravneni[STROP] = [
+        {"id": "s1", "type": "user", "role": "writer", "emailAddress": "kdo@greensie.cz"},
+    ]
+    v = disk_prochazeni.pridej_pravo(None, "op", " kdo@greensie.cz ", "writer", False, "dan@x.cz")
+    assert disk.sdilene == [("op", "kdo@greensie.cz", "writer", False)]
+    assert v["novy"] is False, "Disk ho zná, tedy nic k varování."
+
+
+def test_neplatna_adresa_a_role_neprojdou(disk):
+    for email in ("", "bez-zavinace", "dva lidi@x.cz"):
+        with pytest.raises(ValueError):
+            disk_prochazeni.pridej_pravo(None, "op", email, "reader")
+    with pytest.raises(ValueError):
+        disk_prochazeni.pridej_pravo(None, "op", "kdo@greensie.cz", "owner")
+    assert disk.sdilene == [], "Nic z toho se nesmělo dostat na Disk."
+
+
+def test_sdileni_novemu_cloveku_se_loguje_jako_varovani(monkeypatch):
+    """V Logech to má být vidět na první pohled – únik dokumentů začíná tady."""
+    drive = _drive()
+    drive.opravneni[STROP] = [
+        {"id": "s1", "type": "user", "role": "writer", "emailAddress": "kolega@gmail.com"},
+    ]
+    n = SimpleNamespace(
+        google_root_folder_id=KOREN, google_shared_drive_id="sdileny", google_subject_email=SLUZEBNI
+    )
+    monkeypatch.setattr(crm_slozky, "_nastaveni", lambda db: n)
+    monkeypatch.setattr(crm_slozky, "_drive_klient", lambda nast: drive)
+    zapsano: list[tuple] = []
+    monkeypatch.setattr(
+        disk_prochazeni,
+        "zaloguj",
+        lambda db, uroven, kod, zprava, detail=None: zapsano.append((uroven, kod, detail)),
+    )
+    disk_prochazeni.pridej_pravo(None, "op", "cizi@firma.cz", "reader", False, "dan@x.cz")
+    uroven, kod, detail = zapsano[0]
+    assert (uroven, kod) == ("warn", "disk_prava")
+    assert detail["novy_clovek"] is True
+    assert detail["uzivatel"] == "dan@x.cz"
+
+    disk_prochazeni.pridej_pravo(None, "op", "kolega@gmail.com", "reader", False, "dan@x.cz")
+    assert zapsano[1][0] == "info", "Kolega, kterého disk zná, je běžný provoz."
+
+
+def test_sdileni_se_da_odebrat(disk):
+    disk_prochazeni.odeber_pravo(None, "op", "p1", "dan@x.cz")
+    assert disk.zrusene == [("op", "p1")]
+
+
+def test_konektoru_se_pristup_odebrat_neda(disk):
+    """Kdyby zmizel, přestane fungovat zakládání složek i celý modul."""
+    with pytest.raises(ValueError):
+        disk_prochazeni.odeber_pravo(None, "op", "p4")
+    assert disk.zrusene == []
+
+
+def test_zdedene_opravneni_se_odebrat_neda(disk):
+    """Google to odmítne – appka to musí říct dřív a čitelněji."""
+    with pytest.raises(ValueError) as e:
+        disk_prochazeni.odeber_pravo(None, "op", "p3")
+    assert "zděděné" in str(e.value)
+    assert disk.zrusene == []
+
+
+def test_neexistujici_opravneni_hlasi_chybu(disk):
+    with pytest.raises(ValueError):
+        disk_prochazeni.odeber_pravo(None, "op", "vymyslene")
+
+
+def test_sdileni_mimo_strop_neprojde(disk):
+    """Stejná hranice jako všude jinde – u sdílení o to víc."""
+    for volani in (
+        lambda: disk_prochazeni.prava(None, "mzdy"),
+        lambda: disk_prochazeni.pridej_pravo(None, "mzdy", "kdo@greensie.cz", "reader"),
+        lambda: disk_prochazeni.odeber_pravo(None, "mzdy", "p1"),
+    ):
+        with pytest.raises(PermissionError):
+            volani()
+    assert disk.sdilene == [] and disk.zrusene == []
+
+
+def test_zmena_sdileni_ma_vlastni_pravo():
+    """Právo `disk` na měnění sdílení nestačí — je to rozhodnutí, které jde i mimo firmu."""
+    from app.auth.permissions import VSECHNA_PRAVA
+    from app.konektor.disk_routes import vyzaduj_sdileni
+
+    assert "disk_sdileni" in VSECHNA_PRAVA
+    with pytest.raises(HTTPException) as e:
+        vyzaduj_sdileni(_uzivatel(False, ["disk"]))
+    assert e.value.status_code == 403, "403, ne 404: modul člověk vidí, jen na tohle nemá právo."
+    u = _uzivatel(True, [])
+    assert vyzaduj_sdileni(u) is u
 
 
 # ---- práva a přepínač novinek ------------------------------------------------

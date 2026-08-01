@@ -291,6 +291,210 @@ def zaloz_slozku(
     return {"id": f.get("id"), "nazev": f.get("name"), "url": _odkaz(f)}
 
 
+# ---- sdílení položek -------------------------------------------------------
+# Role, které smí appka nastavit. `owner` a `organizer` ne: na sdíleném disku
+# rozdávají práva dál a odebrat je zpátky přes appku nejde. `commenter` je
+# užitečný u smluv, kde má druhá strana psát poznámky, ale ne měnit obsah.
+POVOLENE_ROLE = ("reader", "commenter", "writer")
+
+def _znami(drive: DriveClient, strop: str) -> set[str]:
+    """E-maily, které na Disku už přístup mají (členové sdíleného disku).
+
+    Slouží k rozpoznání, že se dokument sdílí **někomu novému** — to je jediný
+    okamžik, kdy má appka varovat.
+
+    Původně se to zkoušelo podle domény (`@greensie.cz` = naše). Ukázalo se to
+    jako slepá cesta: tým používá vlastní gmaily a seznam.cz, takže doménová
+    kontrola označila 17 z 20 kolegů jako „mimo firmu". Varování, které svítí
+    vždycky, si člověk odvykne čítat — a pak přehlédne to jediné důležité.
+    """
+    try:
+        return {
+            (p.get("emailAddress") or "").strip().lower()
+            for p in drive.prava(strop)
+            if p.get("emailAddress")
+        }
+    except Exception:  # noqa: BLE001 – bez seznamu se jen nevaruje, nesmí to spadnout
+        return set()
+
+
+def prava(db: Session, item_id: str) -> dict:
+    """Kdo má k položce (složce i souboru) přístup na Disku.
+
+    Rozhodnutí Dana (1. 8. 2026): sdílení se má dát vyřídit odsud, ne odchodem
+    na Disk.
+
+    Co se vrací a proč právě to:
+
+    * `zdedene` — oprávnění, které položka dostala z nadřazené složky nebo ze
+      samotného sdíleného disku. **Smazat ho na téhle úrovni nejde** (Google to
+      odmítne), takže se posílá s příznakem a appka u něj tlačítko nenabídne.
+      Bez toho by lidé klikali na „odebrat" a dostávali chybu.
+    * `sluzebni` — service account konektoru. Kdyby si ho někdo odebral, přestane
+      fungovat celý konektor (zakládání složek, synchronizace, i tento modul).
+    * `novy` — e-mail, který na Disku jinak nikde není (zákazník, projektant).
+      Není to chyba, ale musí to být vidět. Záměrně se to NEpozná podle domény:
+      tým používá vlastní gmaily, takže doménová kontrola označila 17 z 20 kolegů
+      a varování by ztratilo význam.
+    """
+    n, drive, strop = _priprav(db)
+    if not _pod_stropem(drive, item_id, strop):
+        raise PermissionError("Tato položka neleží pod výchozí složkou modulu Disk.")
+
+    f = drive.get_file(item_id)
+    sluzebni = (n.google_subject_email or "").strip().lower()
+    znami = _znami(drive, strop)
+    lidi = []
+    for p in drive.prava(item_id):
+        if p.get("deleted"):
+            continue
+        detaily = p.get("permissionDetails") or []
+        email = (p.get("emailAddress") or "").strip()
+        lidi.append(
+            {
+                "id": p.get("id"),
+                "email": email,
+                "jmeno": p.get("displayName") or "",
+                "typ": p.get("type") or "",
+                "role": p.get("role") or "",
+                "zdedene": any(d.get("inherited") for d in detaily),
+                "sluzebni": bool(sluzebni and email.lower() == sluzebni),
+                # „Někdo, kdo na Disku jinak není" — typicky zákazník nebo
+                # projektant. U zděděných to nemá smysl: ti JSOU členové disku.
+                "novy": bool(email) and email.lower() not in znami,
+            }
+        )
+    # Nejdřív ti, se kterými se dá něco udělat; zděděná a služební práva až pod
+    # nimi, aby v seznamu nepřekrývala to, co člověk hledá.
+    lidi.sort(key=lambda x: (x["zdedene"] or x["sluzebni"], x["email"].lower()))
+    return {
+        "id": item_id,
+        "nazev": f.get("name") or "",
+        "je_slozka": f.get("mimeType") == logika.FOLDER_MIME,
+        "url": _odkaz(f),
+        "lide": lidi,
+        "role": list(POVOLENE_ROLE),
+        # Prohlížeč z toho pozná, že se adresa v políčku sdílí někomu novému, a
+        # varuje ještě před odesláním. Nejsou to citlivá data: tyhle e-maily jsou
+        # v témže okně vidět v seznamu.
+        "znami": sorted(znami),
+    }
+
+
+def pridej_pravo(
+    db: Session,
+    item_id: str,
+    email: str,
+    role: str,
+    oznamit: bool = False,
+    uzivatel: str = "",
+) -> dict:
+    """Přidá člověka k položce na Disku.
+
+    Jen konkrétní e-mail — **žádné „kdokoli s odkazem"**. Veřejný odkaz na
+    firemní dokument je věc, kterou nikdo nevzal zpět; když ho někdo opravdu
+    potřebuje, udělá ho na Disku vědomě.
+
+    Sdílení celé složky se dědí na všechno v ní. To je vlastnost Disku, ne naše,
+    ale appka to musí říct nahlas — proto je to v hlášce i v manuálu.
+
+    `oznamit` je u nás **zapnuté ve výchozím stavu**, a to kvůli reálnému stavu
+    Disku: tým ho má pod vlastními gmaily, takže adresy `@greensie.cz` nemají
+    účet Google a Google je bez pozvánky odmítne přidat vůbec.
+    """
+    cisty = (email or "").strip()
+    if "@" not in cisty or " " in cisty:
+        raise ValueError("Zadej e-mailovou adresu člověka, kterému se má sdílet.")
+    if role not in POVOLENE_ROLE:
+        raise ValueError(f"Neznámá role „{role}“.")
+
+    _, drive, strop = _priprav(db)
+    if not _pod_stropem(drive, item_id, strop):
+        raise PermissionError("Tato položka neleží pod výchozí složkou modulu Disk.")
+
+    novy = cisty.lower() not in _znami(drive, strop)
+    try:
+        p = drive.pridej_pravo(item_id, cisty, role, oznamit)
+    except Exception as e:  # noqa: BLE001
+        # Reálný případ z 1. 8. 2026: kolegové mají Disk pod vlastními gmaily,
+        # takže adresy @greensie.cz nemají účet Google. Takovou adresu Google
+        # odmítne pozvat bez oznámení e-mailem (`invalidSharingRequest`) — a
+        # surová anglická chyba z Drive API by člověku neřekla, co udělat.
+        if "invalidSharingRequest" in str(e) and not oznamit:
+            raise ValueError(
+                f"Adresa {cisty} nemá účet Google, takže ji Disk pustí jen s pozvánkou. "
+                "Zaškrtni „dát vědět e-mailem“ a pošli to znovu."
+            )
+        raise
+    zaloguj(
+        db,
+        # Sdílení někomu, kdo na Disku jinak není, je varování, ne běžný provoz:
+        # v Logech má být vidět na první pohled. U kolegy, který na disku už je,
+        # by to samé jen zaplevelilo log.
+        "warn" if novy else "info",
+        "disk_prava",
+        f"Sdíleno '{cisty}' ({role}) na Disku z modulu Disk.",
+        {
+            "item_id": item_id,
+            "permission_id": p.get("id"),
+            "email": cisty,
+            "role": role,
+            "novy_clovek": novy,
+            "uzivatel": uzivatel or "?",
+        },
+    )
+    return {
+        "id": p.get("id"),
+        "email": p.get("emailAddress") or cisty,
+        "jmeno": p.get("displayName") or "",
+        "role": p.get("role") or role,
+        "novy": novy,
+    }
+
+
+def odeber_pravo(db: Session, item_id: str, permission_id: str, uzivatel: str = "") -> dict:
+    """Odebere člověku přístup k položce.
+
+    Zděděné oprávnění a service account konektoru se odebrat nedají — první
+    Google odmítne, druhé by rozbilo konektor i tenhle modul.
+    """
+    n, drive, strop = _priprav(db)
+    if not _pod_stropem(drive, item_id, strop):
+        raise PermissionError("Tato položka neleží pod výchozí složkou modulu Disk.")
+
+    sluzebni = (n.google_subject_email or "").strip().lower()
+    ktere = [p for p in drive.prava(item_id) if p.get("id") == permission_id]
+    if not ktere:
+        raise ValueError("Tohle oprávnění u položky neexistuje.")
+    p = ktere[0]
+    email = (p.get("emailAddress") or "").strip()
+    if sluzebni and email.lower() == sluzebni:
+        raise ValueError(
+            "Tohle je přístup konektoru — kdyby zmizel, přestane fungovat "
+            "zakládání složek i tenhle modul."
+        )
+    if any(d.get("inherited") for d in p.get("permissionDetails") or []):
+        raise ValueError(
+            "Tohle oprávnění je zděděné z nadřazené složky — odebrat se musí tam, "
+            "kde bylo dáno."
+        )
+
+    drive.smaz_pravo(item_id, permission_id)
+    zaloguj(
+        db,
+        "info",
+        "disk_prava",
+        f"Odebráno sdílení '{email or permission_id}' na Disku z modulu Disk.",
+        {
+            "item_id": item_id,
+            "permission_id": permission_id,
+            "email": email,
+            "uzivatel": uzivatel or "?",
+        },
+    )
+    return {"id": permission_id, "email": email}
+
+
 def nahled(db: Session, file_id: str) -> tuple[bytes, str, str]:
     """Obsah souboru pro zobrazení **přímo v appce**. Vrací (data, mime, název).
 

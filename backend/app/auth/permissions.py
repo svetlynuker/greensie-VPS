@@ -109,6 +109,11 @@ PRAVA = [
     # ale i tak je to jiná věc než vidět svoje zákazníky, takže o tom má
     # rozhodovat přidělení, ne odvození z jiného práva.
     {"klic": "disk", "nazev": "Otevřít Disk (procházení firemního Google Disku)"},
+    # Měnit sdílení na Disku je vlastní právo, ne součást `disk`: procházet a
+    # nahrávat je denní práce, ale „komu se ten dokument otevře" je rozhodnutí,
+    # které jde i mimo firmu a nikdo ho nevezme zpět. Kdo právo nemá, sdílení
+    # vidí (aby věděl, komu soubor poslat), ale nemění.
+    {"klic": "disk_sdileni", "nazev": "Disk – měnit sdílení složek a souborů"},
     {"klic": "projekty", "nazev": "Otevřít Přehled projektů"},
     {"klic": "finance", "nazev": "Otevřít Přehled financí"},
     {"klic": "zmeny", "nazev": "Otevřít Přehled změn"},

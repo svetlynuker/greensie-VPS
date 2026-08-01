@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import Ikona from "../components/Ikona";
 import DiskNahled from "../components/DiskNahled";
+import DiskPrava from "../components/DiskPrava";
 import { diskKoren, diskNahraj, diskObsah, diskZalozSlozku, logout, nactiMe } from "../api";
 import "../styles/crm.css";
 import "../styles/disk.css";
@@ -26,6 +27,9 @@ import "../styles/disk.css";
  * 3. **Soubor se otevře v appce** (`DiskNahled`), ne přesměrováním na Disk —
  *    u toho, co jde zobrazit. Zip nebo dwg se nepředstírá: takové položky vedou
  *    na Disk, protože backend u nich `lze_nahled` nepošle.
+ * 4. **Sdílení se řeší odsud** (`DiskPrava`) — zámek na každém řádku. Vidí ho
+ *    každý s právem `disk`, měnit ho smí jen `disk_sdileni`; „kdokoli s odkazem"
+ *    appka vědomě neumí.
  *
  * Strop viditelnosti drží backend: složka nad kořenem konektoru a nic nad ní
  * (`konektor/disk_prochazeni.py`), a to u čtení i u nahrání. Filtrování v liště
@@ -53,6 +57,7 @@ export default function Disk() {
   const [novaSlozka, setNovaSlozka] = useState(null); // rozepsaný název, null = neschované
   const [zaklada, setZaklada] = useState(false);
   const [otevreny, setOtevreny] = useState(null); // soubor v náhledu
+  const [sdileni, setSdileni] = useState(null); // položka, u které se řeší sdílení
   const vstup = useRef(null);
   const zivy = useRef(true);
   const navigate = useNavigate();
@@ -417,6 +422,15 @@ export default function Disk() {
                         <span className="dk-sipka">↗</span>
                       </a>
                     )}
+                    {/* Sdílení: kdo k té položce má přístup. Na řádku, ne až
+                        v náhledu — u složek žádný náhled není. */}
+                    <button
+                      className="dk-odkaz"
+                      onClick={() => setSdileni(p)}
+                      title={`Sdílení „${p.nazev}“ — kdo k tomu má přístup`}
+                    >
+                      <Ikona jmeno="zamek" velikost={13} />
+                    </button>
                     {/* U složky vede řádek dovnitř, takže odkaz na Disk musí být
                         zvlášť. U souboru je to totéž místo — ať je sloupec ↗
                         na všech řádcích na stejném místě. */}
@@ -458,6 +472,7 @@ export default function Disk() {
           </div>
 
           {otevreny && <DiskNahled polozka={otevreny} onZavri={() => setOtevreny(null)} />}
+          {sdileni && <DiskPrava polozka={sdileni} onZavri={() => setSdileni(null)} />}
         </div>
       )}
     </Layout>
