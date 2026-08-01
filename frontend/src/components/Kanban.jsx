@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Iniciraly from "./Iniciraly";
 import { fmtKcKratce, fmtDatum, jePoTerminu, nazvyKategorii, tridaBarvy } from "../crm";
 
@@ -18,6 +18,13 @@ import { fmtKcKratce, fmtDatum, jePoTerminu, nazvyKategorii, tridaBarvy } from "
  *
  * `kategorie` je seznam z `crmKategorie()` – jen k přeložení klíče na název.
  * Kanban si ho sám nenačítá, aby ho stránka nemusela tahat dvakrát.
+ *
+ * ---- Proč má pole pevnou výšku ------------------------------------------
+ * Dřív rostl kanban do výšky podle nejplnějšího sloupce a vodorovný posuvník
+ * seděl až pod ním. Při dvaceti případech v jednom sloupci to znamenalo
+ * odrolovat celou stránku dolů, jen aby se šlo podívat doprava. Teď má pole
+ * výšku okna, roluje se do stran v něm a každý sloupec má vlastní svislý
+ * posuvník — dá se tedy hýbat oběma směry, aniž se hne stránka.
  */
 export default function Kanban({
   sloupce,
@@ -28,6 +35,92 @@ export default function Kanban({
 }) {
   const [nesu, setNesu] = useState(null); // id přetahovaného záznamu
   const [nad, setNad] = useState(null); // klíč stavu, nad kterým visí
+  const poleRef = useRef(null);
+
+  /**
+   * Dopočítá výšku pole: co zbylo v okně od jeho horní hrany dolů.
+   * V CSS to spočítat nejde — nad kanbanem je na každé stránce něco jiného
+   * (KPI pás, lišta, rozbalený filtr), takže žádná konstanta nesedí všude.
+   *
+   * Zapisuje se jen skutečná změna. Změna výšky pole mění výšku stránky
+   * a ta zpátky spustí ResizeObserver; bez téhle pojistky by se ti dva
+   * překřikovali donekonečna.
+   */
+  useLayoutEffect(() => {
+    const pole = poleRef.current;
+    if (!pole) return undefined;
+
+    let posledni = null;
+    const dopocitej = () => {
+      const shora = pole.getBoundingClientRect().top;
+      // 16 px rezerva dole, ať pole nekončí přesně na hraně okna. Strop na
+      // výšku okna je pojistka pro odrolovanou stránku: `shora` je pak
+      // záporné a bez něj by pole rostlo přes celé okno pořád dál.
+      const zbytek = Math.round(window.innerHeight - shora - 16);
+      const vyska = Math.max(320, Math.min(window.innerHeight - 16, zbytek));
+      if (posledni !== null && Math.abs(vyska - posledni) < 2) return;
+      posledni = vyska;
+      pole.style.setProperty("--kanban-v", `${vyska}px`);
+    };
+
+    dopocitej();
+    window.addEventListener("resize", dopocitej);
+    // Obsah nad kanbanem se za běhu mění (filtr se rozbalí, KPI pás naskočí).
+    const sledovac = new ResizeObserver(dopocitej);
+    sledovac.observe(document.body);
+    return () => {
+      window.removeEventListener("resize", dopocitej);
+      sledovac.disconnect();
+    };
+  }, []);
+
+  /**
+   * Přetažení dlaždice k okraji pole s ním popojede. Bez toho se dlaždice
+   * nedá přesunout do sloupce, který zrovna není vidět — a to je při pěti
+   * sloupcích na užším monitoru většina z nich.
+   */
+  useEffect(() => {
+    const pole = poleRef.current;
+    if (!pole || !nesu) return undefined;
+
+    let bezi = 0;
+    const najedi = (e) => {
+      const r = pole.getBoundingClientRect();
+      const pasmo = 70; // jak blízko k okraji se začne popojíždět
+      let smer = 0;
+      if (e.clientX < r.left + pasmo) smer = -1;
+      else if (e.clientX > r.right - pasmo) smer = 1;
+
+      if (!smer) {
+        cancelAnimationFrame(bezi);
+        bezi = 0;
+        return;
+      }
+      if (bezi) return;
+      const krok = () => {
+        pole.scrollLeft += smer * 14;
+        bezi = requestAnimationFrame(krok);
+      };
+      bezi = requestAnimationFrame(krok);
+    };
+    const stop = () => {
+      cancelAnimationFrame(bezi);
+      bezi = 0;
+    };
+
+    // Na `dragleave` se schválně neposlouchá: bublá i při přechodu mezi
+    // sloupci uvnitř pole, takže by popojíždění pořád škublo a znovu se
+    // rozjelo. Že kurzor odjel z okraje, pozná `najedi` sám (smer === 0).
+    pole.addEventListener("dragover", najedi);
+    pole.addEventListener("drop", stop);
+    document.addEventListener("dragend", stop);
+    return () => {
+      stop();
+      pole.removeEventListener("dragover", najedi);
+      pole.removeEventListener("drop", stop);
+      document.removeEventListener("dragend", stop);
+    };
+  }, [nesu]);
 
   function zacniNest(e, zaznam) {
     setNesu(zaznam.id);
@@ -48,7 +141,7 @@ export default function Kanban({
   }
 
   return (
-    <div className="crm-kanban">
+    <div className="crm-kanban" ref={poleRef}>
       {sloupce.map((s) => (
         <div
           key={s.stav.klic}
