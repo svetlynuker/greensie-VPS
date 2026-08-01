@@ -57,6 +57,21 @@ MAX_HLOUBKA = 14
 # patří na Disk přímo — při 502 z Hetzneru by se sem stejně nedonesly.
 MAX_SOUBOR_B = 25 * 1024 * 1024
 
+# Totéž pro náhled: soubor se stahuje z Disku do paměti a posílá do prohlížeče.
+# Nad tímhle stropem se náhled nenabízí a člověk jde na Disk — několik lidí,
+# kteří si naráz otevřou stometrové video, by web proces uspalo.
+MAX_NAHLED_B = 25 * 1024 * 1024
+
+# Google formáty (Docs/Sheets/Slides) nemají binární obsah — do náhledu se
+# převádějí na PDF. Prezentace a tabulky v PDF nejsou ideální na čtení, ale je to
+# jediný tvar, který umí Google vyexportovat a prohlížeč zobrazit bez pluginu.
+EXPORT_PDF = "application/pdf"
+GOOGLE_PREFIX = "application/vnd.google-apps."
+
+# Co se v appce dá reálně ukázat. Ostatní typy (zipy, dwg, videa) se nabídnou
+# k uložení — tvářit se, že je appka umí zobrazit, by bylo horší než to přiznat.
+NAHLED_PRIMO = ("application/pdf", "text/", "image/")
+
 
 def _strop_id(drive: DriveClient, n: KonektorNastaveni) -> str:
     """Odkud modul začíná: **složka o úroveň výš nad kořenem konektoru**.
@@ -100,6 +115,21 @@ def _odkaz(f: dict) -> str:
     if f.get("id"):
         return f"https://drive.google.com/file/d/{f['id']}/view"
     return ""
+
+
+def _lze_nahled(f: dict) -> bool:
+    """Dá se soubor ukázat v appce, nebo je to případ pro Disk?
+
+    Google formáty ano (exportují se na PDF), z ostatních jen PDF, obrázky a text.
+    Zip nebo dwg by prohlížeč jen nabídl k uložení, což z náhledu dělá past —
+    člověk klikne „otevřít" a stáhne se mu soubor.
+    """
+    mime = f.get("mimeType") or ""
+    if mime == logika.FOLDER_MIME:
+        return False
+    if int(f.get("size") or 0) > MAX_NAHLED_B:
+        return False
+    return mime.startswith(GOOGLE_PREFIX) or mime.startswith(NAHLED_PRIMO)
 
 
 def _priprav(db: Session) -> tuple[KonektorNastaveni, DriveClient, str]:
@@ -149,6 +179,9 @@ def obsah(db: Session, folder_id: str | None = None, limit: int = LIMIT_POLOZEK)
             "je_slozka": f.get("mimeType") == logika.FOLDER_MIME,
             "url": _odkaz(f),
             "velikost": int(f["size"]) if f.get("size") else None,
+            # Aby prohlížeč věděl, jestli soubor otevřít v appce, nebo poslat na
+            # Disk. Rozhodnout to musí backend: jen on ví, co umí vyexportovat.
+            "lze_nahled": _lze_nahled(f),
         }
         # `list_children_vse`, ne `list_children`: ta bere jen první stránku
         # (1000 položek) a utnutý konec abecedy by se neprojevil chybou.
@@ -222,3 +255,74 @@ def nahraj(
         {"folder_id": cil, "file_id": f.get("id"), "uzivatel": uzivatel or "?"},
     )
     return {"id": f.get("id"), "nazev": f.get("name"), "url": _odkaz(f)}
+
+
+def zaloz_slozku(
+    db: Session, folder_id: str | None, nazev: str, uzivatel: str = ""
+) -> dict:
+    """Založí podsložku v právě otevřené složce.
+
+    Rozhodnutí Dana (1. 8. 2026). Do téhle chvíle appka na Disku zakládala jen
+    složky podle firemního vzoru (klient, obchodní případ) — tohle je obyčejná
+    složka, kterou si člověk pojmenuje sám, protože ne všechno na Disku má
+    předlohu.
+
+    Kontrola stropu jako u zápisu souboru. Duplicitní název se **nehlídá**:
+    Google Disk dvě složky téhož jména dovolí a appka za něj rozhodovat nemá —
+    jen by se pak lidé divili, proč jim appka nedovolí, co Disk dovolí.
+    """
+    cisty = logika._bezpecny_nazev(nazev)
+    if not cisty or cisty == "beze-jmena":
+        raise ValueError("Složka musí mít název.")
+
+    _, drive, strop = _priprav(db)
+    cil = folder_id or strop
+    if folder_id and not _pod_stropem(drive, folder_id, strop):
+        raise PermissionError("Tato složka neleží pod výchozí složkou modulu Disk.")
+
+    f = drive.create_folder(cisty, cil)
+    zaloguj(
+        db,
+        "info",
+        "disk_slozka",
+        f"Založena složka '{cisty}' z modulu Disk.",
+        {"parent_id": cil, "folder_id": f.get("id"), "uzivatel": uzivatel or "?"},
+    )
+    return {"id": f.get("id"), "nazev": f.get("name"), "url": _odkaz(f)}
+
+
+def nahled(db: Session, file_id: str) -> tuple[bytes, str, str]:
+    """Obsah souboru pro zobrazení **přímo v appce**. Vrací (data, mime, název).
+
+    Rozhodnutí Dana (1. 8. 2026): soubor se má otevřít v appce, ne přesměrováním
+    na Disk. Proto se čte přes service account konektoru a posílá do prohlížeče —
+    nezáleží tedy na tom, jestli má člověk vlastní přístup ke Google Disku.
+
+    Google formáty se exportují na PDF (`exportuj`), binární soubory jdou tak,
+    jak jsou (`stahni`). Složka náhled nemá — do té se vchází.
+
+    Kontrola stropu je i tady, a je to ta nejdůležitější z celého modulu: bez ní
+    by `file_id` z adresy stáhlo jakýkoli soubor na firemním Disku, včetně těch,
+    ke kterým se v appce nedá doklikat.
+    """
+    _, drive, strop = _priprav(db)
+    if not _pod_stropem(drive, file_id, strop):
+        raise PermissionError("Tento soubor neleží pod výchozí složkou modulu Disk.")
+
+    f = drive.get_file(file_id)
+    mime = f.get("mimeType") or ""
+    nazev = f.get("name") or "soubor"
+    if mime == logika.FOLDER_MIME:
+        raise ValueError("Tohle je složka, ne soubor.")
+
+    velikost = int(f.get("size") or 0)
+    if velikost > MAX_NAHLED_B:
+        raise ValueError(
+            "Soubor je větší než 25 MB — otevři ho prosím na Disku."
+        )
+
+    if mime.startswith(GOOGLE_PREFIX):
+        # Google dokument nemá binární obsah; PDF je jediná podoba, kterou umí
+        # vydat i prohlížeč zobrazit. Název dostane .pdf, ať je jasné, co to je.
+        return drive.exportuj(file_id, EXPORT_PDF), EXPORT_PDF, f"{nazev}.pdf"
+    return drive.stahni(file_id), mime or "application/octet-stream", nazev

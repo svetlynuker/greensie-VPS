@@ -3,10 +3,11 @@
 > **Sekce v nabídce:** `disk` (skupina **Agenda**) · **Adresa (routa):** `/disk` · **Kdo smí otevřít:** kdokoli s právem `disk` (bez práva se sekce v nabídce vůbec nezobrazí; supersprávce má vždy). Modul je zatím vedený jako **novinka** — vidí ho jen supersprávce, viz `backend/app/crm/novinky.py`.
 > **Kód:** frontend `frontend/src/pages/Disk.jsx`, backend `backend/app/konektor/disk_routes.py` + `backend/app/konektor/disk_prochazeni.py`
 
-**Firemní Google Disk k procházení a nahrávání přímo v appce**, přes celou plochu. Začíná se složkou
-**o úroveň výš nad kořenem konektoru** (u nás `8. Raynet`) a dá se dojít až k jednotlivému souboru.
-Na každé úrovni je odkaz, kterým se dá z appky odejít na Disk — do té samé složky, ve které člověk
-právě je. Do otevřené složky se dá soubor nahrát, tlačítkem nebo přetažením.
+**Firemní Google Disk přímo v appce**, přes celou plochu. Začíná se složkou **o úroveň výš nad
+kořenem konektoru** (u nás `8. Raynet`) a dá se dojít až k jednotlivému souboru. Soubor se
+**otevře v appce** (PDF, obrázky, texty i Google dokumenty), do otevřené složky se dá **nahrát**
+soubor nebo **založit podsložka**, a na každé úrovni je odkaz, kterým se dá odejít na Disk — do té
+samé složky, ve které člověk právě je.
 
 > 📸 SCREENSHOT: celá obrazovka modulu Disk — lišta s drobečkovou navigací, filtrem a tlačítkem + Nahrát, seznam složek a souborů ve dvou sloupcích
 
@@ -17,8 +18,12 @@ právě je. Do otevřené složky se dá soubor nahrát, tlačítkem nebo přeta
 ### K čemu to slouží
 Když člověk hledá soubor na firemním Disku, obvykle ví, **kudy** k němu vede cesta (klient → obchodní
 případ → podsložka), ale na Disku se k tomu musí proklikat přes cizí rozhraní a hledání mezi všemi
-sdílenými disky. Tady je vidět jen firemní struktura od jedné složky dolů — soubor se odsud otevře,
-nahraje, nebo se jedním klikem přejde na Disk přímo do té složky.
+sdílenými disky. Tady je vidět jen firemní struktura od jedné složky dolů — soubor se odsud otevře
+a přečte, nahraje, složka založí, nebo se jedním klikem přejde na Disk přímo do té složky.
+
+**Soubory se otevírají v appce, ne přesměrováním na Disk.** Čtou se přes service account konektoru,
+takže nezáleží na tom, jakým Google účtem je člověk v prohlížeči přihlášený — a nezáleží ani na tom,
+jestli vlastní přístup ke Disku má. Google dokumenty se pro zobrazení převedou na PDF.
 
 Výchozí složka je schválně **o úroveň výš nad kořenem konektoru**: vedle `1. zákazníci` tam leží i
 `2. formuláře`, `3. interní dokumentace` a `4. návody`, a právě pro ně to má smysl — ke klientským
@@ -31,11 +36,14 @@ omezení na jeden záznam.
 Shora dolů:
 
 1. **Lišta** — tlačítko **← Zpět** (o úroveň výš), **drobečková navigace** (výchozí složka › zákazníci ›
-   klient › případ › …), pole **Filtrovat v této složce…**, tlačítka **Obnovit**, **+ Nahrát** a
-   **Otevřít na Disku ↗**.
-2. **Seznam** — složky nejdřív, pak soubory, obojí podle názvu. Na širokém monitoru ve dvou sloupcích.
+   klient › případ › …), pole **Filtrovat v této složce…**, tlačítka **Obnovit**, **+ Složka**,
+   **+ Nahrát** a **Otevřít na Disku ↗**.
+2. **Řádek na název nové složky** — ukáže se až po kliknutí na **+ Složka**, jinak tam není.
+3. **Seznam** — složky nejdřív, pak soubory, obojí podle názvu. Na širokém monitoru ve dvou sloupcích.
    Soubor přetažený na plochu se nahraje do právě otevřené složky.
-3. **Pata seznamu** — kolik je ve složce složek a souborů.
+4. **Pata seznamu** — kolik je ve složce složek a souborů.
+5. **Okno náhledu** — po kliknutí na soubor. Přes většinu obrazovky, s tlačítky **Uložit** a
+   **Disk ↗**; zavírá se křížkem, klávesou Esc nebo kliknutím mimo okno.
 
 ### Ovládací prvky — políčko po políčku
 
@@ -46,18 +54,28 @@ Shora dolů:
 | **↗ u kroku cesty** | za každým krokem | Otevře **tuhle úroveň** na Google Disku (nová karta). | všichni s právem `disk` |
 | **Filtrovat v této složce…** | lišta vpravo | Nechá v seznamu jen položky, které mají zadaný text v názvu. Po přechodu do jiné složky se filtr sám maže. | všichni s právem `disk` |
 | **Obnovit** | lišta vpravo | Přečte obsah složky znovu z Disku (nic se necachuje, ale hodí se po změně na Disku). | všichni s právem `disk` |
+| **+ Složka** | lišta vpravo | Otevře řádek na název a založí podsložku v **právě otevřené složce**. Enter založí, Esc zruší. | všichni s právem `disk` |
 | **+ Nahrát** | lišta vpravo | Vybere soubory a nahraje je do **právě otevřené složky**. Víc souborů naráz jde. | všichni s právem `disk` |
 | **Přetažení souboru na plochu** | celá obrazovka | Totéž jako **+ Nahrát**, jen bez dialogu. Plocha se při přetahování zeleně orámuje. | všichni s právem `disk` |
 | **Otevřít na Disku ↗** | lišta vpravo | Otevře **právě zobrazenou složku** na Google Disku. | všichni s právem `disk` |
 | **Řádek složky** | seznam | Vejde do složky. | všichni s právem `disk` |
-| **Řádek souboru** | seznam | Otevře soubor na Disku (nová karta). | všichni s právem `disk` |
-| **↗ na konci řádku** | seznam vpravo | Otevře tu složku/soubor na Disku, aniž by se do složky vcházelo. | všichni s právem `disk` |
+| **Řádek souboru** | seznam | **Otevře soubor v appce** (PDF, obrázek, text, Google dokument). U typů, které appka zobrazit neumí (zip, dwg, video) a u souborů nad 25 MB je za názvem ↗ a řádek vede na Disk. | všichni s právem `disk` |
+| **↗ na konci řádku** | seznam vpravo | Otevře tu složku/soubor na Disku, aniž by se do složky vcházelo nebo otevíral náhled. | všichni s právem `disk` |
+| **Uložit** (v náhledu) | okno náhledu | Uloží otevřený soubor k sobě do počítače. | všichni s právem `disk` |
+| **Disk ↗** (v náhledu) | okno náhledu | Otevře soubor na Disku — tam se dá i **upravit**, což appka neumí. | všichni s právem `disk` |
 
 ### Jak na…
 
 **Najít smlouvu ke klientovi:** výchozí složka → `1. zákazníci` → složka klienta → kontejner
 obchodních případů → případ → podsložka. Když je klientů hodně, napiš část jména do
 **Filtrovat v této složce…**.
+
+**Otevřít soubor:** klikni na jeho řádek — otevře se v appce. Pro úpravu je v okně **Disk ↗**;
+appka soubory needituje.
+
+**Založit složku:** doklikej se tam, kde má vzniknout, klikni **+ Složka**, napiš název a dej Enter.
+Lomítko v názvu se změní na „-" (Disk ho nemá rád), takže „2026/revize" vznikne jako jedna složka
+`2026-revize`. Dvě složky stejného jména Disk dovolí a appka je nezakazuje.
 
 **Nahrát soubor:** doklikej se do složky, kam soubor patří, a použij **+ Nahrát** (nebo soubor
 přetáhni na plochu). Soubor jde přímo na Disk — v appce po něm zůstane jen odkaz, takže nikdy
@@ -76,12 +94,16 @@ Na celý Disk je hledání na Disku samotném.
 
 ### Práva — kdo co vidí a smí
 Modul je pod samostatným právem **`disk`** („Otevřít Disk"), které se přiděluje v **Admin nastavení**
-(skupině nebo jednotlivci). Kdo ho má, může procházet **a nahrávat** kamkoli pod výchozí složkou
-modulu. Právo `konektor` (nastavení konektoru) s tím nemá nic společného; jsou to dvě různé věci
-schválně, aby procházení Disku nemuseli mít správci a naopak.
+(skupině nebo jednotlivci). Kdo ho má, může pod výchozí složkou modulu **procházet, otevírat soubory,
+nahrávat a zakládat složky**. Právo `konektor` (nastavení konektoru) s tím nemá nic společného; jsou
+to dvě různé věci schválně, aby procházení Disku nemuseli mít správci a naopak.
 
-Pozor: nahrávání není zvlášť — právo `disk` znamená i právo přidat soubor. Mazání a přejmenování
-appka neumí vůbec, to se dělá na Disku.
+Pozor: **není to odstupňované** — právo `disk` znamená i právo přidat soubor a složku. A protože se
+soubory čtou service accountem, **náhled v appce nekontroluje, jestli má člověk k souboru přístup na
+Disku samotném**: rozhoduje jedině právo `disk` a strop modulu. Kdo tedy nemá vidět něco, co pod
+stropem leží, nesmí dostat právo `disk` — nebo to patří mimo strop.
+
+Mazání a přejmenování appka neumí vůbec, to se dělá na Disku.
 
 Navíc platí přepínač novinek: dokud `crm/novinky.py` vrací „jen supersprávce", modul se ostatním
 neukáže ani s právem (endpointy vrací 404, ne 403 — kdo funkci nemá vidět, pro toho neexistuje).
@@ -107,8 +129,8 @@ mimo ni (mzdy, personální složky), appka nezobrazí a nedovolí do toho nahr�
 ID do adresy.
 
 ### Napojení na okolní systémy
-Jen **Google Drive API v3** (přes service account konektoru, `DriveClient`). Appka **čte a nahrává**,
-nic nemaže a nepřejmenovává. Soubory se u nás neukládají ani po cestě — projdou do Disku a v appce
+Jen **Google Drive API v3** (přes service account konektoru, `DriveClient`). Appka **čte, nahrává a
+zakládá složky**, nic nemaže a nepřejmenovává. Soubory se u nás neukládají ani po cestě — projdou do Disku a v appce
 zůstane jen odkaz, aby neexistovaly dvě kopie téhož dokumentu. Každé nahrání se zapisuje do logu
 konektoru jako `disk_nahrani` — v kontextu záznamu je e-mail toho, kdo soubor nahrál, ID složky a ID
 souboru, takže je dohledatelné, kdo co kam přidal (tabulka `konektor_log` sloupec pro uživatele nemá,
@@ -122,6 +144,13 @@ píše do ní jinak jen automatika).
     ke stropu. Každá položka i každý krok cesty nese `url` na Disk.
   - `POST /disk/soubor` (multipart: `soubor`, `folder_id`) — nahrání do složky; prázdné `folder_id`
     = výchozí složka. Strop 25 MB (`disk_prochazeni.MAX_SOUBOR_B`), pak 413.
+  - `POST /disk/slozka` (JSON: `nazev`, `folder_id`) — nová podsložka; prázdné `folder_id` = výchozí
+    složka. Prázdný název → 422.
+  - `GET /disk/soubor/{file_id}/nahled` — obsah souboru k zobrazení v appce
+    (`Content-Disposition: inline`, `Cache-Control: no-store`). Google formáty přijdou jako PDF
+    (`files.export`), ostatní tak, jak jsou (`files.get_media`). Složka → 422, soubor nad 25 MB → 422.
+    Ve výpisu položek je proto příznak **`lze_nahled`** — rozhoduje backend, protože jen on ví, co umí
+    vyexportovat; prohlížeč by to hádal z přípony.
 - **Bezpečnost:** `folder_id` chodí z prohlížeče, takže se u **každého** požadavku — čtení i nahrání —
   ověřuje, že složka leží pod stropem (`crm_slozky.je_pod_slozkou` — leze se po rodičích, jinak to
   Drive API neumí; modul si volá vyšší `MAX_HLOUBKA`, protože počítá od složky o dvě úrovně výš).
@@ -131,7 +160,8 @@ píše do ní jinak jen automatika).
 - **Nic se necachuje:** obsah se čte z Disku při každém kliknutí. Kopie v naší DB by tvrdila, že tam
   soubor je, i když ho někdo mezitím smazal.
 - **Klíčové soubory:** `backend/app/konektor/disk_prochazeni.py` (logika), `disk_routes.py` (API),
-  `frontend/src/pages/Disk.jsx` (obrazovka), `frontend/src/styles/disk.css`.
+  `frontend/src/pages/Disk.jsx` (obrazovka), `frontend/src/components/DiskNahled.jsx` (okno náhledu),
+  `frontend/src/styles/disk.css`.
 
 ### Časté potíže / co dělat, když…
 
@@ -141,7 +171,11 @@ píše do ní jinak jen automatika).
 | „Konektor na Disk není připravený…" (409) | V Konektoru chybí kořenová složka / sdílený disk nebo service-account JSON. | Doplnit v Konektoru Raynet ↔ Disk a použít **Otestovat spojení**. |
 | „Disk neodpověděl…" (502) | Google API vrátilo chybu (přístup, rate limit, výpadek). | Zkusit **Obnovit**; když trvá, podívat se do Logů a do konektoru. |
 | „Tato složka neleží pod výchozí složkou modulu Disk." (403) | Ručně dosazené `folder_id` mimo strop, nebo se složka na Disku přesunula jinam. | Vrátit se na výchozí složku (první krok cesty) a projít cestu znovu. |
-| „Disk soubor nepřijal…" (502) | Google odmítlo zápis (práva service accountu, kvóta). | Zkusit znovu; když trvá, ověřit v Konektoru **Otestovat spojení** a mrknout do Logů. |
+| „Disk soubor nepřijal…" / „Disk složku nezaložil…" (502) | Google odmítlo zápis (práva service accountu, kvóta). | Zkusit znovu; když trvá, ověřit v Konektoru **Otestovat spojení** a mrknout do Logů. |
+| „Složka musí mít název." (422) | Prázdný název nové složky. | Napsat název. |
+| „Tohle je složka, ne soubor." (422) | Náhled zavolaný na složku (ručně dosazené ID). | Do složky se vchází kliknutím na řádek. |
+| „Soubor je větší než 25 MB — otevři ho prosím na Disku." (422) | Strop náhledu. | Otevřít na Disku (↗ na konci řádku). |
+| Soubor se v okně nezobrazí (prázdné okno) | Prohlížeč ten typ neumí zobrazit, i když ho appka poslala. | Použít **Uložit**, nebo **Disk ↗**. |
 | „Soubor je větší než 25 MB…" (413) | Strop nahrávání přes appku. | Nahrát ho přímo na Disk (**Otevřít na Disku ↗**). |
 | Ve složce chybí položky | Složka má víc položek, než se posílá do prohlížeče (1000). | Zbytek je vidět na Disku — použít **Otevřít na Disku ↗**. |
 
@@ -152,8 +186,14 @@ píše do ní jinak jen automatika).
   strop, což je přesně to, co bezpečnostní kontrola brání.
 - Načtení složky i nahrání sahá na Google **v požadavku webu**. U složek s tisíci položkami to může
   být pomalé; proto je strop 1000 položek na složku a 25 MB na soubor.
-- Nahrání jde do složky, ve které člověk **právě je** — ne do složky, na kterou se dívá v seznamu.
-  Když má soubor patřit do podsložky, je potřeba do ní nejdřív vejít.
+- Nahrání i zakládání složky jde do složky, ve které člověk **právě je** — ne do složky, na kterou se
+  dívá v seznamu. Když má soubor patřit do podsložky, je potřeba do ní nejdřív vejít.
+- Náhled **teče přes web proces**: soubor se stáhne z Disku do paměti a pošle do prohlížeče. Proto ten
+  strop 25 MB. Kdyby si víc lidí naráz otevíralo velké soubory, je to první místo, které bude škrtat.
+- V prohlížeči se obsah drží jako `blob:` URL a uvolňuje se při zavření okna. Odkaz na náhled se proto
+  nedá poslat kolegovi — na poslání je odkaz na Disk.
+- Google dokumenty se zobrazují **jako PDF**, takže tabulky a prezentace vypadají jinak než na Disku.
+  Je to jediná podoba, kterou Google vydá a prohlížeč zobrazí bez pluginu.
 - Výchozí složka se odvozuje z rodiče kořene konektoru. **Kdyby někdo v Konektoru změnil kořenovou
   složku, posune se i výchozí složka modulu** — to je zamýšlené, ale není to na první pohled vidět.
 
