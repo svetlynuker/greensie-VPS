@@ -84,7 +84,7 @@ def obsah(
 async def nahraj_soubor(
     soubor: UploadFile = File(...),
     folder_id: str | None = Form(default=None),
-    _user: User = Depends(vyzaduj_disk),
+    user: User = Depends(vyzaduj_disk),
     db: Session = Depends(get_db),
 ):
     """Nahraje soubor na Disk do právě otevřené složky.
@@ -103,7 +103,12 @@ async def nahraj_soubor(
         )
     return _osetri(
         lambda: disk_prochazeni.nahraj(
-            db, folder_id, soubor.filename or "soubor", data, soubor.content_type or ""
+            db,
+            folder_id,
+            soubor.filename or "soubor",
+            data,
+            soubor.content_type or "",
+            user.email,
         ),
         "Disk soubor nepřijal",
     )

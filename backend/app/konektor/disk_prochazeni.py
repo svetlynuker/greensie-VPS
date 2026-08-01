@@ -187,7 +187,7 @@ def obsah(db: Session, folder_id: str | None = None, limit: int = LIMIT_POLOZEK)
 
 
 def nahraj(
-    db: Session, folder_id: str | None, nazev: str, data: bytes, mime: str
+    db: Session, folder_id: str | None, nazev: str, data: bytes, mime: str, uzivatel: str = ""
 ) -> dict:
     """Nahraje soubor do právě otevřené složky na Disku.
 
@@ -201,6 +201,10 @@ def nahraj(
 
     Stejná kontrola jako u čtení — cílová složka musí ležet pod stropem modulu,
     jinak by se přes appku dalo zapisovat kamkoli na Disk.
+
+    `uzivatel` jde do kontextu logu. Tabulka `konektor_log` sloupec pro člověka
+    nemá (píše do ní automatika, ne lidé), ale zápis na firemní Disk je akce
+    člověka — a „kdo to tam dal" je první otázka, kterou se někdo zeptá.
     """
     _, drive, strop = _priprav(db)
     cil = folder_id or strop
@@ -215,6 +219,6 @@ def nahraj(
         "info",
         "disk_nahrani",
         f"Nahrán soubor '{nazev}' z modulu Disk.",
-        {"folder_id": cil, "file_id": f.get("id")},
+        {"folder_id": cil, "file_id": f.get("id"), "uzivatel": uzivatel or "?"},
     )
     return {"id": f.get("id"), "nazev": f.get("name"), "url": _odkaz(f)}
