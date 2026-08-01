@@ -1773,14 +1773,41 @@ export function emailHromadnaVazba(ids, { zakaznikId = null, pripadId = null, od
 }
 
 // ---- modul Disk (procházení firemního Google Disku) ----
-// Kořen je složka nastavená v konektoru; ta je zároveň strop viditelnosti,
-// výš se z appky nedostaneš (backend to u každého požadavku ověřuje).
+// Výchozí složka je o úroveň výš nad kořenem konektoru a je zároveň strop
+// viditelnosti — výš se z appky nedostaneš (backend to u každého požadavku
+// ověřuje, u čtení i u nahrání).
 export function diskKoren() {
   return zavolej("/disk/koren");
 }
 
-// Obsah složky + cesta ke kořeni. Prázdné `folderId` = kořen konektoru.
+// Obsah složky + cesta ke stropu. Prázdné `folderId` = výchozí složka.
 export function diskObsah(folderId = null) {
   const q = folderId ? `?folder_id=${encodeURIComponent(folderId)}` : "";
   return zavolej(`/disk/obsah${q}`);
+}
+
+// Nahrání souboru do otevřené složky. Jde přes appku, ale neukládá se u nás —
+// zůstane jen odkaz. Vlastní fetch, ne `zavolej`: ten posílá Content-Type
+// application/json, což by multipart rozbilo (stejný vzor jako crmSlozkaNahraj).
+export async function diskNahraj(soubor, folderId = null) {
+  const token = getToken();
+  const form = new FormData();
+  form.append("soubor", soubor);
+  if (folderId) form.append("folder_id", folderId);
+  const res = await fetch(`${API_BASE}/disk/soubor`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!res.ok) {
+    let detail = `Chyba ${res.status}`;
+    try {
+      const chyba = await res.json();
+      if (chyba.detail) detail = chyba.detail;
+    } catch {
+      // ponech výchozí hlášku
+    }
+    throw new Error(detail);
+  }
+  return res.json();
 }

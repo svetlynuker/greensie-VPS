@@ -20,6 +20,25 @@
   min-height: 380px;
 }
 
+/* Soubor přetažený nad plochu se nahraje do otevřené složky — orámování musí
+   být vidět na první pohled, jinak člověk neví, že pustit je bezpečné. */
+.dk.nad-sebou {
+  outline: 2px dashed var(--fm-brand);
+  outline-offset: 6px;
+  border-radius: 10px;
+}
+
+/* Potvrzení nahrání. Zelené, ne šedé: je to výsledek akce, ne popisek. */
+.dk-hlaska-radek {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: var(--brand-strong);
+  background: var(--brand-wash);
+  border: 1px solid color-mix(in srgb, var(--fm-brand) 30%, transparent);
+  border-radius: var(--radius-sm);
+}
+
 /* ---- lišta: zpět, drobečky, filtr, odkaz na Disk ---- */
 .dk-lista {
   display: flex;

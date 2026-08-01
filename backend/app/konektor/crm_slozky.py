@@ -224,20 +224,26 @@ def soubory(db: Session, ef: KonektorEntityFolder, limit: int = 40) -> list[dict
 MAX_HLOUBKA_KONTROLY = 10
 
 
-def je_pod_slozkou(drive: DriveClient, folder_id: str, koren_id: str) -> bool:
+def je_pod_slozkou(
+    drive: DriveClient, folder_id: str, koren_id: str, max_hloubka: int = MAX_HLOUBKA_KONTROLY
+) -> bool:
     """Leží `folder_id` uvnitř `koren_id` (nebo je to on sám)?
 
     BEZPEČNOSTNÍ KONTROLA, ne pohodlí. ID složky přichází z prohlížeče, takže
     bez ní by si kdokoli mohl vyžádat obsah libovolné složky na firemním Disku —
     včetně mezd nebo smluv, ke kterým v CRM nemá co dělat. Ověřuje se řetěz
     rodičů, protože jiný způsob Drive API nenabízí.
+
+    `max_hloubka` si volá modul Disk vyšší (viz `disk_prochazeni.MAX_HLOUBKA`):
+    počítá od složky o dvě úrovně výš, takže s desítkou by hlouběji zanořené
+    soubory odmítl jako „mimo strop".
     """
     if not folder_id or not koren_id:
         return False
     if folder_id == koren_id:
         return True
     aktualni = folder_id
-    for _ in range(MAX_HLOUBKA_KONTROLY):
+    for _ in range(max_hloubka):
         try:
             f = drive.get_file(aktualni)
         except Exception:  # noqa: BLE001 – neexistující ID = nemá přístup
