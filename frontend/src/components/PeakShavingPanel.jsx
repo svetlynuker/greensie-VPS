@@ -1522,7 +1522,7 @@ export default function PeakShavingPanel({ nabidka }) {
                   : "bez DPH"}
             </div>
           </div>
-          <div className="gs-kpi">
+          <div className="gs-kpi" data-druh="cas">
             {/* Hlavní číslo = REÁLNÁ návratnost (ta, která rozhoduje o
                 doporučení a mění se s přepínačem základu). Prostá návratnost
                 je jen orientační – nezná O&M ani degradaci a počítá se vždy
@@ -1548,7 +1548,7 @@ export default function PeakShavingPanel({ nabidka }) {
             </div>
           </div>
           {npvDop.npv_kc != null && (
-            <div className="gs-kpi">
+            <div className="gs-kpi" data-druh="penize">
               <div className="gs-kpi-label">NPV ({dop.npv_horizont_roky} let)</div>
               <div className="gs-kpi-value">{kc(npvDop.npv_kc)}</div>
               <div className="gs-kpi-sub">
@@ -1589,7 +1589,7 @@ export default function PeakShavingPanel({ nabidka }) {
               </div>
             </div>
           )}
-          <div className="gs-kpi">
+          <div className="gs-kpi" data-druh="penize">
             <div className="gs-kpi-label">Investice</div>
             <div className="gs-kpi-value">{kc(dop.cena_celkem_kc)}</div>
             <div className="gs-kpi-sub">

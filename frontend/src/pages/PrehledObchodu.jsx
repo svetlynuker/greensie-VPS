@@ -24,9 +24,11 @@ import "../styles/grafyObchodu.css";
  * nulu — a to je horší než chybějící graf.
  */
 
-function Kpi({ label, hodnota, jednotka, popis, stav }) {
+function Kpi({ label, hodnota, jednotka, popis, stav, druh }) {
   return (
-    <div className="gs-kpi">
+    // `druh` obarví dlaždici podle toho, co ukazuje (peníze / čas / riziko);
+    // barva je doplněk k popisce, čísla se dají číst i bez ní.
+    <div className="gs-kpi" data-druh={druh}>
       <div className="gs-kpi-label">{label}</div>
       <div className="gs-kpi-value">
         {hodnota}
@@ -119,6 +121,7 @@ export default function PrehledObchodu() {
             label="Otevřené případy"
             hodnota={s.otevrenych}
             popis={`${fmtKcKratce(s.hodnota_otevrenych_kc)} v pipeline`}
+            druh="penize"
           />
           <Kpi
             label="Vyhráno"
@@ -131,6 +134,7 @@ export default function PrehledObchodu() {
             hodnota={s.prohranych}
             popis={fmtKcKratce(s.hodnota_prohranych_kc)}
             stav={s.prohranych > 0 ? "serious" : undefined}
+            druh="riziko"
           />
           <Kpi
             label="Úspěšnost"

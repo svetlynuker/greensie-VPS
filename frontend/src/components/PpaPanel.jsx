@@ -663,7 +663,7 @@ export default function PpaPanel({ nabidka }) {
               samospotřeba {pct(vybrana?.energie?.mira_samospotreby)} výroby
             </div>
           </div>
-          <div className="gs-kpi">
+          <div className="gs-kpi" data-druh="penize">
             <div className="gs-kpi-label">Úspora zákazníka celkem</div>
             <div className="gs-kpi-value">{kc(vybrana?.uspora_kumulativni_kc)}</div>
             <div className="gs-kpi-sub">za {vybrana?.delka_kontraktu_roky} let kontraktu</div>

@@ -181,6 +181,17 @@
   outline-offset: -2px;
 }
 
+/* Ikony obarvené po skupinách (barvu určuje `barva` v navigace.js).
+   V nabídce o dvanácti položkách se pak hledá i podle odstínu, ne jen
+   čtením názvů. Aktivní položka barvu pouští — tam vede zelená značka. */
+[data-barva="modra"]   .gs-nav-item .gs-nav-ico { color: #74c0fc; }
+[data-barva="zelena"]  .gs-nav-item .gs-nav-ico { color: #8ce99a; }
+[data-barva="fialova"] .gs-nav-item .gs-nav-ico { color: #b197fc; }
+[data-barva="jantar"]  .gs-nav-item .gs-nav-ico { color: #ffc078; }
+[data-barva="tyrkys"]  .gs-nav-item .gs-nav-ico { color: #66d9e8; }
+[data-barva="ruzova"]  .gs-nav-item .gs-nav-ico { color: #faa2c1; }
+[data-barva="seda"]    .gs-nav-item .gs-nav-ico { color: #b6c2bb; }
+
 .gs-nav-item[aria-current="page"] {
   color: #fff;
 }
@@ -294,7 +305,7 @@
   gap: 10px;
   padding: 0 var(--pad-obsah);
   background: var(--surface);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-strong);
   position: sticky;
   top: 0;
   z-index: 30;
@@ -337,8 +348,8 @@
   gap: 9px;
   padding: 4px 9px 4px 4px;
   border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
   font: inherit;
   cursor: pointer;
   color: var(--ink);
@@ -402,7 +413,7 @@
   right: 0;
   width: 286px;
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   box-shadow: var(--shadow-2);
   padding: 6px;
@@ -514,7 +525,7 @@
 /* Segmentový přepínač (režim, kompenzace vady, velikost textu) */
 .gs-seg {
   display: inline-flex;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 8px;
   overflow: hidden;
   flex: none;
@@ -598,6 +609,7 @@
   align-items: center;
   gap: 10px;
   padding: 13px 16px;
+  background: var(--head-bg);
   border-bottom: 1px solid var(--line);
 }
 
@@ -633,6 +645,7 @@
   text-transform: uppercase;
   color: var(--muted);
   padding: 10px 16px;
+  background: var(--head-bg);
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
@@ -671,7 +684,7 @@
   height: 46px;
   border-radius: 13px;
   background: var(--surface-2);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   display: grid;
   place-items: center;
   margin: 0 auto 12px;
