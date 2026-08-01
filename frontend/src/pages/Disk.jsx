@@ -2,31 +2,31 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import Ikona from "../components/Ikona";
-import { diskKoren, diskObsah, logout, nactiMe } from "../api";
+import { diskKoren, diskNahraj, diskObsah, logout, nactiMe } from "../api";
 import "../styles/crm.css";
 import "../styles/disk.css";
 
 /**
- * Modul Disk — firemní Google Disk k procházení přes celou plochu.
+ * Modul Disk — firemní Google Disk k procházení a nahrávání přes celou plochu.
  *
  * Je to ta samá věc jako karta „Dokumenty na Disku" na klientovi
- * (`components/DiskSlozka.jsx`), jen o úroveň výš a bez omezení na jeden
- * záznam: začíná se **kořenovou složkou nastavenou v konektoru** a dá se dojít
- * až k poslednímu souboru.
+ * (`components/DiskSlozka.jsx`), jen o dvě úrovně výš a bez omezení na jeden
+ * záznam: začíná se **složkou nad kořenem konektoru** (u nás `8. Raynet`, kde
+ * vedle klientů leží i formuláře a návody) a dá se dojít až k poslednímu souboru.
  *
  * Dvě věci, které z toho plynou:
  *
  * 1. **Na každé úrovni je odkaz na Disk** (výslovné Danovo zadání). V drobečkové
  *    navigaci má každý krok svoje ↗, každá složka i soubor v seznamu taky —
  *    takže odkud člověk chce odejít na Disk, odtud odejde, ne jen z kořene.
- * 2. **Appka tady nic needituje.** Je to průzkumník a rozcestník na Disk;
- *    nahrávání zůstává na kartě záznamu, kde je jasné, ke komu soubor patří.
- *    Nahrávání „někam do firemního Disku" by jen vyrábělo soubory bez majitele.
+ * 2. **Nahrává se do právě otevřené složky** — tlačítkem nebo přetažením souboru
+ *    na plochu. Soubor u nás nezůstane: projde do Disku a v appce je jen odkaz.
+ *    Dvě kopie téhož dokumentu by znamenaly, že nikdo neví, která platí.
  *
- * Strop viditelnosti drží backend: kořen konektoru a nic nad ním
- * (`konektor/disk_prochazeni.py`). Filtrování v liště je jen nad **právě
- * načtenou složkou** — není to hledání přes celý Disk, protože to Drive API
- * neumí bez sahání i tam, kam se z appky vidět nemá.
+ * Strop viditelnosti drží backend: složka nad kořenem konektoru a nic nad ní
+ * (`konektor/disk_prochazeni.py`), a to u čtení i u nahrání. Filtrování v liště
+ * je jen nad **právě načtenou složkou** — není to hledání přes celý Disk,
+ * protože to Drive API neumí bez sahání i tam, kam se z appky vidět nemá.
  */
 
 function velikost(b) {
@@ -43,6 +43,10 @@ export default function Disk() {
   const [nacita, setNacita] = useState(true);
   const [chyba, setChyba] = useState(null);
   const [filtr, setFiltr] = useState("");
+  const [nahrava, setNahrava] = useState(false);
+  const [hlaska, setHlaska] = useState("");
+  const [nadSebou, setNadSebou] = useState(false); // přetahování souboru nad plochou
+  const vstup = useRef(null);
   const zivy = useRef(true);
   const navigate = useNavigate();
 
@@ -80,6 +84,7 @@ export default function Disk() {
         // Filtr platí pro jednu složku — po přechodu jinam by jen schovával
         // obsah, který člověk chtěl vidět.
         setFiltr("");
+        setHlaska("");
       } catch (e) {
         osetriChybu(e);
       } finally {
@@ -88,6 +93,38 @@ export default function Disk() {
     },
     [osetriChybu]
   );
+
+  /** Znovu načte právě otevřenou složku (po nahrání, nebo na „Obnovit"). */
+  const obnov = useCallback(() => {
+    otevri(obsah?.je_koren ? null : obsah?.folder_id);
+  }, [otevri, obsah]);
+
+  /** Nahraje soubory do právě otevřené složky, jeden po druhém. */
+  async function nahraj(soubory) {
+    const seznam = [...(soubory || [])];
+    if (!seznam.length || !obsah) return;
+    setNahrava(true);
+    setChyba(null);
+    setHlaska("");
+    // Do výchozí složky se posílá prázdné id — backend si ji dosadí sám, ať
+    // se ID stropu nemusí posílat z prohlížeče.
+    const cil = obsah.je_koren ? null : obsah.folder_id;
+    try {
+      for (const f of seznam) {
+        await diskNahraj(f, cil);
+      }
+      if (!zivy.current) return;
+      setHlaska(
+        seznam.length === 1 ? `Nahráno: ${seznam[0].name}` : `Nahráno ${seznam.length} souborů.`
+      );
+      otevri(cil);
+    } catch (e) {
+      osetriChybu(e);
+    } finally {
+      if (zivy.current) setNahrava(false);
+      if (vstup.current) vstup.current.value = "";
+    }
+  }
 
   useEffect(() => {
     nactiMe().then(setMe).catch(osetriChybu);
@@ -133,7 +170,23 @@ export default function Disk() {
           </p>
         </div>
       ) : (
-        <div className="dk">
+        <div
+          className={`dk ${nadSebou ? "nad-sebou" : ""}`}
+          // Přetažení souboru na plochu = nahrání do otevřené složky. Rychlejší
+          // než dialog a lidé to od průzkumníka čekají.
+          onDragOver={(e) => {
+            if (!obsah) return;
+            e.preventDefault();
+            setNadSebou(true);
+          }}
+          onDragLeave={() => setNadSebou(false)}
+          onDrop={(e) => {
+            if (!obsah) return;
+            e.preventDefault();
+            setNadSebou(false);
+            nahraj(e.dataTransfer.files);
+          }}
+        >
           <div className="dk-lista">
             <button
               className="fm-btn crm-btn-maly"
@@ -202,15 +255,23 @@ export default function Disk() {
             />
             <button
               className="fm-btn crm-btn-maly"
-              onClick={() => otevri(obsah?.je_koren ? null : obsah?.folder_id)}
+              onClick={obnov}
               disabled={nacita}
               title="Načíst obsah znovu z Disku"
             >
               {nacita ? "Načítám…" : "Obnovit"}
             </button>
+            <button
+              className="fm-btn crm-btn-maly fm-primary"
+              onClick={() => vstup.current?.click()}
+              disabled={!obsah || nahrava}
+              title="Nahrát soubor do právě otevřené složky"
+            >
+              {nahrava ? "Nahrávám…" : "+ Nahrát"}
+            </button>
             {obsah?.url && (
               <a
-                className="fm-btn crm-btn-maly fm-primary"
+                className="fm-btn crm-btn-maly"
                 href={obsah.url}
                 target="_blank"
                 rel="noreferrer"
@@ -221,16 +282,29 @@ export default function Disk() {
             )}
           </div>
 
+          <input
+            ref={vstup}
+            type="file"
+            multiple
+            style={{ display: "none" }}
+            onChange={(e) => nahraj(e.target.files)}
+          />
+
           {chyba && <div className="crm-chyba">{chyba}</div>}
+          {hlaska && !chyba && <div className="dk-hlaska-radek">{hlaska}</div>}
 
           <div className="fm-card dk-obsah">
             {!obsah && nacita && <p className="dk-prazdno">Načítám Disk…</p>}
 
             {obsah && vypis.length === 0 && (
               <p className="dk-prazdno">
-                {hledej
-                  ? "Nic tomu tady neodpovídá."
-                  : "Tahle složka je prázdná."}
+                {hledej ? (
+                  "Nic tomu tady neodpovídá."
+                ) : (
+                  <>
+                    Tahle složka je prázdná. Přetáhni sem soubor, nebo použij <b>+ Nahrát</b>.
+                  </>
+                )}
               </p>
             )}
 
@@ -292,6 +366,11 @@ export default function Disk() {
                     Složka má víc položek, než se sem posílá — zbytek je vidět na Disku.
                   </span>
                 )}
+                <span className="crm-mezera" />
+                <span className="crm-tise">
+                  Soubory leží na Disku, ne v appce. Nahraný soubor jde přímo tam — tady
+                  zůstane odkaz.
+                </span>
               </div>
             )}
           </div>

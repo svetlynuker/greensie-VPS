@@ -15,7 +15,7 @@ tvar drží jedno místo (`disk_prochazeni`) a nová třída `*Out` by byla dal�
 kandidát na kolizi názvů.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.auth.models import User
@@ -39,11 +39,13 @@ def vyzaduj_disk(user: User = Depends(get_current_user)) -> User:
     return user
 
 
-def _osetri(volani):
+def _osetri(volani, hlaska_502: str = "Disk neodpověděl"):
     """Překlad chyb Disku na HTTP. Konkrétní hláška, ne tiché prázdno.
 
     Prázdný seznam by člověk čekal na Disku a hledal by, kdo mu smazal složky —
-    proto se nenastavený konektor i mlčící Google hlásí jako chyba.
+    proto se nenastavený konektor i mlčící Google hlásí jako chyba. `hlaska_502`
+    se liší podle akce: „nepřijal soubor" a „neodpověděl" vedou k jinému
+    hledání příčiny.
     """
     try:
         return volani()
@@ -52,7 +54,7 @@ def _osetri(volani):
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:  # noqa: BLE001 – chybu chceme ukázat čitelně
-        raise HTTPException(status_code=502, detail=f"Disk neodpověděl: {e}")
+        raise HTTPException(status_code=502, detail=f"{hlaska_502}: {e}")
 
 
 @router.get("/koren")
@@ -66,13 +68,42 @@ def koren(
 
 @router.get("/obsah")
 def obsah(
-    folder_id: str | None = Query(default=None, description="Složka; prázdné = kořen konektoru"),
+    folder_id: str | None = Query(default=None, description="Složka; prázdné = výchozí složka"),
     _user: User = Depends(vyzaduj_disk),
     db: Session = Depends(get_db),
 ):
-    """Obsah složky + cesta ke kořeni. Každá úroveň nese odkaz na Disk.
+    """Obsah složky + cesta ke stropu. Každá úroveň nese odkaz na Disk.
 
-    `folder_id` je z prohlížeče, takže se ověřuje, že složka leží pod kořenem
-    konektoru — viz hlavička `disk_prochazeni`.
+    `folder_id` je z prohlížeče, takže se ověřuje, že složka leží pod stropem
+    modulu — viz hlavička `disk_prochazeni`.
     """
     return _osetri(lambda: disk_prochazeni.obsah(db, folder_id))
+
+
+@router.post("/soubor")
+async def nahraj_soubor(
+    soubor: UploadFile = File(...),
+    folder_id: str | None = Form(default=None),
+    _user: User = Depends(vyzaduj_disk),
+    db: Session = Depends(get_db),
+):
+    """Nahraje soubor na Disk do právě otevřené složky.
+
+    Soubor se u nás NEUKLÁDÁ ani po cestě — projde do Disku a v appce zůstane
+    jen odkaz. Cílová složka se ověřuje stejně jako u čtení, jinak by se přes
+    appku dalo zapisovat kamkoli na Disk.
+    """
+    data = await soubor.read()
+    if not data:
+        raise HTTPException(status_code=422, detail="Soubor je prázdný.")
+    if len(data) > disk_prochazeni.MAX_SOUBOR_B:
+        raise HTTPException(
+            status_code=413,
+            detail="Soubor je větší než 25 MB — nahraj ho prosím přímo na Disk.",
+        )
+    return _osetri(
+        lambda: disk_prochazeni.nahraj(
+            db, folder_id, soubor.filename or "soubor", data, soubor.content_type or ""
+        ),
+        "Disk soubor nepřijal",
+    )

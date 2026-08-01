@@ -31,19 +31,22 @@ from app.konektor import crm_slozky, disk_prochazeni
 from app.konektor.disk_routes import vyzaduj_disk
 from app.konektor.google_klient import FOLDER_MIME
 
-KOREN = "koren123"
+KOREN = "koren123"  # kořen konektoru (google_root_folder_id)
+STROP = "strop123"  # složka o úroveň výš – odsud modul začíná
 
 
 class FakeDrive:
     """Minimální Disk: strom složek a souborů v paměti.
 
-    `deti` = {id rodiče: [položky]}, `soubory` = {id: položka} pro `get_file`.
+    `deti` = {id rodiče: [id položek]}, `polozky` = {id: položka} pro `get_file`.
     Položky mají tvar odpovědi Drive API, ať se testuje totéž, co poteče z Googlu.
+    `nahrane` sbírá, co si modul přál nahrát a kam.
     """
 
     def __init__(self, polozky: dict[str, dict], deti: dict[str, list[str]]):
         self.polozky = polozky
         self.deti = deti
+        self.nahrane: list[tuple[str, str, bytes, str]] = []
 
     def get_file(self, file_id: str) -> dict:
         if file_id not in self.polozky:
@@ -52,6 +55,14 @@ class FakeDrive:
 
     def list_children_vse(self, parent_id: str) -> list[dict]:
         return [self.polozky[i] for i in self.deti.get(parent_id, [])]
+
+    def upload_file(self, name: str, parent_id: str, data: bytes, mime: str) -> dict:
+        self.nahrane.append((name, parent_id, data, mime))
+        return {
+            "id": f"novy-{len(self.nahrane)}",
+            "name": name,
+            "webViewLink": f"https://drive/novy-{len(self.nahrane)}",
+        }
 
 
 def _slozka(id_: str, nazev: str, rodic: str | None, link: str | None = None) -> dict:
@@ -75,20 +86,30 @@ def _soubor(id_: str, nazev: str, rodic: str, velikost: str | None = None) -> di
 
 
 def _drive() -> FakeDrive:
-    """Kořen → klient → případ (+ soubory) a jedna složka MIMO kořen."""
+    """Strop (`8. Raynet`) → kořen konektoru → klient → případ (+ soubory).
+
+    Vedle kořene konektoru leží sesterská složka (`2. formuláře`) — právě pro ni
+    se výchozí složka posunula o úroveň výš. A mimo strop leží složka, kterou
+    appka nesmí ani vypsat, ani do ní nahrát.
+    """
     polozky = {
-        # Kořen schválně bez webViewLink – tak se chová kořen sdíleného disku.
-        KOREN: _slozka(KOREN, "6. projekty", None),
+        "sdileny": _slozka("sdileny", "Greensie disk", None),
+        # Strop schválně bez webViewLink – Drive ho u některých složek nevrátí.
+        STROP: _slozka(STROP, "8. Raynet", "sdileny"),
+        KOREN: _slozka(KOREN, "1. zákazníci", STROP, "https://drive/koren"),
+        "formulare": _slozka("formulare", "2. formuláře", STROP, "https://drive/form"),
         "klient": _slozka("klient", "Alfa s.r.o. [7]", KOREN, "https://drive/klient"),
         "op": _slozka("op", "OP-26-0301 - FVE", "klient", "https://drive/op"),
         "zz": _soubor("zz", "zaloha.pdf", "op", "2048"),
         "aa": _soubor("aa", "smlouva.pdf", "op", "1024"),
         "pod": _slozka("pod", "3. nabidka", "op", "https://drive/pod"),
-        # Mimo kořen – tohle appka nesmí vypsat ani na přímé zadání ID.
+        # Mimo strop – tohle appka nesmí vypsat ani na přímé zadání ID.
         "mzdy": _slozka("mzdy", "Mzdy", "jinykoren", "https://drive/mzdy"),
         "jinykoren": _slozka("jinykoren", "Personalistika", None),
     }
     deti = {
+        "sdileny": [STROP],
+        STROP: [KOREN, "formulare"],
         KOREN: ["klient"],
         "klient": ["op"],
         # Schválně v „špatném" pořadí: soubor, soubor, složka.
@@ -104,17 +125,49 @@ def disk(monkeypatch):
     n = SimpleNamespace(google_root_folder_id=KOREN, google_shared_drive_id="sdileny")
     monkeypatch.setattr(crm_slozky, "_nastaveni", lambda db: n)
     monkeypatch.setattr(crm_slozky, "_drive_klient", lambda nast: drive)
+    # zaloguj by sahal na DB; obsah logu hlídá test níž zvlášť.
+    monkeypatch.setattr(disk_prochazeni, "zaloguj", lambda *a, **k: None)
     return drive
 
 
+# ---- výchozí složka: o úroveň výš nad kořenem konektoru ----------------------
+def test_vychozi_slozka_je_o_uroven_vys_nad_korenem(disk):
+    """Danovo zadání z 1. 8. 2026: první obrazovka je nadřazená složka.
+
+    Kdyby se sem vrátil kořen konektoru, formuláře a návody by z appky nebyly
+    dosažitelné vůbec.
+    """
+    d = disk_prochazeni.obsah(None, None)
+    assert d["je_koren"] is True
+    assert d["folder_id"] == STROP
+    assert d["nazev"] == "8. Raynet"
+    assert [p["nazev"] for p in d["polozky"]] == ["1. zákazníci", "2. formuláře"]
+    assert d["cesta"] == [], "Ve výchozí složce není co v cestě zkracovat."
+
+
+def test_sesterska_slozka_korene_je_pristupna(disk):
+    """To je celý smysl posunu o úroveň výš."""
+    d = disk_prochazeni.obsah(None, "formulare")
+    assert d["nazev"] == "2. formuláře"
+
+
+def test_cesta_vede_az_ke_stropu(disk):
+    d = disk_prochazeni.obsah(None, "op")
+    assert [k["nazev"] for k in d["cesta"]] == [
+        "1. zákazníci",
+        "Alfa s.r.o. [7]",
+        "OP-26-0301 - FVE",
+    ], "Cesta musí obsahovat i kořen konektoru – ten už je teď běžná úroveň."
+
+
 # ---- strop viditelnosti ------------------------------------------------------
-def test_slozka_mimo_koren_se_nevypise(disk):
+def test_slozka_mimo_strop_se_nevypise(disk):
     """Cizí ID z prohlížeče = 403, ne výpis. Jinak je appka čtečka celého Disku."""
     with pytest.raises(PermissionError):
         disk_prochazeni.obsah(None, "mzdy")
 
 
-def test_slozka_pod_korenem_se_vypise(disk):
+def test_slozka_pod_stropem_se_vypise(disk):
     d = disk_prochazeni.obsah(None, "op")
     assert d["nazev"] == "OP-26-0301 - FVE"
     assert [p["nazev"] for p in d["polozky"]] == ["3. nabidka", "smlouva.pdf", "zaloha.pdf"], (
@@ -122,16 +175,17 @@ def test_slozka_pod_korenem_se_vypise(disk):
     )
 
 
-def test_koren_se_bere_z_nastaveni_konektoru(disk):
-    d = disk_prochazeni.obsah(None, None)
-    assert d["je_koren"] is True
-    assert d["folder_id"] == KOREN
-    assert d["cesta"] == [], "V kořeni není co v cestě zkracovat."
-
-
 def test_bez_korenove_slozky_padne_zpet_na_sdileny_disk():
+    """Bez nastavené složky je stropem sdílený disk – výš se stoupat nedá."""
     n = SimpleNamespace(google_root_folder_id="", google_shared_drive_id="sdileny")
-    assert disk_prochazeni._koren_id(n) == "sdileny"
+    assert disk_prochazeni._strop_id(_drive(), n) == "sdileny"
+
+
+def test_koren_bez_rodice_zustava_stropem_sam():
+    """Kořen konektoru = kořen sdíleného disku → není kam jít výš."""
+    drive = _drive()
+    n = SimpleNamespace(google_root_folder_id="jinykoren", google_shared_drive_id="sdileny")
+    assert disk_prochazeni._strop_id(drive, n) == "jinykoren"
 
 
 def test_bez_nastaveni_hlasi_neprichystany_konektor(monkeypatch):
@@ -147,7 +201,12 @@ def test_bez_nastaveni_hlasi_neprichystany_konektor(monkeypatch):
 def test_kazda_polozka_i_krok_cesty_ma_odkaz_na_disk(disk):
     d = disk_prochazeni.obsah(None, "pod")
     assert d["url"], "Aktuální složka musí mít odkaz – jinak není kam odejít."
-    assert [k["nazev"] for k in d["cesta"]] == ["Alfa s.r.o. [7]", "OP-26-0301 - FVE", "3. nabidka"]
+    assert [k["nazev"] for k in d["cesta"]] == [
+        "1. zákazníci",
+        "Alfa s.r.o. [7]",
+        "OP-26-0301 - FVE",
+        "3. nabidka",
+    ]
     assert all(k["url"] for k in d["cesta"]), (
         "Každý krok cesty nese odkaz na Disk – to je Danovo zadání „na každé úrovni“."
     )
@@ -155,11 +214,11 @@ def test_kazda_polozka_i_krok_cesty_ma_odkaz_na_disk(disk):
     assert all(p["url"] for p in obsah_op["polozky"])
 
 
-def test_koren_bez_weblinku_dostane_zaloznu_adresu(disk):
-    """Kořen sdíleného disku `webViewLink` nevrací – odkaz se skládá z ID."""
+def test_vychozi_slozka_bez_weblinku_dostane_zaloznu_adresu(disk):
+    """Drive `webViewLink` u některých složek nevrátí – odkaz se skládá z ID."""
     k = disk_prochazeni.koren(None)
-    assert k["url"] == f"https://drive.google.com/drive/folders/{KOREN}"
-    assert k["nazev"] == "6. projekty"
+    assert k["url"] == f"https://drive.google.com/drive/folders/{STROP}"
+    assert k["nazev"] == "8. Raynet"
 
 
 def test_velikost_souboru_se_prevadi_na_cislo(disk):
@@ -172,6 +231,59 @@ def test_zkraceni_dlouhe_slozky_se_hlasi(disk):
     d = disk_prochazeni.obsah(None, "op", limit=1)
     assert len(d["polozky"]) == 1
     assert d["zkraceno"] is True, "Utnutý výpis se musí přiznat, jinak to vypadá na smazané soubory."
+
+
+# ---- nahrávání ---------------------------------------------------------------
+def test_nahrani_jde_do_otevrene_slozky(disk):
+    v = disk_prochazeni.nahraj(None, "op", "nabidka.pdf", b"data", "application/pdf")
+    assert disk.nahrane == [("nabidka.pdf", "op", b"data", "application/pdf")]
+    assert v["url"], "Nahraný soubor musí jít hned otevřít na Disku."
+
+
+def test_nahrani_bez_slozky_padne_do_vychozi(disk):
+    """Prohlížeč posílá prázdné id, backend si výchozí složku dosadí sám."""
+    disk_prochazeni.nahraj(None, None, "poznamka.txt", b"x", "text/plain")
+    assert disk.nahrane[0][1] == STROP
+
+
+def test_nahrani_mimo_strop_neprojde(disk):
+    """Stejná kontrola jako u čtení – jinak by appka zapisovala kamkoli na Disk."""
+    with pytest.raises(PermissionError):
+        disk_prochazeni.nahraj(None, "mzdy", "vir.exe", b"x", "application/octet-stream")
+    assert disk.nahrane == [], "Do cizí složky se nesmí dostat ani jeden bajt."
+
+
+def test_nazev_souboru_se_ocisti(disk):
+    """Lomítka v názvu Drive nemá rád – jdou přes `logika._bezpecny_nazev` na „-".
+
+    Zároveň to znamená, že název z prohlížeče nemůže naznačit cestu jinam:
+    „../tajne/smlouva.pdf" skončí jako jeden název souboru, ne jako cesta.
+    """
+    disk_prochazeni.nahraj(None, "op", "../tajne/smlouva.pdf", b"x", "application/pdf")
+    ulozeny, kam, _, _ = disk.nahrane[0]
+    assert "/" not in ulozeny
+    assert ulozeny == "..-tajne-smlouva.pdf"
+    assert kam == "op", "Cíl určuje folder_id, nikdy název souboru."
+
+
+def test_nahrani_se_zaloguje(monkeypatch):
+    """Zápis na firemní Disk musí být dohledatelný – jinak nikdo nezjistí, kdo co přidal."""
+    drive = _drive()
+    n = SimpleNamespace(google_root_folder_id=KOREN, google_shared_drive_id="sdileny")
+    monkeypatch.setattr(crm_slozky, "_nastaveni", lambda db: n)
+    monkeypatch.setattr(crm_slozky, "_drive_klient", lambda nast: drive)
+    zapsano: list[tuple] = []
+    monkeypatch.setattr(
+        disk_prochazeni, "zaloguj", lambda db, uroven, kod, zprava, detail=None: zapsano.append(
+            (uroven, kod, zprava, detail)
+        )
+    )
+    disk_prochazeni.nahraj(None, "op", "smlouva.pdf", b"x", "application/pdf")
+    assert len(zapsano) == 1
+    uroven, kod, zprava, detail = zapsano[0]
+    assert (uroven, kod) == ("info", "disk_nahrani")
+    assert "smlouva.pdf" in zprava
+    assert detail["folder_id"] == "op"
 
 
 # ---- práva a přepínač novinek ------------------------------------------------
