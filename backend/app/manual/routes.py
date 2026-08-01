@@ -31,6 +31,7 @@ STRANKY = [
     # CRM je první mezi moduly schválně: cesta zakázky začíná u zákazníka.
     ("crm", "moduly/crm.md", "Moduly"),
     ("emaily", "moduly/emaily.md", "Moduly"),
+    ("disk", "moduly/disk.md", "Moduly"),
     ("prehled-projektu", "moduly/prehled-projektu.md", "Moduly"),
     ("prehled-financi", "moduly/prehled-financi.md", "Moduly"),
     ("prehled-zmen", "moduly/prehled-zmen.md", "Moduly"),

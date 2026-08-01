@@ -69,6 +69,35 @@ class DriveClient:
         )
         return vysledek.get("files", [])
 
+    def list_children_vse(self, parent_id: str) -> list[dict]:
+        """Jako `list_children`, ale projde VŠECHNY stránky.
+
+        `list_children` bere jen první stránku (1000 položek). U kontejnerů, které
+        konektor obsluhuje, se toho nikdy nedosáhne, ale kořenová složka má jednu
+        podsložku na klienta a roste — a utnutá první stránka by se neprojevila
+        chybou, jen chybějícím koncem abecedy. Modul Disk proto používá tuhle.
+        """
+        q = f"'{parent_id}' in parents and trashed=false"
+        vse: list[dict] = []
+        token = None
+        while True:
+            vysledek = (
+                self.service.files()
+                .list(
+                    q=q,
+                    fields="nextPageToken,files(id,name,mimeType,webViewLink,size)",
+                    includeItemsFromAllDrives=True,
+                    supportsAllDrives=True,
+                    pageSize=1000,
+                    pageToken=token,
+                )
+                .execute(num_retries=DRIVE_RETRY)
+            )
+            vse.extend(vysledek.get("files", []))
+            token = vysledek.get("nextPageToken")
+            if not token:
+                return vse
+
     def find_folder(self, name: str, parent_id: str) -> dict | None:
         """Najde podsložku daného jména pod parentem (nebo None)."""
         for f in self.list_children(parent_id):

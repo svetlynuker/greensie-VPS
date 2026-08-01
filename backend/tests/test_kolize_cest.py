@@ -32,6 +32,7 @@ MODULY_ROUTERU = [
     "app.crm.routes_realizace",
     "app.crm.email_routes",
     "app.konektor.routes",
+    "app.konektor.disk_routes",
     "app.logy.routes",
     "app.manual.routes",
     "app.zmeny.routes",
