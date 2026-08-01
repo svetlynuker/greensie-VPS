@@ -32,6 +32,17 @@ from app.konektor.logika import NastaveniNepripraveno
 router = APIRouter(prefix="/disk", tags=["disk"])
 
 
+class DiskPravoVstup(BaseModel):
+    """Komu a s jakou rolí se má položka na Disku sdílet."""
+
+    item_id: str
+    email: str
+    role: str = "reader"
+    # Zapnuto schválně: adresy bez účtu Google (u nás většina `@greensie.cz`)
+    # Google bez pozvánky odmítne přidat vůbec — viz `disk_prochazeni.pridej_pravo`.
+    oznamit: bool = True
+
+
 class DiskSlozkaVstup(BaseModel):
     """Nová podsložka. `folder_id` prázdné = výchozí složka modulu.
 
@@ -52,6 +63,21 @@ def vyzaduj_disk(user: User = Depends(get_current_user)) -> User:
     """
     if not ma_novinky(user) or not muze_otevrit(user, "disk"):
         raise HTTPException(status_code=404, detail="Nenalezeno")
+    return user
+
+
+def vyzaduj_sdileni(user: User = Depends(vyzaduj_disk)) -> User:
+    """Právo `disk_sdileni` na měnění sdílení.
+
+    Tady 403 a ne 404: modul člověk vidí (dostal se přes `vyzaduj_disk`), takže
+    „neexistuje" by byla lež — a hláška „na tohle nemáš právo" mu řekne, o co
+    má požádat.
+    """
+    if not muze_otevrit(user, "disk_sdileni"):
+        raise HTTPException(
+            status_code=403,
+            detail="Na měnění sdílení na Disku nemáš oprávnění.",
+        )
     return user
 
 
@@ -144,6 +170,52 @@ def zaloz_slozku(
     return _osetri(
         lambda: disk_prochazeni.zaloz_slozku(db, vstup.folder_id, vstup.nazev, user.email),
         "Disk složku nezaložil",
+    )
+
+
+@router.get("/prava")
+def prava(
+    item_id: str = Query(..., description="Složka nebo soubor"),
+    user: User = Depends(vyzaduj_disk),
+    db: Session = Depends(get_db),
+):
+    """Kdo má k položce přístup na Disku.
+
+    Čtení stačí právo `disk` — vědět, komu už je dokument dostupný, potřebuje
+    každý, kdo ho má komu poslat. `smim_menit` říká prohlížeči, jestli má vůbec
+    ukazovat tlačítka (rozhoduje ale server u každé změny znovu).
+    """
+    vysledek = _osetri(lambda: disk_prochazeni.prava(db, item_id))
+    vysledek["smim_menit"] = muze_otevrit(user, "disk_sdileni")
+    return vysledek
+
+
+@router.post("/prava")
+def pridej_pravo(
+    vstup: DiskPravoVstup,
+    user: User = Depends(vyzaduj_sdileni),
+    db: Session = Depends(get_db),
+):
+    """Nasdílí položku konkrétnímu člověku. Žádné „kdokoli s odkazem"."""
+    return _osetri(
+        lambda: disk_prochazeni.pridej_pravo(
+            db, vstup.item_id, vstup.email, vstup.role, vstup.oznamit, user.email
+        ),
+        "Disk sdílení nepřijal",
+    )
+
+
+@router.delete("/prava/{permission_id}")
+def odeber_pravo(
+    permission_id: str,
+    item_id: str = Query(..., description="Složka nebo soubor, u které se právo ruší"),
+    user: User = Depends(vyzaduj_sdileni),
+    db: Session = Depends(get_db),
+):
+    """Odebere člověku přístup k položce."""
+    return _osetri(
+        lambda: disk_prochazeni.odeber_pravo(db, item_id, permission_id, user.email),
+        "Disk sdílení nezrušil",
     )
 
 

@@ -6,8 +6,8 @@
 **Firemní Google Disk přímo v appce**, přes celou plochu. Začíná se složkou **o úroveň výš nad
 kořenem konektoru** (u nás `8. Raynet`) a dá se dojít až k jednotlivému souboru. Soubor se
 **otevře v appce** (PDF, obrázky, texty i Google dokumenty), do otevřené složky se dá **nahrát**
-soubor nebo **založit podsložka**, a na každé úrovni je odkaz, kterým se dá odejít na Disk — do té
-samé složky, ve které člověk právě je.
+soubor nebo **založit podsložka**, u každé položky se dá vyřídit **sdílení** (kdo k tomu má přístup),
+a na každé úrovni je odkaz, kterým se dá odejít na Disk — do té samé složky, ve které člověk právě je.
 
 > 📸 SCREENSHOT: celá obrazovka modulu Disk — lišta s drobečkovou navigací, filtrem a tlačítkem + Nahrát, seznam složek a souborů ve dvou sloupcích
 
@@ -60,6 +60,7 @@ Shora dolů:
 | **Otevřít na Disku ↗** | lišta vpravo | Otevře **právě zobrazenou složku** na Google Disku. | všichni s právem `disk` |
 | **Řádek složky** | seznam | Vejde do složky. | všichni s právem `disk` |
 | **Řádek souboru** | seznam | **Otevře soubor v appce** (PDF, obrázek, text, Google dokument). U typů, které appka zobrazit neumí (zip, dwg, video) a u souborů nad 25 MB je za názvem ↗ a řádek vede na Disk. | všichni s právem `disk` |
+| **🔒 na konci řádku** | seznam vpravo | Otevře **sdílení** té složky/souboru — kdo k tomu má přístup. | vidí všichni s právem `disk`, mění jen `disk_sdileni` |
 | **↗ na konci řádku** | seznam vpravo | Otevře tu složku/soubor na Disku, aniž by se do složky vcházelo nebo otevíral náhled. | všichni s právem `disk` |
 | **Uložit** (v náhledu) | okno náhledu | Uloží otevřený soubor k sobě do počítače. | všichni s právem `disk` |
 | **Disk ↗** (v náhledu) | okno náhledu | Otevře soubor na Disku — tam se dá i **upravit**, což appka neumí. | všichni s právem `disk` |
@@ -85,6 +86,23 @@ appka není přenosová trubka.
 **Nahrát dokument ke konkrétnímu klientovi:** dá se i tady, ale přehlednější je karta zákazníka nebo
 obchodního případu (*Dokumenty na Disku*) — tam se cílová složka nabídne sama.
 
+**Nasdílet složku nebo soubor někomu:** klikni na 🔒 na jeho řádku. V okně je vidět, kdo k tomu
+už má přístup; dole se přidá e-mail a role (**může číst** / **komentovat** / **upravovat**).
+
+Tři věci, které je u sdílení potřeba vědět:
+
+1. **Sdílení složky platí na všechno v ní**, i na podsložky. Tak to má Google Disk — když nasdílíš
+   složku klienta, nasdílíš i všechny smlouvy uvnitř.
+2. **Pozvánka e-mailem je zaškrtnutá schválně.** Většina našich adres `@greensie.cz` nemá účet Google
+   (tým má Disk pod vlastními gmaily) a takovou adresu Disk bez pozvánky **odmítne přidat vůbec**.
+   Když zaškrtnutí zrušíš, appka to u takové adresy pozná a napíše, ať pozvánku pošleš.
+3. **„Kdokoli s odkazem" appka neumí** a je to záměr — veřejný odkaz na firemní dokument nikdo nevzal
+   zpět. Když ho někdo opravdu potřebuje, udělá ho na Disku vědomě.
+
+Přístupy z řádku **Přístup ze sdíleného disku a nadřazených složek** jsou sbalené a odebrat se tady
+nedají — dal je někdo výš, tam se musí i sebrat. Přístup konektoru odebrat nejde vůbec: bez něj
+přestane fungovat zakládání složek i tenhle modul.
+
 **Filtr nenašel, co hledám:** filtr pracuje **jen s právě otevřenou složkou**, nehledá napříč Diskem.
 Na celý Disk je hledání na Disku samotném.
 
@@ -98,7 +116,12 @@ Modul je pod samostatným právem **`disk`** („Otevřít Disk"), které se př
 nahrávat a zakládat složky**. Právo `konektor` (nastavení konektoru) s tím nemá nic společného; jsou
 to dvě různé věci schválně, aby procházení Disku nemuseli mít správci a naopak.
 
-Pozor: **není to odstupňované** — právo `disk` znamená i právo přidat soubor a složku. A protože se
+**Měnit sdílení je vlastní právo `disk_sdileni`** („Disk – měnit sdílení složek a souborů“). Kdo ho
+nemá, sdílení **vidí** (potřebuje vědět, komu už je dokument dostupný), ale nemění. Odděleno schválně:
+„komu se ten dokument otevře“ je rozhodnutí, které jde i mimo firmu a nikdo ho nevezme zpět. Server
+právo kontroluje u každé změny, ne jen při kreslení tlačítek.
+
+Pozor: **jinak to odstupňované není** — právo `disk` znamená i právo přidat soubor a složku. A protože se
 soubory čtou service accountem, **náhled v appce nekontroluje, jestli má člověk k souboru přístup na
 Disku samotném**: rozhoduje jedině právo `disk` a strop modulu. Kdo tedy nemá vidět něco, co pod
 stropem leží, nesmí dostat právo `disk` — nebo to patří mimo strop.
@@ -129,8 +152,8 @@ mimo ni (mzdy, personální složky), appka nezobrazí a nedovolí do toho nahr�
 ID do adresy.
 
 ### Napojení na okolní systémy
-Jen **Google Drive API v3** (přes service account konektoru, `DriveClient`). Appka **čte, nahrává a
-zakládá složky**, nic nemaže a nepřejmenovává. Soubory se u nás neukládají ani po cestě — projdou do Disku a v appce
+Jen **Google Drive API v3** (přes service account konektoru, `DriveClient`). Appka **čte, nahrává,
+zakládá složky a mění sdílení**, nic nemaže a nepřejmenovává (kromě rušení sdílení). Soubory se u nás neukládají ani po cestě — projdou do Disku a v appce
 zůstane jen odkaz, aby neexistovaly dvě kopie téhož dokumentu. Každé nahrání se zapisuje do logu
 konektoru jako `disk_nahrani` — v kontextu záznamu je e-mail toho, kdo soubor nahrál, ID složky a ID
 souboru, takže je dohledatelné, kdo co kam přidal (tabulka `konektor_log` sloupec pro uživatele nemá,
@@ -146,6 +169,16 @@ píše do ní jinak jen automatika).
     = výchozí složka. Strop 25 MB (`disk_prochazeni.MAX_SOUBOR_B`), pak 413.
   - `POST /disk/slozka` (JSON: `nazev`, `folder_id`) — nová podsložka; prázdné `folder_id` = výchozí
     složka. Prázdný název → 422.
+  - `GET /disk/prava?item_id=<id>` — kdo má k položce přístup. Každý řádek nese `zdedene`
+    (dal ho někdo výš, nejde odebrat tady), `sluzebni` (service account konektoru, nejde odebrat
+    vůbec) a `novy` (adresa, která na Disku jinde přístup nemá). V odpovědi je i `znami` — e-maily,
+    které Disk zná, aby prohlížeč poznal, že se sdílí někomu novému.
+  - `POST /disk/prava` (JSON: `item_id`, `email`, `role`, `oznamit`) — nasdílení. Role jen
+    `reader` | `commenter` | `writer` (`owner` a `organizer` appka nenastavuje: na sdíleném disku
+    rozdávají práva dál a přes appku je nejde vzít zpět). `oznamit` je **výchozí `true`** — adresy bez
+    účtu Google Google bez pozvánky nepřijme. Vyžaduje `disk_sdileni`.
+  - `DELETE /disk/prava/{permission_id}?item_id=<id>` — odebrání přístupu. Zděděné oprávnění → 422,
+    service account → 422. Vyžaduje `disk_sdileni`.
   - `GET /disk/soubor/{file_id}/nahled` — obsah souboru k zobrazení v appce
     (`Content-Disposition: inline`, `Cache-Control: no-store`). Google formáty přijdou jako PDF
     (`files.export`), ostatní tak, jak jsou (`files.get_media`). Složka → 422, soubor nad 25 MB → 422.
@@ -161,7 +194,7 @@ píše do ní jinak jen automatika).
   soubor je, i když ho někdo mezitím smazal.
 - **Klíčové soubory:** `backend/app/konektor/disk_prochazeni.py` (logika), `disk_routes.py` (API),
   `frontend/src/pages/Disk.jsx` (obrazovka), `frontend/src/components/DiskNahled.jsx` (okno náhledu),
-  `frontend/src/styles/disk.css`.
+  `frontend/src/components/DiskPrava.jsx` (okno sdílení), `frontend/src/styles/disk.css`.
 
 ### Časté potíže / co dělat, když…
 
@@ -173,6 +206,10 @@ píše do ní jinak jen automatika).
 | „Tato složka neleží pod výchozí složkou modulu Disk." (403) | Ručně dosazené `folder_id` mimo strop, nebo se složka na Disku přesunula jinam. | Vrátit se na výchozí složku (první krok cesty) a projít cestu znovu. |
 | „Disk soubor nepřijal…" / „Disk složku nezaložil…" (502) | Google odmítlo zápis (práva service accountu, kvóta). | Zkusit znovu; když trvá, ověřit v Konektoru **Otestovat spojení** a mrknout do Logů. |
 | „Složka musí mít název." (422) | Prázdný název nové složky. | Napsat název. |
+| „Adresa … nemá účet Google, takže ji Disk pustí jen s pozvánkou." (422) | Sdílení bez pozvánky na adresu bez účtu Google (u nás většina `@greensie.cz`). | Zaškrtnout **poslat pozvánku e-mailem** a poslat znovu. |
+| „Tohle oprávnění je zděděné z nadřazené složky…" (422) | Přístup dal někdo na sdíleném disku nebo výš. | Odebrat tam, kde byl daný. |
+| „Tohle je přístup konektoru…" (422) | Pokus odebrat service account. | Nedělat to — bez něj přestane fungovat konektor i modul. |
+| „Na měnění sdílení na Disku nemáš oprávnění." (403) | Chybí právo `disk_sdileni`. | Přidělit ho v Admin nastavení. |
 | „Tohle je složka, ne soubor." (422) | Náhled zavolaný na složku (ručně dosazené ID). | Do složky se vchází kliknutím na řádek. |
 | „Soubor je větší než 25 MB — otevři ho prosím na Disku." (422) | Strop náhledu. | Otevřít na Disku (↗ na konci řádku). |
 | Soubor se v okně nezobrazí (prázdné okno) | Prohlížeč ten typ neumí zobrazit, i když ho appka poslala. | Použít **Uložit**, nebo **Disk ↗**. |
@@ -194,6 +231,14 @@ píše do ní jinak jen automatika).
   nedá poslat kolegovi — na poslání je odkaz na Disk.
 - Google dokumenty se zobrazují **jako PDF**, takže tabulky a prezentace vypadají jinak než na Disku.
   Je to jediná podoba, kterou Google vydá a prohlížeč zobrazí bez pluginu.
+- Varování „tuhle adresu na Disku nikdo jiný nemá" se **nepozná podle domény**. Doménová kontrola
+  (`@greensie.cz` = naše) se zkoušela a označila 17 z 20 kolegů jako cizí, protože tým má Disk pod
+  vlastními gmaily a seznam.cz. Varování, které svítí vždycky, si člověk odvykne čítat, takže
+  rozhoduje **členství na Disku**, ne text za zavináčem.
+- Modul **nikdy nenabízí „kdokoli s odkazem"** ani role `owner`/`organizer`. Kdyby to někdo
+  potřeboval, dělá to na Disku — vědomě a na svoje jméno.
+- Zrušení sdílení u složky se projeví i na jejím obsahu (dědí se), ale **až pro to, co bylo zděděné**;
+  co má někdo přidané u konkrétního souboru zvlášť, zůstává. To je chování Disku, ne appky.
 - Výchozí složka se odvozuje z rodiče kořene konektoru. **Kdyby někdo v Konektoru změnil kořenovou
   složku, posune se i výchozí složka modulu** — to je zamýšlené, ale není to na první pohled vidět.
 

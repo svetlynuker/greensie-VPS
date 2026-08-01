@@ -101,6 +101,129 @@
   margin: 0;
 }
 
+/* ---- sdílení položky (kdo k ní má přístup) ---- */
+.dk-prava-seznam {
+  list-style: none;
+  margin: 10px 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.dk-pravo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+.dk-pravo:hover {
+  background: var(--surface-2);
+}
+.dk-pravo-kdo {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.dk-pravo-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dk-pravo-znacky {
+  display: inline-flex;
+  gap: 4px;
+}
+/* Místo po chybějícím tlačítku „Odebrat", aby role ve sloupci neposkakovaly. */
+.dk-pravo-misto {
+  width: 74px;
+  flex: 0 0 auto;
+}
+
+.dk-znacka {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* Sdílení mimo firmu musí být vidět, ne se schovat mezi šedé odznaky. */
+.dk-znacka-var {
+  background: var(--st-warn-w);
+  border-color: color-mix(in srgb, var(--st-warn) 40%, transparent);
+  color: var(--st-warn);
+  font-weight: 600;
+}
+
+/* Sbalená zděděná oprávnění – rozbalovač. */
+.dk-zdedena {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+}
+.dk-rozbal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--fm-brand-dk);
+  cursor: pointer;
+  padding: 4px 2px;
+  border-radius: 6px;
+}
+.dk-rozbal:hover {
+  text-decoration: underline;
+}
+.dk-rozbal-sipka {
+  display: inline-block;
+  transition: transform 0.12s ease;
+}
+.dk-rozbal-sipka.dolu {
+  transform: rotate(90deg);
+}
+
+.dk-prava-pridat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.dk-role {
+  width: auto;
+}
+.dk-oznamit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dk-prava-pozn {
+  flex-basis: 100%;
+  margin: 0;
+}
+.dk-varovani {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: var(--st-warn);
+  background: var(--st-warn-w);
+  border: 1px solid color-mix(in srgb, var(--st-warn) 35%, transparent);
+  border-radius: var(--radius-sm);
+}
+
 /* ---- lišta: zpět, drobečky, filtr, odkaz na Disk ---- */
 .dk-lista {
   display: flex;

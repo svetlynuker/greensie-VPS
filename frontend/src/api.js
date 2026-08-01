@@ -1817,6 +1817,30 @@ export async function diskNahledSouboru(fileId) {
   return res.blob();
 }
 
+// Sdílení položky na Disku: kdo k ní má přístup. Čtení stačí právo `disk`,
+// změna vyžaduje `disk_sdileni` (server to hlídá u každé změny znovu, příznak
+// `smim_menit` je jen pro to, aby prohlížeč neukazoval tlačítka nadarmo).
+export function diskPrava(itemId) {
+  return zavolej(`/disk/prava?item_id=${encodeURIComponent(itemId)}`);
+}
+
+// Nasdílení konkrétnímu člověku. Role: reader | commenter | writer.
+// „Kdokoli s odkazem" appka vědomě neumí — veřejný odkaz na firemní dokument
+// nikdo nevzal zpět.
+export function diskPravoPridej(itemId, email, role = "reader", oznamit = false) {
+  return zavolej("/disk/prava", {
+    method: "POST",
+    body: JSON.stringify({ item_id: itemId, email, role, oznamit }),
+  });
+}
+
+export function diskPravoOdeber(itemId, permissionId) {
+  return zavolej(
+    `/disk/prava/${encodeURIComponent(permissionId)}?item_id=${encodeURIComponent(itemId)}`,
+    { method: "DELETE" }
+  );
+}
+
 // Nahrání souboru do otevřené složky. Jde přes appku, ale neukládá se u nás —
 // zůstane jen odkaz. Vlastní fetch, ne `zavolej`: ten posílá Content-Type
 // application/json, což by multipart rozbilo (stejný vzor jako crmSlozkaNahraj).

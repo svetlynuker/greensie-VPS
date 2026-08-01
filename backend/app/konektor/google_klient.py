@@ -180,6 +180,56 @@ class DriveClient:
             .execute(num_retries=DRIVE_RETRY)
         )
 
+    # ---- sdílení (kdo má k položce přístup) ----
+    # `permissionDetails` je jen u položek ve Shared Drive a říká, jestli je
+    # oprávnění zděděné z nadřazené složky. Bez toho by appka nabízela mazání
+    # oprávnění, které smazat nelze (Google vrátí chybu).
+    PRAVA_FIELDS = (
+        "permissions(id,type,role,emailAddress,displayName,deleted,"
+        "permissionDetails(inherited,inheritedFrom,role))"
+    )
+
+    def prava(self, file_id: str) -> list[dict]:
+        """Kdo má k položce přístup (bez dědění ze samotného sdíleného disku)."""
+        vysledek = (
+            self.service.permissions()
+            .list(
+                fileId=file_id,
+                fields=self.PRAVA_FIELDS,
+                supportsAllDrives=True,
+                pageSize=100,
+            )
+            .execute(num_retries=DRIVE_RETRY)
+        )
+        return vysledek.get("permissions", [])
+
+    def pridej_pravo(
+        self, file_id: str, email: str, role: str, oznamit: bool = False
+    ) -> dict:
+        """Přidá konkrétního člověka (nebo skupinu) k položce.
+
+        `oznamit=False` schválně: e-mail by přišel jménem service accountu, což
+        u příjemce vypadá jako spam od neznámého robota. Kdo komu co dal vědět,
+        je věc člověka.
+        """
+        telo = {"type": "user", "role": role, "emailAddress": email}
+        return (
+            self.service.permissions()
+            .create(
+                fileId=file_id,
+                body=telo,
+                sendNotificationEmail=oznamit,
+                fields="id,type,role,emailAddress,displayName",
+                supportsAllDrives=True,
+            )
+            .execute(num_retries=DRIVE_RETRY)
+        )
+
+    def smaz_pravo(self, file_id: str, permission_id: str) -> None:
+        self.service.permissions().delete(
+            fileId=file_id, permissionId=permission_id, supportsAllDrives=True
+        ).execute(num_retries=DRIVE_RETRY)
+
     # ---- stažení obsahu (náhled souboru přímo v appce) ----
     def stahni(self, file_id: str) -> bytes:
         """Obsah běžného (binárního) souboru. Pro Google formáty použij `exportuj`."""
