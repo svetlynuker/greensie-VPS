@@ -1686,3 +1686,14 @@ export function emailPravidloSmaz(id) {
 export function emailAutomatikaUloz(data) {
   return zavolej("/crm/emaily/automatika", { method: "PUT", body: JSON.stringify(data) });
 }
+
+// ---- profil pro e-mailový podpis (CRM-33) ----
+// HTML podpisu skládá backend a vrací ho i v odpovědi na uložení — frontend si
+// ho nikdy nesestavuje sám, jinak by náhled a odeslaná pošta mohly být jiné.
+export function nactiProfil() {
+  return zavolej("/auth/profil");
+}
+
+export function ulozProfil(data) {
+  return zavolej("/auth/profil", { method: "PUT", body: JSON.stringify(data) });
+}

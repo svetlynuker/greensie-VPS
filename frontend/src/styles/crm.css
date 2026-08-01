@@ -1846,3 +1846,49 @@
   font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- karta „Podpis do e-mailu" v nastavení (CRM-33) ------------------- */
+.pn-mrizka {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.pn-prepinac {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.pn-nahled-hlava {
+  margin-top: 18px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* Bílé pozadí i v tmavém režimu: podpis je psaný pro světlé pozadí mailu,
+   takže náhled musí ukazovat to, co uvidí příjemce, ne to, co sedí k appce. */
+.pn-nahled {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.pn-nahled-prazdno {
+  padding: 16px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.6;
+}

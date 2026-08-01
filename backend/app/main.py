@@ -557,6 +557,24 @@ def _lehka_migrace():
                         f"ALTER TABLE crm_email_ucty ADD COLUMN IF NOT EXISTS {sloupec} {definice}"
                     )
                 )
+        # Profil uživatele pro e-mailový podpis (CRM-33). Tabulku vytvoří
+        # `create_all`; tohle je pojistka pro sloupce doplněné později.
+        if inspect(engine).has_table("uzivatel_profil"):
+            for sloupec, definice in (
+                ("jmeno", "VARCHAR NOT NULL DEFAULT ''"),
+                ("prijmeni", "VARCHAR NOT NULL DEFAULT ''"),
+                ("telefon", "VARCHAR NOT NULL DEFAULT ''"),
+                ("funkce", "VARCHAR NOT NULL DEFAULT ''"),
+                ("pozdrav", "VARCHAR NOT NULL DEFAULT 'S pozdravem'"),
+                ("podpis_zapnuty", "BOOLEAN NOT NULL DEFAULT true"),
+                ("upraveno_at", "TIMESTAMPTZ"),
+            ):
+                conn.execute(
+                    text(
+                        f"ALTER TABLE uzivatel_profil ADD COLUMN IF NOT EXISTS {sloupec} {definice}"
+                    )
+                )
+
         if inspect(engine).has_table("crm_email_zpravy"):
             for sloupec, definice in (
                 ("zpracovano_at", "TIMESTAMPTZ"),
