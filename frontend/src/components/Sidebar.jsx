@@ -26,7 +26,7 @@ export default function Sidebar({ prava, novinky = false, mini, onPrepnoutPanel 
 
       <nav className="gs-sb-scroll" aria-label="Hlavní nabídka">
         {skupiny.map((grp, i) => (
-          <div key={grp.skupina || `grp-${i}`}>
+          <div key={grp.skupina || `grp-${i}`} data-barva={grp.barva || undefined}>
             {grp.skupina && <div className="gs-nav-grp-label">{grp.skupina}</div>}
             {grp.polozky.map((p) => (
               <button

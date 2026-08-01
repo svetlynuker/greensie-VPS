@@ -3,6 +3,9 @@
 // vlevo, jak se která stránka jmenuje v horní liště a která
 // stránka manuálu k ní patří.
 //
+// `barva` skupiny obarvuje ikony v levém panelu (viz layout.css) —
+// v nabídce se pak hledá i podle odstínu, nejen podle názvu.
+//
 // Právo (`pravo`) je klíč z backendového katalogu práv
 // (backend/app/auth/permissions.py → PRAVA). Kdo právo nemá,
 // položku vůbec neuvidí. `vzdy: true` = nepotřebuje právo.
@@ -11,6 +14,7 @@
 export const NABIDKA = [
   {
     skupina: null,
+    barva: null,
     polozky: [
       { klic: "rozcestnik", nazev: "Rozcestník", ikona: "domu", cesta: "/rozcestnik", vzdy: true },
     ],
@@ -19,6 +23,7 @@ export const NABIDKA = [
     // Kalendář je nahoře a sám: je to jediná obrazovka, kterou člověk otevírá
     // proto, aby zjistil „co mám dnes", ne aby hledal záznam.
     skupina: "Agenda",
+    barva: "modra",
     polozky: [
       // Jede pod právem Zákazníků: aktivity visí na záznamech CRM, takže kdo
       // vidí zákazníky, má co plánovat.
@@ -39,6 +44,7 @@ export const NABIDKA = [
   {
     // CRM: odtud vede celá cesta zakázky (zákazník → případ → nabídka → objednávka).
     skupina: "Obchod",
+    barva: "zelena",
     polozky: [
       { klic: "zakaznici", nazev: "Zákazníci", ikona: "zakaznici", cesta: "/zakaznici", pravo: "zakaznici" },
       // Číselník lidí u zákazníků. Hned pod Zákazníky schválně: je to druhý
@@ -75,6 +81,7 @@ export const NABIDKA = [
     // Realizace zakázky. Oddělené od Obchodu schválně: podepsanou zakázku
     // přebírá technika a je to jiná parta lidí i jiná denní práce.
     skupina: "Technické",
+    barva: "fialova",
     polozky: [
       // POZOR na dvojí význam slova „projekt": tohle je CRM projekt (realizace).
       // Přehled projektů z Freela je v Přehledech, dokud ho appka nenahradí.
@@ -89,6 +96,7 @@ export const NABIDKA = [
   },
   {
     skupina: "Přehledy",
+    barva: "jantar",
     polozky: [
       // Čísla obchodu. Jede pod právem Případů — funnel i forecast jsou o nich.
       {
@@ -105,6 +113,7 @@ export const NABIDKA = [
   },
   {
     skupina: "Nabídky",
+    barva: "tyrkys",
     polozky: [
       { klic: "nabidkovac", nazev: "Nabídkovač", ikona: "nabidkovac", cesta: "/nabidkovac", pravo: "nabidkovac" },
       {
@@ -118,6 +127,7 @@ export const NABIDKA = [
   },
   {
     skupina: "Systém",
+    barva: "seda",
     polozky: [
       { klic: "konektor", nazev: "Konektor Raynet ↔ Disk", ikona: "konektor", cesta: "/konektor", pravo: "konektor" },
       { klic: "logy", nazev: "Logy", ikona: "logy", cesta: "/logy", pravo: "logy" },
@@ -126,6 +136,7 @@ export const NABIDKA = [
   },
   {
     skupina: "Nápověda",
+    barva: "ruzova",
     polozky: [
       { klic: "manual", nazev: "Manuál", ikona: "manual", cesta: "/manual", vzdy: true },
     ],

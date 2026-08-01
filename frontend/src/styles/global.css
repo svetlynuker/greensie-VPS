@@ -9,15 +9,25 @@
 :root {
   color-scheme: light;
 
-  /* ---- plochy a inkousty (neutrály s jemným zeleným nádechem) ---- */
-  --bg:        #eaeeeb;
+  /* ---- plochy a inkousty (neutrály s jemným zeleným nádechem) ----
+     Tři úrovně hloubky, ne dvě: zapuštěná plocha (--sunken) drží
+     kanbanové sloupce a seznamy, --surface je běžná karta a bílá
+     karta v zapuštěné ploše je nejvýš. Bez toho splývalo pozadí
+     s kontejnerem — návrh „Vrstvy" z 1. 8. 2026. */
+  --bg:        #dbe3de;
   --surface:   #ffffff;
-  --surface-2: #f5f8f6;
+  --surface-2: #eff4f1;
+  --sunken:    #ccd8d1;
   --ink:       #16211c;
   --ink-2:     #4b5852;
   --muted:     #78847d;
-  --line:      #e1e7e3;
-  --line-soft: #eef2ef;
+  /* Dvě síly linky: --line dělí uvnitř kontejneru, --line-strong
+     obkresluje kontejner samotný. Kdo hledá hranu karty, najde ji. */
+  --line:        #c2cfc8;
+  --line-strong: #aebeb5;
+  --line-soft:   #e2e9e5;
+  /* Podbarvená hlava kontejneru (panel, karta, hlavička tabulky). */
+  --head-bg:   #eff4f1;
 
   /* ---- brand ---- */
   /* Pozor na dvě zelené, každá má svou práci:
@@ -51,11 +61,18 @@
   --c-grid:   #e9edea;
   --c-axis:   #4b5852;
 
+  /* ---- barvy dlaždic podle druhu ukazatele ----
+     Peníze / čas / riziko. Barva je vždy jen doplněk k popisce
+     dlaždice, nikdy jediný nosič informace. */
+  --kpi-penize: var(--brand-strong);
+  --kpi-cas:    #1971c2;
+  --kpi-riziko: var(--st-crit);
+
   /* ---- elevace a tvary ---- */
-  --shadow-1: 0 1px 2px rgba(20, 33, 28, 0.06), 0 1px 1px rgba(20, 33, 28, 0.04);
-  --shadow-2: 0 6px 20px -6px rgba(20, 33, 28, 0.18), 0 2px 6px rgba(20, 33, 28, 0.06);
-  --radius:    14px;
-  --radius-sm: 10px;
+  --shadow-1: 0 1px 2px rgba(20, 33, 28, 0.08), 0 2px 6px -2px rgba(20, 33, 28, 0.08);
+  --shadow-2: 0 10px 26px -10px rgba(20, 33, 28, 0.32), 0 2px 8px rgba(20, 33, 28, 0.08);
+  --radius:    12px;
+  --radius-sm: 9px;
 
   /* rozvržení rozcestníku - libovolně měnitelné bez zásahu do JS */
   --fm-tile-min-width: 232px;
@@ -78,14 +95,17 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg:        #0e1512;
-  --surface:   #161e1a;
-  --surface-2: #1b2420;
+  --bg:        #070c0a;
+  --surface:   #18221d;
+  --surface-2: #202b25;
+  --sunken:    #0d1411;
   --ink:       #e7ece9;
   --ink-2:     #aab4ae;
   --muted:     #7f8b85;
-  --line:      #26302b;
-  --line-soft: #1f2823;
+  --line:        #2f3c35;
+  --line-strong: #445349;
+  --line-soft:   #232e28;
+  --head-bg:   #202b25;
 
   --brand:        #40c057;
   --brand-strong: #69db7c;
@@ -109,8 +129,10 @@
   --c-grid:   #232d28;
   --c-axis:   #aab4ae;
 
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 8px 24px -8px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --kpi-cas: #4dabf7;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-2: 0 12px 28px -10px rgba(0, 0, 0, 0.75), 0 2px 8px rgba(0, 0, 0, 0.45);
 }
 
 /* ---- Kompenzace červeno-zelené vady (deuteranopie/protanopie):
@@ -129,6 +151,9 @@
   --c-export:     #eda100; /* amber — modrou přebírá hlavní série */
   --c-orez:       #d55e00;
   --c-refnew:     #d97706;
+  /* Modrou tu má „v pořádku", tak časová dlaždice uhne do fialové —
+     jinak by dvě různé věci na obrazovce znamenaly totéž. */
+  --kpi-cas:      #6741d9;
 }
 
 :root[data-theme="dark"][data-cvd="on"] {
@@ -144,6 +169,7 @@
   --c-export:     #c98500;
   --c-orez:       #c04c1b;
   --c-refnew:     #c98500;
+  --kpi-cas:      #9775fa;
 }
 
 * {
@@ -176,17 +202,21 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- Tlačítka ---------- */
+/* ---------- Tlačítka ----------
+   Tlačítko má mít hmotu: vlastní plochu, obrys a stín, ne jen text
+   s tenkým rámečkem. Tři úrovně se pak poznají na první pohled —
+   plná zelená (hlavní akce), plná světlá (běžná), tichá (ústup). */
 .fm-btn {
-  border: 1px solid var(--line);
-  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
   color: var(--ink);
   padding: 7px 13px;
   border-radius: 9px;
   font: inherit;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
+  box-shadow: var(--shadow-1);
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
 
@@ -212,6 +242,34 @@ a {
   color: #fff;
 }
 
+/* Tichá varianta — pro „Zrušit" a ústupové akce. Nemá plochu ani
+   obrys, takže vedle plných tlačítek nesoupeří o pozornost. */
+.fm-btn.fm-tise {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-2);
+  box-shadow: none;
+}
+
+.fm-btn.fm-tise:hover {
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+/* Ničivá akce (mazání) je plná červená rovnou, ne až po najetí —
+   ať je vidět, do čeho člověk kliká, dřív než tam najede. */
+.fm-btn.fm-danger {
+  background: var(--st-crit);
+  border-color: var(--st-crit);
+  color: #fff;
+}
+
+.fm-btn.fm-danger:hover {
+  filter: brightness(0.92);
+  color: #fff;
+}
+
 /* zapnutý přepínač (téma, kompenzace vady…) */
 .fm-btn[aria-pressed="true"] {
   border-color: var(--brand);
@@ -224,8 +282,9 @@ a {
   width: 32px;
   height: 32px;
   border-radius: 9px;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-1);
   color: var(--ink-2);
   display: inline-grid;
   place-items: center;
@@ -257,7 +316,7 @@ a {
 /* ---------- Karty ---------- */
 .fm-card {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-1);
 }
@@ -268,7 +327,7 @@ a {
   align-items: center;
   gap: 10px;
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   padding: 10px 14px;
   box-shadow: var(--shadow-1);
@@ -310,7 +369,7 @@ a {
 .gs-tile {
   text-align: left;
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--fm-tile-radius);
   padding: 18px;
   cursor: pointer;
@@ -478,7 +537,7 @@ a {
 
 .gs-kpi {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   padding: 15px 16px;
   box-shadow: var(--shadow-1);
@@ -524,6 +583,34 @@ a {
   color: var(--brand-strong);
 }
 
+/* ---- Dlaždice barevná podle druhu ukazatele ----
+   Peníze, čas, riziko. Na pásu čtyř čísel se pak pozná, které je
+   které, dřív než člověk přečte popisky. Odstín je doplněk k popisce,
+   nikdy jediný nosič informace — a --kpi-* tokeny řeší CVD režim. */
+.gs-kpi[data-druh] {
+  background: linear-gradient(165deg, var(--kpi-wash), var(--surface));
+  border-color: color-mix(in srgb, var(--kpi-barva) 38%, var(--line-strong));
+}
+
+.gs-kpi[data-druh] .gs-kpi-value {
+  color: var(--kpi-barva);
+}
+
+.gs-kpi[data-druh="penize"] {
+  --kpi-barva: var(--kpi-penize);
+  --kpi-wash: var(--brand-wash);
+}
+
+.gs-kpi[data-druh="cas"] {
+  --kpi-barva: var(--kpi-cas);
+  --kpi-wash: color-mix(in srgb, var(--kpi-cas) 10%, var(--surface));
+}
+
+.gs-kpi[data-druh="riziko"] {
+  --kpi-barva: var(--kpi-riziko);
+  --kpi-wash: var(--st-crit-w);
+}
+
 /* ---------- Formulářová pole ---------- */
 input,
 select,
@@ -563,7 +650,7 @@ textarea::placeholder {
    výpočtu) — ne pro akce. Stav drží aria-pressed, ne jen barva. */
 .gs-seg {
   display: inline-flex;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 9px;
   overflow: hidden;
   background: var(--surface);
@@ -608,11 +695,16 @@ textarea::placeholder {
   color: var(--muted);
 }
 
-/* ---------- Záložky (dělí výsledek, ať není jedna dlouhá rolovačka) ---------- */
+/* ---------- Záložky (dělí výsledek, ať není jedna dlouhá rolovačka) ----------
+   Pilulky v zapuštěné liště, ne podtržítka: podtržená záložka splývala
+   s linkou pod sebou a nebylo poznat, kde pás záložek končí. */
 .gs-tabs {
   display: flex;
-  gap: 2px;
-  border-bottom: 1px solid var(--line);
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   overflow-x: auto;
 }
 
@@ -620,10 +712,9 @@ textarea::placeholder {
   font: inherit;
   font-size: 13px;
   font-weight: 600;
-  padding: 9px 15px;
-  margin-bottom: -1px;
+  padding: 7px 14px;
   border: 0;
-  border-bottom: 2px solid transparent;
+  border-radius: 7px;
   background: transparent;
   color: var(--muted);
   white-space: nowrap;
@@ -635,8 +726,13 @@ textarea::placeholder {
 }
 
 .gs-tabs > button[aria-selected="true"] {
-  color: var(--brand-strong);
-  border-bottom-color: var(--brand);
+  background: var(--brand);
+  color: #fff;
+}
+
+.gs-tabs > button:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
 }
 
 .gs-tabs .gs-tab-cnt {
@@ -648,7 +744,7 @@ textarea::placeholder {
    Vysvětlení „proč to tak je" patří sem, ne drobným šedým textem mezi čísla.
    Napoprvé je potřeba, napodesáté zahlcuje — tak ať si ho čtenář rozbalí sám. */
 .gs-meta {
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   font-size: 12px;
@@ -762,7 +858,7 @@ textarea::placeholder {
   /* 58px lišta + 20px odsazení obsahu (viz --tb-h v layout.css) */
   top: 78px;
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   box-shadow: var(--shadow-1);
   overflow: hidden;
@@ -773,6 +869,7 @@ textarea::placeholder {
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
+  background: var(--head-bg);
   border-bottom: 1px solid var(--line);
 }
 .gs-panel-h h3 {
@@ -960,7 +1057,8 @@ textarea::placeholder {
   gap: 8px;
   flex-wrap: wrap;
   padding: 12px 14px;
-  border-bottom: 1px solid var(--line-soft);
+  background: var(--head-bg);
+  border-bottom: 1px solid var(--line);
 }
 .gs-karta-h .gs-karta-nazev {
   font-size: 14px;
@@ -982,7 +1080,7 @@ textarea::placeholder {
 
 .gs-varianta {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   box-shadow: var(--shadow-1);
   padding: 15px 16px;
@@ -1114,7 +1212,7 @@ textarea::placeholder {
 }
 .gs-table th,
 .nb-table th {
-  background: var(--surface-2);
+  background: var(--head-bg);
   font-size: 12px;
   color: var(--muted);
   position: sticky;
@@ -1157,7 +1255,7 @@ textarea::placeholder {
 .gs-scroll,
 .nb-scroll {
   overflow-x: auto;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow-1);
@@ -1232,7 +1330,8 @@ textarea::placeholder {
 .nb-pole {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
   border-radius: 8px;
   font-size: 14px;
   font-family: inherit;
@@ -1315,7 +1414,7 @@ textarea::placeholder {
   overflow-y: auto;
   z-index: 60;
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 12px;
   box-shadow: var(--shadow-2, 0 10px 30px rgba(0, 0, 0, 0.18));
 }
