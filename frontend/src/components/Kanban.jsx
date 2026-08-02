@@ -52,12 +52,15 @@ export default function Kanban({
 
     let posledni = null;
     const dopocitej = () => {
-      const shora = pole.getBoundingClientRect().top;
-      // 16 px rezerva dole, ať pole nekončí přesně na hraně okna. Strop na
-      // výšku okna je pojistka pro odrolovanou stránku: `shora` je pak
-      // záporné a bez něj by pole rostlo přes celé okno pořád dál.
-      const zbytek = Math.round(window.innerHeight - shora - 16);
-      const vyska = Math.max(320, Math.min(window.innerHeight - 16, zbytek));
+      // Pozice v DOKUMENTU, ne ve viewportu: `getBoundingClientRect` sám
+      // vrací hodnotu poníženou o odrolování, takže odrolovaná stránka by
+      // dala vyšší pole → delší stránku → ještě víc rolování. Přičtením
+      // scrollY je výpočet na odrolování nezávislý.
+      const shora = pole.getBoundingClientRect().top + window.scrollY;
+      // Rezerva dole = spodní odsazení obsahu (--pad-obsah) plus pár pixelů,
+      // aby po kanbanu stránka nezačala rolovat kvůli poslednímu paddingu.
+      const zbytek = Math.round(window.innerHeight - shora - 24);
+      const vyska = Math.max(320, Math.min(window.innerHeight - 24, zbytek));
       if (posledni !== null && Math.abs(vyska - posledni) < 2) return;
       posledni = vyska;
       pole.style.setProperty("--kanban-v", `${vyska}px`);
@@ -203,7 +206,7 @@ export default function Kanban({
                         Dny ve fázi jsou to, co v kanbanu chybělo nejvíc: jinak
                         se nepozná ležák od čerstvého případu. */}
                     <div className="crm-dlazdice-vlastnik">
-                      {z.vlastnik_jmeno && <Iniciraly jmeno={z.vlastnik_jmeno} velikost={20} />}
+                      {z.vlastnik_jmeno && <Iniciraly jmeno={z.vlastnik_jmeno} velikost={16} />}
                       <span>{z.vlastnik_jmeno || "bez vlastníka"}</span>
                       <span className="crm-mezera" />
                       {z.dni_ve_fazi > 0 && (
