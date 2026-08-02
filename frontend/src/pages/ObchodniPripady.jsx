@@ -169,17 +169,10 @@ export default function ObchodniPripady() {
   const muzeNastaveni = me.prava?.includes("crm_nastaveni");
 
   return (
-    <Layout uzivatel={me.uzivatel}>
-      <div className="crm-app siroky ra-misto">
-        <div className="crm-hlava">
-          <div>
-            <h1>Obchodní případy</h1>
-            <p className="crm-popis">
-              Zakázka od poptávky po výhru. Případ zastřešuje nabídky, objednávku a projekt;
-              posouvej ho fázemi přetažením dlaždice.
-            </p>
-          </div>
-          <span className="crm-mezera" />
+    <Layout
+      uzivatel={me.uzivatel}
+      akce={
+        <>
           {muzeNastaveni && (
             <button className="fm-btn" onClick={() => setNastaveniStavu(true)}>
               ⚙ Stavy pipeline
@@ -188,8 +181,10 @@ export default function ObchodniPripady() {
           <button className="fm-btn fm-primary" onClick={() => setNovy(true)}>
             + Nový případ
           </button>
-        </div>
-
+        </>
+      }
+    >
+      <div className="crm-app siroky ra-misto">
         <div className="crm-toolbar">
           <div className="crm-prepinac">
             <button

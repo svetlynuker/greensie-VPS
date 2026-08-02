@@ -140,37 +140,31 @@ export default function Nabidky() {
   const bezPripadu = radky.filter((n) => !n.pripad_id).length;
 
   return (
-    <Layout uzivatel={me.uzivatel}>
-      <div className="crm-app siroky">
-        <div className="crm-hlava">
-          <div>
-            <h1>Nabídky</h1>
-            <p className="crm-popis">
-              Přehled nabídek napříč obchodními případy — co je odesláno, co čeká na reakci
-              a co zákazník přijal. Podklady a výpočet se dělají na kartě případu; klik na
-              nabídku tam vede.
-            </p>
-          </div>
-          <span className="crm-mezera" />
-          {me.prava?.includes("crm_nastaveni") && (
-            <>
-              {/* Staré nabídky bez případu – nabídne se jen když nějaké jsou. */}
-              {bezPripadu > 0 && (
-                <button
-                  className="fm-btn"
-                  onClick={() => setMigrace(true)}
-                  title="Zavěsit nabídky bez obchodního případu na zákazníka a případ"
-                >
-                  🔗 Dohledat staré ({bezPripadu})
-                </button>
-              )}
-              <button className="fm-btn" onClick={() => setNastaveniStavu(true)}>
-                ⚙ Stavy nabídek
+    <Layout
+      uzivatel={me.uzivatel}
+      akce={
+        <>
+        {me.prava?.includes("crm_nastaveni") && (
+          <>
+            {/* Staré nabídky bez případu – nabídne se jen když nějaké jsou. */}
+            {bezPripadu > 0 && (
+              <button
+                className="fm-btn"
+                onClick={() => setMigrace(true)}
+                title="Zavěsit nabídky bez obchodního případu na zákazníka a případ"
+              >
+                🔗 Dohledat staré ({bezPripadu})
               </button>
-            </>
-          )}
-        </div>
-
+            )}
+            <button className="fm-btn" onClick={() => setNastaveniStavu(true)}>
+              ⚙ Stavy nabídek
+            </button>
+          </>
+        )}
+        </>
+      }
+    >
+      <div className="crm-app siroky">
         <div className="crm-toolbar">
           <div className="crm-prepinac">
             <button

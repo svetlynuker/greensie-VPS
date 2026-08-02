@@ -155,24 +155,19 @@ export default function Objednavky() {
 
 
   return (
-    <Layout uzivatel={me.uzivatel}>
+    <Layout
+      uzivatel={me.uzivatel}
+      akce={
+        <>
+        {me.prava?.includes("crm_nastaveni") && (
+          <button className="fm-btn" onClick={() => setNastaveniStavu(true)}>
+            ⚙ Stavy objednávek
+          </button>
+        )}
+        </>
+      }
+    >
       <div className="crm-app siroky">
-        <div className="crm-hlava">
-          <div>
-            <h1>Objednávky</h1>
-            <p className="crm-popis">
-              Potvrzené zakázky. Objednávka vzniká z přijaté nabídky na kartě případu a je
-              spouštěčem projektu — realizace se zakládá z ní.
-            </p>
-          </div>
-          <span className="crm-mezera" />
-          {me.prava?.includes("crm_nastaveni") && (
-            <button className="fm-btn" onClick={() => setNastaveniStavu(true)}>
-              ⚙ Stavy objednávek
-            </button>
-          )}
-        </div>
-
         <div className="crm-toolbar">
           <div className="crm-prepinac">
             <button

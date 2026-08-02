@@ -34,7 +34,12 @@ function panelZPameti() {
 // Rámec appky: navigace vlevo, lišta nahoře, obsah stránky uvnitř.
 // Stránky dál posílají `uzivatel` (kvůli okamžitému vykreslení jména);
 // práva pro nabídku si rámec dotáhne sám ze sdíleného /auth/me.
-export default function Layout({ uzivatel, children }) {
+//
+// `akce` jsou tlačítka stránky (založit, nastavit) do horní lišty. Dřív měla
+// každá stránka vlastní kartu s nadpisem, popisem a těmito tlačítky — jenže
+// nadpis už je v liště a popis patří do manuálu, takže karta jen opakovala,
+// co je vidět, a ukrajovala z plochy pro práci (2. 8. 2026).
+export default function Layout({ uzivatel, akce = null, children }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [me, setMe] = useState(null);
@@ -84,6 +89,8 @@ export default function Layout({ uzivatel, children }) {
           <span className="gs-tb-title">{nazev}</span>
           {podnazev && <span className="gs-tb-crumb">{podnazev}</span>}
           <span className="gs-tb-spacer" />
+
+          {akce && <div className="gs-tb-akce">{akce}</div>}
 
           {kdo && !naManualu && (
             <button

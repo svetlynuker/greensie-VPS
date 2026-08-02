@@ -320,6 +320,9 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* Bez min-height/width by se flex položka odmítla smrštit pod svůj text
+     a místo zkrácení nadpisu by z lišty vytlačila tlačítka. */
+  min-width: 0;
 }
 
 .gs-tb-crumb {
@@ -336,6 +339,33 @@
 
 .gs-tb-spacer {
   flex: 1;
+}
+
+/* Akce stránky (založit, nastavit) v liště. Nesmršťují se — když se lišta
+   zúží, ustoupí nadpis a hledání, ne tlačítka: bez nich se nedá pracovat. */
+.gs-tb-akce {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.gs-tb-akce .fm-btn {
+  padding: 6px 12px;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+/* Na užších oknech se tlačítka smrsknou, ale zůstanou — jen jim ubude
+   odsazení. Zmizet nesmí, jinou cestu k založení záznamu stránka nemá. */
+@media (max-width: 1080px) {
+  .gs-tb-akce {
+    gap: 6px;
+  }
+  .gs-tb-akce .fm-btn {
+    padding: 6px 9px;
+    font-size: 12px;
+  }
 }
 
 /* ---------- Uživatel vpravo nahoře ---------- */
