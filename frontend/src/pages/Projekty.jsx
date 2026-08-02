@@ -126,27 +126,22 @@ export default function Projekty() {
   const muzeNastaveni = me.prava?.includes("crm_nastaveni");
 
   return (
-    <Layout uzivatel={me.uzivatel}>
-      <div className="crm-app siroky">
-        <div className="crm-hlava">
-          <div>
-            <h1>Projekty</h1>
-            <p className="crm-popis">
-              Realizace zakázek. Projekt vzniká z objednávky (nebo z obchodního případu) —
-              samostatně ho založit nelze, aby vždy bylo dohledatelné, z čeho realizace vyšla.
-            </p>
-          </div>
-          <span className="crm-mezera" />
-          <button className="fm-btn" onClick={() => setSablony(true)}>
-            📋 Šablony kroků
+    <Layout
+      uzivatel={me.uzivatel}
+      akce={
+        <>
+        <button className="fm-btn" onClick={() => setSablony(true)}>
+          📋 Šablony kroků
+        </button>
+        {muzeNastaveni && (
+          <button className="fm-btn" onClick={() => setNastaveniStavu(true)}>
+            ⚙ Stavy projektů
           </button>
-          {muzeNastaveni && (
-            <button className="fm-btn" onClick={() => setNastaveniStavu(true)}>
-              ⚙ Stavy projektů
-            </button>
-          )}
-        </div>
-
+        )}
+        </>
+      }
+    >
+      <div className="crm-app siroky">
         <div className="crm-toolbar">
           <div className="crm-prepinac">
             <button
