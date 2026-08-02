@@ -41,15 +41,6 @@ export default function Nabidkovac() {
 
         <div className="nb-toolbar">
           <div style={{ flex: 1 }}>
-            <div className="nb-head">
-              <span className="nb-dot" />
-              <h1>Nabídkovač</h1>
-            </div>
-            <p className="nb-popis">
-              Nástroj obchodních zástupců pro cenové nabídky ve třech produktových liniích.
-              Vyber podsekci a založ novou nabídku. Jedna zakázka může nakonec vyústit ve víc
-              navrhovaných řešení současně.
-            </p>
           </div>
           {muzeKatalog && (
             <Link to="/nabidkovac/katalog" className="fm-btn">

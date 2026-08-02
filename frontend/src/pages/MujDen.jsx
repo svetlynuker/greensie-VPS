@@ -76,21 +76,17 @@ export default function MujDen() {
   const jmeno = (me.uzivatel?.jmeno || "").split(" ")[0];
 
   return (
-    <Layout uzivatel={me.uzivatel}>
-      <div className="gs-page-head">
-        <div>
-          <h1 className="gs-page-h1">Můj den{jmeno ? `, ${jmeno}` : ""}</h1>
-          <p className="gs-page-lead">
-            Co tě dnes tlačí. Jen tvoje věci — cizí agenda tady není.
-          </p>
-        </div>
-        <span className="gs-tb-spacer" />
+    <Layout
+      uzivatel={me.uzivatel}
+      akce={
+        <>
         <button className="fm-btn" onClick={() => navigate("/kalendar")}>
           <Ikona jmeno="kalendar" velikost={15} />
           Kalendář
         </button>
-      </div>
-
+        </>
+      }
+    >
       {chyba && <div className="crm-chyba">Nepodařilo se načíst: {chyba}</div>}
 
       {d && (

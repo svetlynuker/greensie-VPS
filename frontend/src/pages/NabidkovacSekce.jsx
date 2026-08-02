@@ -75,12 +75,6 @@ export default function NabidkovacSekce() {
           ← Zpět na Nabídkovač
         </Link>
 
-        <div className="nb-head">
-          <span className="nb-dot" />
-          <h1>{sekce.nazev}</h1>
-        </div>
-        <p className="nb-popis">{sekce.popis}</p>
-
         {/* Jasně viditelné: výpočet se teprve staví (kap. 2 SPEC) */}
         <div className="nb-warn">
           <span>⚠️</span>

@@ -94,22 +94,16 @@ export default function PrehledObchodu() {
 
   return (
     <Layout uzivatel={me.uzivatel}>
-      <div className="gs-page-head">
-        <div>
-          <h1 className="gs-page-h1">Přehled obchodu</h1>
-          <p className="gs-page-lead">
-            {vsechno ? "Čísla celé firmy." : "Tvoje čísla."}
-            {s?.data_od ? ` Appka má data od ${fmtDatum(s.data_od)}.` : ""}
-          </p>
-        </div>
-      </div>
-
       {chyba && <div className="crm-chyba">Statistiky se nepodařilo načíst: {chyba}</div>}
 
-      {/* Poznámka o koexistenci s Raynetem — bez ní vypadá graf jako propad. */}
+      {/* Poznámka o koexistenci s Raynetem — bez ní vypadá graf jako propad.
+          Nese i to, co dřív stálo v hlavičce stránky (čí čísla to jsou a od
+          kdy appka data má): obojí je o výkladu čísel, tak ať je to pohromadě. */}
       <div className="fm-card" style={{ padding: "10px 14px", marginBottom: 14 }}>
         <span className="crm-tise">
-          <b>Pozor na výklad:</b> v appce jsou jen zakázky založené tady. Starší obchod
+          <b>Pozor na výklad:</b> {vsechno ? "čísla celé firmy" : "jen tvoje čísla"}, a jen
+          ze zakázek založených v appce
+          {s?.data_od ? ` (má data od ${fmtDatum(s.data_od)})` : ""}. Starší obchod
           dojíždí v Raynetu, takže tohle není celý byznys firmy — a čísla budou růst,
           jak se sem budou zakládat nové zakázky.
         </span>
