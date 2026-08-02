@@ -168,74 +168,76 @@ export default function Objednavky() {
       }
     >
       <div className="crm-app siroky">
-        <div className="crm-toolbar">
-          <div className="crm-prepinac">
-            <button
-              className={`crm-zalozka ${zobrazeni === "kanban" ? "aktivni" : ""}`}
-              onClick={() => setZobrazeni("kanban")}
-            >
-              Kanban
-            </button>
-            <button
-              className={`crm-zalozka ${zobrazeni === "tabulka" ? "aktivni" : ""}`}
-              onClick={() => setZobrazeni("tabulka")}
-            >
-              Tabulka
-            </button>
+        {/* Přepínač zobrazení, filtry a čísla v jedné liště. */}
+        <div className="crm-lista-hlavni">
+          <div className="crm-toolbar">
+            <div className="crm-prepinac">
+              <button
+                className={`crm-zalozka ${zobrazeni === "kanban" ? "aktivni" : ""}`}
+                onClick={() => setZobrazeni("kanban")}
+              >
+                Kanban
+              </button>
+              <button
+                className={`crm-zalozka ${zobrazeni === "tabulka" ? "aktivni" : ""}`}
+                onClick={() => setZobrazeni("tabulka")}
+              >
+                Tabulka
+              </button>
+            </div>
+            {zobrazeni === "tabulka" && (
+              <input
+                className="crm-pole crm-hledani"
+                placeholder="Hledat podle čísla nebo názvu…"
+                value={hledat}
+                onChange={(e) => setHledat(e.target.value)}
+              />
+            )}
+            {/* Počet nese KPI pás vedle; tady zbývá jen to, co on neví. */}
+            {f.skryto > 0 && (
+              <span className="crm-tise crm-pocet">filtr skryl {f.skryto} z {radky.length}</span>
+            )}
           </div>
-          {zobrazeni === "tabulka" && (
-            <input
-              className="crm-pole crm-hledani"
-              placeholder="Hledat podle čísla nebo názvu…"
-              value={hledat}
-              onChange={(e) => setHledat(e.target.value)}
-            />
-          )}
-          <span className="crm-mezera" />
-          <span className="crm-pocet">
-            <b>{f.radky.length}</b>
-            {f.skryto > 0 ? ` z ${radky.length}` : ""} objednávek
-          </span>
-        </div>
 
-        <FiltrPanel
-          entita="obj"
-          sloupce={f.sloupce}
-          vsechnyRadky={radky}
-          podminky={f.podminky}
-          razeni={f.razeni}
-          onPodminky={f.setPodminky}
-          onRazeni={f.setRazeni}
-          rozvrzeni={f.rozvrzeni}
-          onRozvrzeni={f.ulozRozvrzeni}
-        />
+          <FiltrPanel
+            entita="obj"
+            sloupce={f.sloupce}
+            vsechnyRadky={radky}
+            podminky={f.podminky}
+            razeni={f.razeni}
+            onPodminky={f.setPodminky}
+            onRazeni={f.setRazeni}
+            rozvrzeni={f.rozvrzeni}
+            onRozvrzeni={f.ulozRozvrzeni}
+          />
+
+          <KpiPas
+            zobrazit={kpi.pocet > 0}
+            filtrovano={f.podminky.length > 0}
+            // Odkaz jen tomu, kdo na Přehled financí smí — jinak by vedl na 403.
+            odkaz={
+              me.prava?.includes("finance")
+                ? { cesta: "/finance", text: "Přehled financí" }
+                : undefined
+            }
+            polozky={[
+              { klic: "pocet", hodnota: kpi.pocet, label: "objednávek" },
+              { klic: "soucet", pred: "celkem", hodnota: fmtKcKratce(kpi.soucet) },
+              { klic: "prumer", pred: "průměr", hodnota: fmtKcKratce(kpi.prumer) },
+              kpi.bezProjektu > 0 && {
+                klic: "bez_projektu",
+                hodnota: kpi.bezProjektu,
+                label: "bez projektu",
+                tise: true,
+                title: "Podepsané objednávky, ke kterým se ještě nerozjela realizace",
+              },
+            ].filter(Boolean)}
+          />
+        </div>
 
         {chyba && <div className="crm-chyba">{chyba}</div>}
 
         {/* KPI nad seznamem (CRM-22) */}
-        <KpiPas
-          zobrazit={kpi.pocet > 0}
-          filtrovano={f.podminky.length > 0}
-          // Odkaz jen tomu, kdo na Přehled financí smí — jinak by vedl na 403.
-          odkaz={
-            me.prava?.includes("finance")
-              ? { cesta: "/finance", text: "Přehled financí" }
-              : undefined
-          }
-          polozky={[
-            { klic: "pocet", hodnota: kpi.pocet, label: "objednávek" },
-            { klic: "soucet", pred: "celkem", hodnota: fmtKcKratce(kpi.soucet) },
-            { klic: "prumer", pred: "průměr", hodnota: fmtKcKratce(kpi.prumer) },
-            kpi.bezProjektu > 0 && {
-              klic: "bez_projektu",
-              hodnota: kpi.bezProjektu,
-              label: "bez projektu",
-              tise: true,
-              title: "Podepsané objednávky, ke kterým se ještě nerozjela realizace",
-            },
-          ].filter(Boolean)}
-        />
-
         {zobrazeni === "kanban" ? (
           <Kanban
             sloupce={f.filtrujKanban(kanban.sloupce)}
