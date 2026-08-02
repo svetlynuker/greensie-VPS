@@ -1043,6 +1043,55 @@
   padding: 5px 10px;
   margin-bottom: 6px;
 }
+
+/* ---- Jedna lišta místo tří (2. 8. 2026) ----
+   Přepínač zobrazení, filtry a čísla stály každý ve vlastním rámečku pod
+   sebou — dohromady přes 50 px výšky za informaci, která se vejde na řádek.
+   Obal nese plochu i rámeček, části uvnitř o svoje přicházejí. */
+.crm-lista-hlavni {
+  display: flex;
+  align-items: center;
+  gap: 6px 12px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  padding: 5px 10px;
+  margin-bottom: 7px;
+}
+
+.crm-lista-hlavni > .crm-toolbar,
+.crm-lista-hlavni > .crm-filtr-lista,
+.crm-lista-hlavni > .crm-kpi-pas {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+  margin: 0;
+  padding: 0;
+  gap: 6px;
+}
+
+/* Svislá čárka mezi částmi. Bez ní by se přepínač, filtry a čísla slily
+   v jednu dlouhou řadu, ve které se nepozná, kde co začíná. */
+.crm-lista-hlavni > * + * {
+  border-left: 1px solid var(--line);
+  padding-left: 12px;
+}
+
+/* Čísla odplouvají doprava, ať mají filtry místo růst. Když se lišta zalomí,
+   `auto` se zruší samo a čísla sednou na začátek dalšího řádku. */
+.crm-lista-hlavni > .crm-kpi-pas {
+  margin-left: auto;
+}
+
+/* Zalomená lišta: svislá čárka na začátku řádku vypadá jako chyba. */
+@media (max-width: 1200px) {
+  .crm-lista-hlavni > .crm-kpi-pas {
+    margin-left: 0;
+  }
+}
 .crm-tabulka-lista {
   display: flex;
   align-items: center;

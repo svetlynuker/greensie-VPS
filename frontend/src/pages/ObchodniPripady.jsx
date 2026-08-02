@@ -185,50 +185,69 @@ export default function ObchodniPripady() {
       }
     >
       <div className="crm-app siroky ra-misto">
-        <div className="crm-toolbar">
-          <div className="crm-prepinac">
-            <button
-              className={`crm-zalozka ${zobrazeni === "kanban" ? "aktivni" : ""}`}
-              onClick={() => setZobrazeni("kanban")}
-            >
-              Kanban
-            </button>
-            <button
-              className={`crm-zalozka ${zobrazeni === "tabulka" ? "aktivni" : ""}`}
-              onClick={() => setZobrazeni("tabulka")}
-            >
-              Tabulka
-            </button>
+        {/* Přepínač zobrazení, filtry a čísla v jedné liště. */}
+        <div className="crm-lista-hlavni">
+          <div className="crm-toolbar">
+            <div className="crm-prepinac">
+              <button
+                className={`crm-zalozka ${zobrazeni === "kanban" ? "aktivni" : ""}`}
+                onClick={() => setZobrazeni("kanban")}
+              >
+                Kanban
+              </button>
+              <button
+                className={`crm-zalozka ${zobrazeni === "tabulka" ? "aktivni" : ""}`}
+                onClick={() => setZobrazeni("tabulka")}
+              >
+                Tabulka
+              </button>
+            </div>
+            {zobrazeni === "tabulka" && (
+              <input
+                className="crm-pole crm-hledani"
+                placeholder="Hledat podle čísla, názvu nebo zákazníka…"
+                value={hledat}
+                onChange={(e) => setHledat(e.target.value)}
+              />
+            )}
+            {/* Počet nese KPI pás vedle; tady zbývá jen to, co on neví. */}
+            {f.skryto > 0 && (
+              <span className="crm-tise crm-pocet">filtr skryl {f.skryto} z {radky.length}</span>
+            )}
           </div>
-          {zobrazeni === "tabulka" && (
-            <input
-              className="crm-pole crm-hledani"
-              placeholder="Hledat podle čísla, názvu nebo zákazníka…"
-              value={hledat}
-              onChange={(e) => setHledat(e.target.value)}
-            />
-          )}
-          <span className="crm-mezera" />
-          <span className="crm-pocet">
-            <b>{f.radky.length}</b>
-            {f.skryto > 0 ? ` z ${radky.length}` : ""} případů
-            {f.skryto > 0 && <span className="crm-tise"> (filtr skryl {f.skryto})</span>}
-          </span>
-        </div>
 
-        <FiltrPanel
-          entita="op"
-          sloupce={f.sloupce}
-          vsechnyRadky={radky}
-          podminky={f.podminky}
-          razeni={f.razeni}
-          onPodminky={f.setPodminky}
-          onRazeni={f.setRazeni}
-          rozvrzeni={f.rozvrzeni}
-          onRozvrzeni={f.ulozRozvrzeni}
-          mojeJmeno={me?.uzivatel?.jmeno || ""}
-          otevreneStavy={stavy.filter((s) => s.druh === "otevreny").map((s) => s.nazev)}
-        />
+          <FiltrPanel
+            entita="op"
+            sloupce={f.sloupce}
+            vsechnyRadky={radky}
+            podminky={f.podminky}
+            razeni={f.razeni}
+            onPodminky={f.setPodminky}
+            onRazeni={f.setRazeni}
+            rozvrzeni={f.rozvrzeni}
+            onRozvrzeni={f.ulozRozvrzeni}
+            mojeJmeno={me?.uzivatel?.jmeno || ""}
+            otevreneStavy={stavy.filter((s) => s.druh === "otevreny").map((s) => s.nazev)}
+          />
+
+          <KpiPas
+            zobrazit={kpi.pocet > 0}
+            filtrovano={f.podminky.length > 0}
+            odkaz={{ cesta: "/prehled-obchodu", text: "Přehled obchodu" }}
+            polozky={[
+              { klic: "pocet", hodnota: kpi.pocet, label: "případů" },
+              { klic: "soucet", pred: "celkem", hodnota: fmtKcKratce(kpi.soucet) },
+              { klic: "prumer", pred: "průměr", hodnota: fmtKcKratce(kpi.prumer) },
+              kpi.bezHodnoty > 0 && {
+                klic: "bez",
+                hodnota: `${kpi.bezHodnoty}×`,
+                label: "bez hodnoty",
+                tise: true,
+                title: "Případy bez hodnoty se do součtu nepočítají",
+              },
+            ].filter(Boolean)}
+          />
+        </div>
 
         {chyba && <div className="crm-chyba">{chyba}</div>}
 
@@ -242,23 +261,6 @@ export default function ObchodniPripady() {
         )}
 
         {/* KPI nad seznamem (CRM-22). Reaguje na filtr — proto „z vyfiltrovaných". */}
-        <KpiPas
-          zobrazit={kpi.pocet > 0}
-          filtrovano={f.podminky.length > 0}
-          odkaz={{ cesta: "/prehled-obchodu", text: "Přehled obchodu" }}
-          polozky={[
-            { klic: "pocet", hodnota: kpi.pocet, label: "případů" },
-            { klic: "soucet", pred: "celkem", hodnota: fmtKcKratce(kpi.soucet) },
-            { klic: "prumer", pred: "průměr", hodnota: fmtKcKratce(kpi.prumer) },
-            kpi.bezHodnoty > 0 && {
-              klic: "bez",
-              hodnota: `${kpi.bezHodnoty}×`,
-              label: "bez hodnoty",
-              tise: true,
-              title: "Případy bez hodnoty se do součtu nepočítají",
-            },
-          ].filter(Boolean)}
-        />
         {/* CRM-45: appka nemá historii — bez téhle věty vypadá součet jako propad. */}
         <OdkazRaynet />
 
