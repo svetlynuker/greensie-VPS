@@ -99,27 +99,22 @@ export default function Mapa() {
   if (!me) return null;
 
   return (
-    <Layout uzivatel={me.uzivatel}>
+    <Layout
+      uzivatel={me.uzivatel}
+      akce={
+        <>
+        <label className="crm-zaskrtavaci">
+          <input
+            type="checkbox"
+            checked={jenSPripady}
+            onChange={(e) => setJenSPripady(e.target.checked)}
+          />
+          Jen s otevřeným případem
+        </label>
+        </>
+      }
+    >
       <div className="crm-app siroky">
-        <div className="crm-hlava">
-          <div>
-            <h1>Mapa</h1>
-            <p className="crm-popis">
-              Zákazníci se souřadnicemi. Špendlík sedí na <b>provozovně</b>, a když ji firma
-              nemá vyplněnou, na adrese firmy — u každého bodu je napsáno, co platí.
-            </p>
-          </div>
-          <span className="crm-mezera" />
-          <label className="crm-zaskrtavaci">
-            <input
-              type="checkbox"
-              checked={jenSPripady}
-              onChange={(e) => setJenSPripady(e.target.checked)}
-            />
-            Jen s otevřeným případem
-          </label>
-        </div>
-
         {chyba && <div className="crm-chyba">{chyba}</div>}
 
         <KpiPas

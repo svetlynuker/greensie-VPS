@@ -110,16 +110,6 @@ export default function KontaktniOsoby() {
   return (
     <Layout uzivatel={me.uzivatel}>
       <div className="crm-app">
-        <div className="crm-hlava">
-          <div>
-            <h1>Kontaktní osoby</h1>
-            <p className="crm-popis">
-              Všichni lidé u leadů i klientů na jednom místě. Osoba se zakládá na kartě své firmy —
-              odtud se prochází, hledá a exportuje.
-            </p>
-          </div>
-        </div>
-
         <div className="crm-toolbar">
           <input
             className="crm-pole crm-hledani"

@@ -220,24 +220,27 @@ export default function Rozcestnik() {
   const muzeNabidkovac = (me.prava || []).includes("nabidkovac");
 
   return (
-    <Layout uzivatel={me.uzivatel}>
-      <div className="gs-page-head">
-        <div>
-          <h1 className="gs-page-h1">
-            {pozdrav()}
-            {jmeno ? `, ${jmeno}` : ""}
-          </h1>
-          <p className="gs-page-lead">
-            Stav ke dnešnímu dni. Sekce vlevo se řídí tvými oprávněními.
-          </p>
-        </div>
-        <span className="gs-tb-spacer" />
+    <Layout
+      uzivatel={me.uzivatel}
+      akce={
+        <>
         {muzeNabidkovac && (
           <button className="fm-btn fm-primary" onClick={() => navigate("/nabidkovac")}>
             <Ikona jmeno="nabidkovac" velikost={15} />
             Nová nabídka
           </button>
         )}
+        </>
+      }
+    >
+      <div className="gs-page-head">
+        <div>
+          <h1 className="gs-page-h1">
+            {pozdrav()}
+            {jmeno ? `, ${jmeno}` : ""}
+          </h1>
+        </div>
+        <span className="gs-tb-spacer" />
       </div>
 
       {chyba && (

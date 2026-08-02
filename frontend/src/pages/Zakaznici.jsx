@@ -115,25 +115,23 @@ export default function Zakaznici() {
   if (!me || !zakaznici) return null;
 
   return (
-    <Layout uzivatel={me.uzivatel}>
-      <div className="crm-app ra-misto">
-        <div className="crm-hlava">
-          <div>
-            <h1>Zákazníci</h1>
-            <p className="crm-popis">{sekce.popis}</p>
-          </div>
-          <span className="crm-mezera" />
-          {/* Import z Raynetu – bez něj je CRM prázdná kostra. */}
-          {me.prava?.includes("crm_nastaveni") && (
-            <button className="fm-btn" onClick={() => setImportRaynet(true)}>
-              ⬇ Import z Raynetu
-            </button>
-          )}
-          <button className="fm-btn fm-primary" onClick={() => setZaklada(true)}>
-            + Nový {pohled === "lead" ? "lead" : "klient"}
+    <Layout
+      uzivatel={me.uzivatel}
+      akce={
+        <>
+        {/* Import z Raynetu – bez něj je CRM prázdná kostra. */}
+        {me.prava?.includes("crm_nastaveni") && (
+          <button className="fm-btn" onClick={() => setImportRaynet(true)}>
+            ⬇ Import z Raynetu
           </button>
-        </div>
-
+        )}
+        <button className="fm-btn fm-primary" onClick={() => setZaklada(true)}>
+          + Nový {pohled === "lead" ? "lead" : "klient"}
+        </button>
+        </>
+      }
+    >
+      <div className="crm-app ra-misto">
         <div className="crm-zalozky">
           {POHLEDY_ZAKAZNIKU.map((p) => (
             <Link

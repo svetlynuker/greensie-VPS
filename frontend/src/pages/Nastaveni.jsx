@@ -111,23 +111,19 @@ export default function Nastaveni() {
   if (!me) return null;
 
   return (
-    <Layout uzivatel={me.uzivatel}>
-      <div className="gs-page-head">
-        <div>
-          <h1 className="gs-page-h1">Nastavení</h1>
-          <p className="gs-page-lead">
-            Tvoje osobní volby. Ukládají se k účtu, takže platí i na jiném počítači.
-          </p>
-        </div>
-        <span className="gs-tb-spacer" />
+    <Layout
+      uzivatel={me.uzivatel}
+      akce={
+        <>
         {ulozeno && (
           <span className="gs-pill good">
             <span className="gs-dot" />
             {ulozeno} uloženo
           </span>
         )}
-      </div>
-
+        </>
+      }
+    >
       {chyba && (
         <div className="fm-card" style={{ padding: 14, marginBottom: 16 }}>
           <span className="gs-pill warn">
