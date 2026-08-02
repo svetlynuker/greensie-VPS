@@ -13,9 +13,11 @@
   --sb-ink:     #dbe5df;
   --sb-ink-2:   #93a49b;
   --sb-line:    #24352c;
-  --tb-h:        58px;
-  --nav-item-h:  37px;
-  --pad-obsah:   20px;
+  /* Lišta i odsazení obsahu jsou sražené (2. 8. 2026): na kanbanu ukrajoval
+     každý pixel nahoře z plochy, kde je vidět práce. */
+  --tb-h:        50px;
+  --nav-item-h:  36px;
+  --pad-obsah:   14px;
 }
 
 /* V tmavém režimu je panel ještě o stupeň hlubší než plochy appky. */

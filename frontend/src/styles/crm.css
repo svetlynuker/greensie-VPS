@@ -68,7 +68,7 @@
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   border-bottom: 1px solid var(--line);
 }
 .crm-zalozka {
@@ -76,9 +76,9 @@
   background: transparent;
   border: 0;
   border-bottom: 2px solid transparent;
-  padding: 8px 14px;
+  padding: 6px 12px;
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--muted);
   cursor: pointer;
@@ -102,7 +102,7 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 .crm-pocet {
   font-size: 13px;
@@ -447,7 +447,7 @@
    záloha pro první vykreslení, než měření doběhne. */
 .crm-kanban {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   height: var(--kanban-v, min(70vh, 760px));
   overflow-x: auto;
   overflow-y: hidden;
@@ -457,7 +457,8 @@
   align-items: stretch;
 }
 .crm-kanban-sloupec {
-  flex: 0 0 260px;
+  /* Užší sloupec = víc stavů na obrazovku bez rolování do stran. */
+  flex: 0 0 232px;
   display: flex;
   flex-direction: column;
   /* Bez min-height: 0 by flex položka odmítla být nižší než její obsah
@@ -469,7 +470,7 @@
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
-  padding: 8px;
+  padding: 6px;
 }
 /* V tmavém režimu musí být zapuštění hlubší, jinak není vidět vůbec. */
 :root[data-theme="dark"] .crm-kanban-sloupec {
@@ -483,10 +484,10 @@
 .crm-kanban-hlava {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 6px;
+  gap: 7px;
+  padding: 3px 5px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
 }
 .crm-kanban-nazev {
@@ -494,22 +495,22 @@
   min-width: 0;
 }
 .crm-kanban-pocet {
-  font-size: 11px;
-  padding: 1px 7px;
+  font-size: 10.5px;
+  padding: 0 6px;
   border-radius: 999px;
   border: 1px solid currentColor;
 }
 .crm-kanban-soucet {
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--muted);
-  padding: 2px 6px 6px;
+  padding: 1px 5px 5px;
 }
 /* Hlava a součet zůstávají stát, roluje se jen tělo — v odrolovaném sloupci
    tak pořád vidíš, který stav to je a kolik v něm je peněz. */
 .crm-kanban-telo {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -532,20 +533,26 @@
   background: transparent;
 }
 .crm-kanban-prazdno {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
   text-align: center;
-  padding: 16px 0;
+  padding: 12px 0;
   border: 1px dashed var(--line);
   border-radius: 8px;
 }
+/* Dlaždice je zmenšená na ~75 % (2. 8. 2026): do sloupce se tak vejde
+   o třetinu víc případů, aniž by se muselo rolovat. Písmo drží nad 10 px,
+   níž už se čísla případů špatně čtou. */
 .crm-dlazdice {
   background: var(--surface);
   border: 1px solid var(--line-strong);
-  border-radius: 10px;
+  border-radius: 8px;
   box-shadow: var(--shadow-1);
-  padding: 10px;
+  padding: 6px 8px;
   cursor: grab;
+  /* Řádkování drží dlaždici nízkou; jednotlivé řádky si ho případně
+     zvednou samy tam, kde se text zalamuje. */
+  line-height: 1.25;
 }
 .crm-dlazdice:hover {
   border-color: color-mix(in srgb, var(--fm-brand, #4a4) 50%, var(--line));
@@ -556,45 +563,50 @@
 .crm-dlazdice-hlava {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
 }
 .crm-dlazdice-cislo {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 .crm-dlazdice-hodnota {
   margin-left: auto;
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--muted);
   white-space: nowrap;
 }
 .crm-dlazdice-zakaznik {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  margin-top: 4px;
+  margin-top: 2px;
+  line-height: 1.25;
 }
 .crm-dlazdice-nazev {
-  font-size: 12px;
-  color: var(--text);
-  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ink-2);
+  margin-top: 1px;
+  line-height: 1.25;
 }
 .crm-dlazdice-pata,
 .crm-dlazdice-vlastnik {
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--muted);
-  margin-top: 4px;
+  margin-top: 2px;
 }
+/* Rozbalovačka stavu je náhrada přetahování pro klávesnici a dotyk, ne
+   hlavní ovládání — proto smí být nejdrobnější prvek na dlaždici. */
 .crm-dlazdice-stav {
   width: 100%;
-  margin-top: 8px;
+  margin-top: 4px;
   font: inherit;
-  font-size: 11px;
-  padding: 3px 6px;
+  font-size: 10px;
+  line-height: 1.3;
+  padding: 1px 4px;
   color: var(--muted);
   background: transparent;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 5px;
 }
 
 /* ---- aktivity / časová osa ---- */
@@ -1028,8 +1040,8 @@
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
-  padding: 8px 12px;
-  margin-bottom: 10px;
+  padding: 5px 10px;
+  margin-bottom: 6px;
 }
 .crm-tabulka-lista {
   display: flex;
@@ -1146,11 +1158,11 @@
 .crm-kpi-pas {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 14px;
   flex-wrap: wrap;
-  padding: 9px 14px;
-  margin-bottom: 10px;
-  font-size: 13px;
+  padding: 6px 12px;
+  margin-bottom: 6px;
+  font-size: 12.5px;
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
@@ -1162,17 +1174,17 @@
 
 /* Pás „Raynet ještě jede" (CRM-45). Vypadá jako KPI pás, ale je vědomě tišší —
    je to poznámka k výkladu čísel, ne další číslo. */
+/* Poznámka k výkladu čísel, ne další údaj — proto bez rámečku i plochy.
+   Jako čtvrtý orámovaný pás v řadě ukrajovala z kanbanu přes 50 px. */
 .crm-raynet-pas {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
-  padding: 7px 14px;
-  margin-bottom: 10px;
-  font-size: 12.5px;
-  background: var(--surface-2, var(--surface));
-  border: 1px dashed var(--line);
-  border-radius: var(--radius);
+  padding: 0 2px;
+  margin-bottom: 7px;
+  font-size: 11.5px;
+  line-height: 1.35;
 }
 
 /* ---- Můj den ---- */

@@ -855,8 +855,9 @@ textarea::placeholder {
 /* ---------- levý panel se vstupy ---------- */
 .gs-panel {
   position: sticky;
-  /* 58px lišta + 20px odsazení obsahu (viz --tb-h v layout.css) */
-  top: 78px;
+  /* Lišta + odsazení obsahu (viz --tb-h a --pad-obsah v layout.css).
+     Počítá se z tokenů, ať se to při jejich změně nerozejde. */
+  top: calc(var(--tb-h, 50px) + var(--pad-obsah, 14px));
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
