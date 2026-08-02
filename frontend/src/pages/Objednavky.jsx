@@ -4,6 +4,7 @@ import Layout from "../components/Layout";
 import CrmTabulka from "../components/CrmTabulka";
 import FiltrPanel from "../components/FiltrPanel";
 import Kanban from "../components/Kanban";
+import ZobrazeniPrepinac from "../components/ZobrazeniPrepinac";
 import KpiPas from "../components/KpiPas";
 import ObjednavkaFormular from "../components/ObjednavkaFormular";
 import StavyNastaveni from "../components/StavyNastaveni";
@@ -171,20 +172,7 @@ export default function Objednavky() {
         {/* Přepínač zobrazení, filtry a čísla v jedné liště. */}
         <div className="crm-lista-hlavni">
           <div className="crm-toolbar">
-            <div className="crm-prepinac">
-              <button
-                className={`crm-zalozka ${zobrazeni === "kanban" ? "aktivni" : ""}`}
-                onClick={() => setZobrazeni("kanban")}
-              >
-                Kanban
-              </button>
-              <button
-                className={`crm-zalozka ${zobrazeni === "tabulka" ? "aktivni" : ""}`}
-                onClick={() => setZobrazeni("tabulka")}
-              >
-                Tabulka
-              </button>
-            </div>
+            <ZobrazeniPrepinac hodnota={zobrazeni} onZmena={setZobrazeni} />
             {zobrazeni === "tabulka" && (
               <input
                 className="crm-pole crm-hledani"
