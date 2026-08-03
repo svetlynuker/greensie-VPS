@@ -20,6 +20,9 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from . import kombinace as kombinace_modul
+from . import ppa_tvar
+
 
 # ---- Formátování čísel (čeština) --------------------------------------------
 NBSP = " "
@@ -85,10 +88,20 @@ def _prvni(*hodnoty: Any) -> Any:
     return None
 
 
+def _pv(popis: dict, *cesta: str) -> Any:
+    """Čtení z výsledku PPA přes sjednocení verzí (`ppa_tvar`).
+
+    Nabídky PPA existují ve dvou tvarech (starší `vysledek`, novější
+    `bez_baterie`/`s_baterii` → `po_delkach`). Extraktory tu rozdíl neřeší –
+    jinak by se stalo, co se stalo po nasazení v2: nabídka se tiskla prázdná.
+    """
+    return _g(ppa_tvar.vysledek(popis), *cesta)
+
+
 def _prvni_rok(popis: dict, klic: str) -> Any:
-    """Hodnota z prvního roku ekonomiky PPA (`vysledek.roky[0][klic]`)."""
-    roky = _g(popis, "vysledek", "roky")
-    if isinstance(roky, list) and roky:
+    """Hodnota z prvního roku ekonomiky PPA (`roky[0][klic]`)."""
+    roky = _pv(popis, "roky")
+    if isinstance(roky, list) and roky and isinstance(roky[0], dict):
         return roky[0].get(klic)
     return None
 
@@ -133,31 +146,44 @@ _S_SPOTREBA = "Spotřeba a pokrytí"
 _S_CENA = "Cena a kontrakt"
 _S_USPORA = "Úspora"
 
+def _ppa_rozpad(p: dict, klic: str) -> Any:
+    """Položka rozpadu na náklad a výnos elektrárny (viz `ppa_tvar`)."""
+    return ppa_tvar.rozpad_rok1(p).get(klic)
+
+
 _POLE_PPA: list[Pole] = [
-    Pole("kwp", "Velikost elektrárny", "vykon_kwp", lambda p: _g(p, "vysledek", "kwp"),
+    Pole("kwp", "Velikost elektrárny", "vykon_kwp", lambda p: _pv(p, "kwp"),
          _S_ELEKTRARNA),
     Pole("vyroba_rok1_kwh", "Roční výroba elektrárny", "energie_mwh",
-         lambda p: _g(p, "vysledek", "vyroba_rok1_kwh"), _S_ELEKTRARNA),
-    Pole("sklon_st", "Sklon panelů", "stupne", lambda p: _g(p, "vysledek", "sklon_st"),
+         lambda p: _pv(p, "vyroba_rok1_kwh"), _S_ELEKTRARNA),
+    Pole("sklon_st", "Sklon panelů", "stupne", lambda p: _pv(p, "sklon_st"),
          _S_ELEKTRARNA),
     Pole("azimut_st", "Orientace panelů (azimut)", "stupne",
-         lambda p: _g(p, "vysledek", "azimut_st"), _S_ELEKTRARNA),
+         lambda p: _pv(p, "azimut_st"), _S_ELEKTRARNA),
     Pole("rocni_spotreba_kwh", "Vaše roční spotřeba", "energie_mwh",
-         lambda p: _g(p, "vysledek", "rocni_spotreba_kwh"), _S_SPOTREBA),
+         lambda p: _pv(p, "rocni_spotreba_kwh"), _S_SPOTREBA),
     Pole("samospotreba_rok1_kwh", "Přímo spotřebováno z elektrárny", "energie_mwh",
-         lambda p: _g(p, "vysledek", "samospotreba_rok1_kwh"), _S_SPOTREBA),
+         lambda p: _pv(p, "samospotreba_rok1_kwh"), _S_SPOTREBA),
     Pole("pokryti_spotreby_fve", "Pokrytí spotřeby z elektrárny", "procento",
-         lambda p: _g(p, "vysledek", "pokryti_spotreby_fve"), _S_SPOTREBA),
+         lambda p: _pv(p, "pokryti_spotreby_fve"), _S_SPOTREBA),
     Pole("delka_kontraktu_roky", "Doba kontraktu", "roky_cele",
-         lambda p: _g(p, "vysledek", "delka_kontraktu_roky"), _S_CENA),
+         lambda p: _pv(p, "delka_kontraktu_roky"), _S_CENA),
     Pole("cena_ppa_rok1_kc_mwh", "Cena elektřiny z elektrárny (1. rok)", "penize_mwh",
          lambda p: _prvni_rok(p, "cena_ppa_kc_mwh"), _S_CENA),
     Pole("vyhnutelna_cena_rok1_kc_mwh", "Vaše dnešní cena elektřiny", "penize_mwh",
-         lambda p: _g(p, "vysledek", "vyhnutelna_cena_rok1_kc_mwh"), _S_CENA),
+         lambda p: _pv(p, "vyhnutelna_cena_rok1_kc_mwh"), _S_CENA),
+    # Náklad a výnos elektrárny: co za elektřinu zaplatíte nám proti tomu, co
+    # byste za ni zaplatili dodavateli. Rozdíl = úspora o řádek níž.
+    Pole("naklad_rok1_kc", "Platba za elektřinu z elektrárny (1. rok)", "penize",
+         lambda p: _ppa_rozpad(p, "naklad_rok1_kc"), _S_USPORA),
+    Pole("vynos_rok1_kc", "Cena téže elektřiny od dodavatele (1. rok)", "penize",
+         lambda p: _ppa_rozpad(p, "vynos_rok1_kc"), _S_USPORA),
+    Pole("investice_zakaznika_kc", "Vaše investice", "penize",
+         lambda p: _ppa_rozpad(p, "investice_kc"), _S_USPORA),
     Pole("uspora_rok1_kc", "Úspora v 1. roce", "penize",
          lambda p: _prvni_rok(p, "uspora_klient_kc"), _S_USPORA),
     Pole("uspora_kum_kc", "Celková úspora za dobu kontraktu", "penize",
-         lambda p: _g(p, "vysledek", "souhrn_klient", "uspora_kum_kc"), _S_USPORA),
+         lambda p: _pv(p, "souhrn_klient", "uspora_kum_kc"), _S_USPORA),
 ]
 
 # Sloupce roční tabulky PPA (jen zákaznické). Pořadí = pořadí sloupců.
@@ -280,7 +306,16 @@ _S_K_SPOLU = "Dohromady"
 
 
 def _kppa(p: dict, *cesta: str):
-    return _g(p, "ppa", *cesta)
+    """Výsledek PPA nabídky uvnitř kombinace – přes sjednocení verzí."""
+    return _g(ppa_tvar.vysledek(_g(p, "ppa")), *cesta)
+
+
+def _kppa_rok1(p: dict, klic: str):
+    """Hodnota z prvního roku ekonomiky PPA uvnitř kombinace."""
+    roky = _kppa(p, "roky")
+    if isinstance(roky, list) and roky and isinstance(roky[0], dict):
+        return roky[0].get(klic)
+    return None
 
 
 def _kps(p: dict, *cesta: str):
@@ -288,25 +323,55 @@ def _kps(p: dict, *cesta: str):
 
 
 def _ksouhrn(p: dict, klic: str):
+    """Hodnota ze souhrnu kombinace.
+
+    Počítá se ze ZDROJŮ uložených v kombinaci, ne z uloženého `souhrn`.
+    Důvod je stejný jako u společné tabulky: starší spojení mají u elektrárny
+    `null` (v době spojení se četla špatným klíčem – viz `ppa_tvar`) a jejich
+    součty tedy obsahují jen baterii. Zdrojové výsledky jsou přitom zmrazené
+    v témže popisu, takže jde pořád o tentýž snapshot, jen správně přečtený –
+    a obchodník nemusí kvůli tomu ručně aktualizovat každou starší kombinaci.
+
+    Uložený souhrn slouží jako záloha pro případ, že by zdroje chyběly.
+    """
+    hodnota = _dopocteny_souhrn(p).get(klic)
+    if hodnota is not None:
+        return hodnota
     return _g(p, "souhrn", klic)
+
+
+def _dopocteny_souhrn(p: dict) -> dict:
+    """Souhrn kombinace spočítaný ze zdrojů uvnitř popisu (nikdy nevyhodí)."""
+    try:
+        return kombinace_modul.souhrn(_g(p, "ppa") or {}, _g(p, "peak_shaving") or {})
+    except Exception:
+        return {}
 
 
 _POLE_KOMBINACE: list[Pole] = [
     # --- elektrárna z PPA nabídky ---
     Pole("ppa_kwp", "Velikost elektrárny", "vykon_kwp",
-         lambda p: _kppa(p, "vysledek", "kwp"), _S_K_ELEKTRARNA),
+         lambda p: _kppa(p, "kwp"), _S_K_ELEKTRARNA),
     Pole("ppa_vyroba_rok1_kwh", "Roční výroba elektrárny", "energie_mwh",
-         lambda p: _kppa(p, "vysledek", "vyroba_rok1_kwh"), _S_K_ELEKTRARNA),
+         lambda p: _kppa(p, "vyroba_rok1_kwh"), _S_K_ELEKTRARNA),
     Pole("ppa_pokryti", "Pokrytí spotřeby z elektrárny", "procento",
-         lambda p: _kppa(p, "vysledek", "pokryti_spotreby_fve"), _S_K_ELEKTRARNA),
+         lambda p: _kppa(p, "pokryti_spotreby_fve"), _S_K_ELEKTRARNA),
     Pole("ppa_cena_rok1", "Cena elektřiny z elektrárny (1. rok)", "penize_mwh",
-         lambda p: (_kppa(p, "vysledek", "roky") or [{}])[0].get("cena_ppa_kc_mwh")
-         if isinstance(_kppa(p, "vysledek", "roky"), list) and _kppa(p, "vysledek", "roky")
-         else None, _S_K_ELEKTRARNA),
+         lambda p: _kppa_rok1(p, "cena_ppa_kc_mwh"), _S_K_ELEKTRARNA),
     Pole("ppa_dnesni_cena", "Vaše dnešní cena elektřiny", "penize_mwh",
-         lambda p: _kppa(p, "vysledek", "vyhnutelna_cena_rok1_kc_mwh"), _S_K_ELEKTRARNA),
+         lambda p: _kppa(p, "vyhnutelna_cena_rok1_kc_mwh"), _S_K_ELEKTRARNA),
     Pole("delka_kontraktu_roky", "Doba kontraktu", "roky_cele",
          lambda p: _ksouhrn(p, "delka_kontraktu_roky"), _S_K_ELEKTRARNA),
+    # Náklad, výnos a čistý přínos elektrárny. Investice je nula – to není
+    # chybějící údaj, ale podstata PPA, takže se ukazuje jako plnohodnotné číslo.
+    Pole("ppa_investice", "Investice do elektrárny", "penize",
+         lambda p: _ksouhrn(p, "ppa_investice_kc"), _S_K_ELEKTRARNA),
+    Pole("ppa_naklad_rok1", "Roční náklad: platba za elektřinu", "penize",
+         lambda p: _ksouhrn(p, "ppa_naklad_rok1_kc"), _S_K_ELEKTRARNA),
+    Pole("ppa_vynos_rok1", "Roční výnos: cena téže elektřiny od dodavatele",
+         "penize", lambda p: _ksouhrn(p, "ppa_vynos_rok1_kc"), _S_K_ELEKTRARNA),
+    Pole("ppa_cisty_prinos_rok1", "Čistý přínos elektrárny (1. rok)", "penize",
+         lambda p: _ksouhrn(p, "ppa_cisty_prinos_rok1_kc"), _S_K_ELEKTRARNA),
 
     # --- baterie z peak shaving nabídky ---
     Pole("ps_nazev", "Navržená baterie", "text",
@@ -319,27 +384,57 @@ _POLE_KOMBINACE: list[Pole] = [
          lambda p: _kps(p, "vstup", "rezervovana_kapacita_kw"), _S_K_BATERIE),
     Pole("ps_nova_rezervovana", "Nová rezervovaná kapacita", "vykon_kw",
          lambda p: _kps(p, "doporucena", "nova_rezervovana_kapacita_kw"), _S_K_BATERIE),
+    Pole("ps_investice", "Investice do baterie", "penize",
+         lambda p: _ksouhrn(p, "ps_investice_kc"), _S_K_BATERIE),
+    Pole("ps_naklad_rok1", "Roční náklad: kapacita a provoz", "penize",
+         lambda p: _ksouhrn(p, "ps_naklad_rok1_kc"), _S_K_BATERIE),
+    Pole("ps_vynos_rok1", "Roční výnos: odpadlá platba a obchod", "penize",
+         lambda p: _ksouhrn(p, "ps_vynos_rok1_kc"), _S_K_BATERIE),
+    Pole("ps_cisty_prinos_rok1", "Čistý přínos baterie (1. rok)", "penize",
+         lambda p: _ksouhrn(p, "ps_cisty_prinos_rok1_kc"), _S_K_BATERIE),
+    # Dílčí položky – ať je v nabídce vidět, z čeho se náklad a výnos skládá.
+    Pole("ps_vynos_kapacita_rok1", "Dnešní platba za kapacitu (odpadne)", "penize",
+         lambda p: _ksouhrn(p, "ps_vynos_kapacita_rok1_kc"), _S_K_BATERIE),
+    Pole("ps_naklad_kapacita_rok1", "Platba za kapacitu po instalaci", "penize",
+         lambda p: _ksouhrn(p, "ps_naklad_kapacita_rok1_kc"), _S_K_BATERIE),
+    Pole("ps_provozni_naklad_rok1", "Provoz a servis baterie (ročně)", "penize",
+         lambda p: _ksouhrn(p, "ps_provozni_naklad_rok1_kc"), _S_K_BATERIE),
+    Pole("ps_zisk_obchod_rok1", "Roční výnos z obchodu s elektřinou", "penize",
+         lambda p: _ksouhrn(p, "ps_zisk_obchod_rok1_kc"), _S_K_BATERIE),
 
     # --- dohromady (počítá `nabidkovac/kombinace.py`) ---
     Pole("investice_zakaznika", "Vaše investice", "penize",
          lambda p: _ksouhrn(p, "investice_zakaznika_kc"), _S_K_SPOLU),
+    Pole("spolu_naklad_rok1", "Roční náklady obou opatření", "penize",
+         lambda p: _ksouhrn(p, "spolu_naklad_rok1_kc"), _S_K_SPOLU),
+    Pole("spolu_vynos_rok1", "Roční výnosy obou opatření", "penize",
+         lambda p: _ksouhrn(p, "spolu_vynos_rok1_kc"), _S_K_SPOLU),
+    Pole("cisty_prinos_rok1_celkem", "Čistý přínos celkem (1. rok)", "penize",
+         lambda p: _ksouhrn(p, "cisty_prinos_rok1_celkem_kc"), _S_K_SPOLU),
     Pole("uspora_ppa_rok1", "Úspora z elektrárny (1. rok)", "penize",
          lambda p: _ksouhrn(p, "uspora_ppa_rok1_kc"), _S_K_SPOLU),
-    Pole("uspora_ps_rok1", "Úspora z baterie (1. rok)", "penize",
-         lambda p: _ksouhrn(p, "uspora_ps_rok1_kc"), _S_K_SPOLU),
+    Pole("uspora_ps_rok1", "Úspora z baterie na platbách za kapacitu (1. rok)",
+         "penize", lambda p: _ksouhrn(p, "uspora_ps_rok1_kc"), _S_K_SPOLU),
     Pole("uspora_rok1_celkem", "Celková úspora v 1. roce", "penize",
          lambda p: _ksouhrn(p, "uspora_rok1_celkem_kc"), _S_K_SPOLU),
     Pole("uspora_kum_celkem", "Celková úspora za dobu kontraktu", "penize",
          lambda p: _ksouhrn(p, "uspora_kum_celkem_kc"), _S_K_SPOLU),
     Pole("navratnost_baterie", "Návratnost investice do baterie", "roky",
          lambda p: _ksouhrn(p, "navratnost_baterie_roky"), _S_K_SPOLU),
+    # Návratnost z přínosu OBOU opatření – jiné číslo než návratnost baterie.
+    # Ve výchozí předloze schválně není: baterie se nezaplatí z toho, co ušetří
+    # elektrárna, takže tohle pole patří do nabídky jen vědomě.
+    Pole("navratnost_kombinace", "Návratnost investice z celkového přínosu",
+         "roky", lambda p: _ksouhrn(p, "navratnost_kombinace_roky"), _S_K_SPOLU),
 ]
 
-# Společná roční tabulka – obě opatření vedle sebe a součet.
+# Společná roční tabulka – obě opatření vedle sebe a součet. Sloupce nesou
+# ČISTÝ přínos (u baterie po odečtení provozu), aby se tabulka nerozcházela
+# s dlaždicemi „čistý přínos" nad ní.
 _TABULKA_KOMBINACE = [
     {"klic": "rok", "nazev": "Rok", "format": "roky_cele"},
-    {"klic": "uspora_ppa_kc", "nazev": "Úspora z elektrárny", "format": "penize"},
-    {"klic": "uspora_ps_kc", "nazev": "Úspora z baterie", "format": "penize"},
+    {"klic": "uspora_ppa_kc", "nazev": "Přínos elektrárny", "format": "penize"},
+    {"klic": "uspora_ps_kc", "nazev": "Přínos baterie", "format": "penize"},
     {"klic": "uspora_celkem_kc", "nazev": "Celkem v roce", "format": "penize"},
     {"klic": "uspora_kum_kc", "nazev": "Celkem kumulativně", "format": "penize"},
 ]
@@ -401,15 +496,25 @@ def resolvni_hodnoty(typ: str, popis_json: dict | None) -> dict[str, dict]:
 
 def resolvni_tabulku(typ: str, popis_json: dict | None) -> dict:
     """Vrátí roční tabulku {sloupce:[...], radky:[[text,...],...]} – jen
-    zákaznické sloupce. PPA čte `vysledek.roky`, peak shaving `doporucena.roky`."""
+    zákaznické sloupce. PPA čte svůj výsledek, peak shaving `doporucena.roky`."""
     popis = popis_json or {}
     sloupce = _TABULKA.get(typ, [])
     if typ == "ppa":
-        radky_zdroj = _g(popis, "vysledek", "roky") or []
+        radky_zdroj = _pv(popis, "roky") or []
     elif typ == "kombinace":
-        # Kombinace má společnou tabulku složenou z obou zdrojů (viz
-        # `nabidkovac/kombinace.spolecna_tabulka`).
-        radky_zdroj = _g(popis, "roky") or []
+        # Společná tabulka se skládá ze ZDROJŮ uložených v kombinaci, ne
+        # z uloženého `roky`. Jsou to tatáž zmrazená data, jen přečtená
+        # aktuální logikou – jinak by tabulka ukazovala jiná čísla než
+        # dlaždice nad ní (starší spojení mají u elektrárny `null` a
+        # u baterie přínos před odečtením provozu).
+        try:
+            radky_zdroj = kombinace_modul.spolecna_tabulka(
+                _g(popis, "ppa") or {}, _g(popis, "peak_shaving") or {}
+            )
+        except Exception:
+            radky_zdroj = []
+        if not radky_zdroj:
+            radky_zdroj = _g(popis, "roky") or []
     else:
         radky_zdroj = _dop(popis, "roky") or []
     radky = []
@@ -466,7 +571,7 @@ def graf_pro_typ(typ: str, popis_json: dict | None) -> dict | None:
     obojí má ukázat elektrárnu i špičky, ne si jedno vybrat."""
     popis = popis_json or {}
     if typ == "kombinace":
-        ppa_graf = _g(popis, "ppa", "vysledek", "graf")
+        ppa_graf = _kppa(popis, "graf")
         ps_zdroj = _g(popis, "peak_shaving") or {}
         ps_graf = _dop(ps_zdroj, "graf") or _g(ps_zdroj, "graf")
         return {
@@ -477,7 +582,7 @@ def graf_pro_typ(typ: str, popis_json: dict | None) -> dict | None:
             ),
         }
     if typ == "ppa":
-        return _g(popis, "vysledek", "graf")
+        return _pv(popis, "graf")
     # peak shaving: graf doporučené varianty, fallback na graf na nejvyšší úrovni
     graf = _dop(popis, "graf") or _g(popis, "graf")
     if not isinstance(graf, dict):
@@ -775,9 +880,23 @@ def _slozky(typ: str) -> list[tuple]:
             ("dlazdice", "elektrarna", "Fotovoltaická elektrárna", "",
              ["ppa_kwp", "ppa_vyroba_rok1_kwh", "ppa_pokryti", "delka_kontraktu_roky",
               "ppa_cena_rok1", "ppa_dnesni_cena", "uspora_ppa_rok1"], 3),
+            ("dlazdice", "elektrarna_ekonomika", "Elektrárna: co stojí a co přináší",
+             "Za elektřinu z elektrárny platíte místo dodavateli nám, a to méně. "
+             "Rozdíl obou plateb je váš čistý přínos.",
+             ["ppa_investice", "ppa_naklad_rok1", "ppa_vynos_rok1",
+              "ppa_cisty_prinos_rok1"], 2),
             ("dlazdice", "baterie", "Bateriové úložiště", "",
              ["ps_nazev", "ps_vykon_kw", "ps_kapacita_kwh",
               "ps_rezervovana_kapacita", "ps_nova_rezervovana", "uspora_ps_rok1"], 3),
+            ("dlazdice", "baterie_ekonomika", "Baterie: co stojí a co přináší",
+             "Baterie se pořizuje jednorázově. Ročně pak snižuje platbu za "
+             "kapacitu a může vydělávat obchodem s elektřinou; proti tomu stojí "
+             "platba za novou kapacitu a náklady na provoz.",
+             ["ps_investice", "ps_naklad_rok1", "ps_vynos_rok1",
+              "ps_cisty_prinos_rok1"], 2),
+            ("dlazdice", "soucet", "Obě technologie dohromady",
+             "Součet nákladů a výnosů obou opatření v prvním roce.",
+             ["spolu_naklad_rok1", "spolu_vynos_rok1", "cisty_prinos_rok1_celkem"], 3),
             ("graf", "graf", "Výroba elektrárny a špičky odběru"),
             ("tabulka", "tabulka", "Vývoj úspory po letech",
              ["rok", "uspora_ppa_kc", "uspora_ps_kc", "uspora_celkem_kc",
