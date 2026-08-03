@@ -71,6 +71,9 @@ načíst profil a technologii vybrat z katalogu.
    u obchodních režimů i **výnos z obchodu s elektřinou** – tedy totéž, co ukazuje panel výsledku.
    Prvky, pro které data nejsou, se do PDF netisknou.
 7. **Ulož do PDF** – tlačítko „Uložit do PDF" otevře tiskový dialog prohlížeče (tisk / uložit jako PDF).
+   U **PPA** nabídky přitom vznikne i **interní výpočtový Excel** se stejným názvem (`.xlsx`) –
+   model s živými vzorci k ručnímu doladění. Jsou v něm marže a zisk, takže **zákazníkovi se
+   posílá jen PDF**. Podrobně: [Kalkulátor PPA](nabidkovac-ppa-fve.md#výpočtový-excel-k-nabídce).
 
 ### Stavy nabídky
 Stav se ukazuje jako štítek u nabídky. Životní cyklus (enum na serveru):

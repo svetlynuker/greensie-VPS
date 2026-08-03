@@ -1349,7 +1349,13 @@ def _posledni_pdf(db: Session, nabidky: list) -> dict[int, dict]:
         return {}
     radky = (
         db.query(GenerovanaNabidkaPdf)
-        .filter(GenerovanaNabidkaPdf.nabidka_id.in_(ids))
+        .filter(
+            GenerovanaNabidkaPdf.nabidka_id.in_(ids),
+            # Jen nabídka pro zákazníka. Interní Excel vzniká hned po PDF, takže
+            # má vyšší id — bez filtru by ho tlačítko „PDF" začalo vydávat místo
+            # nabídky.
+            GenerovanaNabidkaPdf.format == "pdf",
+        )
         .order_by(GenerovanaNabidkaPdf.nabidka_id, GenerovanaNabidkaPdf.id.desc())
         .all()
     )

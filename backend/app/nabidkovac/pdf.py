@@ -41,6 +41,12 @@ MAX_HTML_BAJTU = 40 * 1024 * 1024
 _zamek = threading.Lock()
 
 MIME = "application/pdf"
+MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def mime_formatu(format: str | None) -> str:
+    """MIME podle formátu záznamu. Prázdno = řádek z doby před Excelem, tedy PDF."""
+    return MIME_XLSX if format == "xlsx" else MIME
 
 
 class PdfNedostupne(RuntimeError):
@@ -87,29 +93,48 @@ def vyrob(html: str) -> bytes:
     return beh.stdout
 
 
-def nazev_souboru(nabidka: Nabidka, typ_reseni: str, kdy: datetime | None = None) -> str:
-    """Jméno PDF: `NAB-26-0007_ppa_2026-08-03.pdf`.
+def nazev_souboru(
+    nabidka: Nabidka,
+    typ_reseni: str,
+    kdy: datetime | None = None,
+    pripona: str = ".pdf",
+) -> str:
+    """Jméno souboru: `NAB-26-0007_ppa_2026-08-03.pdf`.
 
     Číslo nabídky je vepředu, protože podle něj se soubor hledá na Disku i ve
     schránce zákazníka. Datum na konci proto, že jedna nabídka se přepočítá
     a vytiskne víckrát a starší verze musí zůstat rozeznatelné.
+
+    Excel k téže nabídce dostane **stejné jméno, jen jinou příponu** – tak si je
+    obchodník na Disku spáruje na první pohled.
     """
     kdy = kdy or datetime.now()
     zaklad = nabidka.cislo or f"nabidka-{nabidka.id}"
-    return f"{zaklad}_{typ_reseni}_{kdy:%Y-%m-%d}.pdf"
+    return f"{zaklad}_{typ_reseni}_{kdy:%Y-%m-%d}{pripona}"
 
 
 def uloz(
-    db: Session, nabidka: Nabidka, typ_reseni: str, data: bytes, user_id: int | None
+    db: Session,
+    nabidka: Nabidka,
+    typ_reseni: str,
+    data: bytes,
+    user_id: int | None,
+    format: str = "pdf",
+    kdy: datetime | None = None,
 ) -> GenerovanaNabidkaPdf:
-    """Uloží PDF k nabídce a zařadí jeho nahrání na Disk do fronty."""
+    """Uloží vygenerovaný soubor k nabídce a zařadí jeho nahrání na Disk do fronty.
+
+    `kdy` se předává, aby PDF a Excel z jednoho kliknutí dostaly stejné datum
+    v názvu i těsně před půlnocí.
+    """
     from app.konektor import fronta
 
-    nazev = nazev_souboru(nabidka, typ_reseni)
+    nazev = nazev_souboru(nabidka, typ_reseni, kdy, f".{format}")
     cesta = soubory.uloz_soubor(nabidka.id, nazev, data)
     zaznam = GenerovanaNabidkaPdf(
         nabidka_id=nabidka.id,
         typ_reseni=typ_reseni,
+        format=format,
         nazev=nazev,
         soubor_cesta=cesta,
         vygeneroval_user_id=user_id,
@@ -156,7 +181,7 @@ def nahraj_na_disk(db: Session, pdf_id: int) -> dict:
 
     ef = crm_slozky.zajisti_slozku_nabidky(db, nabidka, pripad, zakaznik)
     soubor = crm_slozky.nahraj(
-        db, ef, None, zaznam.nazev or cesta.name, cesta.read_bytes(), MIME
+        db, ef, None, zaznam.nazev or cesta.name, cesta.read_bytes(), mime_formatu(zaznam.format)
     )
     zaznam.disk_file_id = soubor.get("id") or ""
     zaznam.disk_url = soubor.get("url") or ""

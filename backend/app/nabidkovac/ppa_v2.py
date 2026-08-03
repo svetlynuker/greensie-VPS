@@ -480,6 +480,67 @@ class ParametryEkonomiky:
     diskontni_sazba: float = VYCHOZI_UROKOVA_SAZBA
 
 
+def _param(parametry: dict | None, klic: str, default: float) -> float:
+    """Přečte PPA parametr z manažerského nastavení (JSONB `parametry`) s fallbackem."""
+    if parametry:
+        hodnota = parametry.get(klic)
+        if hodnota is not None:
+            try:
+                return float(hodnota)
+            except (TypeError, ValueError):
+                pass
+    return default
+
+
+def parametry_z_nastaveni(parametry: dict | None) -> ParametryEkonomiky:
+    """Manažerské nastavení (`vypoctova_nastaveni.parametry`) → ekonomické parametry.
+
+    Je to jedno místo pro výpočet i pro export do Excelu. Kdyby si každý skládal
+    parametry sám, sešit by po změně nastavení počítal s jinými čísly než appka
+    a nikdo by si toho nevšiml.
+    """
+    return ParametryEkonomiky(
+        nakladova_cena_kc_kwp=_param(
+            parametry, "ppa_nakladova_cena_kc_kwp", VYCHOZI_NAKLADOVA_CENA_KC_KWP
+        ),
+        marze_fve=_param(parametry, "ppa_marze_fve", VYCHOZI_MARZE_FVE),
+        marze_bess=_param(parametry, "ppa_marze_bess", VYCHOZI_MARZE_BESS),
+        provize_fve=_param(parametry, "ppa_provize_fve", VYCHOZI_PROVIZE_FVE),
+        provize_bess=_param(parametry, "ppa_provize_bess", VYCHOZI_PROVIZE_BESS),
+        podil_vlastniho_kapitalu=_param(
+            parametry, "ppa_podil_vlastniho_kapitalu", VYCHOZI_PODIL_VLASTNIHO_KAPITALU
+        ),
+        urokova_sazba=_param(parametry, "ppa_urokova_sazba", VYCHOZI_UROKOVA_SAZBA),
+        dscr_min=_param(parametry, "ppa_dscr_min", VYCHOZI_DSCR_MIN),
+        irr_cil=_param(parametry, "ppa_irr_cil", VYCHOZI_IRR_CIL),
+        servis_kc_rok=_param(parametry, "ppa_servis_kc_rok", VYCHOZI_SERVIS_KC_ROK),
+        degradace_rocni=_param(parametry, "ppa_degradace_rocni", VYCHOZI_DEGRADACE_ROCNI),
+        indexace_krok=_param(parametry, "ppa_indexace_krok", VYCHOZI_INDEXACE_KROK),
+        indexace_perioda_roky=int(
+            _param(parametry, "ppa_indexace_perioda_roky", VYCHOZI_INDEXACE_PERIODA_ROKY)
+        ),
+        cena_exportu_kc_mwh=_param(
+            parametry, "ppa_cena_exportu_kc_mwh", VYCHOZI_CENA_EXPORTU_KC_MWH
+        ),
+        podil_zpenezitelneho_prebytku=_param(
+            parametry, "ppa_podil_zpenezitelneho_prebytku", 1.0
+        ),
+        bess_marze_kc_mesic=_param(
+            parametry, "ppa_bess_marze_kc_mesic", VYCHOZI_BESS_MARZE_KC_MESIC
+        ),
+        bess_ems_kc_mesic=_param(parametry, "ppa_bess_ems_kc_mesic", VYCHOZI_BESS_EMS_KC_MESIC),
+        bess_servis_kc_rok=_param(
+            parametry, "ppa_bess_servis_kc_rok", VYCHOZI_BESS_SERVIS_KC_ROK
+        ),
+        odkup_poplatek_rocni=_param(
+            parametry, "ppa_odkup_poplatek_rocni", VYCHOZI_ODKUP_POPLATEK_ROCNI
+        ),
+        odkup_poplatek_predcasne_splaceni=_param(
+            parametry, "ppa_odkup_poplatek_predcasne", VYCHOZI_ODKUP_POPLATEK_PREDCASNE
+        ),
+    )
+
+
 @dataclass
 class Projekt:
     """Financovaný projekt – kolik stojí, kolik se půjčí a jaká je splátka."""
