@@ -13,6 +13,75 @@ import { fmtKc } from "../crm";
  * schválně: kdyby se kombinace sama přepočítávala, nešlo by dohledat, s jakými
  * čísly nabídka odešla zákazníkovi.
  */
+/**
+ * Rozpad kombinace na náklad a výnos každé technologie zvlášť a jejich součet.
+ *
+ * Ukazuje přesně ta čísla, která umí obchodník vložit do nabídky jako dlaždice
+ * (katalog `sablona_katalog._POLE_KOMBINACE`), aby se appka a tištěná nabídka
+ * nemohly rozejít. Investice stojí mimo tabulku: jednorázová platba a roční
+ * náklady se nesčítají.
+ */
+function RozpadTabulka({ souhrn }) {
+  if (!souhrn) return null;
+  const radky = [
+    {
+      nazev: "Elektrárna (PPA)",
+      naklad: souhrn.ppa_naklad_rok1_kc,
+      vynos: souhrn.ppa_vynos_rok1_kc,
+      cisty: souhrn.ppa_cisty_prinos_rok1_kc,
+      investice: souhrn.ppa_investice_kc,
+    },
+    {
+      nazev: "Baterie (peak shaving)",
+      naklad: souhrn.ps_naklad_rok1_kc,
+      vynos: souhrn.ps_vynos_rok1_kc,
+      cisty: souhrn.ps_cisty_prinos_rok1_kc,
+      investice: souhrn.ps_investice_kc,
+    },
+  ];
+  return (
+    <table className="crm-tabulka crm-tabulka-hustá">
+      <thead>
+        <tr>
+          <th>Technologie</th>
+          <th>Investice</th>
+          <th>Roční náklad</th>
+          <th>Roční výnos</th>
+          <th>Čistý přínos / rok</th>
+        </tr>
+      </thead>
+      <tbody>
+        {radky.map((r) => (
+          <tr key={r.nazev}>
+            <td>{r.nazev}</td>
+            <td>{fmtKc(r.investice)}</td>
+            <td>{fmtKc(r.naklad)}</td>
+            <td>{fmtKc(r.vynos)}</td>
+            <td>{fmtKc(r.cisty)}</td>
+          </tr>
+        ))}
+        <tr>
+          <td>
+            <b>Dohromady</b>
+          </td>
+          <td>
+            <b>{fmtKc(souhrn.investice_zakaznika_kc)}</b>
+          </td>
+          <td>
+            <b>{fmtKc(souhrn.spolu_naklad_rok1_kc)}</b>
+          </td>
+          <td>
+            <b>{fmtKc(souhrn.spolu_vynos_rok1_kc)}</b>
+          </td>
+          <td>
+            <b>{fmtKc(souhrn.cisty_prinos_rok1_celkem_kc)}</b>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
 export default function KombinaceOkno({ pripad, onZavri, onHotovo }) {
   const [zdroje, setZdroje] = useState(null);
   const [ppaId, setPpaId] = useState("");
@@ -150,12 +219,14 @@ export default function KombinaceOkno({ pripad, onZavri, onHotovo }) {
               </div>
 
               {vysledek && (
-                <div className="crm-zprava">
-                  Spojeno do nabídky <b>{vysledek.cislo}</b>. Úspora v 1. roce{" "}
-                  {fmtKc(vysledek.souhrn?.uspora_rok1_celkem_kc)}, celkem za dobu kontraktu{" "}
-                  {fmtKc(vysledek.souhrn?.uspora_kum_celkem_kc)}, investice{" "}
-                  {fmtKc(vysledek.souhrn?.investice_zakaznika_kc)}.
-                </div>
+                <>
+                  <div className="crm-zprava">
+                    Spojeno do nabídky <b>{vysledek.cislo}</b>. Celkem za dobu kontraktu{" "}
+                    {fmtKc(vysledek.souhrn?.uspora_kum_celkem_kc)}, investice{" "}
+                    {fmtKc(vysledek.souhrn?.investice_zakaznika_kc)}.
+                  </div>
+                  <RozpadTabulka souhrn={vysledek.souhrn} />
+                </>
               )}
 
               {chyba && <div className="crm-chyba">{chyba}</div>}
