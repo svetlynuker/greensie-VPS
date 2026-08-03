@@ -15,14 +15,28 @@ from pathlib import Path
 
 KOREN = Path(__file__).resolve().parents[2]
 ROUTES = KOREN / "backend" / "app" / "nabidkovac" / "routes.py"
+PPA_V2 = KOREN / "backend" / "app" / "nabidkovac" / "ppa_v2.py"
 KATALOG = KOREN / "frontend" / "src" / "pages" / "NabidkovacKatalog.jsx"
 
 
 def klice_ktere_backend_cte() -> set[str]:
-    """Klíče předané do `_ppa_param(...)` v routes.py."""
-    zdroj = ROUTES.read_text(encoding="utf-8")
-    # `_ppa_param(nastaveni, "klic"` – i přes zalomení řádku
-    return set(re.findall(r'_ppa_param\(\s*nastaveni,\s*"([^"]+)"', zdroj, re.S))
+    """Klíče čtené z manažerského nastavení.
+
+    Ekonomické parametry skládá `ppa_v2.parametry_z_nastaveni` (sdílí ji výpočet
+    i export do Excelu), zbytek (měrný výnos, cíl samospotřeby…) čte routes.py
+    přímo. Prohledávají se obě místa – jinak by se test rozbil při každém
+    přesunu, aniž by se kontrakt s adminem změnil.
+    """
+    klice: set[str] = set()
+    # `_ppa_param(nastaveni, "klic"` v routes.py – i přes zalomení řádku
+    klice |= set(
+        re.findall(r'_ppa_param\(\s*nastaveni,\s*"([^"]+)"', ROUTES.read_text(encoding="utf-8"), re.S)
+    )
+    # `_param(parametry, "klic"` v ppa_v2.py
+    klice |= set(
+        re.findall(r'_param\(\s*parametry,\s*"([^"]+)"', PPA_V2.read_text(encoding="utf-8"), re.S)
+    )
+    return klice
 
 
 def klice_nabizene_v_adminu() -> set[str]:

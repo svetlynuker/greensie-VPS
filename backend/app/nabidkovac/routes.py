@@ -22,11 +22,13 @@ from app.auth.models import User
 from app.crm.models import ObjednavkaPolozka
 from app.database import get_db
 from app.nabidkovac import (
+    excel_ppa,
     katalog_soubory,
     pdf as pdf_modul,
     peak_shaving,
     polozky as polozky_modul,
     ppa_fve,
+    ppa_tvar,
     ppa_v2,
     profil_import,
     profil_pokryti,
@@ -2458,49 +2460,9 @@ def spocti_ppa(
 
     # ---- manažerské nastavení → ekonomické parametry (METODIKA kap. 4)
     nastaveni = db.query(VypoctovaNastaveni).order_by(VypoctovaNastaveni.verze.desc()).first()
-    parametry = ppa_v2.ParametryEkonomiky(
-        nakladova_cena_kc_kwp=_ppa_param(
-            nastaveni, "ppa_nakladova_cena_kc_kwp", ppa_v2.VYCHOZI_NAKLADOVA_CENA_KC_KWP
-        ),
-        marze_fve=_ppa_param(nastaveni, "ppa_marze_fve", ppa_v2.VYCHOZI_MARZE_FVE),
-        marze_bess=_ppa_param(nastaveni, "ppa_marze_bess", ppa_v2.VYCHOZI_MARZE_BESS),
-        provize_fve=_ppa_param(nastaveni, "ppa_provize_fve", ppa_v2.VYCHOZI_PROVIZE_FVE),
-        provize_bess=_ppa_param(nastaveni, "ppa_provize_bess", ppa_v2.VYCHOZI_PROVIZE_BESS),
-        podil_vlastniho_kapitalu=_ppa_param(
-            nastaveni, "ppa_podil_vlastniho_kapitalu", ppa_v2.VYCHOZI_PODIL_VLASTNIHO_KAPITALU
-        ),
-        urokova_sazba=_ppa_param(nastaveni, "ppa_urokova_sazba", ppa_v2.VYCHOZI_UROKOVA_SAZBA),
-        dscr_min=_ppa_param(nastaveni, "ppa_dscr_min", ppa_v2.VYCHOZI_DSCR_MIN),
-        irr_cil=_ppa_param(nastaveni, "ppa_irr_cil", ppa_v2.VYCHOZI_IRR_CIL),
-        servis_kc_rok=_ppa_param(nastaveni, "ppa_servis_kc_rok", ppa_v2.VYCHOZI_SERVIS_KC_ROK),
-        degradace_rocni=_ppa_param(nastaveni, "ppa_degradace_rocni", ppa_v2.VYCHOZI_DEGRADACE_ROCNI),
-        indexace_krok=_ppa_param(nastaveni, "ppa_indexace_krok", ppa_v2.VYCHOZI_INDEXACE_KROK),
-        indexace_perioda_roky=int(
-            _ppa_param(nastaveni, "ppa_indexace_perioda_roky", ppa_v2.VYCHOZI_INDEXACE_PERIODA_ROKY)
-        ),
-        cena_exportu_kc_mwh=_ppa_param(
-            nastaveni, "ppa_cena_exportu_kc_mwh", ppa_v2.VYCHOZI_CENA_EXPORTU_KC_MWH
-        ),
-        podil_zpenezitelneho_prebytku=_ppa_param(
-            nastaveni, "ppa_podil_zpenezitelneho_prebytku", 1.0
-        ),
-        bess_marze_kc_mesic=_ppa_param(
-            nastaveni, "ppa_bess_marze_kc_mesic", ppa_v2.VYCHOZI_BESS_MARZE_KC_MESIC
-        ),
-        bess_ems_kc_mesic=_ppa_param(
-            nastaveni, "ppa_bess_ems_kc_mesic", ppa_v2.VYCHOZI_BESS_EMS_KC_MESIC
-        ),
-        bess_servis_kc_rok=_ppa_param(
-            nastaveni, "ppa_bess_servis_kc_rok", ppa_v2.VYCHOZI_BESS_SERVIS_KC_ROK
-        ),
-        odkup_poplatek_rocni=_ppa_param(
-            nastaveni, "ppa_odkup_poplatek_rocni", ppa_v2.VYCHOZI_ODKUP_POPLATEK_ROCNI
-        ),
-        odkup_poplatek_predcasne_splaceni=_ppa_param(
-            nastaveni, "ppa_odkup_poplatek_predcasne", ppa_v2.VYCHOZI_ODKUP_POPLATEK_PREDCASNE
-        ),
+    parametry = ppa_v2.parametry_z_nastaveni(
+        nastaveni.parametry if nastaveni is not None else None
     )
-
     merny_vynos = _ppa_param(
         nastaveni, "ppa_merny_vynos_kwh_kwp", ppa_v2.VYCHOZI_MERNY_VYNOS_KWH_KWP
     )
@@ -2888,6 +2850,9 @@ def _pdf_out(z: GenerovanaNabidkaPdf) -> dict:
         "id": z.id,
         "nazev": z.nazev or f"nabidka-{z.nabidka_id}.pdf",
         "typ_reseni": z.typ_reseni or "",
+        # "pdf" = nabídka pro zákazníka, "xlsx" = interní model. UI je odlišuje
+        # ikonou i popiskem, aby nikdo neposlal klientovi marže.
+        "format": z.format or "pdf",
         "vygenerovano_at": _iso(z.vygenerovano_at),
         "vygeneroval_jmeno": getattr(z.vygeneroval, "jmeno", None) if z.vygeneroval else None,
         "disk_url": z.disk_url or "",
@@ -2944,8 +2909,81 @@ def vyrob_pdf_nabidky(
     except pdf_modul.PdfNedostupne as e:
         # 503, ne 500: appka je v pořádku, jen tahle služba teď neumí odpovědět.
         raise HTTPException(status_code=503, detail=str(e))
-    zaznam = pdf_modul.uloz(db, n, typ_reseni, data, user.id)
+    kdy = datetime.now()
+    zaznam = pdf_modul.uloz(db, n, typ_reseni, data, user.id, "pdf", kdy)
+    # U PPA vzniká zároveň interní výpočtový model. Chyba tady nesmí sebrat PDF,
+    # které už je hotové – Excel se pak dá dogenerovat tlačítkem zvlášť.
+    if typ_reseni == "ppa":
+        try:
+            _vyrob_xlsx(db, n, user.id, kdy)
+        except HTTPException:
+            pass
     return _pdf_out(zaznam)
+
+
+def _vyrob_xlsx(
+    db: Session, n: Nabidka, user_id: int | None, kdy: datetime | None = None
+) -> GenerovanaNabidkaPdf:
+    """Interní PPA model do Excelu – ze stejné varianty, jakou tiskne PDF."""
+    reseni = _posledni_reseni(db, n.id, "ppa")
+    popis = (reseni.popis_json if reseni is not None else None) or {}
+    varianta = ppa_tvar.zvolena_varianta(popis)
+    if not varianta:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Nabídka nemá spočítané PPA v aktuálním tvaru (v2). Přepočítej ji, "
+                "pak půjde vyexportovat i výpočtový Excel."
+            ),
+        )
+    nastaveni = (
+        db.get(VypoctovaNastaveni, n.vypoctova_nastaveni_id)
+        if n.vypoctova_nastaveni_id
+        else None
+    )
+    if nastaveni is None:
+        nastaveni = db.query(VypoctovaNastaveni).order_by(VypoctovaNastaveni.verze.desc()).first()
+    parametry = ppa_v2.parametry_z_nastaveni(
+        nastaveni.parametry if nastaveni is not None else None
+    )
+    kdy = kdy or datetime.now()
+
+    baterie = varianta.get("baterie") or {}
+    popis_baterie = (
+        f"s baterií {baterie.get('kapacita_kwh'):.0f} kWh"
+        if varianta.get("s_baterii") and baterie.get("kapacita_kwh")
+        else "bez baterie"
+    )
+    hlavicka = {
+        "titulek": f"PPA výpočet – {n.cislo or f'nabídka {n.id}'}",
+        "podtitulek": (
+            f"{n.zakaznik_nazev or 'zákazník neuveden'} · FVE "
+            f"{float(varianta.get('kwp') or 0):.0f} kWp {popis_baterie} · kontrakt na "
+            f"{varianta.get('delka_kontraktu_roky')} let"
+        ),
+        "vygenerovano": f"Interní model, vygenerováno {kdy:%d. %m. %Y} z Greensie app",
+        # Kontrakt běží od roku následujícího po výpočtu – v roce 0 se staví.
+        "prvni_rok": kdy.year + 1,
+    }
+    data = excel_ppa.sestav(hlavicka, varianta, popis.get("vstup") or {}, parametry)
+    return pdf_modul.uloz(db, n, "ppa", data, user_id, "xlsx", kdy)
+
+
+@router.post("/nabidky/{nabidka_id}/vystup/ppa/xlsx")
+def vyrob_xlsx_nabidky(
+    nabidka_id: int,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Vyrobí jen výpočtový Excel (bez tisku PDF) a propíše ho na Disk.
+
+    Normálně vzniká spolu s PDF; tohle je pro případ, že si ho někdo chce
+    vygenerovat po přepočtu znovu, aniž by tiskl nabídku pro zákazníka.
+    """
+    n = db.get(Nabidka, nabidka_id)
+    if n is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    return _pdf_out(_vyrob_xlsx(db, n, user.id))
 
 
 @router.get("/nabidka-pdf/{pdf_id}/soubor")
@@ -2954,18 +2992,19 @@ def vydej_pdf_nabidky(
     user: User = Depends(vyzaduj_nabidkovac),
     db: Session = Depends(get_db),
 ):
-    """Vydá vygenerované PDF k zobrazení v prohlížeči."""
+    """Vydá vygenerovaný soubor (PDF k prohlédnutí, Excel ke stažení)."""
     z = db.get(GenerovanaNabidkaPdf, pdf_id)
     if z is None:
-        raise HTTPException(status_code=404, detail="PDF neexistuje")
+        raise HTTPException(status_code=404, detail="Soubor neexistuje")
     cesta = soubory.UPLOAD_DIR / z.soubor_cesta
     if not cesta.exists():
-        raise HTTPException(status_code=404, detail="Soubor PDF na serveru chybí.")
+        raise HTTPException(status_code=404, detail="Soubor na serveru chybí.")
     return FileResponse(
         path=str(cesta),
-        media_type=pdf_modul.MIME,
+        media_type=pdf_modul.mime_formatu(z.format),
         filename=z.nazev or cesta.name,
-        content_disposition_type="inline",
+        # Excel prohlížeč nezobrazí – inline by z něj udělalo prázdnou záložku.
+        content_disposition_type="inline" if z.format != "xlsx" else "attachment",
     )
 
 

@@ -180,6 +180,8 @@ def _lehka_migrace():
             ("nazev", "VARCHAR NOT NULL DEFAULT ''"),
             ("disk_file_id", "VARCHAR NOT NULL DEFAULT ''"),
             ("disk_url", "VARCHAR NOT NULL DEFAULT ''"),
+            # Starší řádky jsou všechny PDF – proto default, ne backfill.
+            ("format", "VARCHAR NOT NULL DEFAULT 'pdf'"),
         ):
             conn.execute(
                 text(

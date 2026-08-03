@@ -4,11 +4,16 @@
 
 import { useState } from "react";
 
-import { nabidkaPdfOtevri } from "../api";
+import { nabidkaPdfOtevri, nabidkaSouborStahni } from "../api";
 
 /**
- * `pdf` je to, co vrací API u nabídky: `{ id, nazev, vygenerovano_at, disk_url }`
- * nebo nic, když nabídka PDF ještě nemá.
+ * `pdf` je to, co vrací API u nabídky:
+ * `{ id, nazev, format, vygenerovano_at, disk_url }` nebo nic, když nabídka
+ * soubor ještě nemá.
+ *
+ * `format` rozlišuje nabídku pro zákazníka (`pdf`) od interního výpočtového
+ * modelu (`xlsx`). Popisek i ikona se liší schválně – v Excelu jsou marže
+ * a zisk, takže se nesmí splést s tím, co se posílá klientovi.
  *
  * Otevírá se přes fetch a blob URL, protože endpoint chce token v hlavičce
  * a ten `<a href>` poslat neumí.
@@ -20,13 +25,20 @@ export default function PdfNabidky({ pdf, kompaktni = false }) {
     return kompaktni ? null : <span className="crm-tise">bez PDF</span>;
   }
 
+  const jeExcel = pdf.format === "xlsx";
+  const popisek = jeExcel ? "📊 Excel" : "📄 PDF";
+  const popis = jeExcel
+    ? "Stáhnout interní výpočtový model (jen pro nás – jsou v něm marže a zisk)"
+    : "Otevřít nabídku pro zákazníka v PDF";
+
   async function otevri(e) {
     // V tabulce i na dlaždici je tlačítko uvnitř řádku, který sám na klik
     // někam naviguje – bez tohohle by se otevřelo obojí.
     e.stopPropagation();
     setChyba(null);
     try {
-      await nabidkaPdfOtevri(pdf.id);
+      if (jeExcel) await nabidkaSouborStahni(pdf.id, pdf.nazev);
+      else await nabidkaPdfOtevri(pdf.id);
     } catch (err) {
       setChyba(err.message);
     }
@@ -37,11 +49,11 @@ export default function PdfNabidky({ pdf, kompaktni = false }) {
       <button
         className="fm-btn crm-btn-maly"
         onClick={otevri}
-        title={pdf.nazev ? `Otevřít ${pdf.nazev}` : "Otevřít PDF nabídky"}
+        title={pdf.nazev ? `${popis} (${pdf.nazev})` : popis}
       >
-        📄 PDF
+        {popisek}
       </button>
-      {/* Odkaz na Disk chybí, dokud se PDF nenahrálo (běží fronta konektoru) —
+      {/* Odkaz na Disk chybí, dokud se soubor nenahrál (běží fronta konektoru) —
           mrtvý odkaz by byl horší než žádný. */}
       {pdf.disk_url && (
         <a

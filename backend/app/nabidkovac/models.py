@@ -702,6 +702,10 @@ class GenerovanaNabidkaPdf(Base):
     # Ze které šablony výstupu PDF vzniklo ("ppa" / "peak_shaving" /
     # "kombinace"). Nullable kvůli řádkům z doby před tímhle tlačítkem.
     typ_reseni = Column(String, nullable=True, index=True)
+    # "pdf" = nabídka pro zákazníka, "xlsx" = interní výpočtový model k dolaďování.
+    # Obojí vzniká jedním kliknutím a leží vedle sebe pod stejným jménem, proto
+    # sdílí tabulku i frontu na Disk; liší se jen formátem a příponou.
+    format = Column(String, nullable=False, default="pdf", server_default="pdf", index=True)
     # Jméno souboru pro člověka (NAB-26-0007_ppa_2026-08-03.pdf). Uložená cesta
     # ho neobsahuje čitelně – před názvem je uuid, aby se soubory nepřepisovaly.
     nazev = Column(String, nullable=False, default="", server_default="")

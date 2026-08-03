@@ -51,8 +51,12 @@ def _kwh(mwh: Any) -> float | None:
     return c * 1000.0 if c is not None else None
 
 
-def _zvolena_varianta(popis: dict) -> dict | None:
-    """Varianta + délka kontraktu, které patří do nabídky (jen tvar v2)."""
+def zvolena_varianta(popis: dict) -> dict | None:
+    """Varianta + délka kontraktu, které patří do nabídky (jen tvar v2).
+
+    Veřejná, protože ji kromě tisku potřebuje i export do Excelu – oba výstupy
+    vznikají jedním kliknutím a musely by jinak ukázat každý jinou variantu.
+    """
     s_baterii = bool(_g(popis, "vstup", "s_baterii"))
     poradi = ("s_baterii", "bez_baterie") if s_baterii else ("bez_baterie", "s_baterii")
     for klic in poradi:
@@ -116,7 +120,7 @@ def vysledek(popis_json: Any) -> dict:
     stary = popis_json.get("vysledek")
     if isinstance(stary, dict):
         return stary
-    varianta = _zvolena_varianta(popis_json)
+    varianta = zvolena_varianta(popis_json)
     if varianta is None:
         return {}
     return _v2_na_jednotny(varianta, popis_json.get("vstup") or {})

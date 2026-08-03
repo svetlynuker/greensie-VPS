@@ -55,9 +55,12 @@ export default function NabidkaDetail() {
   const [spravaPoli, setSpravaPoli] = useState(false);
   // Odeslání nabídky zákazníkovi e-mailem (CRM-10).
   const [posilaEmail, setPosilaEmail] = useState(false);
-  // Vygenerovaná PDF nabídky (nejnovější první). Historie se nemaže – musí být
-  // poznat, co přesně zákazník dostal a kdy.
+  // Vygenerované soubory nabídky (nejnovější první) – PDF pro zákazníka
+  // i interní výpočtový Excel. Historie se nemaže: musí být poznat, co přesně
+  // zákazník dostal a kdy.
   const [pdfka, setPdfka] = useState([]);
+  const posledniPdf = pdfka.find((z) => z.format !== "xlsx");
+  const posledniXlsx = pdfka.find((z) => z.format === "xlsx");
 
   function naplnFormular(n) {
     setNazev(n.zakaznik_nazev || "");
@@ -201,13 +204,16 @@ export default function NabidkaDetail() {
               Nabídka pro zákazníka
             </button>
           )}
-          {/* Poslední vytištěné PDF – ať se za ním nemusí do editoru. */}
-          {pdfka.length > 0 && <PdfNabidky pdf={pdfka[0]} />}
+          {/* Poslední vytištěné PDF a poslední výpočtový Excel – ať se za nimi
+              nemusí do editoru. Každý formát zvlášť: kdyby se bralo prostě to
+              nejnovější, po tisku by tu místo nabídky visel interní model. */}
+          {posledniPdf && <PdfNabidky pdf={posledniPdf} />}
+          {posledniXlsx && <PdfNabidky pdf={posledniXlsx} />}
         </div>
 
         {pdfka.length > 0 && (
           <div className="fm-card nb-pdf-historie">
-            <h3>Nabídka pro zákazníka v PDF</h3>
+            <h3>Vygenerované soubory</h3>
             <ul>
               {pdfka.slice(0, 5).map((z) => (
                 <li key={z.id}>

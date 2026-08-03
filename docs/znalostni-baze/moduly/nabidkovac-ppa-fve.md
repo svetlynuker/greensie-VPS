@@ -151,6 +151,36 @@ Po výpočtu je nahoře **navržená FVE** (velikost v kWp) s odznakem, jak vzni
   posune k větší FVE (přebytek se investorovi vyplatí).
 - **Porovnat víc velikostí:** ve **Srovnání velikostí** klikej na řádky – detail i graf se překreslí.
 - **Přesnější simulace výroby:** vyplň **GPS** zákazníka (karta Zákazník) a reálný **sklon/azimut**.
+- **Doladit čísla ručně v Excelu:** viz níže – ke každé vytištěné PPA nabídce vzniká i sešit
+  s živými vzorci.
+
+### Výpočtový Excel k nabídce
+
+Když u PPA nabídky klikneš na **Uložit do PDF**, vznikne vedle PDF ještě **`.xlsx` se stejným
+názvem** – interní model, ve kterém se dá počítat dál. Najdeš ho na detailu nabídky (tlačítko
+**📊 Excel**) i ve složce nabídky na Disku vedle PDF. Kdo netiskne a chce jen přepočítaný sešit,
+vygeneruje si ho zvlášť (`POST …/vystup/ppa/xlsx`).
+
+> ⚠️ **Není to nabídka pro zákazníka.** Jsou v něm marže, provize, zisk Greensie i zisk SPV při
+> odkupu. PDF má whitelist, který interní čísla nepustí ven; Excel je záměrně nemá.
+
+V sešitu **nejsou hotová čísla, ale vzorce**. Přepiš žlutou buňku a přepočítá se všechno
+ostatní – proto vzniká. Pět listů:
+
+| List | Co v něm je |
+|---|---|
+| **Zadání** | Všechny vstupy pohromadě (žlutě) a pod nimi dopočítaná investice – CAPEX, úvěr, anuita, nájem baterie |
+| **Cashflow** | Roky ve sloupcích: výroba, ceny s indexací, tržby, náklady, splátka, DSCR, zisk. Dole IRR, NPV a nejhorší DSCR |
+| **Odkup** | Za kolik si klient technologii odkoupí v roce *t* a co na tom zůstane SPV |
+| **Splátkový kalendář** | Reálný úvěr měsíc po měsíci (úrok, úmor, zůstatek) |
+| **Úspora zákazníka** | Rozdíl proti dnešní vyhnutelné ceně, po letech i kumulativně |
+
+**Co laděním nejčastěji chceš:** cenu PPA (list Zadání) a pak koukat, jestli **DSCR nespadne pod
+limit banky** – takový rok se na listu Cashflow obarví červeně.
+
+Proti staršímu ručnímu souboru `docs/PPA výpočet.xlsx` je délka podle skutečného kontraktu (ne
+napevno 15 nebo 10 let), splátkový kalendář se dopočítává vzorci (ne naklikaná čísla, která po
+změně úroku lhala) a přibyl list s úsporou zákazníka.
 
 ---
 
@@ -225,6 +255,7 @@ invertor z katalogu `technologie` + BOS). Komponentový režim vyžaduje naplně
 | `GET /nabidky/{id}/ppa/profil-souhrn` | `nabidkovac` | Počet / rozsah / roční spotřeba (MWh) profilu |
 | `POST /nabidky/{id}/ppa/vypocet` | `nabidkovac` | Spustí výpočet, uloží do `navrhovana_reseni` |
 | `POST /dokumenty/{id}/zpracuj-profil` | `nabidkovac` | Naparsuje XLS/CSV → `spotreba_profil` (sdíleno s peak shavingem) |
+| `POST /nabidky/{id}/vystup/ppa/xlsx` | `nabidkovac` | Interní výpočtový Excel (vzniká i sám při tisku PDF) |
 
 Vstup výpočtu (`PpaVstup` v `schemas.py`): povinné `cena_ppa_kc_mwh`, `cena_silova_kc_mwh`,
 `delka_kontraktu_roky`; volitelné `sklon_st` (35), `azimut_st` (0), `instalovany_vykon_kwp`,
@@ -236,6 +267,8 @@ ořízne na posledních 12 měsíců; kratší než ~350 dní / s dírami → HT
 ```
 backend/app/nabidkovac/
   ppa_fve.py   – VÝPOČETNÍ JÁDRO (simulace výroby, spárování, ekonomika, ekonomický výběr velikosti, CAPEX)
+  ppa_v2.py    – model v2 + `parametry_z_nastaveni` (jedno místo pro výpočet i Excel)
+  excel_ppa.py – výpočtový sešit s živými vzorci (5 listů); vzorce musí odpovídat ppa_v2
   routes.py    – API (…/ppa/vypocet, …/ppa/profil-souhrn) + doplnění defaultů, validace, upozornění
   schemas.py   – PpaVstup
   permissions.py – vyzaduj_nabidkovac / vyzaduj_nabidkovac_katalog

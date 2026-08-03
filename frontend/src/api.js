@@ -548,6 +548,24 @@ export async function nabidkaPdfOtevri(pdfId) {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
+/** Stáhne soubor do počítače. Excel nemá prohlížeč čím zobrazit – v nové
+ *  záložce by z něj byla prázdná stránka. */
+export async function nabidkaSouborStahni(pdfId, nazev) {
+  const url = await nabidkaPdfBlobUrl(pdfId);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nazev || `nabidka-${pdfId}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/** Vyrobí (nebo znovu vyrobí) interní výpočtový Excel k PPA nabídce. */
+export function nabidkaXlsxVyrob(nabidkaId) {
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/vystup/ppa/xlsx`, { method: "POST" });
+}
+
 // ---- Uživatelská nastavení (pohledy + vzhled, uložená v DB) ----
 export function nactiNastaveni() {
   return zavolej("/nastaveni");
