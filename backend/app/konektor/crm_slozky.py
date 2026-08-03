@@ -26,21 +26,36 @@ Dan Raynetí webhook nevypne.
 
 ---- Kdy se složka zakládá -----------------------------------------------
 
-**Jen na kliknutí**, ne automaticky při vzniku případu. Případ, který za dva dny
-skončí jako „nezajímavé", by na Disku nechal prázdnou složku, kterou nikdo
-neuklidí.
+**Automaticky při vzniku záznamu** (zadání Dana z 3. 8. 2026: „aby se to
+propisovalo plně automaticky, ne jen ručně"). Platí pro obchodní případ,
+nabídku i objednávku; u zákazníka jen pro typ „klient" a pro okamžik konverze
+lead → klient — leady, ze kterých nic nebude, by jinak na Disku nechaly stovky
+prázdných složek.
+
+Zakládání **nikdy neběží ve web procesu**: kopie vzoru je desítky volání na
+Disk a několik sekund, takže by formulář visel a při souběhu by appka padala na
+502 (stejný důvod, proč běží pošta jako vlastní služba). Endpointy proto jen
+zařadí úlohu do fronty konektoru (`naplanuj`) a složku vytvoří worker.
+Tlačítko „Založit složku" zůstává — je to záchranná brzda, když je konektor
+nenastavený nebo úloha spadla.
 """
 
 from sqlalchemy.orm import Session
 
-from app.konektor import logika
+from app.konektor import fronta, logika
 from app.konektor.google_klient import DriveClient
 from app.konektor.logger import zaloguj
-from app.konektor.models import KonektorEntityFolder, KonektorNastaveni
+from app.konektor.models import KonektorEntityFolder, KonektorJobQueue, KonektorNastaveni
 
 # Klíče entit pro záznamy z appky (Raynetí používají „company" / „deal").
 ENTITA_ZAKAZNIK = "crm_zakaznik"
 ENTITA_OP = "crm_op"
+ENTITA_NABIDKA = "crm_nabidka"
+ENTITA_OBJEDNAVKA = "crm_objednavka"
+
+# Typ úlohy ve frontě konektoru (`konektor_job_queue.typ`). Jeden pro všechny
+# entity — worker si podle payloadu vybere, co zakládat.
+TYP_JOBU = "crm_slozka"
 
 
 def _drive_klient(n: KonektorNastaveni) -> DriveClient:
@@ -190,6 +205,197 @@ def zajisti_slozku_pripadu(db: Session, pripad, zakaznik) -> KonektorEntityFolde
         {"pripad_id": pripad.id, "drive_folder_id": ef.drive_folder_id},
     )
     return ef
+
+
+# Popis typu nabídky do názvu složky. Vlastní tabulka, ne převzatý překlad z
+# UI: název složky na Disku se nesmí měnit s tím, jak se přepíše tlačítko.
+NAZVY_TYPU_NABIDKY = {
+    "ppa": "PPA",
+    "prodej": "Prodej",
+    "peak_shaving": "Peak shaving",
+    "kombinace": "Kombinace opatření",
+}
+
+
+def _zajisti_slozku_pod_op(
+    db: Session,
+    entita: str,
+    zaznam_id: int,
+    nazev_slozky: str,
+    klic: str,
+    pripad,
+    zakaznik,
+) -> KonektorEntityFolder:
+    """Složka nabídky/objednávky v jejím kontejneru pod složkou případu.
+
+    Společné tělo pro obě entity — liší se jen kontejner („1. nabídky" /
+    „5. objednávky") a vzor uvnitř něj. Struktura je stejná jako u Raynetích
+    nabídek (`logika._zpracuj_zaznam_pod_op`), aby na Disku nevznikly dvě
+    konvence; odsud se ale navíc nezapisuje odkaz do Raynetu (není kam).
+    """
+    ef = najdi_slozku(db, entita, zaznam_id)
+    if ef is not None:
+        return ef
+
+    n = _nastaveni(db)
+    drive = _drive_klient(n)
+    # Nadřazená složka případu musí existovat; když ne, vytvoří se teď (i se
+    # složkou zákazníka nad ní). Nabídka založená u případu bez složky by jinak
+    # neměla kam patřit.
+    op_ef = zajisti_slozku_pripadu(db, pripad, zakaznik)
+
+    _, knab, kobj = logika._kfg_kontejnery(n)
+    nazev_kont = knab if klic == "nabidky" else kobj
+    cil = logika._kontejner_ze_slozky(drive, op_ef, klic, nazev_kont)
+    if cil is None:
+        # Starý režim bez vzoru (nebo kontejner někdo ve složce smazal):
+        # vytvoříme ho, ať nabídka neskončí volně v případu.
+        cil = drive.create_folder(nazev_kont, op_ef.drive_folder_id)["id"]
+
+    nazev = logika._bezpecny_nazev(nazev_slozky)
+    vzor = logika._vzor_polozky(drive, n, klic) if n.google_vzor_folder_id else None
+    slozka = (
+        drive.copy_tree(vzor["id"], cil, nazev) if vzor is not None
+        else drive.create_folder(nazev, cil)
+    )
+
+    ef = KonektorEntityFolder(
+        entity=entita,
+        entity_id=zaznam_id,
+        drive_folder_id=slozka["id"],
+        drive_folder_url=slozka.get("webViewLink", ""),
+        name=nazev,
+    )
+    db.add(ef)
+    db.commit()
+    zaloguj(
+        db,
+        "info",
+        "crm_slozka",
+        f"Vytvořena složka '{nazev}' v '{nazev_kont}' (z appky).",
+        {"entita": entita, "zaznam_id": zaznam_id, "drive_folder_id": ef.drive_folder_id},
+    )
+    return ef
+
+
+def zajisti_slozku_nabidky(db: Session, nabidka, pripad, zakaznik) -> KonektorEntityFolder:
+    """Složka nabídky v kontejneru nabídek pod složkou případu.
+
+    Název je `číslo - typ řešení` (např. „NAB-26-0007 - PPA"). Číslo samo by
+    nestačilo: jeden případ může mít nabídku na PPA i na peak shaving a ve
+    složce případu by pak byly dvě řady čísel bez vysvětlení, co je co.
+    """
+    popis = NAZVY_TYPU_NABIDKY.get(nabidka.typ, nabidka.typ or "")
+    zaklad = f"{nabidka.cislo} - {popis}".strip(" -") if nabidka.cislo else popis
+    return _zajisti_slozku_pod_op(
+        db,
+        ENTITA_NABIDKA,
+        nabidka.id,
+        zaklad or f"nabidka-{nabidka.id}",
+        "nabidky",
+        pripad,
+        zakaznik,
+    )
+
+
+def zajisti_slozku_objednavky(db: Session, objednavka, pripad, zakaznik) -> KonektorEntityFolder:
+    """Složka objednávky v kontejneru objednávek pod složkou případu."""
+    zaklad = f"{objednavka.cislo} - {objednavka.nazev or ''}".strip(" -")
+    return _zajisti_slozku_pod_op(
+        db,
+        ENTITA_OBJEDNAVKA,
+        objednavka.id,
+        zaklad or f"objednavka-{objednavka.id}",
+        "objednavky",
+        pripad,
+        zakaznik,
+    )
+
+
+# ---- automatika: zařazení do fronty a její zpracování ----------------------
+
+
+def naplanuj(db: Session, entita: str, zaznam_id: int) -> None:
+    """Zařadí založení složky do fronty konektoru (idempotentně).
+
+    Volá se z endpointů, které záznam zakládají — a **až po jejich commitu**:
+    `fronta.zarad` commituje, takže dřív by uložil rozdělaný záznam.
+
+    Chyba se tady polkne schválně. Kdyby zařazení do fronty shodilo zakládání
+    zákazníka, appka by kvůli složce na Disku přestala umět svou hlavní práci.
+    Nezaložená složka se pozná (tlačítko „Založit složku" zůstane) a dá se
+    dohnat; ztracený záznam ne.
+    """
+    try:
+        if najdi_slozku(db, entita, zaznam_id) is not None:
+            return
+        ceka = (
+            db.query(KonektorJobQueue)
+            .filter(
+                KonektorJobQueue.typ == TYP_JOBU,
+                KonektorJobQueue.status == "pending",
+                KonektorJobQueue.payload["entita"].astext == entita,
+                KonektorJobQueue.payload["id"].astext == str(zaznam_id),
+            )
+            .first()
+        )
+        if ceka is not None:
+            return
+        fronta.zarad(db, TYP_JOBU, {"entita": entita, "id": zaznam_id})
+    except Exception:  # noqa: BLE001 - viz docstring
+        db.rollback()
+
+
+def zpracuj_job(db: Session, payload: dict) -> dict:
+    """Vykoná jednu úlohu z fronty: založí složku podle entity v payloadu.
+
+    Záznam mezitím mohl někdo smazat — to není chyba, jen už není co zakládat
+    (jinak by úloha šla do `failed` a hlásila chybu, se kterou nikdo nic
+    neudělá).
+    """
+    from app.crm.models import ObchodniPripad, Objednavka, Zakaznik
+    from app.nabidkovac.models import Nabidka
+
+    entita = str(payload.get("entita") or "")
+    zaznam_id = int(payload.get("id") or 0)
+    if najdi_slozku(db, entita, zaznam_id) is not None:
+        return {"skip": True}
+
+    if entita == ENTITA_ZAKAZNIK:
+        z = db.get(Zakaznik, zaznam_id)
+        if z is None:
+            return {"skip": True}
+        n = _nastaveni(db)
+        ef = zajisti_slozku_zakaznika(db, _drive_klient(n), n, z)
+    elif entita == ENTITA_OP:
+        p = db.get(ObchodniPripad, zaznam_id)
+        if p is None:
+            return {"skip": True}
+        ef = zajisti_slozku_pripadu(db, p, db.get(Zakaznik, p.zakaznik_id))
+    elif entita in (ENTITA_NABIDKA, ENTITA_OBJEDNAVKA):
+        zaznam = db.get(Nabidka if entita == ENTITA_NABIDKA else Objednavka, zaznam_id)
+        if zaznam is None:
+            return {"skip": True}
+        pripad = (
+            db.get(ObchodniPripad, zaznam.obchodni_pripad_id)
+            if zaznam.obchodni_pripad_id
+            else None
+        )
+        if pripad is None:
+            # Nabídka bez případu (nabídkovač otevřený samostatně) nemá pod čím
+            # na Disku být. Není to chyba fronty, jen tady práce končí.
+            return {"skip": True}
+        zakaznik = db.get(Zakaznik, pripad.zakaznik_id)
+        if zakaznik is None:
+            return {"skip": True}
+        if entita == ENTITA_NABIDKA:
+            ef = zajisti_slozku_nabidky(db, zaznam, pripad, zakaznik)
+        else:
+            ef = zajisti_slozku_objednavky(db, zaznam, pripad, zakaznik)
+    else:
+        raise ValueError(f"Neznámá entita složky: {entita}")
+
+    return {"drive_folder_id": ef.drive_folder_id, "drive_folder_url": ef.drive_folder_url}
 
 
 def soubory(db: Session, ef: KonektorEntityFolder, limit: int = 40) -> list[dict]:

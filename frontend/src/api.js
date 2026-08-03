@@ -514,6 +514,40 @@ export function nactiObrazekVystupu(cesta) {
   return nacitani;
 }
 
+// ---- Nabídka pro zákazníka jako PDF ----
+// HTML papíru sestaví prohlížeč (`vystup/tisk.js`), server z něj Chromiem
+// udělá PDF, uloží ho k nabídce a propíše na Disk.
+
+export function nabidkaVystupDoPdf(nabidkaId, typReseni, html) {
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/vystup/${typReseni}/pdf`, {
+    method: "POST",
+    body: JSON.stringify({ html }),
+  });
+}
+
+export function nabidkaPdfSeznam(nabidkaId) {
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/pdf`);
+}
+
+// Blob URL vygenerovaného PDF. Přes fetch, ne přímý odkaz – endpoint chce
+// token v hlavičce a ten `<a href>` poslat neumí.
+export async function nabidkaPdfBlobUrl(pdfId) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/nabidkovac/nabidka-pdf/${pdfId}/soubor`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`PDF se nepodařilo načíst (chyba ${res.status})`);
+  return URL.createObjectURL(await res.blob());
+}
+
+/** Otevře PDF v nové záložce. */
+export async function nabidkaPdfOtevri(pdfId) {
+  const url = await nabidkaPdfBlobUrl(pdfId);
+  window.open(url, "_blank", "noopener");
+  // Uvolnit až po otevření, jinak si nová záložka soubor nestihne vyzvednout.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 // ---- Uživatelská nastavení (pohledy + vzhled, uložená v DB) ----
 export function nactiNastaveni() {
   return zavolej("/nastaveni");

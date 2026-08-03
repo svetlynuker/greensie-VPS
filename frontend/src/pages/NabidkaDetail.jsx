@@ -6,6 +6,7 @@ import PeakShavingPanel from "../components/PeakShavingPanel";
 import PpaPanel from "../components/PpaPanel";
 import ProdejPanel from "../components/ProdejPanel";
 import EmailOkno from "../components/EmailOkno";
+import PdfNabidky from "../components/PdfNabidky";
 import RozpisPolozek from "../components/RozpisPolozek";
 import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
 import VlastniPoleVstupy from "../components/VlastniPoleVstupy";
@@ -18,6 +19,7 @@ import {
   nabidkaPolozky,
   nabidkaUlozPolozky,
   nabidkaPridejZKatalogu,
+  nabidkaPdfSeznam,
 } from "../api";
 import { PODSEKCE, STAV_NABIDKY, fmtDatum } from "../nabidkovac";
 import "../styles/nabidkovac.css";
@@ -53,6 +55,9 @@ export default function NabidkaDetail() {
   const [spravaPoli, setSpravaPoli] = useState(false);
   // Odeslání nabídky zákazníkovi e-mailem (CRM-10).
   const [posilaEmail, setPosilaEmail] = useState(false);
+  // Vygenerovaná PDF nabídky (nejnovější první). Historie se nemaže – musí být
+  // poznat, co přesně zákazník dostal a kdy.
+  const [pdfka, setPdfka] = useState([]);
 
   function naplnFormular(n) {
     setNazev(n.zakaznik_nazev || "");
@@ -98,6 +103,14 @@ export default function NabidkaDetail() {
         }
       });
   }, [id, navigate]);
+
+  // PDF se dotahují zvlášť: detail nabídky se načítá při každé změně a tenhle
+  // seznam se mění jen tlačítkem „Uložit do PDF" v editoru výstupu.
+  useEffect(() => {
+    nabidkaPdfSeznam(id)
+      .then(setPdfka)
+      .catch(() => setPdfka([]));
+  }, [id]);
 
   async function uloz() {
     setUklada(true);
@@ -188,7 +201,33 @@ export default function NabidkaDetail() {
               Nabídka pro zákazníka
             </button>
           )}
+          {/* Poslední vytištěné PDF – ať se za ním nemusí do editoru. */}
+          {pdfka.length > 0 && <PdfNabidky pdf={pdfka[0]} />}
         </div>
+
+        {pdfka.length > 0 && (
+          <div className="fm-card nb-pdf-historie">
+            <h3>Nabídka pro zákazníka v PDF</h3>
+            <ul>
+              {pdfka.slice(0, 5).map((z) => (
+                <li key={z.id}>
+                  <PdfNabidky pdf={z} kompaktni />
+                  <span>{z.nazev}</span>
+                  <span className="crm-tise">{fmtDatum(z.vygenerovano_at)}</span>
+                  {z.vygeneroval_jmeno && (
+                    <span className="crm-tise">{z.vygeneroval_jmeno}</span>
+                  )}
+                  {/* Dokud PDF není na Disku, běží fronta konektoru (pár
+                      sekund) – nebo se nahrát nepovedlo a je to vidět. */}
+                  {!z.na_disku && <span className="crm-tise">propisuje se na Disk…</span>}
+                </li>
+              ))}
+            </ul>
+            {pdfka.length > 5 && (
+              <div className="crm-tise">…a dalších {pdfka.length - 5} starších</div>
+            )}
+          </div>
+        )}
 
         {upravaZakaznika && (
           <div className="fm-card" style={{ padding: 18, marginBottom: 14 }}>

@@ -14,7 +14,9 @@ import Papir from "../components/vystup/Papir";
 import Vlastnosti from "../components/vystup/Vlastnosti";
 import {
   logout,
+  nabidkaPdfOtevri,
   nabidkaVystup,
+  nabidkaVystupDoPdf,
   nabidkaVystupSablonaSmaz,
   nabidkaVystupSablonaUloz,
   nabidkaVystupSablony,
@@ -22,6 +24,7 @@ import {
   nactiMe,
 } from "../api";
 import { useEditorVystupu } from "../vystup/editor";
+import { sestavTiskoveHtml } from "../vystup/tisk";
 import "../styles/nabidkovac.css";
 import "../styles/vystup.css";
 
@@ -37,6 +40,7 @@ export default function NabidkaVystupStranka() {
   const [chyba, setChyba] = useState(null);
   const [zprava, setZprava] = useState(null);
   const [uklada, setUklada] = useState(false);
+  const [tiskne, setTiskne] = useState(false);
   const [neulozeno, setNeulozeno] = useState(false);
   const [zoom, setZoom] = useState(0.8);
   const [aktivniStranka, setAktivniStranka] = useState(null);
@@ -141,10 +145,37 @@ export default function NabidkaVystupStranka() {
       editor.nahradKonfiguraci(d.konfigurace, { vymazHistorii: false });
       setNeulozeno(false);
       setZprava("Uloženo.");
+      return true;
+    } catch (e) {
+      setChyba(e.message);
+      return false;
+    } finally {
+      setUklada(false);
+    }
+  }
+
+  // ---- PDF ----
+  // Dřív tady bylo `window.print()`. Tisk z prohlížeče ale skončí souborem
+  // někde v Downloads: server o něm neví, takže ho nemůže propsat na Disk ani
+  // ukázat u nabídky. Proto papír sestavíme do samostatného HTML, server z něj
+  // udělá PDF a uloží ho — a rovnou ho otevřeme, ať ho je vidět.
+  async function doPdf() {
+    setChyba(null);
+    setZprava(null);
+    setTiskne(true);
+    try {
+      // Neuložené rozvržení se uloží samo, a když uložení selže, PDF nevzniká:
+      // soubor u nabídky, který neodpovídá uložené šabloně, by později nikdo
+      // nerozklíčoval.
+      if (neulozeno && !(await uloz())) return;
+      const html = await sestavTiskoveHtml();
+      const zaznam = await nabidkaVystupDoPdf(id, typ, html);
+      setZprava(`PDF „${zaznam.nazev}" uloženo, propisuje se na Disk.`);
+      await nabidkaPdfOtevri(zaznam.id);
     } catch (e) {
       setChyba(e.message);
     } finally {
-      setUklada(false);
+      setTiskne(false);
     }
   }
 
@@ -229,8 +260,9 @@ export default function NabidkaVystupStranka() {
         onZoom={setZoom}
         onZpetNaNabidku={() => navigate(`/nabidkovac/nabidka/${id}`)}
         onUloz={uloz}
-        onTisk={() => window.print()}
+        onTisk={doPdf}
         uklada={uklada}
+        tiskne={tiskne}
         neulozeno={neulozeno}
         zprava={zprava}
         chyba={chyba}

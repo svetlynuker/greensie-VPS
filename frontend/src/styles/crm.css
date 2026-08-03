@@ -879,6 +879,19 @@
   padding: 4px 8px;
   font-size: 12px;
 }
+
+/* Odkaz na PDF nabídky (a na jeho kopii na Disku) v řádku seznamu i na
+   dlaždici kanbanu. `a.fm-btn` potřebuje zarovnání navíc – jako odkaz nemá
+   výšku tlačítka a dvojice by se rozjela o pár pixelů. */
+.crm-pdf-odkaz {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.crm-pdf-odkaz a.fm-btn {
+  text-decoration: none;
+  line-height: normal;
+}
 /* Hlavní mazací tlačítko ve formuláři je plná červená rovnou, ne až po
    najetí — ať je vidět, do čeho člověk kliká, dřív než tam najede.
    Dvojitý selektor kvůli specifitě: `.fm-btn` z global.css nastavuje

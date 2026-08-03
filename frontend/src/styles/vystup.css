@@ -257,7 +257,12 @@
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.14);
 
   /* Typografie papíru je v bodech – je to tiskovina, ne obrazovka. */
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  /* Arial a Liberation Sans mají SHODNÉ metriky, takže text zlomí řádky na
+     stejném místě na Windows, na Linuxu i v Chromiu na serveru, které z papíru
+     dělá PDF. Se „Segoe UI" (jen Windows) se odsazení rozešlo a co se v editoru
+     na stránku vešlo, mohlo být v PDF o řádek delší – a `overflow: hidden`
+     papíru by ten řádek uřízl. */
+  font-family: Arial, "Liberation Sans", Helvetica, sans-serif;
   font-size: 10pt;
   line-height: 1.45;
 }

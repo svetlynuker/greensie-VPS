@@ -525,6 +525,18 @@ class VystupSablonaVstup(BaseModel):
     konfigurace: VystupKonfigurace
 
 
+class VystupPdfVstup(BaseModel):
+    """Podklad pro tisk: hotová podoba papíru z prohlížeče.
+
+    Posílá se celý dokument (styly + papír + obrázky v data: URI), protože papír
+    vykresluje React a jediné místo, kde existuje ve finální podobě, je
+    prohlížeč. Server ho nerozebírá — pouze předá Chromiu k vytištění, a to
+    v izolovaném procesu bez sítě, takže obsah nikam dál neteče.
+    """
+
+    html: str
+
+
 class VystupOut(BaseModel):
     """Vše, co frontend potřebuje k vykreslení náhledu i editoru."""
 

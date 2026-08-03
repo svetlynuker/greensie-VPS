@@ -11,6 +11,7 @@ export default function Lista({
   onUloz,
   onTisk,
   uklada,
+  tiskne,
   neulozeno,
   zprava,
   chyba,
@@ -93,8 +94,13 @@ export default function Lista({
         <button className="fm-btn" onClick={onUloz} disabled={uklada}>
           {uklada ? "Ukládám…" : "Uložit"}
         </button>
-        <button className="fm-btn fm-primary" onClick={onTisk}>
-          Uložit do PDF
+        <button
+          className="fm-btn fm-primary"
+          onClick={onTisk}
+          disabled={tiskne || uklada}
+          title="Vyrobí PDF, uloží ho k nabídce, propíše na Disk a otevře v nové záložce"
+        >
+          {tiskne ? "Vyrábím PDF…" : "Uložit do PDF"}
         </button>
       </div>
 

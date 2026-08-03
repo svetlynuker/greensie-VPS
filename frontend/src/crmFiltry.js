@@ -205,6 +205,9 @@ export const SLOUPCE_NABIDKY = [
   S("pripad_cislo", "Případ"),
   S("stav_nazev", "Obchodní stav", "vyber"),
   S("spocitana", "Spočítáno", "ano_ne"),
+  // Nabídka pro zákazníka v PDF – ať se za ní nemusí klikat do detailu.
+  // Filtruje se podle skaláru `ma_pdf`, vykresluje se jako odkaz na soubor.
+  S("ma_pdf", "PDF", "ano_ne"),
   S("vytvoril_jmeno", "Vytvořil"),
   S("vytvoreno_at", "Vytvořeno", "datum"),
 ];

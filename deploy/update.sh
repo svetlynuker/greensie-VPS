@@ -17,6 +17,22 @@ VENV="${PROJEKT}/backend/venv"
 echo "==> Instaluji Python závislosti backendu do venv…"
 sudo -u dan bash -c "'${VENV}/bin/pip' install -r '${PROJEKT}/backend/requirements.txt'"
 
+# Headless Chromium pro tisk nabídky do PDF. NEMAZAT: `pip install playwright`
+# přinese jen knihovnu, samotný prohlížeč se stahuje tímhle příkazem a bez něj
+# skončí „Uložit do PDF" chybou 503. Obojí je idempotentní – když je Chromium
+# ve správné verzi stažené, příkaz jen skončí.
+#
+# Písma jsou stejně povinná jako prohlížeč: na čistém serveru žádná nejsou
+# a Chromium by nabídku vysázel do prázdna. Liberation Sans má shodné metriky
+# s Arialem, takže PDF zlomí řádky tam, kde je zlomil editor v prohlížeči.
+echo "==> Instaluji písma a Chromium pro tisk PDF…"
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+  fonts-liberation fonts-dejavu-core
+sudo -u dan bash -c "'${VENV}/bin/playwright' install chromium"
+# Systémové knihovny, které Chromium potřebuje (libnss3, libasound2…). Běží jako
+# root, protože instaluje balíčky; `--with-deps` samo zavolá apt.
+"${VENV}/bin/playwright" install-deps chromium
+
 # npm install PŘED buildem – stejný důvod: když PR přidá nový npm balíček do
 # package.json, build by bez něj spadl. npm install je taky idempotentní.
 echo "==> Instaluji npm závislosti frontendu…"

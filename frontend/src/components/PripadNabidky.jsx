@@ -5,7 +5,8 @@ import KombinaceOkno from "./KombinaceOkno";
 import PeakShavingPanel from "./PeakShavingPanel";
 import PpaPanel from "./PpaPanel";
 import ProdejPanel from "./ProdejPanel";
-import { crmKategorie, crmVytvorNabidku, nabidkaDetail } from "../api";
+import PdfNabidky from "./PdfNabidky";
+import { crmKategorie, crmVytvorNabidku, nabidkaDetail, nabidkaPdfSeznam } from "../api";
 import { STAV_NABIDKY } from "../nabidkovac";
 import "../styles/nabidkovac.css";
 
@@ -32,6 +33,9 @@ export default function PripadNabidky({ pripad, onZmena }) {
   const [zaklada, setZaklada] = useState(null); // typ, který se právě zakládá
   const [kombinace, setKombinace] = useState(false);
   const [kategorie, setKategorie] = useState([]);
+  // Poslední vytištěné PDF vybrané nabídky. Načítá se zvlášť od detailu:
+  // detail se obnovuje po každém výpočtu, PDF se mění jen tiskem.
+  const [pdf, setPdf] = useState(null);
   const [chyba, setChyba] = useState(null);
 
   const nabidky = pripad.nabidky || [];
@@ -71,6 +75,16 @@ export default function PripadNabidky({ pripad, onZmena }) {
       .then(setKategorie)
       .catch(() => setKategorie([]));
   }, []);
+
+  useEffect(() => {
+    if (!aktivni?.id) {
+      setPdf(null);
+      return;
+    }
+    nabidkaPdfSeznam(aktivni.id)
+      .then((seznam) => setPdf(seznam[0] || null))
+      .catch(() => setPdf(null));
+  }, [aktivni?.id]);
 
   async function zaloz(typ) {
     setZaklada(typ);
@@ -192,6 +206,8 @@ export default function PripadNabidky({ pripad, onZmena }) {
                 Nabídka pro zákazníka (PDF)
               </button>
             )}
+            {/* Naposledy vytištěné PDF — bez odbočky do editoru výstupu. */}
+            {pdf && <PdfNabidky pdf={pdf} />}
             <button
               className="fm-btn"
               onClick={() => navigate(`/nabidkovac/nabidka/${aktivni.id}`)}
