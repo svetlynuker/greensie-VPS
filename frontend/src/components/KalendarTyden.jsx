@@ -643,7 +643,8 @@ export default function KalendarTyden({
                 aria-label="Sbalit noční hodiny"
                 aria-expanded="true"
               >
-                ▴
+                <span className="kal-osa-sipka">▴</span>
+                <span className="kal-osa-pas-popis">0–7</span>
               </button>
             </>
           ) : (
@@ -683,7 +684,8 @@ export default function KalendarTyden({
                 aria-label="Sbalit večerní hodiny"
                 aria-expanded="true"
               >
-                ▾
+                <span className="kal-osa-pas-popis">19–24</span>
+                <span className="kal-osa-sipka">▾</span>
               </button>
             </>
           ) : (

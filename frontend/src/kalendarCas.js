@@ -22,7 +22,10 @@
 export const PRAC_OD = 7;
 export const PRAC_DO = 19;
 export const PX_HODINA = 44;
-export const PX_PAS = 26; // složený pás (0:00–7:00, 19:00–23:59)
+// Složený pás (0:00–7:00, 19:00–23:59). 30 px, ne 26: pás nese tlačítko na
+// rozbalení a na 26 px z něj byl terč, který se hledal.
+// POZOR: musí odpovídat fallbacku --kal-noc v kalendar.css.
+export const PX_PAS = 30;
 
 // Na kolik minut se tažení zaokrouhluje. Čtvrthodina je nejmenší jednotka, se
 // kterou se schůzky reálně plánují — jemnější krok by dělal časy jako 10:07.
