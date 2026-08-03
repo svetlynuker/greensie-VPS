@@ -679,10 +679,15 @@ class VystupSablona(Base):
 
 
 class GenerovanaNabidkaPdf(Base):
-    """Vygenerované PDF nabídky (kap. 4.8 SPEC).
+    """Vygenerované PDF nabídky pro zákazníka (kap. 4.8 SPEC).
 
-    `reseni_id` je nullable – jedno PDF může shrnovat víc řešení najednou.
-    Generování PDF se tu NEIMPLEMENTUJE (layout se řeší samostatně).
+    Vzniká tlačítkem „Uložit do PDF" v editoru výstupu: prohlížeč pošle hotovou
+    podobu papíru, Chromium z ní udělá PDF (`nabidkovac/pdf.py`) a soubor se
+    uloží k nabídce. Historie se NEMAŽE – jedna nabídka se přepočítá a vytiskne
+    víckrát a musí být dohledatelné, co přesně zákazník dostal a kdy.
+
+    `reseni_id` je nullable – jedno PDF může shrnovat víc řešení najednou
+    (kombinace opatření), takže se neváže na jedno konkrétní.
     """
 
     __tablename__ = "generovane_nabidky_pdf"
@@ -694,8 +699,22 @@ class GenerovanaNabidkaPdf(Base):
     reseni_id = Column(
         Integer, ForeignKey("navrhovana_reseni.id", ondelete="SET NULL"), nullable=True
     )
+    # Ze které šablony výstupu PDF vzniklo ("ppa" / "peak_shaving" /
+    # "kombinace"). Nullable kvůli řádkům z doby před tímhle tlačítkem.
+    typ_reseni = Column(String, nullable=True, index=True)
+    # Jméno souboru pro člověka (NAB-26-0007_ppa_2026-08-03.pdf). Uložená cesta
+    # ho neobsahuje čitelně – před názvem je uuid, aby se soubory nepřepisovaly.
+    nazev = Column(String, nullable=False, default="", server_default="")
     soubor_cesta = Column(String, nullable=False)
+
+    # Kopie na Disku. Prázdné = ještě se nenahrála (běží fronta) nebo nahrát
+    # nešla; podle toho UI pozná, jestli má nabídnout odkaz na Disk.
+    disk_file_id = Column(String, nullable=False, default="", server_default="")
+    disk_url = Column(String, nullable=False, default="", server_default="")
+
     vygeneroval_user_id = Column(
         Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True
     )
     vygenerovano_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    vygeneroval = relationship("User")

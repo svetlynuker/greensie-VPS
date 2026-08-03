@@ -17,3 +17,6 @@ markdown==3.7
 cryptography==49.0.0
 google-api-python-client==2.198.0
 google-auth==2.56.2
+# Nabídka pro zákazníka → PDF (headless Chromium). Sám prohlížeč se instaluje
+# zvlášť příkazem `playwright install chromium` – viz deploy/update.sh.
+playwright==1.56.0

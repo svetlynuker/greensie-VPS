@@ -483,6 +483,13 @@ class NabidkaRadekOut(BaseModel):
     vytvoril_jmeno: Optional[str] = None
     vytvoreno_at: Optional[str] = None
     extra_text: dict = {}
+    # Nejnovější vygenerované PDF nabídky ({id, nazev, vygenerovano_at,
+    # disk_url}), nebo None, když ještě žádné není. Seznam podle toho ukáže
+    # „Otevřít PDF" — aby se za ním nemuselo klikat do detailu.
+    pdf: Optional[dict] = None
+    # Totéž jako `bool(pdf)`, ale zvlášť: sloupec tabulky se filtruje, řadí
+    # a exportuje podle skalární hodnoty, ne podle vnořeného objektu.
+    ma_pdf: bool = False
 
 
 class NabidkaKanbanSloupec(BaseModel):

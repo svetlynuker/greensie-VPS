@@ -172,6 +172,21 @@ def _lehka_migrace():
             text("ALTER TABLE konektor_nastaveni ADD COLUMN IF NOT EXISTS dms_baseline JSONB")
         )
 
+        # Nabídka pro zákazníka v PDF: čitelný název, ze které šablony vznikla
+        # a kam se propsala na Disk. Tabulka existovala jen jako kostra, tyhle
+        # sloupce jí create_all nepřidá.
+        for sloupec, typ in (
+            ("typ_reseni", "VARCHAR"),
+            ("nazev", "VARCHAR NOT NULL DEFAULT ''"),
+            ("disk_file_id", "VARCHAR NOT NULL DEFAULT ''"),
+            ("disk_url", "VARCHAR NOT NULL DEFAULT ''"),
+        ):
+            conn.execute(
+                text(
+                    f"ALTER TABLE generovane_nabidky_pdf ADD COLUMN IF NOT EXISTS {sloupec} {typ}"
+                )
+            )
+
         # CRM: hodnoty vlastních (admin definovaných) polí. Tabulky
         # `crm_zakaznici` / `crm_obchodni_pripady` mohly vzniknout ještě bez
         # tohoto sloupce – create_all ho do existující tabulky nepřidá.

@@ -23,6 +23,7 @@ from app.crm.models import ObjednavkaPolozka
 from app.database import get_db
 from app.nabidkovac import (
     katalog_soubory,
+    pdf as pdf_modul,
     peak_shaving,
     polozky as polozky_modul,
     ppa_fve,
@@ -44,6 +45,7 @@ from app.nabidkovac.models import (
     TYPY_NABIDKY,
     TYPY_SLOUPCE,
     VYCHOZI_ZDROJ,
+    GenerovanaNabidkaPdf,
     KatalogSloupec,
     Nabidka,
     NabidkaDokument,
@@ -85,6 +87,7 @@ from app.nabidkovac.schemas import (
     VypoctovaNastaveniVstup,
     VystupKonfigurace,
     VystupOut,
+    VystupPdfVstup,
     VystupPrvek,
     VystupSablonaOut,
     VystupSablonaVstup,
@@ -2868,6 +2871,100 @@ def vydej_obrazek_vystupu(
     return FileResponse(
         path=str(soubor),
         media_type=vystup_obrazky.mime_typ(cesta),
+        content_disposition_type="inline",
+    )
+
+
+# ---------------- nabídka pro zákazníka jako PDF ----------------
+# Papír vykresluje React (mm souřadnice, SVG grafy, barvy z CSS tokenů), takže
+# jediná podoba, která se dá vytisknout beze ztráty, je ta z prohlížeče. Klient
+# proto pošle hotové HTML papíru včetně stylů a obrázků v data: URI a server
+# z něj Chromiem udělá PDF. Kdyby si server sazbu skládal sám, byl by to druhý
+# renderer, který se s tím v editoru začne rozcházet.
+
+
+def _pdf_out(z: GenerovanaNabidkaPdf) -> dict:
+    return {
+        "id": z.id,
+        "nazev": z.nazev or f"nabidka-{z.nabidka_id}.pdf",
+        "typ_reseni": z.typ_reseni or "",
+        "vygenerovano_at": _iso(z.vygenerovano_at),
+        "vygeneroval_jmeno": getattr(z.vygeneroval, "jmeno", None) if z.vygeneroval else None,
+        "disk_url": z.disk_url or "",
+        # Dokud PDF nemá kopii na Disku, běží (nebo spadla) fronta. UI podle
+        # toho píše „propisuje se na Disk…" místo mrtvého odkazu.
+        "na_disku": bool(z.disk_file_id),
+    }
+
+
+@router.get("/nabidky/{nabidka_id}/pdf")
+def seznam_pdf_nabidky(
+    nabidka_id: int,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Vygenerovaná PDF nabídky, nejnovější první.
+
+    Historie zůstává celá: nabídka se přepočítá a vytiskne víckrát a musí být
+    poznat, co přesně zákazník dostal a kdy.
+    """
+    if db.get(Nabidka, nabidka_id) is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    radky = (
+        db.query(GenerovanaNabidkaPdf)
+        .filter(GenerovanaNabidkaPdf.nabidka_id == nabidka_id)
+        .order_by(GenerovanaNabidkaPdf.vygenerovano_at.desc(), GenerovanaNabidkaPdf.id.desc())
+        .all()
+    )
+    return [_pdf_out(z) for z in radky]
+
+
+@router.post("/nabidky/{nabidka_id}/vystup/{typ_reseni}/pdf")
+def vyrob_pdf_nabidky(
+    nabidka_id: int,
+    typ_reseni: str,
+    vstup: VystupPdfVstup,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Z HTML papíru udělá PDF, uloží ho k nabídce a propíše na Disk.
+
+    Nahrání na Disk běží na pozadí (fronta konektoru) — jinak by uživatel čekal
+    na Google a při nabídce bez složky i na kopii celého vzoru. PDF má hned,
+    odkaz na Disk se doplní během několika sekund.
+    """
+    _over_typ_reseni(typ_reseni)
+    n = db.get(Nabidka, nabidka_id)
+    if n is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    if not (vstup.html or "").strip():
+        raise HTTPException(status_code=422, detail="Prázdný podklad pro PDF.")
+    try:
+        data = pdf_modul.vyrob(vstup.html)
+    except pdf_modul.PdfNedostupne as e:
+        # 503, ne 500: appka je v pořádku, jen tahle služba teď neumí odpovědět.
+        raise HTTPException(status_code=503, detail=str(e))
+    zaznam = pdf_modul.uloz(db, n, typ_reseni, data, user.id)
+    return _pdf_out(zaznam)
+
+
+@router.get("/nabidka-pdf/{pdf_id}/soubor")
+def vydej_pdf_nabidky(
+    pdf_id: int,
+    user: User = Depends(vyzaduj_nabidkovac),
+    db: Session = Depends(get_db),
+):
+    """Vydá vygenerované PDF k zobrazení v prohlížeči."""
+    z = db.get(GenerovanaNabidkaPdf, pdf_id)
+    if z is None:
+        raise HTTPException(status_code=404, detail="PDF neexistuje")
+    cesta = soubory.UPLOAD_DIR / z.soubor_cesta
+    if not cesta.exists():
+        raise HTTPException(status_code=404, detail="Soubor PDF na serveru chybí.")
+    return FileResponse(
+        path=str(cesta),
+        media_type=pdf_modul.MIME,
+        filename=z.nazev or cesta.name,
         content_disposition_type="inline",
     )
 

@@ -7,6 +7,7 @@ import Kanban from "../components/Kanban";
 import ZobrazeniPrepinac from "../components/ZobrazeniPrepinac";
 import KpiPas from "../components/KpiPas";
 import MigraceNabidek from "../components/MigraceNabidek";
+import PdfNabidky from "../components/PdfNabidky";
 import StavyNastaveni from "../components/StavyNastaveni";
 import {
   crmNabidkaStav,
@@ -238,6 +239,11 @@ export default function Nabidky() {
                   {/* Nespočítaná nabídka není co poslat zákazníkovi – ať je to vidět. */}
                   {n.spocitana ? "" : " · nespočítáno"}
                 </div>
+                {n.pdf && (
+                  <div className="crm-dlazdice-pata">
+                    <PdfNabidky pdf={n.pdf} kompaktni />
+                  </div>
+                )}
                 {n.vytvoril_jmeno && (
                   <div className="crm-dlazdice-vlastnik">{n.vytvoril_jmeno}</div>
                 )}
@@ -273,6 +279,7 @@ export default function Nabidky() {
                 ) : (
                   <span className="crm-tise">nespočítáno</span>
                 );
+              if (sl.klic === "ma_pdf") return <PdfNabidky pdf={n.pdf} />;
               if (sl.klic === "vytvoreno_at") return fmtDatum(n.vytvoreno_at);
               return n[sl.klic] || "—";
             }}

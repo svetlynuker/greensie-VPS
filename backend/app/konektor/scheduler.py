@@ -77,6 +77,16 @@ def _zpracuj_job(db: Session, job: KonektorJobQueue) -> None:
     elif job.typ == "dms_zmeny":
         from app.konektor.logika import zrcadli_zmeny_dms
         zrcadli_zmeny_dms(db)
+    elif job.typ == "crm_slozka":
+        # Složky pro záznamy z appky (zákazník / OP / nabídka / objednávka).
+        # Běží tady, a ne v endpointu, který záznam zakládá: kopie vzoru je
+        # desítky volání na Disk a několik sekund — ve web procesu by to sekalo
+        # formulář a při souběhu tlačilo appku k 502.
+        from app.konektor.crm_slozky import zpracuj_job
+        zpracuj_job(db, job.payload)
+    elif job.typ == "nabidka_pdf_na_disk":
+        from app.nabidkovac.pdf import nahraj_na_disk
+        nahraj_na_disk(db, int(job.payload["pdf_id"]))
     else:
         raise RuntimeError(f"Neznámý typ úlohy: {job.typ}")
 

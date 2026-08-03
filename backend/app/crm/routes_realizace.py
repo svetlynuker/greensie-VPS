@@ -391,6 +391,11 @@ def zaloz_objednavku(
     automatizace_modul.po_vzniku(db, "obj", o, user)
     db.commit()
     db.refresh(o)
+    # Složka objednávky na Disku (a s ní případ i zákazník nad ní) — do fronty
+    # konektoru, ne tady; viz `crm.routes._naplanuj_slozku`.
+    from app.crm.routes import _naplanuj_slozku
+
+    _naplanuj_slozku(db, "objednavka", o.id)
     return _objednavka_detail(db, o, user)
 
 

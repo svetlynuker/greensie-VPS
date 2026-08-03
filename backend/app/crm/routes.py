@@ -237,6 +237,34 @@ def _vlastnictvi(db: Session, vstup, user: User, zaznam=None) -> tuple[int | Non
     return vlastnik, [i for i in spolu if i != vlastnik]
 
 
+# Entita v URL/CRM → klíč entity v konektoru. Jeden slovník pro celý modul, ať
+# se „nabidka" nepřekládá na dvou místech dvěma způsoby.
+_KLICE_SLOZEK = {
+    "zakaznik": "crm_zakaznik",
+    "op": "crm_op",
+    "nabidka": "crm_nabidka",
+    "objednavka": "crm_objednavka",
+}
+
+
+def _naplanuj_slozku(db: Session, entita: str, zaznam_id: int) -> None:
+    """Zařadí založení složky na Disku do fronty konektoru.
+
+    Volat **až po commitu** záznamu — zařazení do fronty samo commituje.
+
+    Ve fronte, ne tady: kopie vzoru je desítky volání na Disk a několik sekund,
+    takže by uživatel čekal na formuláři a souběh by appku tlačil k 502.
+    Konektor nemusí být vůbec nastavený; potom se jen nic nenaplánuje a složka
+    se dá založit tlačítkem (`POST /crm/slozka/...`).
+    """
+    from app.konektor import crm_slozky
+
+    klic = _KLICE_SLOZEK.get(entita)
+    if klic is None:
+        return
+    crm_slozky.naplanuj(db, klic, zaznam_id)
+
+
 # ---- uživatelé do výběru ----------------------------------------------------
 @router.get("/uzivatele", response_model=list[UzivatelVolbaOut])
 def seznam_uzivatelu(
@@ -421,6 +449,11 @@ def zaloz_zakaznika(
     db.add(z)
     db.commit()
     db.refresh(z)
+    # Složka na Disku se zakládá jen klientům, ne leadům (zadání Dana): lead,
+    # ze kterého nic nebude, by na Disku nechal prázdnou složku a nikdo by ji
+    # neuklidil. Leadovi vznikne až konverzí nebo prvním obchodním případem.
+    if z.typ == "klient":
+        _naplanuj_slozku(db, "zakaznik", z.id)
     return _zakaznik_detail(z, user, db)
 
 
@@ -473,6 +506,9 @@ def uprav_zakaznika(
 
     db.commit()
     db.refresh(z)
+    # Z leadu se stal klient → teď už složka na Disku smysl má.
+    if puvodni_typ == "lead" and z.typ == "klient":
+        _naplanuj_slozku(db, "zakaznik", z.id)
     return _zakaznik_detail(z, user, db)
 
 
@@ -490,6 +526,7 @@ def konvertuj_na_klienta(
         z.konvertovan_at = datetime.now()
         db.commit()
         db.refresh(z)
+        _naplanuj_slozku(db, "zakaznik", z.id)
     return _zakaznik_detail(z, user, db)
 
 
@@ -1041,6 +1078,9 @@ def zaloz_pripad(
     automatizace_modul.po_vzniku(db, "op", p, user)
     db.commit()
     db.refresh(p)
+    # Složka případu (a s ní i složka zákazníka, i když je to zatím lead —
+    # obchodní případ už je reálná práce, na kterou se vážou dokumenty).
+    _naplanuj_slozku(db, "op", p.id)
     return _pripad_detail(db, p, user)
 
 
@@ -1235,6 +1275,7 @@ def vytvor_nabidku_z_pripadu(
     db.add(n)
     db.commit()
     db.refresh(n)
+    _naplanuj_slozku(db, "nabidka", n.id)
     return {"id": n.id, "cislo": n.cislo, "typ": n.typ}
 
 
@@ -1295,8 +1336,44 @@ def smaz_pripad(
 # ---- nabídky: obchodní pipeline a sekce Nabídky -----------------------------
 # Nabídky zůstávají v tabulce nabídkovače (ten je zdroj pravdy o výpočtech);
 # CRM jim přidává obchodní stav a pohled „co je odesláno a co viselo".
+def _posledni_pdf(db: Session, nabidky: list) -> dict[int, dict]:
+    """K zadaným nabídkám najde jejich nejnovější PDF — jedním dotazem.
+
+    Bez toho by seznam nabídek dělal dotaz na řádek (v kanbanu stovky) jen
+    proto, aby u nich mohl svítit odkaz „Otevřít PDF".
+    """
+    from app.nabidkovac.models import GenerovanaNabidkaPdf
+
+    ids = [n.id for n in nabidky]
+    if not ids:
+        return {}
+    radky = (
+        db.query(GenerovanaNabidkaPdf)
+        .filter(GenerovanaNabidkaPdf.nabidka_id.in_(ids))
+        .order_by(GenerovanaNabidkaPdf.nabidka_id, GenerovanaNabidkaPdf.id.desc())
+        .all()
+    )
+    out: dict[int, dict] = {}
+    for r in radky:
+        # První řádek každé nabídky je díky řazení ten nejnovější.
+        out.setdefault(
+            r.nabidka_id,
+            {
+                "id": r.id,
+                "nazev": r.nazev or "",
+                "vygenerovano_at": _iso(r.vygenerovano_at),
+                "disk_url": r.disk_url or "",
+            },
+        )
+    return out
+
+
 def _nabidka_radek(
-    db: Session, n, stav_mapa: dict[str, CrmStav], extra_text: dict | None = None
+    db: Session,
+    n,
+    stav_mapa: dict[str, CrmStav],
+    extra_text: dict | None = None,
+    pdf: dict | None = None,
 ) -> NabidkaRadekOut:
     klic = nabidky_pipeline.stav_nabidky(db, n)
     stav = stav_mapa.get(klic)
@@ -1321,6 +1398,8 @@ def _nabidka_radek(
         vytvoril_jmeno=_jmeno(n.vytvoril),
         vytvoreno_at=_iso(n.vytvoreno_at),
         extra_text=extra_text or {},
+        pdf=pdf,
+        ma_pdf=pdf is not None,
     )
 
 
@@ -1348,7 +1427,8 @@ def seznam_nabidek_crm(
 
     mapa = _mapa_stavu(db, "nab")
     texty = pole_modul.hodnoty_pro_seznam(db, "nab", nabidky)
-    radky = [_nabidka_radek(db, n, mapa, texty.get(n.id)) for n in nabidky]
+    pdfka = _posledni_pdf(db, nabidky)
+    radky = [_nabidka_radek(db, n, mapa, texty.get(n.id), pdfka.get(n.id)) for n in nabidky]
     # Filtr podle stavu až tady: starší nabídky stav v DB nemají a dopočítává
     # se jim první stav pipeline, takže v SQL by se nechytily.
     if stav:
@@ -1369,6 +1449,7 @@ def kanban_nabidek(
     seznam_stavu = stavy_modul.seznam(db, "nab")
     mapa = {s.klic: s for s in seznam_stavu}
     texty = pole_modul.hodnoty_pro_seznam(db, "nab", nabidky)
+    pdfka = _posledni_pdf(db, nabidky)
 
     koše: dict[str, list] = {s.klic: [] for s in seznam_stavu}
     for n in nabidky:
@@ -1383,7 +1464,8 @@ def kanban_nabidek(
         NabidkaKanbanSloupec(
             stav=_stav_out(s),
             zaznamy=[
-                _nabidka_radek(db, n, mapa, texty.get(n.id)) for n in koše.get(s.klic, [])
+                _nabidka_radek(db, n, mapa, texty.get(n.id), pdfka.get(n.id))
+                for n in koše.get(s.klic, [])
             ],
             pocet=len(koše.get(s.klic, [])),
         )
@@ -1433,7 +1515,9 @@ def zmen_stav_nabidky(
         db.commit()
         db.refresh(n)
     texty = pole_modul.hodnoty_pro_seznam(db, "nab", [n])
-    return _nabidka_radek(db, n, _mapa_stavu(db, "nab"), texty.get(n.id))
+    return _nabidka_radek(
+        db, n, _mapa_stavu(db, "nab"), texty.get(n.id), _posledni_pdf(db, [n]).get(n.id)
+    )
 
 
 # ---- aktivity a poznámky ----------------------------------------------------
@@ -2070,8 +2154,17 @@ def hromadne_aktivita(
 # jednom místě. Zakládání je POST (mění stav na Disku), čtení GET.
 
 def _slozka_zaznam(db: Session, entita: str, zaznam_id: int, user: User):
-    """Ověří přístup a vrátí (klíč entity konektoru, záznam, zákazník)."""
-    from app.konektor.crm_slozky import ENTITA_OP, ENTITA_ZAKAZNIK
+    """Ověří přístup a vrátí (klíč entity konektoru, záznam, zákazník).
+
+    U nabídky a objednávky se práva odvozují od jejich obchodního případu —
+    vlastní viditelnost nemají a bez případu by je nešlo dohledat ani na Disku.
+    """
+    from app.konektor.crm_slozky import (
+        ENTITA_NABIDKA,
+        ENTITA_OBJEDNAVKA,
+        ENTITA_OP,
+        ENTITA_ZAKAZNIK,
+    )
 
     if entita == "zakaznik":
         z = vyzaduj_zaznam(db.get(Zakaznik, zaznam_id), user, "Zákazník")
@@ -2079,8 +2172,28 @@ def _slozka_zaznam(db: Session, entita: str, zaznam_id: int, user: User):
     if entita == "op":
         p = vyzaduj_zaznam(db.get(ObchodniPripad, zaznam_id), user, "Obchodní případ")
         return ENTITA_OP, p, db.get(Zakaznik, p.zakaznik_id)
+    if entita in ("nabidka", "objednavka"):
+        if entita == "nabidka":
+            from app.nabidkovac.models import Nabidka
+
+            zaznam = db.get(Nabidka, zaznam_id)
+            popis, klic = "Nabídka", ENTITA_NABIDKA
+        else:
+            zaznam = db.get(Objednavka, zaznam_id)
+            popis, klic = "Objednávka", ENTITA_OBJEDNAVKA
+        if zaznam is None:
+            raise HTTPException(status_code=404, detail=f"{popis} neexistuje")
+        if not zaznam.obchodni_pripad_id:
+            raise HTTPException(
+                status_code=422, detail=f"{popis} nepatří k obchodnímu případu, složku nemá kde mít."
+            )
+        p = vyzaduj_zaznam(
+            db.get(ObchodniPripad, zaznam.obchodni_pripad_id), user, "Obchodní případ"
+        )
+        return klic, zaznam, db.get(Zakaznik, p.zakaznik_id)
     raise HTTPException(
-        status_code=422, detail="Složku lze vést jen u zákazníka nebo obchodního případu."
+        status_code=422,
+        detail="Složku lze vést jen u zákazníka, případu, nabídky nebo objednávky.",
     )
 
 
@@ -2093,9 +2206,9 @@ def slozka_zaznamu(
 ):
     """Odkaz na složku na Disku a její obsah.
 
-    Když složka není, vrací `existuje: false` — appka ji nezakládá sama, protože
-    u případu, který za dva dny skončí jako „nezajímavé", by na Disku zůstala
-    prázdná složka, kterou nikdo neuklidí (rozhodnutí Dana).
+    Když složka není, vrací `existuje: false`. Nově se zakládá automaticky při
+    vzniku záznamu, ale ve frontě na pozadí — pár sekund po založení tedy
+    ještě chybět může a UI k ní nabídne tlačítko.
 
     Obsah se čte z Disku při každém zobrazení. Kopie v naší DB by tvrdila, že
     tam soubor je, i když ho někdo mezitím smazal.
@@ -2200,9 +2313,11 @@ def zaloz_slozku_zaznamu(
 ):
     """Založí složku na Disku (kopií vzoru) a vrátí na ni odkaz.
 
-    Trvá to několik sekund a desítky volání na Disk, proto se to spouští
-    tlačítkem. Chyba se hlásí konkrétně — tichý polovytvořený strom složek by
-    byl horší než chybová zpráva.
+    Záchranná brzda k automatice: normálně složku zakládá worker z fronty
+    (viz `_naplanuj_slozku`), tohle je cesta pro případ, že konektor nebyl
+    nastavený nebo úloha spadla. Běží synchronně, takže to trvá několik sekund;
+    chyba se hlásí konkrétně — tichý polovytvořený strom složek by byl horší
+    než chybová zpráva.
     """
     from app.konektor import crm_slozky
     from app.konektor.logika import NastaveniNepripraveno
@@ -2216,8 +2331,14 @@ def zaloz_slozku_zaznamu(
             ef = crm_slozky.zajisti_slozku_zakaznika(
                 db, crm_slozky._drive_klient(n), n, zakaznik
             )
-        else:
+        elif klic == crm_slozky.ENTITA_OP:
             ef = crm_slozky.zajisti_slozku_pripadu(db, zaznam, zakaznik)
+        else:
+            pripad = db.get(ObchodniPripad, zaznam.obchodni_pripad_id)
+            if klic == crm_slozky.ENTITA_NABIDKA:
+                ef = crm_slozky.zajisti_slozku_nabidky(db, zaznam, pripad, zakaznik)
+            else:
+                ef = crm_slozky.zajisti_slozku_objednavky(db, zaznam, pripad, zakaznik)
     except NastaveniNepripraveno as e:
         raise HTTPException(status_code=409, detail=f"Konektor na Disk není připravený: {e}")
     except Exception as e:  # noqa: BLE001
