@@ -583,25 +583,48 @@
   font-size: 10px;
   color: var(--muted);
 }
-.kal-osa-pas.rozbalovaci {
+/* Přepínač pásma je plnohodnotné tlačítko, ne dekorace: zelená pilulka
+   s okrajem. První verze byla jen šedá šipka v barvě popisků osy a splývala
+   s okolím tak, že vypadala jako artefakt — ovládací prvek, který uživatel
+   nenajde, je stejně dobrý jako žádný. */
+.kal-osa-pas.rozbalovaci,
+.kal-osa-sbal {
   appearance: none;
-  width: 100%;
-  border: 0;
-  background: transparent;
   font: inherit;
   font-size: 10px;
-  color: var(--muted);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.01em;
   cursor: pointer;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 3px;
-  padding: 0 6px;
   white-space: nowrap;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--fm-brand, #2f9e44) 55%, transparent);
+  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 18%, var(--surface));
+  color: var(--fm-brand-dk, #237a34);
+  box-shadow: var(--shadow-1);
 }
-.kal-osa-pas.rozbalovaci:hover {
-  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 12%, transparent);
-  color: var(--ink);
+.kal-osa-pas.rozbalovaci:hover,
+.kal-osa-sbal:hover {
+  background: var(--fm-brand, #2f9e44);
+  border-color: var(--fm-brand, #2f9e44);
+  color: #fff;
+}
+.kal-osa-pas.rozbalovaci:focus-visible,
+.kal-osa-sbal:focus-visible {
+  outline: 2px solid var(--fm-brand, #2f9e44);
+  outline-offset: 1px;
+}
+/* Složené pásmo: pilulka zabírá celý pás, takže je z ní velký terč.
+   Výšku dává inline styl (výška pásu) a VERTIKÁLNÍ MARGIN tu být nesmí —
+   přičetl by se k výšce osy a čísla hodin by se rozešla s linkami v mřížce. */
+.kal-osa-pas.rozbalovaci {
+  width: calc(100% - 8px);
+  margin: 0 4px;
+  padding: 0 2px;
 }
 .kal-osa-sipka {
   font-size: 9px;
@@ -610,31 +633,22 @@
 .kal-osa-pas-popis {
   font-variant-numeric: tabular-nums;
 }
-/* Šipka pro sbalení rozbaleného pásma. Absolutně v ose, aby si nebrala výšku —
+/* Rozbalené pásmo: pilulka je absolutně v ose, aby si nebrala výšku —
    geometrie osy musí zůstat čistě „hodiny × PX_HODINA". */
 .kal-osa-sbal {
   position: absolute;
-  left: 3px;
-  appearance: none;
-  border: 0;
-  background: transparent;
-  font: inherit;
-  font-size: 10px;
-  line-height: 1;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 5px;
-}
-.kal-osa-sbal:hover {
-  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 14%, transparent);
-  color: var(--ink);
+  left: 4px;
+  right: 4px;
+  height: 18px;
+  padding: 0 2px;
+  /* O bod menší než složená pilulka — „19–24 ▾" se musí vejít do šířky osy. */
+  font-size: 9px;
 }
 .kal-osa-sbal.horni {
-  top: 2px;
+  top: 3px;
 }
 .kal-osa-sbal.dolni {
-  bottom: 2px;
+  bottom: 3px;
 }
 /* Mimopracovní hodina v ose je tlumenější — pracovní část zůstává hlavní. */
 .kal-osa-hodina.mimopracovni span {
@@ -653,7 +667,7 @@
   );
   /* Linky hodin začínají až pod nočním pásem. Fáze přichází z JS jako
      --kal-noc, protože výška pásu se mění podle rozbalení. */
-  background-position: 0 var(--kal-noc, 26px);
+  background-position: 0 var(--kal-noc, 30px);
 }
 .kal-den:last-child {
   border-right: 0;
