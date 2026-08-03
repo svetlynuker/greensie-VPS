@@ -34,6 +34,25 @@ def _over_prava(prava: list[str]) -> list[str]:
     return [p["klic"] for p in PRAVA if p["klic"] in set(prava)]
 
 
+def _prava_skupiny(db: Session, skupina_id) -> set[str]:
+    if skupina_id is None:
+        return set()
+    s = db.get(Skupina, skupina_id)
+    return set(s.prava or []) if s is not None else set()
+
+
+def _jen_navic(db: Session, skupina_id, prava: list[str]) -> list[str]:
+    """Z osobních výjimek vyhodí to, co člověk už dědí ze skupiny.
+
+    Proč: `extra_prava` a práva skupiny se sčítají, takže duplikát nic nepřidá
+    — ale při odebírání škodí. Kdo měl `finance` ve skupině i ve výjimkách,
+    tomu odebrání ze skupiny nic nezpůsobilo a nebylo poznat proč. Ve výjimkách
+    tak zůstává jen to, co je opravdu „nad rámec skupiny".
+    """
+    ze_skupiny = _prava_skupiny(db, skupina_id)
+    return [p for p in prava if p not in ze_skupiny]
+
+
 def _over_skupina(db: Session, skupina_id):
     if skupina_id is not None and db.get(Skupina, skupina_id) is None:
         raise HTTPException(status_code=422, detail="Skupina neexistuje")
@@ -41,6 +60,21 @@ def _over_skupina(db: Session, skupina_id):
 
 def _pocet_adminu(db: Session) -> int:
     return db.query(User).filter(User.je_admin.is_(True)).count()
+
+
+def _smi_delat_superspravce(kdo: User) -> None:
+    """Supersprávce může udělat jen supersprávce.
+
+    Admin nastavení je za právem `admin`, takže ho lze přidělit i někomu, kdo
+    supersprávce není. Bez téhle pojistky by si takový člověk mohl zaškrtnout
+    `je_admin` a obejít celý katalog práv — přidělené právo na správu uživatelů
+    není totéž jako právo na plný přístup do všeho.
+    """
+    if not kdo.je_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Supersprávce může nastavit jen jiný supersprávce.",
+        )
 
 
 def _uzivatel_out(u: User) -> UzivatelOut:
@@ -87,7 +121,13 @@ def seznam_uzivatelu(db: Session = Depends(get_db)):
 
 
 @router.post("/uzivatele", response_model=HesloVysledek)
-def pridej_uzivatele(vstup: UzivatelVstup, db: Session = Depends(get_db)):
+def pridej_uzivatele(
+    vstup: UzivatelVstup,
+    kdo: User = Depends(vyzaduj_admina),
+    db: Session = Depends(get_db),
+):
+    if vstup.je_admin:
+        _smi_delat_superspravce(kdo)
     email = vstup.email.strip().lower()
     jmeno = vstup.jmeno.strip()
     if not jmeno:
@@ -97,7 +137,7 @@ def pridej_uzivatele(vstup: UzivatelVstup, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=409, detail="Uživatel s tímto e-mailem už existuje")
     _over_skupina(db, vstup.skupina_id)
-    prava = _over_prava(vstup.extra_prava)
+    prava = _jen_navic(db, vstup.skupina_id, _over_prava(vstup.extra_prava))
 
     heslo = vygeneruj_heslo()
     u = User(
@@ -120,10 +160,18 @@ def pridej_uzivatele(vstup: UzivatelVstup, db: Session = Depends(get_db)):
 
 
 @router.put("/uzivatele/{uzivatel_id}", response_model=UzivatelOut)
-def uprav_uzivatele(uzivatel_id: int, vstup: UzivatelUprava, db: Session = Depends(get_db)):
+def uprav_uzivatele(
+    uzivatel_id: int,
+    vstup: UzivatelUprava,
+    kdo: User = Depends(vyzaduj_admina),
+    db: Session = Depends(get_db),
+):
     u = db.get(User, uzivatel_id)
     if u is None:
         raise HTTPException(status_code=404, detail="Uživatel neexistuje")
+    # Zapnout i vypnout supersprávce smí jen supersprávce.
+    if bool(vstup.je_admin) != bool(u.je_admin):
+        _smi_delat_superspravce(kdo)
 
     email = vstup.email.strip().lower()
     jmeno = vstup.jmeno.strip()
@@ -135,7 +183,7 @@ def uprav_uzivatele(uzivatel_id: int, vstup: UzivatelUprava, db: Session = Depen
     if jiny:
         raise HTTPException(status_code=409, detail="Jiný uživatel s tímto e-mailem už existuje")
     _over_skupina(db, vstup.skupina_id)
-    prava = _over_prava(vstup.extra_prava)
+    prava = _jen_navic(db, vstup.skupina_id, _over_prava(vstup.extra_prava))
 
     # pojistka: nesmíme odebrat práva supersprávce poslednímu adminovi
     if u.je_admin and not vstup.je_admin and _pocet_adminu(db) <= 1:
@@ -231,6 +279,13 @@ def uprav_skupinu(skupina_id: int, vstup: SkupinaVstup, db: Session = Depends(ge
         raise HTTPException(status_code=409, detail="Jiná skupina s tímto názvem už existuje")
     s.nazev = nazev
     s.prava = _over_prava(vstup.prava)
+    # Co skupina nově dává všem, nemá cenu držet u členů jako osobní výjimku —
+    # jinak by se právo nedalo odebrat zpátky (viz `_jen_navic`).
+    ze_skupiny = set(s.prava)
+    for clen in list(s.clenove):
+        zbytek = [p for p in (clen.extra_prava or []) if p not in ze_skupiny]
+        if zbytek != list(clen.extra_prava or []):
+            clen.extra_prava = zbytek
     db.commit()
     db.refresh(s)
     return _skupina_out(s)

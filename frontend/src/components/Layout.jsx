@@ -79,7 +79,6 @@ export default function Layout({ uzivatel, akce = null, children }) {
     <div className="gs-app" data-panel={panel}>
       <Sidebar
         prava={prava}
-        novinky={Boolean(me?.novinky)}
         mini={panel === "mini"}
         onPrepnoutPanel={prepnoutPanel}
       />
@@ -107,8 +106,8 @@ export default function Layout({ uzivatel, akce = null, children }) {
             <>
               <GlobalniHledani />
               {/* Zvoneček (CRM-10) — vedle hledání, před uživatelským menu.
-                  Zatím jen pro ty, komu se ukazují novinky (crm/novinky.py). */}
-              {me?.novinky && <Zvonecek />}
+                  Notifikace jsou vždycky jen moje, takže právo nepotřebuje. */}
+              <Zvonecek />
               <UserMenu uzivatel={kdo} prava={prava} />
             </>
           )}

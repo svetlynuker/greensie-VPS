@@ -16,8 +16,10 @@ Co se tady hlídá a proč právě to:
   nevrátí. Bez záložní adresy by první obrazovka modulu byla jediná, ze které
   se na Disk odejít nedá.
 
-* **Přepínač novinek + právo.** Modul je zatím interní; kdyby `vyzaduj_disk`
-  přestal koukat na `ma_novinky`, naskočí Disk všem, kdo dostanou právo.
+* **Právo `disk` je jediná branka.** Dřív se vedle práva koukalo i na
+  „přepínač novinek", takže přidělené právo samo modul neotevřelo. Kdyby se
+  druhá podmínka vrátila, přidělování práv přestane fungovat a nikdo nepozná
+  proč — proto se testuje, že právo samo stačí.
 
 Bez DB a bez Googlu: `_nastaveni` i Drive klient se podstrkují monkeypatchem.
 """
@@ -583,17 +585,21 @@ def _uzivatel(admin: bool, prava: list[str]):
     return SimpleNamespace(je_admin=admin, extra_prava=prava, skupina=None)
 
 
-def test_bez_prava_disk_modul_neexistuje():
+def test_bez_prava_disk_neotevre():
     with pytest.raises(HTTPException) as e:
         vyzaduj_disk(_uzivatel(False, []))
-    assert e.value.status_code == 404, "404, ne 403 – kdo funkci nemá vidět, pro toho neexistuje."
+    assert e.value.status_code == 403, "403, ne 404 – ať člověk ví, o jaké právo požádat."
 
 
-def test_pravo_disk_zatim_nestaci_bez_novinek():
-    """Modul je interní: samotné právo ho neodemkne, dokud běží přepínač novinek."""
-    with pytest.raises(HTTPException) as e:
-        vyzaduj_disk(_uzivatel(False, ["disk"]))
-    assert e.value.status_code == 404
+def test_pravo_disk_staci_samo():
+    """Právo `disk` modul otevře — bez supersprávce a bez druhé branky.
+
+    Dřív tu byl vedle práva ještě „přepínač novinek", takže přidělené právo
+    samo nic neotevřelo a jediná cesta dovnitř bylo dát člověku plná práva
+    supersprávce. Kdyby se druhá podmínka vrátila, spadne tenhle test.
+    """
+    u = _uzivatel(False, ["disk"])
+    assert vyzaduj_disk(u) is u
 
 
 def test_superspravce_disk_otevre():

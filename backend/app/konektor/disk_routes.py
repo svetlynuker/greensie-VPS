@@ -24,7 +24,6 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import User
 from app.auth.permissions import get_current_user, muze_otevrit
-from app.crm.novinky import ma_novinky
 from app.database import get_db
 from app.konektor import disk_prochazeni
 from app.konektor.logika import NastaveniNepripraveno
@@ -56,13 +55,17 @@ class DiskSlozkaVstup(BaseModel):
 
 
 def vyzaduj_disk(user: User = Depends(get_current_user)) -> User:
-    """Právo `disk` + přepínač novinek (modul se zatím zkouší interně).
+    """Právo `disk` – nic víc.
 
-    404 místo 403 stejně jako v `novinky.py`: kdo funkci nemá vidět, pro toho
-    neexistuje.
+    403 a ne 404, ze stejného důvodu jako u sdílení níž: modul existuje a kdo
+    ho nemá, má vědět, o co požádat. Dřív tu byla ještě druhá branka
+    („přepínač novinek"), takže přidělené právo samo nic neotevřelo.
     """
-    if not ma_novinky(user) or not muze_otevrit(user, "disk"):
-        raise HTTPException(status_code=404, detail="Nenalezeno")
+    if not muze_otevrit(user, "disk"):
+        raise HTTPException(
+            status_code=403,
+            detail="Na Disk nemáš oprávnění.",
+        )
     return user
 
 

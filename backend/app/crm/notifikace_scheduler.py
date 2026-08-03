@@ -91,19 +91,15 @@ def posli_denni_souhrny(db) -> int:
     """Rozešle souhrn úkolů. Vrací počet lidí, kterým něco odešlo."""
     from app.auth.models import User
     from app.auth.permissions import prava_uzivatele
-    from app.crm.novinky import ma_novinky
     from app.crm import notifikace as notifikace_modul
     from app.crm import ukoly as ukoly_modul
 
     dnes = date.today()
     posláno = 0
     for u in db.query(User).order_by(User.id).all():
-        # Dvě podmínky, obě nutné:
-        #  * `zakaznici` — úkoly jsou CRM aktivity, takže bez práva na CRM by
-        #    člověk dostal zprávu o záznamu, který si nemůže otevřít,
-        #  * novinky — notifikace se zatím zkoušejí interně (rozhodnutí Dana
-        #    31. 7. 2026: kdo má práva, vidí je dál, ale nové funkce zatím ne).
-        if PRAVO_CRM not in prava_uzivatele(u) or not ma_novinky(u):
+        # `zakaznici` — úkoly jsou CRM aktivity, takže bez práva na CRM by
+        # člověk dostal zprávu o záznamu, který si nemůže otevřít.
+        if PRAVO_CRM not in prava_uzivatele(u):
             continue
         ukoly = ukoly_modul.moje_ukoly(db, u)
         if not ukoly:

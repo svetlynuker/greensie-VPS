@@ -5,10 +5,10 @@ import Logo from "./Logo";
 
 // Levý navigační panel. Vidí jen to, na co má uživatel právo — sekce bez
 // práva se neukazují vůbec (ani zamčené), takže se o nich uživatel nedozví.
-export default function Sidebar({ prava, novinky = false, mini, onPrepnoutPanel }) {
+export default function Sidebar({ prava, mini, onPrepnoutPanel }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const skupiny = nabidkaPro(prava, novinky);
+  const skupiny = nabidkaPro(prava);
   const aktivni = aktivniKlic(location.pathname);
 
   return (

@@ -658,6 +658,24 @@ def _lehka_migrace():
                     )
                 )
 
+        # Osobní výjimky, které jen opisují práva skupiny, se zahodí. Vznikly
+        # zaškrtáváním práv „pro jistotu znovu" a tiše lámaly odebírání: právo
+        # odebrané ze skupiny zůstalo člověku ve výjimkách a nebylo poznat proč.
+        # Nic nikomu neubírá — obojí se sčítá, takže duplikát nic nepřidával.
+        # Idempotentní, běží při každém startu (viz admin/routes._jen_navic).
+        if inspect(engine).has_table("skupiny"):
+            conn.execute(
+                text(
+                    "UPDATE uzivatele u SET extra_prava = ("
+                    "  SELECT COALESCE(array_agg(p ORDER BY p), '{}')"
+                    "  FROM unnest(u.extra_prava) AS p"
+                    "  WHERE NOT (p = ANY(s.prava))"
+                    ") FROM skupiny s"
+                    " WHERE u.skupina_id = s.id"
+                    "   AND u.extra_prava && s.prava"
+                )
+            )
+
 
 _lehka_migrace()
 

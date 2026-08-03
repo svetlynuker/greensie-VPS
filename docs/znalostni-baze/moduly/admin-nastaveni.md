@@ -103,10 +103,16 @@ Celou stránku i všechna její tlačítka vidí **jen administrátor** (kdo má
 | **Jméno** | Jméno uživatele (povinné) |
 | **E-mail** | Přihlašovací e-mail (povinný, ukládá se malými písmeny, musí být unikátní) |
 | *(info o hesle)* | Jen u nového účtu: upozornění, že heslo se vygeneruje automaticky a pošle uživateli |
-| **Supersprávce** (zaškrtávátko) | Zapne plný přístup ke všemu. Když je zaškrtnuté, sekce Skupina + Práva navíc se **zešedne a zamkne** (u supersprávce se ignorují) |
+| **Supersprávce** (zaškrtávátko) | Zapne plný přístup ke všemu. Když je zaškrtnuté, sekce Skupina + Práva se **zešedne a zamkne** (u supersprávce se ignorují). **Na jednotlivé moduly ho nepotřebuješ** — stačí zaškrtnout právo níž |
 | **Skupina** (rozbalovací) | Přiřadí uživatele do skupiny (dědí její práva); „— žádná —" = bez skupiny |
-| **Práva navíc (mimo skupinu)** | Zaškrtávátka jednotlivých práv z katalogu — přidají se navíc nad rámec skupiny |
+| **Práva** | Zaškrtávátka jednotlivých práv z katalogu. Co člověk **dědí ze skupiny**, je zaškrtnuté, zamčené a označené „ze skupiny" — odebírá se ve skupině, ne tady. Ostatní zaškrtnutá jsou osobní výjimky nad rámec skupiny |
+| *(souhrn pod právy)* | „Výsledně bude mít N práv (X ze skupiny, Y navíc)" — kolik práv člověk po uložení opravdu bude mít |
 | **Zrušit / Uložit** | Zavře bez uložení / uloží |
+
+> **Zaškrtnuté právo modul opravdu otevře.** Nic dalšího se nezapíná. Do 3. 8. 2026
+> to tak nebylo: u nových modulů (E-mail, Disk, Mapa) běžela vedle práva ještě
+> druhá branka, která pouštěla jen supersprávce — právo se přidělilo, uložilo,
+> a člověku se pořád nic neukázalo. Ta branka je zrušená.
 
 > 📸 SCREENSHOT: okno „Upravit uživatele" s přepínačem Supersprávce, výběrem skupiny a zaškrtávátky práv
 
@@ -192,6 +198,8 @@ Historický katalog položek starého dlaždicového rozcestníku: `projekty`, `
 - **Nelze smazat sám sebe** — mazání účtu, který právě mažeš pod svým přihlášením, vrátí 409 („Nemůžeš smazat sám sebe.").
 - **Nelze smazat posledního admina** — když by to byl poslední supersprávce (`_pocet_adminu(db) <= 1`), server odmítne (409).
 - **Nelze odebrat supersprávce poslednímu adminovi** — při úpravě účtu, který je posledním adminem, nejde odškrtnout Supersprávce (409).
+- **Supersprávce může nastavit jen supersprávce** — právo `admin` může mít i nesupersprávce, ale zaškrtnutí/odškrtnutí **Supersprávce** mu server odmítne (403). Jinak by si držitel práva `admin` sám udělal plný přístup do všeho a katalog práv by nic neznamenal.
+- **Osobní výjimky se ukládají očištěné** — co člověk dědí ze skupiny, se do `extra_prava` neuloží podruhé (`_jen_navic`). Duplikát nic nepřidával, ale bránil odebrání: právo odebrané ze skupiny zůstalo ve výjimkách a odebrání se navenek „neprovedlo". Stejné očištění proběhne i při **úpravě skupiny** (u všech členů) a jednorázově při startu backendu.
 - **Unikátní e-mail** — dva účty se stejným e-mailem nejdou (409); e-mail se normalizuje na malá písmena.
 - **Unikátní název skupiny** — duplicitní název skupiny je 409.
 - **Kontrola práv** — přiřazovaná práva musí být z katalogu, jinak 422 („Neznámá práva: …"). Neexistující skupina → 422.

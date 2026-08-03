@@ -51,7 +51,6 @@ from app.crm.models import (
     ObchodniPripad,
     Zakaznik,
 )
-from app.crm.novinky import ma_novinky
 from app.crm.schemas import (
     EmailAdresaOut,
     EmailHromadnaVazbaVstup,
@@ -90,13 +89,18 @@ MAX_NA_STRANU = 200
 
 # ---- práva -------------------------------------------------------------------
 def vyzaduj_emaily(user: User = Depends(get_current_user)) -> User:
-    """Právo `emaily` + přepínač novinek (funkce se zkouší interně).
+    """Právo `emaily` – nic víc.
 
-    404 místo 403 stejně jako v `novinky.py`: kdo funkci nemá vidět, pro toho
-    neexistuje – jinak by se lidé ptali, proč e-mail nemají.
+    403 a ne 404: kdo právo nemá, má se dozvědět, že modul existuje a o co
+    požádat. Dřív tu byla ještě druhá branka („přepínač novinek"), takže právo
+    samo nikdy nic neotevřelo a jediná cesta dovnitř bylo dát člověku plná
+    práva supersprávce. To je zrušené – právo je jediný přepínač.
     """
-    if not ma_novinky(user) or not muze_otevrit(user, "emaily"):
-        raise HTTPException(status_code=404, detail="Nenalezeno")
+    if not muze_otevrit(user, "emaily"):
+        raise HTTPException(
+            status_code=403,
+            detail="Na E-mail nemáš oprávnění.",
+        )
     return user
 
 
@@ -1133,13 +1137,17 @@ def hromadne(
 
 # ---- historie komunikace na kartě zákazníka / případu ------------------------
 def vyzaduj_emaily_ctenar(user: User = Depends(get_current_user)) -> User:
-    """Pro čtení historie na kartě stačí novinky – vlastní schránku mít nemusí.
+    """Pro čtení historie na kartě stačí právo na Zákazníky – schránku ne.
 
     Kdyby se vyžadovalo právo `emaily`, kolega bez připojené schránky by na
-    kartě zákazníka historii komunikace neviděl. A právě o to celé jde.
+    kartě zákazníka historii komunikace neviděl. A právě o to celé jde. Že se
+    kouká jen na svoje záznamy, hlídá `pristup.vyzaduj_zaznam` v endpointu.
     """
-    if not ma_novinky(user):
-        raise HTTPException(status_code=404, detail="Nenalezeno")
+    if not pristup.muze_zakazniky(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Na Zákazníky nemáš oprávnění.",
+        )
     return user
 
 

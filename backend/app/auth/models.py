@@ -128,9 +128,6 @@ class MeOut(BaseModel):
     muze_editovat: bool  # smí editovat matici (Přehled projektů)
     prava: list[str] = []  # efektivní práva uživatele (klíče z permissions.PRAVA)
     musi_zmenit_heslo: bool = False
-    # Vidí uživatel čerstvě postavené funkce? Není to právo — je to jeden
-    # přepínač pro celou skupinu novinek, viz `crm/novinky.py`.
-    novinky: bool = False
 
 
 class ZmenaHeslaVstup(BaseModel):

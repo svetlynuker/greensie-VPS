@@ -187,15 +187,15 @@ export default function Disk() {
   const pocetSlozek = vypis.filter((p) => p.je_slozka).length;
   const pocetSouboru = vypis.length - pocetSlozek;
 
-  // 404 z backendu = modul pro uživatele není zapnutý (novinky / právo `disk`).
-  // Hláška „Nenalezeno" by ho poslala hledat chybu, která tam není.
-  const nedostupny = chyba && chyba.includes("Nenalezeno");
+  // Chybějící právo `disk` — ukážeme vysvětlení, ne červenou chybu, protože
+  // to není porucha appky, ale „požádej o právo".
+  const nedostupny = chyba && (chyba.includes("nemáš oprávnění") || chyba.includes("Nenalezeno"));
 
   return (
     <Layout uzivatel={me}>
       {nedostupny ? (
         <div className="fm-card dk-hlaska">
-          <p>Modul Disk pro tebe zatím není zapnutý.</p>
+          <p>Na Disk nemáš oprávnění.</p>
           <p className="crm-tise">
             Otevře se každému, kdo má právo <b>Disk</b> — přidělí se v Admin nastavení.
           </p>
