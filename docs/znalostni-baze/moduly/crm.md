@@ -217,6 +217,19 @@ znamená (`1. 7. – 31. 7. 2026`), ať je jasné, co se filtruje.
 Absolutní od–do zůstává pro případy, kdy opravdu chceš pevné datum (třeba kvůli auditu).
 
 ### Export do Excelu
+> **Jen s právem `export`.** Kdo ho nemá, tlačítko vůbec nevidí — seznam si prohlédne,
+> ale neodnese si ho v souboru. Přiděluje se v Admin nastavení jako každé jiné právo.
+> Zadání Dana (3. 8. 2026): „aby si nikdo, kdo nemá právo, nemohl exportovat třeba
+> seznam kontaktů."
+>
+> Poctivě, ať to za rok nikdo nečte jako záruku, kterou to není: je to **kontrola
+> pohodlné cesty, ne datová hráz.** Řádky už jsou v prohlížeči (jinak by tabulka
+> nebyla vidět), takže kdo je vidí, může si je opsat nebo vytáhnout z vývojářských
+> nástrojů. Serverový endpoint by na tom nic nezměnil — poslal by tytéž řádky, které
+> tabulka už dostala, a navíc by se rozešel se slibem „exportuje se přesně to, co je
+> vidět". Skutečná hráz na „kdo vidí která data" je právo na sekci a `crm_vse`
+> (omezení na vlastní záznamy).
+
 V liště nad každou tabulkou je **↓ Export CSV (n)**. Číslo v závorce říká, kolik řádků se
 stáhne — je to **přesně to, co máš na obrazovce**: se zapnutým filtrem, ve zvoleném řazení
 a s vybranými sloupci. Soubor se jmenuje podle sekce a data (`obchodni-pripady-2026-07-30.csv`).

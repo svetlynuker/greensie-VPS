@@ -151,19 +151,8 @@ def test_vlastni_pole_se_logují_po_klicich():
     assert ("extra:nove", "", "x") in zmeny
 
 
-# ---- viditelnost novinek (rozhodnutí Dana 31. 7. 2026) -----------------------
-def test_novinky_zatim_jen_pro_adminy():
-    """Kdo má práva, vidí dál svoje obrazovky — ale čerstvé funkce zatím ne.
-
-    Až se to bude otevírat, mění se jediná funkce (`ma_novinky`); endpointy
-    ani frontend se sahat nemusí.
-    """
-    from types import SimpleNamespace
-
-    from app.crm.novinky import ma_novinky
-
-    assert ma_novinky(SimpleNamespace(je_admin=True)) is True
-    assert ma_novinky(SimpleNamespace(je_admin=False)) is False
+# Přidělování práv (dřív tu byl test „novinky jen pro adminy") se testuje
+# v tests/test_prava_prirazovani.py.
 
 
 # ---- dny ve fázi (CRM-44) ----------------------------------------------------

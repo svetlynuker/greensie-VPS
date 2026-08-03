@@ -68,26 +68,48 @@ function Modal({ nadpis, children, onClose }) {
   );
 }
 
-/* ---------- výběr práv (zaškrtávátka) ---------- */
-function PravaVyber({ katalog, vybrana, onZmena }) {
+/* ---------- výběr práv (zaškrtávátka) ----------
+   `zeSkupiny` = práva, která člověk dědí ze své skupiny. Ukazují se
+   zaškrtnutá a zamčená, aby bylo vidět, co už má, a nezaškrtávala se podruhé
+   jako osobní výjimka — duplikát nic nepřidá, ale později brání odebrání
+   práva ze skupiny (viz admin/routes._jen_navic na backendu). */
+function PravaVyber({ katalog, vybrana, onZmena, zeSkupiny = [] }) {
   const set = new Set(vybrana);
+  const dedene = new Set(zeSkupiny);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      {katalog.map((p) => (
-        <label key={p.klic} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
-          <input
-            type="checkbox"
-            checked={set.has(p.klic)}
-            onChange={(e) => {
-              const nove = new Set(set);
-              if (e.target.checked) nove.add(p.klic);
-              else nove.delete(p.klic);
-              onZmena([...nove]);
+      {katalog.map((p) => {
+        const zdedeno = dedene.has(p.klic);
+        return (
+          <label
+            key={p.klic}
+            title={zdedeno ? "Má ze skupiny — odebírá se ve skupině" : undefined}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 13,
+              cursor: zdedeno ? "default" : "pointer",
             }}
-          />
-          {p.nazev}
-        </label>
-      ))}
+          >
+            <input
+              type="checkbox"
+              checked={zdedeno || set.has(p.klic)}
+              disabled={zdedeno}
+              onChange={(e) => {
+                const nove = new Set(set);
+                if (e.target.checked) nove.add(p.klic);
+                else nove.delete(p.klic);
+                onZmena([...nove]);
+              }}
+            />
+            <span style={{ opacity: zdedeno ? 0.6 : 1 }}>{p.nazev}</span>
+            {zdedeno && (
+              <span style={{ fontSize: 11, color: "var(--fm-muted)" }}>ze skupiny</span>
+            )}
+          </label>
+        );
+      })}
     </div>
   );
 }
@@ -103,6 +125,12 @@ function UzivatelEditor({ uzivatel, ciselniky, skupiny, onSave, onClose }) {
   const [uklada, setUklada] = useState(false);
   const [chyba, setChyba] = useState(null);
 
+  // Co člověk dědí ze zvolené skupiny, a co bude mít výsledně (skupina + navíc).
+  const pravaSkupiny =
+    skupinaId === "" ? [] : skupiny.find((s) => s.id === Number(skupinaId))?.prava || [];
+  const jenNavic = extraPrava.filter((p) => !pravaSkupiny.includes(p));
+  const vysledna = [...new Set([...pravaSkupiny, ...jenNavic])];
+
   async function uloz() {
     setUklada(true);
     setChyba(null);
@@ -112,7 +140,8 @@ function UzivatelEditor({ uzivatel, ciselniky, skupiny, onSave, onClose }) {
         email,
         je_admin: jeAdmin,
         skupina_id: skupinaId === "" ? null : Number(skupinaId),
-        extra_prava: extraPrava,
+        // Posílá se jen to, co je opravdu nad rámec skupiny (backend to hlídá taky).
+        extra_prava: jenNavic,
       });
     } catch (e) {
       setChyba(e.message);
@@ -140,11 +169,11 @@ function UzivatelEditor({ uzivatel, ciselniky, skupiny, onSave, onClose }) {
           <input type="checkbox" checked={jeAdmin} onChange={(e) => setJeAdmin(e.target.checked)} />
           <strong>Supersprávce</strong> – plný přístup ke všemu
         </label>
-        {jeAdmin && (
-          <div style={{ fontSize: 12, color: "var(--fm-muted)", marginTop: 4 }}>
-            Supersprávce vidí a otevře vše; skupina a práva navíc se ignorují.
-          </div>
-        )}
+        <div style={{ fontSize: 12, color: "var(--fm-muted)", marginTop: 4 }}>
+          {jeAdmin
+            ? "Supersprávce vidí a otevře vše; skupina a práva navíc se ignorují."
+            : "Na jednotlivé moduly ho nepotřebuješ — stačí zaškrtnout právo níž."}
+        </div>
       </div>
       <div style={{ opacity: jeAdmin ? 0.5 : 1, pointerEvents: jeAdmin ? "none" : "auto" }}>
         <label className="gs-label">Skupina</label>
@@ -154,8 +183,22 @@ function UzivatelEditor({ uzivatel, ciselniky, skupiny, onSave, onClose }) {
             <option key={s.id} value={s.id}>{s.nazev}</option>
           ))}
         </select>
-        <label className="gs-label" style={{ marginTop: 12 }}>Práva navíc (mimo skupinu)</label>
-        <PravaVyber katalog={ciselniky.prava} vybrana={extraPrava} onZmena={setExtraPrava} />
+        <label className="gs-label" style={{ marginTop: 12 }}>Práva</label>
+        <div style={{ fontSize: 12, color: "var(--fm-muted)", marginBottom: 6 }}>
+          Zaškrtnuté právo modul opravdu otevře — nic dalšího se zapínat nemusí.
+          Co má člověk ze skupiny, je zamčené a odebírá se ve skupině.
+        </div>
+        <PravaVyber
+          katalog={ciselniky.prava}
+          vybrana={extraPrava}
+          onZmena={setExtraPrava}
+          zeSkupiny={pravaSkupiny}
+        />
+        <div style={{ fontSize: 12, color: "var(--fm-muted)", marginTop: 8 }}>
+          Výsledně bude mít <b>{vysledna.length}</b>{" "}
+          {vysledna.length === 1 ? "právo" : vysledna.length >= 2 && vysledna.length <= 4 ? "práva" : "práv"}
+          {pravaSkupiny.length > 0 && ` (${pravaSkupiny.length} ze skupiny, ${jenNavic.length} navíc)`}.
+        </div>
       </div>
       {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13 }}>{chyba}</div>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>

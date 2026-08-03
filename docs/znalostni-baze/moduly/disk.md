@@ -1,6 +1,6 @@
 # Disk
 
-> **Sekce v nabídce:** `disk` (skupina **Agenda**) · **Adresa (routa):** `/disk` · **Kdo smí otevřít:** kdokoli s právem `disk` (bez práva se sekce v nabídce vůbec nezobrazí; supersprávce má vždy). Modul je zatím vedený jako **novinka** — vidí ho jen supersprávce, viz `backend/app/crm/novinky.py`.
+> **Sekce v nabídce:** `disk` (skupina **Agenda**) · **Adresa (routa):** `/disk` · **Kdo smí otevřít:** kdokoli s právem `disk` (bez práva se sekce v nabídce vůbec nezobrazí; supersprávce má vždy).
 > **Kód:** frontend `frontend/src/pages/Disk.jsx`, backend `backend/app/konektor/disk_routes.py` + `backend/app/konektor/disk_prochazeni.py`
 
 **Firemní Google Disk přímo v appce**, přes celou plochu. Začíná se složkou **o úroveň výš nad
@@ -130,8 +130,9 @@ stropem leží, nesmí dostat právo `disk` — nebo to patří mimo strop.
 
 Mazání a přejmenování appka neumí vůbec, to se dělá na Disku.
 
-Navíc platí přepínač novinek: dokud `crm/novinky.py` vrací „jen supersprávce", modul se ostatním
-neukáže ani s právem (endpointy vrací 404, ne 403 — kdo funkci nemá vidět, pro toho neexistuje).
+Právo `disk` je jediná branka — kdo ho má, modul se mu otevře. (Do 3. 8. 2026 vedle něj běžel
+ještě „přepínač novinek“, který pouštěl jen supersprávce, takže přidělené právo samo nic
+neotevřelo. Zrušeno; bez práva se teď vrací 403 s vysvětlením, ne 404.)
 
 ### Nastavení
 Žádné vlastní. Výchozí složka se **odvozuje** z **Konektoru Raynet ↔ Disk**:
@@ -202,7 +203,7 @@ píše do ní jinak jen automatika).
 
 | Symptom | Příčina | Řešení |
 |---|---|---|
-| „Modul Disk pro tebe zatím není zapnutý." | Chybí právo `disk` nebo je modul ještě jen pro supersprávce (novinky). | Přidělit právo v Admin nastavení; otevření všem se dělá v `crm/novinky.py`. |
+| „Na Disk nemáš oprávnění." (403) | Chybí právo `disk`. | Přidělit ho v Admin nastavení — ve skupině, nebo jako osobní výjimku. Nic dalšího se zapínat nemusí. |
 | „Konektor na Disk není připravený…" (409) | V Konektoru chybí kořenová složka / sdílený disk nebo service-account JSON. | Doplnit v Konektoru Raynet ↔ Disk a použít **Otestovat spojení**. |
 | „Disk neodpověděl…" (502) | Google API vrátilo chybu (přístup, rate limit, výpadek). | Zkusit **Obnovit**; když trvá, podívat se do Logů a do konektoru. |
 | „Tato složka neleží pod výchozí složkou modulu Disk." (403) | Ručně dosazené `folder_id` mimo strop, nebo se složka na Disku přesunula jinam. | Vrátit se na výchozí složku (první krok cesty) a projít cestu znovu. |

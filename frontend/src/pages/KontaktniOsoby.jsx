@@ -173,6 +173,7 @@ export default function KontaktniOsoby() {
           podminky={f.podminky}
           onPodminky={f.setPodminky}
           exportNazev="kontaktni-osoby"
+          muzeExportovat={me?.prava?.includes("export")}
           onOtevri={(k) => navigate(`/kontakty/detail/${k.id}`)}
           vykresli={(k, sl) => {
             if (sl.klic === "jmeno") return <span className="crm-silne">{k.jmeno}</span>;

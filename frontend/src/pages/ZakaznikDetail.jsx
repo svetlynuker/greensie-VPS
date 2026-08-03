@@ -136,7 +136,7 @@ export default function ZakaznikDetail() {
         <div className="crm-karta-hlava">
           <div style={{ minWidth: 0 }}>
             <h1>
-              {me.novinky && <Spendlik entita="zakaznik" zaznamId={z.id} />}
+              <Spendlik entita="zakaznik" zaznamId={z.id} />
               {z.nazev}
             </h1>
             <div className="crm-karta-radek">
@@ -237,7 +237,7 @@ export default function ZakaznikDetail() {
                 onSprava={() => setSpravaPoli(true)}
               />
               {/* CRM-12: sbalené, načítá se až po rozbalení. */}
-              {me.novinky && <HistorieZmen entita="zakaznik" zaznamId={z.id} />}
+              <HistorieZmen entita="zakaznik" zaznamId={z.id} />
               <KontaktyPanel zakaznik={z} onZmena={setZ} />
               <OdbernaMistaPanel
                 entita="zakaznik"
@@ -294,7 +294,7 @@ export default function ZakaznikDetail() {
             <Aktivity key={aktivityKlic} entita="zakaznik" zaznamId={z.id} />
             {/* Komunikace e-mailem hned pod aktivitami: obojí odpovídá na
                 otázku „co jsme s klientem řešili". */}
-            {me.novinky && <EmailHistorie entita="zakaznik" zaznamId={z.id} />}
+            <EmailHistorie entita="zakaznik" zaznamId={z.id} />
           </>
         )}
 
@@ -371,7 +371,7 @@ export default function ZakaznikDetail() {
             popis: "Zakázka pro tuhle firmu",
             onClick: () => setNovyPripad(true),
           },
-          me.novinky && {
+          {
             klic: "email",
             znak: "✉",
             nazev: "Poslat e-mail",

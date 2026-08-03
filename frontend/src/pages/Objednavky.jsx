@@ -263,6 +263,7 @@ export default function Objednavky() {
             podminky={f.podminky}
             onPodminky={f.setPodminky}
             exportNazev="objednavky"
+            muzeExportovat={me?.prava?.includes("export")}
             onOtevri={(o) => setDetail(o.id)}
             vykresli={(o, sl) => {
               if (sl.klic === "cislo") return <span className="crm-silne">{o.cislo}</span>;

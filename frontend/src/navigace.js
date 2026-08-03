@@ -28,17 +28,15 @@ export const NABIDKA = [
       // Jede pod právem Zákazníků: aktivity visí na záznamech CRM, takže kdo
       // vidí zákazníky, má co plánovat.
       { klic: "muj_den", nazev: "Můj den", ikona: "ukol", cesta: "/muj-den", pravo: "zakaznici" },
-      // `novinka: true` = ukáže se jen tomu, kdo má v /auth/me `novinky`
-      // (funkce se zatím zkouší interně, viz backend crm/novinky.py).
-      { klic: "mapa", nazev: "Mapa", ikona: "mapa", cesta: "/mapa", pravo: "zakaznici", novinka: true },
+      { klic: "mapa", nazev: "Mapa", ikona: "mapa", cesta: "/mapa", pravo: "zakaznici" },
       { klic: "kalendar", nazev: "Kalendář", ikona: "kalendar", cesta: "/kalendar", pravo: "zakaznici" },
       // E-mailový klient (CRM-33). Patří k Agendě, ne k Obchodu: člověk ho
       // otevírá kvůli „co mi přišlo", ne kvůli hledání záznamu.
-      { klic: "emaily", nazev: "E-mail", ikona: "obalka", cesta: "/emaily", pravo: "emaily", novinka: true },
+      { klic: "emaily", nazev: "E-mail", ikona: "obalka", cesta: "/emaily", pravo: "emaily" },
       // Firemní Google Disk k procházení přímo v appce. Patří k Agendě ze
       // stejného důvodu jako E-mail: člověk ho otevírá kvůli „kde je ten
       // soubor", ne kvůli hledání záznamu v CRM.
-      { klic: "disk", nazev: "Disk", ikona: "slozka", cesta: "/disk", pravo: "disk", novinka: true },
+      { klic: "disk", nazev: "Disk", ikona: "slozka", cesta: "/disk", pravo: "disk" },
     ],
   },
   {
@@ -56,7 +54,6 @@ export const NABIDKA = [
         ikona: "zakaznici",
         cesta: "/kontakty",
         pravo: "zakaznici",
-        novinka: true,
       },
       {
         klic: "obchodni_pripady",
@@ -149,12 +146,10 @@ export function smiPolozku(polozka, prava) {
 }
 
 /** Nabídka profiltrovaná právy — skupiny bez jediné položky vypadnou. */
-export function nabidkaPro(prava, novinky = false) {
+export function nabidkaPro(prava) {
   return NABIDKA.map((grp) => ({
     ...grp,
-    // Položka označená `novinka` se ukáže jen tomu, komu se novinky zapínají
-    // (viz backend `crm/novinky.py`) — právo samo nestačí.
-    polozky: grp.polozky.filter((p) => smiPolozku(p, prava) && (!p.novinka || novinky)),
+    polozky: grp.polozky.filter((p) => smiPolozku(p, prava)),
   })).filter((grp) => grp.polozky.length > 0);
 }
 

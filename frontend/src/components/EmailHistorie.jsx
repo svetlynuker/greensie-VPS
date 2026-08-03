@@ -29,9 +29,13 @@ export default function EmailHistorie({ entita, zaznamId }) {
     emailHistorie(entita, zaznamId)
       .then((d) => zivy && setData(d))
       .catch((e) => {
-        // 404 = uživatel nemá novinky zapnuté. Není to chyba, jen se
-        // sekce neukáže — proto tichý stav místo červené hlášky.
-        if (zivy) setChyba(String(e.message).includes("Nenalezeno") ? "skryto" : e.message);
+        // „Nenalezeno" (cizí záznam) nebo chybějící právo. Není to chyba,
+        // jen se sekce neukáže — proto tichý stav místo červené hlášky.
+        if (zivy) {
+          const zpr = String(e.message);
+          const skryt = zpr.includes("Nenalezeno") || zpr.includes("nemáš oprávnění");
+          setChyba(skryt ? "skryto" : e.message);
+        }
       });
     return () => {
       zivy = false;

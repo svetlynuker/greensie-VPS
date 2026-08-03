@@ -28,6 +28,10 @@ export default function CrmTabulka({
   // Základ názvu exportovaného souboru („pripady" → pripady-2026-07-30.csv).
   // Bez něj se tlačítko exportu nekreslí.
   exportNazev = null,
+  // Právo `export` (viz auth/permissions.PRAVA). Výchozí `false` schválně:
+  // kdo prop nepředá, export nedostane — u práv je bezpečnější zapomenout
+  // směrem k „nesmí" než k „smí".
+  muzeExportovat = false,
   // Výběr řádků pro hromadné akce (CRM-19). Bez `onVybrane` se sloupec
   // se zaškrtávátky vůbec nekreslí — v seznamech, kde hromadné akce nejsou,
   // by jen mátl.
@@ -155,7 +159,7 @@ export default function CrmTabulka({
               : ""}
           </button>
         )}
-        {exportNazev && (
+        {exportNazev && muzeExportovat && (
           <button
             className="fm-btn crm-btn-maly"
             onClick={() => stahniCsv(exportNazev, sloupce, radky, vykresli)}

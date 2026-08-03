@@ -232,11 +232,11 @@ export default function Nastaveni() {
           </div>
         </section>
 
-        {/* ---- notifikace (CRM-36) – zatím jen pro interní testování ---- */}
-        {me.novinky && <NotifikaceNastaveni />}
+        {/* ---- notifikace (CRM-36) – osobní věc, právo nepotřebuje ---- */}
+        <NotifikaceNastaveni />
 
         {/* ---- šablony textů (CRM-32), jen pro správce nastavení ---- */}
-        {me.novinky && me.prava?.includes("crm_nastaveni") && (
+        {me.prava?.includes("crm_nastaveni") && (
           <section className="fm-card">
             <div className="gs-karta-hlava">
               <span className="gs-karta-titulek">Šablony e-mailů a poznámek</span>
@@ -254,7 +254,7 @@ export default function Nastaveni() {
         )}
 
         {/* ---- automatizace (CRM-31), jen pro správce nastavení ---- */}
-        {me.novinky && me.prava?.includes("crm_nastaveni") && (
+        {me.prava?.includes("crm_nastaveni") && (
           <section className="fm-card">
             <div className="gs-karta-hlava">
               <span className="gs-karta-titulek">Automatizace</span>
@@ -274,8 +274,9 @@ export default function Nastaveni() {
 
         {/* ---- podpis do e-mailu (CRM-33) ----
             Osobní věc každého, takže patří sem, ne do Admin nastavení.
-            Jede pod přepínačem novinek jako zbytek e-mailového klienta. */}
-        {me.novinky && <PodpisNastaveni />}
+            Jede pod právem `emaily`: podpis se použije jen v poště, takže
+            komu se pošta neotevře, tomu tu karta jen zabírá místo. */}
+        {me.prava?.includes("emaily") && <PodpisNastaveni />}
 
         {/* ---- účet ---- */}
         <section className="fm-card">

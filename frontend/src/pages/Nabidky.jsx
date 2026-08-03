@@ -263,6 +263,7 @@ export default function Nabidky() {
             podminky={f.podminky}
             onPodminky={f.setPodminky}
             exportNazev="nabidky"
+            muzeExportovat={me?.prava?.includes("export")}
             onOtevri={otevri}
             vykresli={(n, sl) => {
               if (sl.klic.startsWith("extra:")) return (n.extra_text || {})[sl.klic.slice(6)] ?? "—";

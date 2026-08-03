@@ -119,6 +119,19 @@ PRAVA = [
     {"klic": "zmeny", "nazev": "Otevřít Přehled změn"},
     {"klic": "nabidkovac", "nazev": "Nabídkovač – vytvářet/upravovat nabídky (OZ)"},
     {"klic": "nabidkovac_katalog", "nazev": "Nabídkovač – editace katalogu a výpočtů (vedení)"},
+    # Hromadný export SEZNAMŮ do souboru (zadání Dana 3. 8. 2026: „aby si nikdo,
+    # kdo nemá právo, nemohl exportovat třeba seznam kontaktů"). Vlastní právo
+    # schválně — podívat se na záznam a odnést si celou databázi v jednom souboru
+    # jsou dvě různé věci.
+    #
+    # NEPATŘÍ sem výstupy pro konkrétního zákazníka (nabídka do PDF, výpočtový
+    # Excel k ní). To je denní práce OZ, ne export dat z appky; zamknout mu je
+    # by znamenalo, že nemůže dělat nabídky.
+    #
+    # Sečteno s právem na modul, nenahrazuje ho: bez `zakaznici` není co
+    # exportovat, bez `export` se seznam nestáhne. Vynucuje se v UI
+    # (`CrmTabulka`) — poctivé mezníky viz docs/znalostni-baze/moduly/crm.md.
+    {"klic": "export", "nazev": "Exportovat seznamy do souboru (CSV z tabulek CRM)"},
     {"klic": "admin", "nazev": "Otevřít Admin nastavení"},
     {"klic": "editace", "nazev": "Editace matice (Přehled projektů)"},
     {"klic": "logy", "nazev": "Otevřít Logy (provoz, chyby, audit)"},

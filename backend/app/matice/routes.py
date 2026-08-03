@@ -4,11 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.auth.models import User
-from app.auth.permissions import get_current_user
 from app.database import get_db
 from app.matice import disk_parovani, freelo
 from app.matice.models import Bunka, NastaveniBarev, NastaveniSynchronizace, Projekt, Sloupec
-from app.matice.permissions import muze_editovat, vyzaduj_editora
+from app.matice.permissions import muze_editovat, vyzaduj_editora, vyzaduj_projekty
 from app.matice.schemas import (
     BarvyOut,
     BunkaOut,
@@ -80,7 +79,7 @@ def _projekt_out(p: Projekt) -> ProjektOut:
 
 # ---- čtení celé matice ----
 @router.get("", response_model=MaticeOut)
-def nacti_matici(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def nacti_matici(user: User = Depends(vyzaduj_projekty), db: Session = Depends(get_db)):
     projekty = db.query(Projekt).order_by(Projekt.poradi, Projekt.id).all()
     sloupce = db.query(Sloupec).order_by(Sloupec.poradi, Sloupec.id).all()
     bunky = db.query(Bunka).all()

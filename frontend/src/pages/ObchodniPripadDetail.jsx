@@ -168,7 +168,7 @@ export default function ObchodniPripadDetail() {
         <div className="crm-karta-hlava">
           <div style={{ minWidth: 0 }}>
             <h1>
-              {me.novinky && <Spendlik entita="op" zaznamId={p.id} />}
+              <Spendlik entita="op" zaznamId={p.id} />
               {p.cislo}
               {p.nazev ? ` · ${p.nazev}` : ""}
             </h1>
@@ -195,11 +195,9 @@ export default function ObchodniPripadDetail() {
               </option>
             ))}
           </select>
-          {me.novinky && (
-            <button className="fm-btn" onClick={() => setPosilaEmail(true)}>
-              ✉ Poslat e-mail
-            </button>
-          )}
+          <button className="fm-btn" onClick={() => setPosilaEmail(true)}>
+            ✉ Poslat e-mail
+          </button>
           <button className="fm-btn" onClick={() => setUpravuje(true)}>
             Upravit
           </button>
@@ -300,7 +298,7 @@ export default function ObchodniPripadDetail() {
                 onSprava={() => setSpravaPoli(true)}
               />
               {/* CRM-12: sbalené, načítá se až po rozbalení. */}
-              {me.novinky && <HistorieZmen entita="op" zaznamId={p.id} />}
+              <HistorieZmen entita="op" zaznamId={p.id} />
               <OdbernaMistaPanel
                 entita="op"
                 zaznamId={p.id}
@@ -360,7 +358,7 @@ export default function ObchodniPripadDetail() {
             {/* Pošta spárovaná na případ i na jeho firmu (viz backend:
                 u případu se berou i zprávy firmy bez konkrétního případu,
                 jinak by karta zela prázdnotou). */}
-            {me.novinky && <EmailHistorie entita="op" zaznamId={p.id} />}
+            <EmailHistorie entita="op" zaznamId={p.id} />
           </>
         )}
 
@@ -438,7 +436,7 @@ export default function ObchodniPripadDetail() {
             popis: "Otevřít výpočet podle kategorie",
             onClick: novaNabidka,
           },
-          me.novinky && {
+          {
             klic: "email",
             znak: "✉",
             nazev: "Poslat e-mail",

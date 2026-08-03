@@ -1,6 +1,6 @@
 # Přehled projektů
 
-> **Sekce v nabídce:** `projekty` · **Adresa (routa):** `/projekty` · **Kdo smí otevřít:** kdokoli s právem `projekty` (bez práva se sekce v nabídce vůbec nezobrazí)
+> **Sekce v nabídce:** `projekty` · **Adresa (routa):** `/projekty` · **Kdo smí otevřít:** kdokoli s právem `projekty` (bez práva se sekce v nabídce vůbec nezobrazí a `GET /matice` vrátí 403 — od 3. 8. 2026, dřív se dala matice bez práva přečíst zadáním adresy)
 > **Kód:** frontend `frontend/src/pages/PrehledProjektu.jsx`, backend `backend/app/matice/`
 
 Hlavní přehledová tabulka firmy — **matice**, kde řádky jsou projekty a sloupce jsou úkoly
