@@ -345,11 +345,7 @@ export default function ObchodniPripadDetail() {
         )}
 
         {zalozka === "nabidky" && (
-          <PripadNabidky
-            pripad={p}
-            onZmena={nactiZnovu}
-            muzeExportovat={me.prava?.includes("export")}
-          />
+          <PripadNabidky pripad={p} onZmena={nactiZnovu} />
         )}
 
         {zalozka === "realizace" && (

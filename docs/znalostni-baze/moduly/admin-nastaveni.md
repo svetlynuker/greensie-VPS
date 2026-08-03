@@ -115,10 +115,13 @@ Celou stránku i všechna její tlačítka vidí **jen administrátor** (kdo má
 > a člověku se pořád nic neukázalo. Ta branka je zrušená.
 
 > **Výjimka, která se sčítá: `export`.** Právo na modul říká „na tahle data se smíš
-> podívat", `export` říká „smíš si je odnést v souboru". Platí obojí zvlášť: kdo má
-> `zakaznici` bez `export`, seznam vidí, ale nestáhne ho do CSV; kdo má `nabidkovac`
-> bez `export`, nabídku spočítá a rozvržení uloží, ale PDF ani výpočtový Excel
-> nevyrobí. Není to druhá branka k modulu — je to samostatná akce nad ním.
+> podívat", `export` říká „smíš si celý seznam odnést v souboru". Platí obojí zvlášť:
+> kdo má `zakaznici` bez `export`, seznam vidí, ale nestáhne ho do CSV. Není to druhá
+> branka k modulu — je to samostatná akce nad ním.
+>
+> **Nepatří sem výstupy pro zákazníka.** Nabídka do PDF a výpočtový Excel k ní jedou
+> pod `nabidkovac`, jako celý zbytek modulu. Je to denní práce OZ, ne export dat
+> z appky — zamknout mu je by znamenalo, že nemůže dělat nabídky.
 
 > 📸 SCREENSHOT: okno „Upravit uživatele" s přepínačem Supersprávce, výběrem skupiny a zaškrtávátky práv
 
@@ -192,7 +195,7 @@ Práva se dělí na **otevírací** (stejný klíč jako sekce v nabídce) a **a
 | `zmeny` | Otevřít Přehled změn | otevírací |
 | `nabidkovac` | Nabídkovač – vytvářet/upravovat nabídky (OZ) | otevírací |
 | `nabidkovac_katalog` | Nabídkovač – editace katalogu a výpočtů (vedení) | akční |
-| `export` | Exportovat data do souboru (CSV seznamů, PDF nabídky, výpočtový Excel) | akční |
+| `export` | Exportovat seznamy do souboru (CSV z tabulek CRM) | akční |
 | `admin` | Otevřít Admin nastavení | otevírací |
 | `editace` | Editace matice (Přehled projektů) | akční |
 | `logy` | Otevřít Logy (provoz, chyby, audit) | otevírací |

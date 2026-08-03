@@ -61,8 +61,6 @@ export default function NabidkaDetail() {
   const [pdfka, setPdfka] = useState([]);
   const posledniPdf = pdfka.find((z) => z.format !== "xlsx");
   const posledniXlsx = pdfka.find((z) => z.format === "xlsx");
-  // Právo `export` — soubor odchází z appky, takže vlastní povolení.
-  const muzeExport = Boolean(me?.prava?.includes("export"));
 
   function naplnFormular(n) {
     setNazev(n.zakaznik_nazev || "");
@@ -207,8 +205,8 @@ export default function NabidkaDetail() {
           {/* Poslední vytištěné PDF a poslední výpočtový Excel – ať se za nimi
               nemusí do editoru. Každý formát zvlášť: kdyby se bralo prostě to
               nejnovější, po tisku by tu místo nabídky visel interní model. */}
-          {posledniPdf && <PdfNabidky pdf={posledniPdf} muzeExportovat={muzeExport} />}
-          {posledniXlsx && <PdfNabidky pdf={posledniXlsx} muzeExportovat={muzeExport} />}
+          {posledniPdf && <PdfNabidky pdf={posledniPdf} />}
+          {posledniXlsx && <PdfNabidky pdf={posledniXlsx} />}
         </div>
 
         {pdfka.length > 0 && (
@@ -217,7 +215,7 @@ export default function NabidkaDetail() {
             <ul>
               {pdfka.slice(0, 5).map((z) => (
                 <li key={z.id}>
-                  <PdfNabidky pdf={z} kompaktni muzeExportovat={muzeExport} />
+                  <PdfNabidky pdf={z} kompaktni />
                   <span>{z.nazev}</span>
                   <span className="crm-tise">{fmtDatum(z.vygenerovano_at)}</span>
                   {z.vygeneroval_jmeno && (

@@ -18,22 +18,11 @@ import { nabidkaPdfOtevri, nabidkaSouborStahni } from "../api";
  * Otevírá se přes fetch a blob URL, protože endpoint chce token v hlavičce
  * a ten `<a href>` poslat neumí.
  */
-export default function PdfNabidky({ pdf, kompaktni = false, muzeExportovat = false }) {
+export default function PdfNabidky({ pdf, kompaktni = false }) {
   const [chyba, setChyba] = useState(null);
 
   if (!pdf?.id) {
     return kompaktni ? null : <span className="crm-tise">bez PDF</span>;
-  }
-
-  // Bez práva `export` se soubor nevydá (backend vrátí 403), takže se
-  // neukazuje ani tlačítko. Schválně se ale říká, že soubor existuje —
-  // „bez PDF" by byla lež a člověk by ho zkoušel vyrobit znovu.
-  if (!muzeExportovat) {
-    return kompaktni ? null : (
-      <span className="crm-tise" title="Soubor existuje, ale na export dat nemáš oprávnění.">
-        {pdf.format === "xlsx" ? "📊" : "📄"} bez práva na export
-      </span>
-    );
   }
 
   const jeExcel = pdf.format === "xlsx";
