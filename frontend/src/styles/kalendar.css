@@ -33,7 +33,7 @@
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
-  color: var(--text);
+  color: var(--ink);
   cursor: pointer;
   /* Šipka dolů jako v předloze; inline SVG, ať se netahá obrázek. */
   background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
@@ -140,7 +140,7 @@
   justify-content: center;
   font: inherit;
   font-size: 13px;
-  color: var(--text);
+  color: var(--ink);
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -157,18 +157,26 @@
 .kal-mesic-den.vtydnu {
   background: color-mix(in srgb, var(--fm-brand, #2f9e44) 16%, transparent);
 }
-.kal-mesic-mrizka > .kal-mesic-den.vtydnu:nth-child(7n + 1) {
+/* `:not(.dnes)` je tu povinné — jinak by tahle specifičtější pravidla přebila
+   kulaté kolečko dneška, kdykoli dnešek padne na pondělí nebo nedělí. */
+.kal-mesic-mrizka > .kal-mesic-den.vtydnu:nth-child(7n + 1):not(.dnes) {
   border-radius: 999px 0 0 999px;
 }
-.kal-mesic-mrizka > .kal-mesic-den.vtydnu:nth-child(7n) {
+.kal-mesic-mrizka > .kal-mesic-den.vtydnu:nth-child(7n):not(.dnes) {
   border-radius: 0 999px 999px 0;
 }
-/* Dnešek: tmavý kroužek jako v předloze. */
+/* Dnešek: plné brandové kolečko. Plná barva schválně, ne color-mix —
+   průsvitný podklad splýval s podbarvením zobrazeného týdne a dnešek pak
+   nebyl v miniatuře poznat vůbec. */
 .kal-mesic-den.dnes {
-  background: color-mix(in srgb, var(--text) 78%, transparent);
-  color: var(--surface);
-  border-radius: 6px;
-  font-weight: 600;
+  background: var(--fm-brand, #2f9e44);
+  color: #fff;
+  border-radius: 999px;
+  font-weight: 700;
+  box-shadow: 0 0 0 1px var(--surface);
+}
+.kal-mesic-den.dnes:hover {
+  background: var(--fm-brand-dk, #237a34);
 }
 .kal-mesic-den.vybrany:not(.dnes) {
   outline: 1px solid var(--fm-brand, #2f9e44);
@@ -187,7 +195,12 @@
   background: var(--fm-brand, #2f9e44);
 }
 .kal-mesic-den.dnes .kal-tecka {
-  background: var(--surface);
+  background: #fff;
+}
+/* Dnešek zůstává plný i když spadne do přesahu jiného měsíce. */
+.kal-mesic-den.dnes.mimo {
+  opacity: 1;
+  color: #fff;
 }
 
 /* ---- panel filtrů ---- */
@@ -219,7 +232,7 @@
 }
 .kalf-zalozka.aktivni {
   background: var(--surface);
-  color: var(--fm-brand-dk, var(--text));
+  color: var(--fm-brand-dk, var(--ink));
   border-bottom-color: var(--fm-brand, #2f9e44);
 }
 .kalf-pocet {
@@ -360,7 +373,7 @@
 }
 .kalf-typ.aktivni,
 .kalf-kategorie-radek.aktivni {
-  color: var(--text);
+  color: var(--ink);
   font-weight: 600;
   background: color-mix(in srgb, var(--fm-brand, #2f9e44) 10%, transparent);
 }
@@ -426,7 +439,7 @@
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: var(--text);
+  color: var(--ink);
   cursor: pointer;
   text-align: left;
 }
@@ -494,11 +507,21 @@
 .kal-den-cislo {
   font-size: 14px;
   font-weight: 600;
-  color: var(--text);
+  color: var(--ink);
 }
-.kal-den-hlava.dnes .kal-den-cislo,
 .kal-den-hlava.dnes .kal-den-nazev {
   color: var(--fm-brand-dk, var(--fm-brand, #2f9e44));
+  font-weight: 700;
+}
+/* Dnešní číslo je plné kolečko — stejný signál jako v miniatuře měsíce,
+   takže „kde jsem dnes" se hledá na obou místech stejně. */
+.kal-den-hlava.dnes .kal-den-cislo {
+  background: var(--fm-brand, #2f9e44);
+  color: #fff;
+  border-radius: 999px;
+  min-width: 22px;
+  padding: 1px 6px;
+  text-align: center;
 }
 .kal-den-hlava.vybrany {
   background: color-mix(in srgb, var(--fm-brand, #2f9e44) 8%, transparent);
@@ -552,22 +575,70 @@
   /* Číslo patří k LINCE hodiny, ne doprostřed pásu. */
   transform: translateY(-6px);
 }
-/* Zúžená pásma (noc, večer) mají dva časy — od a do, ať je vidět, co se do
-   nich vešlo. */
+/* Složené pásmo (noc, večer) je tlačítko: klik ho rozbalí na plné hodiny.
+   Dřív tu byly dva časy pod sebou (0:00 a 7:00) — ve 26px pásu se skoro
+   překrývaly a jen šuměly. Teď je tam rozsah, šipka a počet aktivit. */
 .kal-osa-pas {
   position: relative;
   font-size: 10px;
   color: var(--muted);
 }
-.kal-osa-cas {
+.kal-osa-pas.rozbalovaci {
+  appearance: none;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 10px;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+.kal-osa-pas.rozbalovaci:hover {
+  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 12%, transparent);
+  color: var(--ink);
+}
+.kal-osa-sipka {
+  font-size: 9px;
+  line-height: 1;
+}
+.kal-osa-pas-popis {
+  font-variant-numeric: tabular-nums;
+}
+/* Šipka pro sbalení rozbaleného pásma. Absolutně v ose, aby si nebrala výšku —
+   geometrie osy musí zůstat čistě „hodiny × PX_HODINA". */
+.kal-osa-sbal {
   position: absolute;
-  right: 8px;
+  left: 3px;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 5px;
 }
-.kal-osa-cas.horni {
-  top: -5px;
+.kal-osa-sbal:hover {
+  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 14%, transparent);
+  color: var(--ink);
 }
-.kal-osa-cas.dolni {
-  bottom: -5px;
+.kal-osa-sbal.horni {
+  top: 2px;
+}
+.kal-osa-sbal.dolni {
+  bottom: 2px;
+}
+/* Mimopracovní hodina v ose je tlumenější — pracovní část zůstává hlavní. */
+.kal-osa-hodina.mimopracovni span {
+  opacity: 0.75;
 }
 
 .kal-den {
@@ -580,25 +651,42 @@
     transparent 1px,
     transparent var(--kal-hodina)
   );
-  /* Linky hodin začínají až pod zúženým nočním pásem (PX_NOC = 26). */
-  background-position: 0 26px;
+  /* Linky hodin začínají až pod nočním pásem. Fáze přichází z JS jako
+     --kal-noc, protože výška pásu se mění podle rozbalení. */
+  background-position: 0 var(--kal-noc, 26px);
 }
 .kal-den:last-child {
   border-right: 0;
 }
+/* Dnešní sloupec je poznat na první pohled: 3 % brandu bylo pod hodinovými
+   linkami neviditelné. */
 .kal-den.dnes {
-  background-color: color-mix(in srgb, var(--fm-brand, #2f9e44) 3%, transparent);
+  background-color: color-mix(in srgb, var(--fm-brand, #2f9e44) 9%, transparent);
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--fm-brand, #2f9e44) 45%, transparent),
+    inset -1px 0 0 color-mix(in srgb, var(--fm-brand, #2f9e44) 45%, transparent);
 }
 .kal-den.vybrany {
   background-color: color-mix(in srgb, var(--fm-brand, #2f9e44) 6%, transparent);
 }
-/* Zúžená pásma jsou jemně podbarvená – měřítko je v nich jiné. */
+/* Mimopracovní pásma jsou jemně podbarvená – je v nich jiné měřítko (složené),
+   nebo aspoň jiná část dne (rozbalené). Ve složeném stavu je pás tlačítko na
+   rozbalení, proto `appearance/border` a kurzor. */
 .kal-pas {
   position: absolute;
   left: 0;
   right: 0;
+  appearance: none;
+  padding: 0;
+  border: 0;
   background: color-mix(in srgb, var(--muted) 7%, transparent);
+  cursor: zoom-in;
+}
+.kal-pas.rozbaleny {
   pointer-events: none;
+  cursor: default;
+}
+.kal-pas:not(.rozbaleny):hover {
+  background: color-mix(in srgb, var(--fm-brand, #2f9e44) 14%, transparent);
 }
 .kal-pas.noc {
   top: 0;
@@ -671,25 +759,30 @@
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.16);
 }
+/* Hotová a zrušená aktivita se tlumí FILTREM, ne `opacity` — průsvitná
+   dlaždice pouští skrz sebe hodinové linky a vypadá jako porucha. Filtr
+   ubere barvě sytost, ale krycí zůstane. */
 .kal-udalost.realizovana {
-  opacity: 0.55;
+  filter: saturate(0.45) brightness(0.88);
 }
 .kal-udalost.zrusena {
-  opacity: 0.5;
+  filter: grayscale(1) brightness(0.85);
   text-decoration: line-through;
 }
 /* Cizí aktivita bez nároku na detail: šrafovaný blok BEZ barvy kategorie —
-   barva sama by prozradila, o co jde. */
+   barva sama by prozradila, o co jde. Šrafy leží na plné ploše, aby ani blok
+   nebyl průhledný. */
 .kal-udalost.blok {
-  background: repeating-linear-gradient(
+  background-color: var(--surface-2);
+  background-image: repeating-linear-gradient(
     45deg,
-    color-mix(in srgb, var(--muted) 20%, transparent) 0,
-    color-mix(in srgb, var(--muted) 20%, transparent) 5px,
-    transparent 5px,
-    transparent 10px
+    color-mix(in srgb, var(--muted) 26%, var(--surface-2)) 0,
+    color-mix(in srgb, var(--muted) 26%, var(--surface-2)) 5px,
+    var(--surface-2) 5px,
+    var(--surface-2) 10px
   );
-  color: var(--muted);
-  border: 1px dashed var(--line);
+  color: var(--ink-2);
+  border: 1px dashed var(--line-strong);
   cursor: default;
 }
 /* Vícedenní pruh se roztahuje na celou přidělenou šířku. */
@@ -763,6 +856,7 @@
   cursor: grabbing;
 }
 .kal-tyden.tahne-se .kal-slot,
+.kal-tyden.tahne-se .kal-pas,
 .kal-tyden.tahne-se .kal-udalost {
   pointer-events: none;
 }
@@ -770,11 +864,11 @@
 .kal-udalost.ztlumena {
   opacity: 0.3;
 }
-/* Duch = náhled na cílovém místě. Nereaguje na kurzor vůbec. */
+/* Duch = náhled na cílovém místě. Nereaguje na kurzor vůbec. Krycí je i on —
+   odlišuje ho zelený obrys a stín, ne průsvitnost. */
 .kal-udalost.duch {
   pointer-events: none;
   z-index: 6;
-  opacity: 0.95;
   outline: 2px solid color-mix(in srgb, var(--fm-brand, #2f9e44) 70%, transparent);
   outline-offset: -2px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
@@ -910,7 +1004,7 @@
 }
 .kd-btn-ikona:hover {
   background: color-mix(in srgb, var(--muted) 14%, transparent);
-  color: var(--text);
+  color: var(--ink);
 }
 
 .kd-telo {
@@ -924,7 +1018,7 @@
   align-items: flex-start;
   gap: 9px;
   font-size: 13px;
-  color: var(--text);
+  color: var(--ink);
 }
 .kd-radek > svg {
   flex: 0 0 auto;
@@ -995,7 +1089,7 @@
 }
 .kd-akce:hover {
   background: color-mix(in srgb, var(--muted) 12%, transparent);
-  color: var(--text);
+  color: var(--ink);
 }
 /* Hlavní akce je zelená jako v předloze. */
 .kd-akce.hotovo {
@@ -1076,14 +1170,16 @@
   font: inherit;
   font-size: 12px;
   font-weight: 600;
-  color: var(--text);
+  color: var(--ink);
   cursor: pointer;
   padding: 1px 5px;
   border-radius: 6px;
 }
 .km-den.dnes .km-cislo {
-  background: color-mix(in srgb, var(--text) 78%, transparent);
-  color: var(--surface);
+  background: var(--fm-brand, #2f9e44);
+  color: #fff;
+  border-radius: 999px;
+  padding: 1px 7px;
 }
 .km-cislo:hover {
   background: color-mix(in srgb, var(--muted) 16%, transparent);
@@ -1118,22 +1214,24 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Stejně jako v týdenní mřížce: tlumí se filtrem, ne průsvitností. */
 .km-udalost.realizovana {
-  opacity: 0.55;
+  filter: saturate(0.45) brightness(0.88);
 }
 .km-udalost.zrusena {
-  opacity: 0.5;
+  filter: grayscale(1) brightness(0.85);
   text-decoration: line-through;
 }
 .km-udalost.blok {
-  background: repeating-linear-gradient(
+  background-color: var(--surface-2);
+  background-image: repeating-linear-gradient(
     45deg,
-    color-mix(in srgb, var(--muted) 20%, transparent) 0,
-    color-mix(in srgb, var(--muted) 20%, transparent) 4px,
-    transparent 4px,
-    transparent 8px
+    color-mix(in srgb, var(--muted) 26%, var(--surface-2)) 0,
+    color-mix(in srgb, var(--muted) 26%, var(--surface-2)) 4px,
+    var(--surface-2) 4px,
+    var(--surface-2) 8px
   );
-  color: var(--muted);
+  color: var(--ink-2);
   cursor: default;
 }
 .km-vic {

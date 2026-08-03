@@ -9,16 +9,20 @@
 // zúžené pásy, pracovní část běží po hodinách. Přepočet proto musí umět tři
 // pásma a `yZMinut` s `minutyZY` musí být přesné inverze — jinak by dlaždice
 // po přetažení skočila o pár minut jinam, než kam ji člověk pustil.
+//
+// ---- Proč je geometrie funkce, a ne konstanty -----------------------------
+// Zúžený pás je kompromis: pracovní den se vejde na obrazovku, ale do noci ani
+// do večera se nedá pořádně kliknout a dlaždice v nich jsou zploštělé na
+// nečitelnou čárku. Proto se každý krajní pás dá ROZBALIT do plných hodin —
+// a jakmile je rozbalení volba uživatele, přestává být výška pásu konstanta.
+// Celá osa se počítá v `geometrie()` a komponenta si ji drží podle stavu.
 
 // Hranice pracovní části a výšky pásem v pixelech.
-// POZOR: musí odpovídat --kal-hodina v kalendar.css.
+// POZOR: PX_HODINA musí odpovídat --kal-hodina v kalendar.css.
 export const PRAC_OD = 7;
 export const PRAC_DO = 19;
 export const PX_HODINA = 44;
-export const PX_NOC = 26; // pás 0:00–7:00
-export const PX_VECER = 26; // pás 19:00–23:59
-
-export const VYSKA_DNE = PX_NOC + (PRAC_DO - PRAC_OD) * PX_HODINA + PX_VECER;
+export const PX_PAS = 26; // složený pás (0:00–7:00, 19:00–23:59)
 
 // Na kolik minut se tažení zaokrouhluje. Čtvrthodina je nejmenší jednotka, se
 // kterou se schůzky reálně plánují — jemnější krok by dělal časy jako 10:07.
@@ -27,21 +31,47 @@ export const MIN_DELKA = 15;
 
 const OD_MIN = PRAC_OD * 60;
 const DO_MIN = PRAC_DO * 60;
-const Y_PRAC = PX_NOC;
-const Y_VECER = PX_NOC + ((DO_MIN - OD_MIN) / 60) * PX_HODINA;
 
-/** Minuta dne (0–1440) → svislá pozice v pixelech. */
-export function yZMinut(min) {
-  if (min <= OD_MIN) return (min / OD_MIN) * PX_NOC;
-  if (min >= DO_MIN) return Y_VECER + ((min - DO_MIN) / (1440 - DO_MIN)) * PX_VECER;
-  return Y_PRAC + ((min - OD_MIN) / 60) * PX_HODINA;
-}
+/**
+ * Geometrie svislé osy pro dané rozbalení krajních pásem.
+ *
+ * Vrací výšky pásem, celkovou výšku dne a dvojici vzájemně inverzních přepočtů
+ * `yZMinut` / `minutyZY`. Rozbalený pás má výšku „počet hodin × hodina", takže
+ * tytéž lineární vzorce platí pro složený i rozbalený stav — netřeba dvě
+ * varianty výpočtu, které by se stejně po čase rozešly.
+ */
+export function geometrie(nocRozbalena = false, vecerRozbalena = false) {
+  const pxNoc = nocRozbalena ? PRAC_OD * PX_HODINA : PX_PAS;
+  const pxVecer = vecerRozbalena ? (24 - PRAC_DO) * PX_HODINA : PX_PAS;
+  const yPrac = pxNoc;
+  const yVecer = pxNoc + (PRAC_DO - PRAC_OD) * PX_HODINA;
+  const vyska = yVecer + pxVecer;
 
-/** Svislá pozice v pixelech → minuta dne. Inverze `yZMinut()`. */
-export function minutyZY(y) {
-  if (y <= Y_PRAC) return (y / PX_NOC) * OD_MIN;
-  if (y >= Y_VECER) return DO_MIN + ((y - Y_VECER) / PX_VECER) * (1440 - DO_MIN);
-  return OD_MIN + ((y - Y_PRAC) / PX_HODINA) * 60;
+  /** Minuta dne (0–1440) → svislá pozice v pixelech. */
+  function yZMinut(min) {
+    if (min <= OD_MIN) return (min / OD_MIN) * pxNoc;
+    if (min >= DO_MIN) return yVecer + ((min - DO_MIN) / (1440 - DO_MIN)) * pxVecer;
+    return yPrac + ((min - OD_MIN) / 60) * PX_HODINA;
+  }
+
+  /** Svislá pozice v pixelech → minuta dne. Inverze `yZMinut()`. */
+  function minutyZY(y) {
+    if (y <= yPrac) return (y / pxNoc) * OD_MIN;
+    if (y >= yVecer) return DO_MIN + ((y - yVecer) / pxVecer) * (1440 - DO_MIN);
+    return OD_MIN + ((y - yPrac) / PX_HODINA) * 60;
+  }
+
+  return {
+    nocRozbalena,
+    vecerRozbalena,
+    pxNoc,
+    pxVecer,
+    yPrac,
+    yVecer,
+    vyska,
+    yZMinut,
+    minutyZY,
+  };
 }
 
 /** Zaokrouhlí minutu na krok tažení a udrží ji v rámci dne. */
