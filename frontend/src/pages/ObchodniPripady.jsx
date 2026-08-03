@@ -285,6 +285,7 @@ export default function ObchodniPripady() {
             podminky={f.podminky}
             onPodminky={f.setPodminky}
             exportNazev="obchodni-pripady"
+            muzeExportovat={me?.prava?.includes("export")}
             vybrane={vybrane}
             onVybrane={setVybrane}
             onOtevri={(p) => navigate(`/pripady/detail/${p.id}`)}

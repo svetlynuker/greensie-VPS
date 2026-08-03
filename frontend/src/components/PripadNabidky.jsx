@@ -24,7 +24,7 @@ const TYPY = { ppa: "PPA", prodej: "Prodej", peak_shaving: "Peak shaving", kombi
  * — jsou to tytéž komponenty, jen vložené sem. Kdyby se překreslovaly znovu,
  * musely by se dva pracovní stoly udržovat současně a rozešly by se.
  */
-export default function PripadNabidky({ pripad, onZmena }) {
+export default function PripadNabidky({ pripad, onZmena, muzeExportovat = false }) {
   const navigate = useNavigate();
   // `null` = nic nevybráno, jinak detail nabídky (panely potřebují dokumenty
   // a spočítaná řešení, ne jen souhrn ze seznamu na případu).
@@ -207,7 +207,7 @@ export default function PripadNabidky({ pripad, onZmena }) {
               </button>
             )}
             {/* Naposledy vytištěné PDF — bez odbočky do editoru výstupu. */}
-            {pdf && <PdfNabidky pdf={pdf} />}
+            {pdf && <PdfNabidky pdf={pdf} muzeExportovat={muzeExportovat} />}
             <button
               className="fm-btn"
               onClick={() => navigate(`/nabidkovac/nabidka/${aktivni.id}`)}

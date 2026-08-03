@@ -61,7 +61,12 @@ from app.nabidkovac.models import (
     VypoctovaNastaveni,
     VystupSablona,
 )
-from app.nabidkovac.permissions import muze_katalog, vyzaduj_katalog, vyzaduj_nabidkovac
+from app.nabidkovac.permissions import (
+    muze_katalog,
+    vyzaduj_export,
+    vyzaduj_katalog,
+    vyzaduj_nabidkovac,
+)
 from app.nabidkovac.schemas import (
     DokumentOut,
     DokumentUprava,
@@ -2890,6 +2895,7 @@ def vyrob_pdf_nabidky(
     typ_reseni: str,
     vstup: VystupPdfVstup,
     user: User = Depends(vyzaduj_nabidkovac),
+    _export: User = Depends(vyzaduj_export),
     db: Session = Depends(get_db),
 ):
     """Z HTML papíru udělá PDF, uloží ho k nabídce a propíše na Disk.
@@ -2973,6 +2979,7 @@ def _vyrob_xlsx(
 def vyrob_xlsx_nabidky(
     nabidka_id: int,
     user: User = Depends(vyzaduj_nabidkovac),
+    _export: User = Depends(vyzaduj_export),
     db: Session = Depends(get_db),
 ):
     """Vyrobí jen výpočtový Excel (bez tisku PDF) a propíše ho na Disk.
@@ -2990,6 +2997,7 @@ def vyrob_xlsx_nabidky(
 def vydej_pdf_nabidky(
     pdf_id: int,
     user: User = Depends(vyzaduj_nabidkovac),
+    _export: User = Depends(vyzaduj_export),
     db: Session = Depends(get_db),
 ):
     """Vydá vygenerovaný soubor (PDF k prohlédnutí, Excel ke stažení)."""

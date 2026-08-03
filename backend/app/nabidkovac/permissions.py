@@ -43,3 +43,27 @@ def vyzaduj_katalog(user: User = Depends(get_current_user)) -> User:
             detail="Na editaci katalogu a výpočtů nemáš oprávnění (jen vedení/admin).",
         )
     return user
+
+
+def muze_export(user: User) -> bool:
+    """Smí uživatel odnést data z appky v souboru?"""
+    return muze_otevrit(user, "export")
+
+
+def vyzaduj_export(user: User = Depends(get_current_user)) -> User:
+    """Právo `export` — navíc k právu na modul, ne místo něj.
+
+    Bydlí tady, i když se používá i mimo nabídkovač (CSV seznamů v CRM): je to
+    jediné právo na „soubor odchází z appky" a rozkopírovat ho do dvou modulů
+    by znamenalo dvě definice téhož, které se časem rozejdou.
+
+    Proč vlastní právo: vidět záznam na obrazovce a odnést si celý seznam
+    v souboru jsou dvě různé věci. Kdo má právo na modul, na data se podívat
+    smí; jestli si je smí vzít s sebou, je samostatné rozhodnutí.
+    """
+    if not muze_export(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Na export dat nemáš oprávnění.",
+        )
+    return user

@@ -1,7 +1,7 @@
 # Nabídkovač
 
 > **Sekce v nabídce:** `nabidkovac` · **Adresy (routy):** `/nabidkovac` (rozcestník typů) · `/nabidkovac/:typ` (seznam nabídek podsekce) · `/nabidkovac/nabidka/:id` (detail nabídky) · `/nabidkovac/nabidka/:id/vystup/:typ` (editor + náhled nabídky pro zákazníka) · `/nabidkovac/katalog` (katalog a výpočtová nastavení)
-> **Kdo smí otevřít:** kdokoli s právem `nabidkovac` (bez práva se sekce v nabídce vůbec nezobrazí); katalog a výpočty jen s právem `nabidkovac_katalog` (vedení/admin)
+> **Kdo smí otevřít:** kdokoli s právem `nabidkovac` (bez práva se sekce v nabídce vůbec nezobrazí); katalog a výpočty jen s právem `nabidkovac_katalog` (vedení/admin); **výroba a stažení PDF i výpočtového Excelu navíc vyžaduje právo `export`** (od 3. 8. 2026 — soubor odchází z appky, tak má vlastní povolení)
 > **Kód:** frontend `frontend/src/pages/Nabidkovac.jsx`, `NabidkovacSekce.jsx`, `NabidkaDetail.jsx`, `NabidkaVystupStranka.jsx`, `NabidkovacKatalog.jsx`; backend `backend/app/nabidkovac/`
 
 Nástroj obchodních zástupců (OZ) na tvorbu cenových nabídek ve třech produktových liniích –
@@ -70,7 +70,8 @@ načíst profil a technologii vybrat z katalogu.
    U peak shavingu jsou v nabídce čísla roku 2026 i **modelu od roku 2027** (nové tarify) a
    u obchodních režimů i **výnos z obchodu s elektřinou** – tedy totéž, co ukazuje panel výsledku.
    Prvky, pro které data nejsou, se do PDF netisknou.
-7. **Ulož do PDF** – tlačítko „Uložit do PDF" otevře tiskový dialog prohlížeče (tisk / uložit jako PDF).
+7. **Ulož do PDF** – tlačítko „Uložit do PDF" (jen s právem `export`; bez něj je na jeho místě
+   „bez práva na export" a rozvržení se dá pořád ukládat). PDF vyrábí **server**, ne prohlížeč.
    U **PPA** nabídky přitom vznikne i **interní výpočtový Excel** se stejným názvem (`.xlsx`) –
    model s živými vzorci k ručnímu doladění. Jsou v něm marže a zisk, takže **zákazníkovi se
    posílá jen PDF**. Podrobně: [Kalkulátor PPA](nabidkovac-ppa-fve.md#výpočtový-excel-k-nabídce).

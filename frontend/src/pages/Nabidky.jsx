@@ -137,6 +137,9 @@ export default function Nabidky() {
   }
   if (!me || !kanban) return null;
 
+  // Právo `export` — soubor odchází z appky, takže vlastní povolení.
+  const muzeExport = Boolean(me.prava?.includes("export"));
+
   // Nabídky bez případu visí v přehledu jako #id bez zákazníka – dokud jsou,
   // má smysl nabízet jejich dohledání.
   const bezPripadu = radky.filter((n) => !n.pripad_id).length;
@@ -241,7 +244,7 @@ export default function Nabidky() {
                 </div>
                 {n.pdf && (
                   <div className="crm-dlazdice-pata">
-                    <PdfNabidky pdf={n.pdf} kompaktni />
+                    <PdfNabidky pdf={n.pdf} kompaktni muzeExportovat={muzeExport} />
                   </div>
                 )}
                 {n.vytvoril_jmeno && (
@@ -263,6 +266,7 @@ export default function Nabidky() {
             podminky={f.podminky}
             onPodminky={f.setPodminky}
             exportNazev="nabidky"
+            muzeExportovat={me?.prava?.includes("export")}
             onOtevri={otevri}
             vykresli={(n, sl) => {
               if (sl.klic.startsWith("extra:")) return (n.extra_text || {})[sl.klic.slice(6)] ?? "—";
@@ -279,7 +283,8 @@ export default function Nabidky() {
                 ) : (
                   <span className="crm-tise">nespočítáno</span>
                 );
-              if (sl.klic === "ma_pdf") return <PdfNabidky pdf={n.pdf} />;
+              if (sl.klic === "ma_pdf")
+                return <PdfNabidky pdf={n.pdf} muzeExportovat={muzeExport} />;
               if (sl.klic === "vytvoreno_at") return fmtDatum(n.vytvoreno_at);
               return n[sl.klic] || "—";
             }}

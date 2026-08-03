@@ -261,6 +261,7 @@ export default function NabidkaVystupStranka() {
         onZpetNaNabidku={() => navigate(`/nabidkovac/nabidka/${id}`)}
         onUloz={uloz}
         onTisk={doPdf}
+        muzeTisknout={Boolean(me?.prava?.includes("export"))}
         uklada={uklada}
         tiskne={tiskne}
         neulozeno={neulozeno}

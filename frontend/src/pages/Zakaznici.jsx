@@ -210,6 +210,7 @@ export default function Zakaznici() {
           podminky={f.podminky}
           onPodminky={f.setPodminky}
           exportNazev={pohled === "lead" ? "leady" : "klienti"}
+          muzeExportovat={me?.prava?.includes("export")}
           onOtevri={(z) => navigate(`/zakaznici/detail/${z.id}`)}
           vykresli={(z, sl) => {
             if (sl.klic === "nazev") return <span className="crm-silne">{z.nazev}</span>;

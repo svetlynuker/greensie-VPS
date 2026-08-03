@@ -10,6 +10,9 @@ export default function Lista({
   onZpetNaNabidku,
   onUloz,
   onTisk,
+  // Právo `export` (soubor odchází z appky). Bez něj se tlačítko tisku
+  // nekreslí — backend by PDF stejně nevyrobil (403).
+  muzeTisknout = false,
   uklada,
   tiskne,
   neulozeno,
@@ -94,14 +97,20 @@ export default function Lista({
         <button className="fm-btn" onClick={onUloz} disabled={uklada}>
           {uklada ? "Ukládám…" : "Uložit"}
         </button>
-        <button
-          className="fm-btn fm-primary"
-          onClick={onTisk}
-          disabled={tiskne || uklada}
-          title="Vyrobí PDF, uloží ho k nabídce, propíše na Disk a otevře v nové záložce"
-        >
-          {tiskne ? "Vyrábím PDF…" : "Uložit do PDF"}
-        </button>
+        {muzeTisknout ? (
+          <button
+            className="fm-btn fm-primary"
+            onClick={onTisk}
+            disabled={tiskne || uklada}
+            title="Vyrobí PDF, uloží ho k nabídce, propíše na Disk a otevře v nové záložce"
+          >
+            {tiskne ? "Vyrábím PDF…" : "Uložit do PDF"}
+          </button>
+        ) : (
+          <span className="crm-tise" title="Rozvržení uložit můžeš, ale PDF vyrobí jen ten, kdo má právo na export dat.">
+            bez práva na export
+          </span>
+        )}
       </div>
 
       <div className="vy-lista-radek druhy">

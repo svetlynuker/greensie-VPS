@@ -119,6 +119,12 @@ PRAVA = [
     {"klic": "zmeny", "nazev": "Otevřít Přehled změn"},
     {"klic": "nabidkovac", "nazev": "Nabídkovač – vytvářet/upravovat nabídky (OZ)"},
     {"klic": "nabidkovac_katalog", "nazev": "Nabídkovač – editace katalogu a výpočtů (vedení)"},
+    # Export dat ze appky do souboru: CSV seznamů v CRM, nabídka do PDF,
+    # interní výpočtový Excel. Vlastní právo schválně — vidět záznam na
+    # obrazovce a odnést si celý seznam v souboru jsou dvě různé věci.
+    # Sečteno s právem na modul: bez `zakaznici` není co exportovat, bez
+    # `export` se seznam nestáhne (viz nabidkovac/permissions.vyzaduj_export).
+    {"klic": "export", "nazev": "Exportovat data do souboru (CSV, PDF nabídky, výpočtový Excel)"},
     {"klic": "admin", "nazev": "Otevřít Admin nastavení"},
     {"klic": "editace", "nazev": "Editace matice (Přehled projektů)"},
     {"klic": "logy", "nazev": "Otevřít Logy (provoz, chyby, audit)"},

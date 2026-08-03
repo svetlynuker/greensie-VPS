@@ -19,6 +19,10 @@ Tři pasti, které se tady hlídají:
 * **Schovaná položka v nabídce místo kontroly na backendu.** Přehled projektů
   se v levém panelu schovává za právem `projekty`, ale endpoint matice byl jen
   za přihlášením — kdo právo neměl, přečetl si ji zadáním adresy.
+
+* **Export se sčítá s právem na modul, nenahrazuje ho.** `export` sám nesmí
+  pustit k nabídkovači a právo na nabídkovač samo nesmí pustit k souboru.
+  Kdyby se to spletlo, buď se exporty otevřou všem, nebo se OZ zavřou nabídky.
 """
 
 from types import SimpleNamespace
@@ -123,6 +127,75 @@ def test_ocisteni_nikomu_neubere_zadne_pravo():
     pred = _uzivatel(extra=["zakaznici", "emaily", "finance"], skupina_prava=["zakaznici", "emaily"])
     po = _uzivatel(extra=_jen_navic(db, 1, pred.extra_prava), skupina_prava=["zakaznici", "emaily"])
     assert prava_uzivatele(po) == prava_uzivatele(pred)
+
+
+# ---- export dat je vlastní právo --------------------------------------------
+def test_export_je_v_katalogu_prav():
+    """Ať se dá přidělit v Admin nastavení jako každé jiné právo."""
+    from app.auth.permissions import VSECHNA_PRAVA
+
+    assert "export" in VSECHNA_PRAVA
+
+
+def test_pravo_export_se_scita_s_pravem_na_modul():
+    """`export` je navíc k právu na modul, ne místo něj.
+
+    Kdyby stačil sám, dostal by se k souborům nabídek i ten, kdo na nabídkovač
+    vůbec nemá. Kdyby ho naopak nahradilo právo na nabídkovač, „zamknutí
+    exportů" by neplatilo.
+    """
+    from app.nabidkovac.permissions import vyzaduj_export, vyzaduj_nabidkovac
+
+    jen_export = _uzivatel(extra=["export"])
+    assert vyzaduj_export(jen_export) is jen_export
+    with pytest.raises(HTTPException) as e:
+        vyzaduj_nabidkovac(jen_export)
+    assert e.value.status_code == 403
+
+    jen_nabidkovac = _uzivatel(extra=["nabidkovac"])
+    assert vyzaduj_nabidkovac(jen_nabidkovac) is jen_nabidkovac
+    with pytest.raises(HTTPException) as e:
+        vyzaduj_export(jen_nabidkovac)
+    assert e.value.status_code == 403
+
+    oboji = _uzivatel(extra=["nabidkovac", "export"])
+    assert vyzaduj_nabidkovac(oboji) is oboji
+    assert vyzaduj_export(oboji) is oboji
+
+
+def test_superspravce_exportovat_smi():
+    from app.nabidkovac.permissions import vyzaduj_export
+
+    u = _uzivatel(admin=True)
+    assert vyzaduj_export(u) is u
+
+
+def test_vsechny_endpointy_vydavajici_soubor_nabidky_zamcene():
+    """Výroba PDF, výroba Excelu i vydání hotového souboru — všechny tři.
+
+    Zamknout jen výrobu by nestačilo: soubory z minulosti už na serveru leží
+    a `GET /nabidka-pdf/{id}/soubor` by je vydal dál.
+    """
+    # Router se bere přímo, ne přes `app.main`: import mainu spustí `create_all`,
+    # který proti testovací SQLite spadne na ARRAY (stejný důvod jako
+    # v tests/test_kolize_cest.py).
+    from app.nabidkovac.permissions import vyzaduj_export
+    from app.nabidkovac.routes import router
+
+    hlidane = {
+        ("POST", "/nabidkovac/nabidky/{nabidka_id}/vystup/{typ_reseni}/pdf"),
+        ("POST", "/nabidkovac/nabidky/{nabidka_id}/vystup/ppa/xlsx"),
+        ("GET", "/nabidkovac/nabidka-pdf/{pdf_id}/soubor"),
+    }
+    nalezene = set()
+    for r in router.routes:
+        dependant = getattr(r, "dependant", None)
+        if dependant is None:
+            continue
+        if vyzaduj_export in [d.call for d in dependant.dependencies]:
+            for metoda in getattr(r, "methods", set()) - {"HEAD", "OPTIONS"}:
+                nalezene.add((metoda, r.path))
+    assert hlidane <= nalezene, f"nezamčené: {sorted(hlidane - nalezene)}"
 
 
 # ---- právo `admin` není cesta k supersprávci --------------------------------
