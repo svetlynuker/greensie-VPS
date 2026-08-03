@@ -9,14 +9,10 @@ import {
   PRAC_DO,
   PRAC_OD,
   PX_HODINA,
-  PX_NOC,
-  PX_VECER,
-  VYSKA_DNE,
+  geometrie,
   hm,
   minutyZCasu,
-  minutyZY,
   naCas,
-  yZMinut,
   zTazeni,
 } from "../kalendarCas";
 
@@ -34,6 +30,12 @@ import {
  *
  * Řeší to spor mezi „vejde se pracovní den na obrazovku" a „nic se neschová":
  * noční a večerní aktivita zůstane vidět, jen zploštělá.
+ *
+ * Zploštělá dlaždice se ale nedá přečíst a do 26px pásu se nedá mířit myší,
+ * takže do noční ani večerní hodiny nešlo nic zapsat. Každý pás se proto dá
+ * ROZBALIT na plné hodiny (klikem na pás v ose nebo v ploše dne) a zůstane
+ * rozbalený — volba se ukládá do profilu jako ostatní volby zobrazení.
+ * Geometrie osy proto přichází z `geometrie()`, ne z konstant.
  *
  * ---- Pozicování ---------------------------------------------------------
  * Události leží ABSOLUTNĚ nad sloupcem dne, ne v buňkách tabulky — jinak by
@@ -67,27 +69,69 @@ const DNY = ["Pondělí", "Úterý", "Středa", "Čtvrtek", "Pátek", "Sobota", 
 
 /**
  * Rozdělí překrývající se události do sloupců.
- * Vrací pro každou událost `{ sloupec, sloupcu }` — bez toho by dvě schůzky na
- * stejnou hodinu ležely přesně na sobě a na spodní by nešlo kliknout.
+ * Vrací pro každou událost `{ sloupec, sloupcu, rozsah }` — bez toho by dvě
+ * schůzky na stejnou hodinu ležely přesně na sobě a na spodní by nešlo kliknout.
+ *
+ * Dvě věci, které naivní verze dělala špatně a Dan si toho všiml:
+ *
+ *  1. Počet sloupců se počítá zvlášť pro každý SHLUK (řetězec navazujících
+ *     souběhů), ne pro celý den. Dřív stačila jedna dvojice schůzek v úterý
+ *     dopoledne a všechny ostatní aktivity toho dne — včetně osamocené
+ *     odpolední — zůstaly na poloviční šířku, i když je nic neblokovalo.
+ *  2. Uvnitř shluku se dlaždice ještě ROZTÁHNE doprava přes sloupce, ve
+ *     kterých v jejím čase nikdo není. Souběh 10:30 + 11:00 tak sedí vedle
+ *     sebe, ale schůzka v 15:00 zabere celou šířku dne.
  */
 function rozvrstvi(seznam) {
-  const s = [...seznam].sort((a, b) => minutyZCasu(a.zacatek) - minutyZCasu(b.zacatek));
-  const konce = []; // konec poslední události v každém sloupci
+  const items = seznam
+    .map((u) => {
+      const od = minutyZCasu(u.zacatek);
+      return { u, od, do: od + Math.max(u.delka_min || 30, MIN_DELKA) };
+    })
+    // Sekundárně podle delší doby trvání: dlouhá schůzka pak drží levý sloupec
+    // a krátké se řadí vedle ní, ne naopak.
+    .sort((a, b) => a.od - b.od || b.do - a.do);
+
   const mapa = new Map();
-  for (const u of s) {
-    const od = minutyZCasu(u.zacatek);
-    const do_ = od + Math.max(u.delka_min || 30, MIN_DELKA);
-    let sloupec = konce.findIndex((k) => k <= od);
-    if (sloupec === -1) {
-      sloupec = konce.length;
-      konce.push(do_);
-    } else {
-      konce[sloupec] = do_;
+  let shluk = [];
+  let konecShluku = -1;
+
+  function uzavriShluk() {
+    if (!shluk.length) return;
+    // Greedy přiřazení sloupců v rámci shluku.
+    const konce = []; // konec poslední události v každém sloupci
+    for (const it of shluk) {
+      let sloupec = konce.findIndex((k) => k <= it.od);
+      if (sloupec === -1) {
+        sloupec = konce.length;
+        konce.push(it.do);
+      } else {
+        konce[sloupec] = it.do;
+      }
+      it.sloupec = sloupec;
     }
-    mapa.set(u.id, { sloupec });
+    const sloupcu = Math.max(konce.length, 1);
+    // Roztažení doprava, dokud v dalším sloupci nic nekoliduje.
+    for (const it of shluk) {
+      let rozsah = 1;
+      for (let s = it.sloupec + 1; s < sloupcu; s++) {
+        const obsazeno = shluk.some((x) => x.sloupec === s && x.od < it.do && x.do > it.od);
+        if (obsazeno) break;
+        rozsah += 1;
+      }
+      mapa.set(it.u.id, { sloupec: it.sloupec, sloupcu, rozsah });
+    }
+    shluk = [];
+    konecShluku = -1;
   }
-  const sloupcu = Math.max(konce.length, 1);
-  for (const v of mapa.values()) v.sloupcu = sloupcu;
+
+  for (const it of items) {
+    // Začíná až po konci všeho v shluku → nový shluk, počítá se od jednoho sloupce.
+    if (shluk.length && it.od >= konecShluku) uzavriShluk();
+    shluk.push(it);
+    konecShluku = Math.max(konecShluku, it.do);
+  }
+  uzavriShluk();
   return mapa;
 }
 
@@ -213,8 +257,16 @@ export default function KalendarTyden({
   // schválně TATÁŽ komponenta: kdyby byl vlastní, měl by druhou kopii
   // pozicování, tažení i vrstvení souběhů — a ty by se rozešly.
   pocetDnu = 7,
+  // Rozbalení krajních pásem: {noc, vecer}. Drží to nadřazená stránka, aby se
+  // volba dala uložit do profilu (a nezmizela při přepnutí den/týden).
+  pasma,
+  onPasma,
 }) {
   const dnesIso = isoDen(new Date());
+  const g = useMemo(
+    () => geometrie(Boolean(pasma?.noc), Boolean(pasma?.vecer)),
+    [pasma?.noc, pasma?.vecer]
+  );
   const refMrizka = useRef(null);
   const refOsa = useRef(null);
 
@@ -246,9 +298,25 @@ export default function KalendarTyden({
   const dnyRef = useRef(dny);
   dnyRef.current = dny;
 
+  // Pracovní hodiny s plnou výškou (osa i vodorovné linky).
   const hodiny = useMemo(
     () => Array.from({ length: PRAC_DO - PRAC_OD }, (_, i) => PRAC_OD + i),
     []
+  );
+  const hodinyNoci = useMemo(() => Array.from({ length: PRAC_OD }, (_, i) => i), []);
+  const hodinyVecera = useMemo(
+    () => Array.from({ length: 24 - PRAC_DO }, (_, i) => PRAC_DO + i),
+    []
+  );
+  // Do kterých hodin se dá kliknout a založit aktivitu. Rozbalený pás se chová
+  // stejně jako pracovní část — o to při rozbalení jde.
+  const hodinySlotu = useMemo(
+    () => [
+      ...(g.nocRozbalena ? hodinyNoci : []),
+      ...hodiny,
+      ...(g.vecerRozbalena ? hodinyVecera : []),
+    ],
+    [g.nocRozbalena, g.vecerRozbalena, hodiny, hodinyNoci, hodinyVecera]
   );
 
   // Rozdělení: vícedenní a celodenní jdou do pruhu nahoře, ostatní do mřížky.
@@ -273,6 +341,29 @@ export default function KalendarTyden({
     return out;
   }, [vMrizce]);
 
+  function prepniPasmo(ktere) {
+    onPasma?.({
+      noc: Boolean(pasma?.noc),
+      vecer: Boolean(pasma?.vecer),
+      [ktere]: !pasma?.[ktere],
+    });
+  }
+
+  // Kolik aktivit padá do složených pásem — ve složeném stavu je počet u popisky
+  // jediné, z čeho je poznat, že tam vůbec něco je.
+  const vPasmech = useMemo(() => {
+    let noc = 0;
+    let vecer = 0;
+    for (const seznam of vMrizce.values()) {
+      for (const u of seznam) {
+        const od = minutyZCasu(u.zacatek);
+        if (od < PRAC_OD * 60) noc += 1;
+        else if (od >= PRAC_DO * 60) vecer += 1;
+      }
+    }
+    return { noc, vecer };
+  }, [vMrizce]);
+
   /** Z pozice kurzoru spočítá, nad kterým dnem a v které minutě je. */
   const miraKurzoru = useCallback(
     (e) => {
@@ -284,10 +375,10 @@ export default function KalendarTyden({
     const idx = Math.floor((e.clientX - mrizka.left - osa.width) / sirkaDne);
     return {
       denIdx: Math.max(0, Math.min(pocetDnu - 1, idx)),
-        minuty: minutyZY(e.clientY - mrizka.top),
+        minuty: g.minutyZY(e.clientY - mrizka.top),
       };
     },
-    [pocetDnu]
+    [pocetDnu, g]
   );
 
   function zacniTazeni(e, u, rezim) {
@@ -461,8 +552,9 @@ export default function KalendarTyden({
   const duchAktivni = nahled?.posunuto ? nahled : null;
 
   // Počet sloupců řídí CSS proměnná, ne pevná trojice pravidel — týden i den
-  // tak používají stejnou mřížku.
-  const styleMrizky = { "--kal-dnu": pocetDnu };
+  // tak používají stejnou mřížku. `--kal-noc` posouvá fázi hodinových linek,
+  // aby sedly na hodiny i po rozbalení noci.
+  const styleMrizky = { "--kal-dnu": pocetDnu, "--kal-noc": `${g.pxNoc}px` };
 
   return (
     <div className={`kal-tyden${tahnu ? " tahne-se" : ""}`} style={styleMrizky}>
@@ -535,21 +627,83 @@ export default function KalendarTyden({
       </div>
 
       {/* ---- mřížka hodin ---- */}
-      <div className="kal-mrizka" style={{ height: VYSKA_DNE }} ref={refMrizka}>
+      <div className="kal-mrizka" style={{ height: g.vyska }} ref={refMrizka}>
         <div className="kal-osa" ref={refOsa}>
-          <div className="kal-osa-pas" style={{ height: PX_NOC }}>
-            <span className="kal-osa-cas horni">0:00</span>
-            <span className="kal-osa-cas dolni">7:00</span>
-          </div>
+          {g.nocRozbalena ? (
+            <>
+              {hodinyNoci.map((h) => (
+                <div key={h} className="kal-osa-hodina mimopracovni" style={{ height: PX_HODINA }}>
+                  <span>{h}:00</span>
+                </div>
+              ))}
+              <button
+                className="kal-osa-sbal horni"
+                onClick={() => prepniPasmo("noc")}
+                title="Sbalit noční hodiny (0:00–7:00)"
+                aria-label="Sbalit noční hodiny"
+                aria-expanded="true"
+              >
+                ▴
+              </button>
+            </>
+          ) : (
+            <button
+              className="kal-osa-pas rozbalovaci"
+              style={{ height: g.pxNoc }}
+              onClick={() => prepniPasmo("noc")}
+              title={`Rozbalit noční hodiny 0:00–7:00${
+                vPasmech.noc ? ` — je v nich ${vPasmech.noc} aktivit(a)` : " (teď v nich nic není)"
+              }`}
+              aria-expanded="false"
+            >
+              <span className="kal-osa-sipka">▾</span>
+              <span className="kal-osa-pas-popis">
+                0–7{vPasmech.noc ? ` · ${vPasmech.noc}` : ""}
+              </span>
+            </button>
+          )}
+
           {hodiny.map((h) => (
             <div key={h} className="kal-osa-hodina" style={{ height: PX_HODINA }}>
               <span>{h}:00</span>
             </div>
           ))}
-          <div className="kal-osa-pas" style={{ height: PX_VECER }}>
-            <span className="kal-osa-cas horni">19:00</span>
-            <span className="kal-osa-cas dolni">23:59</span>
-          </div>
+
+          {g.vecerRozbalena ? (
+            <>
+              {hodinyVecera.map((h) => (
+                <div key={h} className="kal-osa-hodina mimopracovni" style={{ height: PX_HODINA }}>
+                  <span>{h}:00</span>
+                </div>
+              ))}
+              <button
+                className="kal-osa-sbal dolni"
+                onClick={() => prepniPasmo("vecer")}
+                title="Sbalit večerní hodiny (19:00–24:00)"
+                aria-label="Sbalit večerní hodiny"
+                aria-expanded="true"
+              >
+                ▾
+              </button>
+            </>
+          ) : (
+            <button
+              className="kal-osa-pas rozbalovaci"
+              style={{ height: g.pxVecer }}
+              onClick={() => prepniPasmo("vecer")}
+              title={`Rozbalit večerní hodiny 19:00–24:00${
+                vPasmech.vecer
+                  ? ` — je v nich ${vPasmech.vecer} aktivit(a)`
+                  : " (teď v nich nic není)"
+              }`}
+              aria-expanded="false"
+            >
+              <span className="kal-osa-sipka">▾</span>
+              <span className="kal-osa-pas-popis">
+                19–24{vPasmech.vecer ? ` · ${vPasmech.vecer}` : ""}
+              </span>
+            </button>
+          )}
         </div>
 
         {dny.map((d, denIdx) => {
@@ -577,20 +731,43 @@ export default function KalendarTyden({
                 .filter(Boolean)
                 .join(" ")}
             >
-              {/* Zúžená pásma mají jiné pozadí — ať je vidět, že měřítko je jiné. */}
-              <div className="kal-pas noc" style={{ height: PX_NOC }} />
-              <div
-                className="kal-pas vecer"
-                style={{ top: PX_NOC + (PRAC_DO - PRAC_OD) * PX_HODINA, height: PX_VECER }}
-              />
+              {/* Mimopracovní pásma jsou jemně podbarvená — ať je vidět, že tam
+                  den končí. Ve složeném stavu je pás zároveň tlačítko: klik ho
+                  rozbalí, protože do 26px se nedá mířit myší. */}
+              {g.nocRozbalena ? (
+                <div className="kal-pas noc rozbaleny" style={{ height: g.pxNoc }} />
+              ) : (
+                <button
+                  className="kal-pas noc"
+                  style={{ height: g.pxNoc }}
+                  onClick={() => prepniPasmo("noc")}
+                  title="Rozbalit noční hodiny (0:00–7:00)"
+                  aria-label="Rozbalit noční hodiny"
+                />
+              )}
+              {g.vecerRozbalena ? (
+                <div
+                  className="kal-pas vecer rozbaleny"
+                  style={{ top: g.yVecer, height: g.pxVecer }}
+                />
+              ) : (
+                <button
+                  className="kal-pas vecer"
+                  style={{ top: g.yVecer, height: g.pxVecer }}
+                  onClick={() => prepniPasmo("vecer")}
+                  title="Rozbalit večerní hodiny (19:00–24:00)"
+                  aria-label="Rozbalit večerní hodiny"
+                />
+              )}
 
-              {/* Terče pro zakládání po půlhodinách (jen pracovní část). */}
-              {hodiny.map((h) =>
+              {/* Terče pro zakládání po půlhodinách. V rozbaleném pásmu taky —
+                  jinak by rozbalení bylo k ničemu: šlo by koukat, ne zapisovat. */}
+              {hodinySlotu.map((h) =>
                 [0, 30].map((m) => (
                   <button
                     key={`${h}-${m}`}
                     className="kal-slot"
-                    style={{ top: yZMinut(h * 60 + m), height: PX_HODINA / 2 }}
+                    style={{ top: g.yZMinut(h * 60 + m), height: PX_HODINA / 2 }}
                     onClick={() => onPrazdno?.(iso, `${h}:${String(m).padStart(2, "0")}`)}
                     title={`Nová aktivita ${d.getDate()}.${d.getMonth() + 1}. v ${h}:${String(m).padStart(2, "0")}`}
                     aria-label={`Nová aktivita ${h}:${String(m).padStart(2, "0")}`}
@@ -601,10 +778,11 @@ export default function KalendarTyden({
               {seznam.map((u) => {
                 const od = minutyZCasu(u.zacatek);
                 const delka = Math.max(u.delka_min || 30, MIN_DELKA);
-                const top = yZMinut(od);
-                const vyska = Math.max(yZMinut(od + delka) - top, 16);
-                const v = vrstva?.get(u.id) || { sloupec: 0, sloupcu: 1 };
-                const sirka = 100 / v.sloupcu;
+                const top = g.yZMinut(od);
+                const vyska = Math.max(g.yZMinut(od + delka) - top, 16);
+                const v = vrstva?.get(u.id) || { sloupec: 0, sloupcu: 1, rozsah: 1 };
+                // Šířka = přidělený sloupec + volné sloupce vpravo (viz `rozvrstvi`).
+                const sirka = (100 / v.sloupcu) * (v.rozsah || 1);
                 return (
                   <Dlazdice
                     key={u.id}
@@ -618,7 +796,7 @@ export default function KalendarTyden({
                     styl={{
                       top,
                       height: vyska,
-                      left: `calc(${v.sloupec * sirka}% + 2px)`,
+                      left: `calc(${v.sloupec * (100 / v.sloupcu)}% + 2px)`,
                       width: `calc(${sirka}% - 4px)`,
                     }}
                   />
@@ -631,11 +809,11 @@ export default function KalendarTyden({
                   barvy={barvy}
                   duch
                   casNahledu={naCas(duchTady.od)}
-                  kratka={yZMinut(duchTady.od + duchTady.delka) - yZMinut(duchTady.od) < 30}
+                  kratka={g.yZMinut(duchTady.od + duchTady.delka) - g.yZMinut(duchTady.od) < 30}
                   styl={{
-                    top: yZMinut(duchTady.od),
+                    top: g.yZMinut(duchTady.od),
                     height: Math.max(
-                      yZMinut(duchTady.od + duchTady.delka) - yZMinut(duchTady.od),
+                      g.yZMinut(duchTady.od + duchTady.delka) - g.yZMinut(duchTady.od),
                       16
                     ),
                     left: "2px",

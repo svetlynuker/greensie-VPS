@@ -72,7 +72,9 @@
   border-top: 1px solid var(--line);
 }
 .am-nahled-hodina {
-  height: calc(100% / 14);
+  /* Počet hodin řídí komponenta — pruh se rozšiřuje, když se plánuje mimo
+     pracovní část dne. */
+  height: calc(100% / var(--am-hodin, 14));
   border-bottom: 1px solid var(--line);
   font-size: 9px;
   color: var(--muted);

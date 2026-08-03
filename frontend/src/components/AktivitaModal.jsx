@@ -252,31 +252,56 @@ export default function AktivitaModal({
   }
 
   // ---- náhled dne vlevo ----
+  /**
+   * Které hodiny náhled pruhu pokrývá.
+   *
+   * Základ je pracovní část 7–20, ale rozsah se rozšíří na cokoli, co se
+   * do dne plánuje — jinak by aktivita ve 23:00 (nebo v 6:00) skončila „za
+   * hranou" pruhu a člověk by při zapisování nočního hovoru neviděl, do čeho
+   * ho dává.
+   */
+  const rozsahNahledu = useMemo(() => {
+    let odH = 7;
+    let doH = 20;
+    const zapoj = (odMin, delkaMin) => {
+      odH = Math.min(odH, Math.floor(odMin / 60));
+      doH = Math.max(doH, Math.ceil((odMin + (delkaMin || 30)) / 60));
+    };
+    if (!celyDen) {
+      zapoj(minutyZCasu(`2000-01-01T${cas.padStart(5, "0")}:00`), Number(delka) || 30);
+    }
+    for (const u of udalostiDne || []) {
+      if (u.cely_den || (u.termin || "").slice(0, 10) !== den) continue;
+      zapoj(minutyZCasu(u.zacatek), u.delka_min);
+    }
+    odH = Math.max(0, odH);
+    doH = Math.min(24, Math.max(doH, odH + 1));
+    return { odH, doH, start: odH * 60, rozsah: (doH - odH) * 60 };
+  }, [cas, delka, celyDen, udalostiDne, den]);
+
   const nahledDne = useMemo(() => {
-    const start = 7 * 60;
-    const konec = 20 * 60;
+    const { start, rozsah } = rozsahNahledu;
     return (udalostiDne || [])
       .filter((u) => !u.cely_den && (u.termin || "").slice(0, 10) === den)
       .map((u) => {
         const od = minutyZCasu(u.zacatek);
         return {
           ...u,
-          top: ((Math.max(od, start) - start) / (konec - start)) * 100,
-          vyska: Math.max(((u.delka_min || 30) / (konec - start)) * 100, 3),
+          top: ((od - start) / rozsah) * 100,
+          vyska: Math.max(((u.delka_min || 30) / rozsah) * 100, 3),
         };
       });
-  }, [udalostiDne, den]);
+  }, [udalostiDne, den, rozsahNahledu]);
 
   const novaTop = useMemo(() => {
     if (celyDen) return null;
     const od = minutyZCasu(`2000-01-01T${cas.padStart(5, "0")}:00`);
-    const start = 7 * 60;
-    const rozsah = 13 * 60;
+    const { start, rozsah } = rozsahNahledu;
     return {
       top: ((od - start) / rozsah) * 100,
       vyska: Math.max(((Number(delka) || 30) / rozsah) * 100, 3),
     };
-  }, [cas, delka, celyDen]);
+  }, [cas, delka, celyDen, rozsahNahledu]);
 
   const denObj = new Date(`${den}T12:00:00`);
   const DNY = ["Po", "Út", "St", "Čt", "Pá", "So", "Ne"];
@@ -305,8 +330,14 @@ export default function AktivitaModal({
               ›
             </button>
           </div>
-          <div className="am-nahled-pruh">
-            {Array.from({ length: 14 }, (_, i) => 7 + i).map((h) => (
+          <div
+            className="am-nahled-pruh"
+            style={{ "--am-hodin": rozsahNahledu.doH - rozsahNahledu.odH }}
+          >
+            {Array.from(
+              { length: rozsahNahledu.doH - rozsahNahledu.odH },
+              (_, i) => rozsahNahledu.odH + i
+            ).map((h) => (
               <div key={h} className="am-nahled-hodina">
                 <span>{h}:00</span>
               </div>

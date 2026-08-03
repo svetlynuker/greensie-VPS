@@ -79,6 +79,10 @@ export default function Kalendar() {
   const [vybraneKategorie, setVybraneKategorie] = useState(() => new Set());
   const [schovatRealizovane, setSchovatRealizovane] = useState(false);
   const [zobrazitZrusene, setZobrazitZrusene] = useState(false);
+  // Rozbalení krajních pásem mřížky (noc 0–7, večer 19–24). Kdo plánuje večerní
+  // hovory, chce je mít rozbalené pořád — proto to jde do profilu, ne do stavu,
+  // který zmizí s překreslením.
+  const [pasma, setPasma] = useState({ noc: false, vecer: false });
 
   const rozsahDotazu = useMemo(() => {
     const od = posunDnu(new Date(mesic.getFullYear(), mesic.getMonth(), 1), -7);
@@ -117,6 +121,7 @@ export default function Kalendar() {
             if (z && typeof z === "object") {
               setSchovatRealizovane(Boolean(z.schovat_realizovane));
               setZobrazitZrusene(Boolean(z.zobrazit_zrusene));
+              setPasma({ noc: Boolean(z.pasmo_noc), vecer: Boolean(z.pasmo_vecer) });
             }
             if (POHLEDY.some((x) => x.klic === n?.[KLIC_POHLED])) {
               setPohled(n[KLIC_POHLED]);
@@ -148,8 +153,15 @@ export default function Kalendar() {
     ulozNastaveni(KLIC_ZOBRAZENI, {
       schovat_realizovane: schovatRealizovane,
       zobrazit_zrusene: zobrazitZrusene,
+      pasmo_noc: pasma.noc,
+      pasmo_vecer: pasma.vecer,
       ...zmena,
     }).catch(() => {});
+  }
+
+  function zmenPasma(nova) {
+    setPasma(nova);
+    ulozZobrazeni({ pasmo_noc: nova.noc, pasmo_vecer: nova.vecer });
   }
 
   /** Šipky posouvají to, co je zobrazené: den, týden, nebo měsíc. */
@@ -528,6 +540,8 @@ export default function Kalendar() {
                 setModal({ vychozi: { termin: iso, cas } });
               }}
               onPresun={presunAktivitu}
+              pasma={pasma}
+              onPasma={zmenPasma}
             />
           )}
         </div>
