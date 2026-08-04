@@ -104,6 +104,10 @@ def _v2_na_jednotny(varianta: dict, vstup: dict) -> dict:
         "pokryti_spotreby_fve": energie.get("pokryti_spotreby_fve"),
         "vyhnutelna_cena_rok1_kc_mwh": varianta.get("cena_vyhnutelna_kc_mwh"),
         "souhrn_klient": {"uspora_kum_kc": varianta.get("uspora_kumulativni_kc")},
+        # Navržená/zadaná baterie tak, jak ji nese varianta v2 (název produktu
+        # z katalogu, kapacita, výkon, nákladová cena, nájem). v1 ji nemá, tam
+        # zůstane None.
+        "baterie": varianta.get("baterie"),
         "roky": roky,
         "graf": varianta.get("graf"),
     }

@@ -542,6 +542,11 @@ export default function PpaPanel({ nabidka }) {
                 </div>
                 <div className="gs-pozn">Bez ní nejsou čísla varianty platná</div>
               </div>
+              <div className="gs-pozn" style={{ gridColumn: "1 / -1" }}>
+                Necháš-li kapacitu prázdnou, appka navrhne velikost z přebytku FVE a vybere na ni
+                nejlevnější baterii z <b>katalogu baterií</b> — ze stejného ceníku, ze kterého čerpá
+                peak shaving. Cena pak přijde z katalogu, takže ji nemusíš zadávat.
+              </div>
             </div>
           )}
         </section>
@@ -647,6 +652,12 @@ export default function PpaPanel({ nabidka }) {
             <div className="gs-kpi-sub">
               výroba {mwh(vybrana?.energie?.vyroba_rok1_mwh)} v prvním roce
               {blok.omezeno_max_kwp ? " · omezeno stropem" : ""}
+              {vybrana?.baterie
+                ? ` · s baterií ${cislo(vybrana.baterie.kapacita_kwh, 0)} kWh / ${cislo(
+                    vybrana.baterie.vykon_kw,
+                    0
+                  )} kW`
+                : ""}
             </div>
           </div>
           <div className="gs-kpi accent">
@@ -780,6 +791,52 @@ export default function PpaPanel({ nabidka }) {
                   {vybrana.baterie && (
                     <Radek l="Nájem baterie" v={`${kc(vybrana.baterie.najem_kc_mesic)}/měs`} />
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* Navržená (nebo ručně zadaná) baterie – bez tohohle bloku nebylo
+                z výsledku vidět, s jakou baterií se vlastně počítalo. */}
+            {vybrana?.baterie && (
+              <div className="fm-card" style={{ padding: 14, marginTop: 14 }}>
+                <h4 style={{ margin: "0 0 8px" }}>
+                  Navržená baterie
+                  {vybrana.baterie.z_katalogu ? (
+                    <span className="nb-badge dobre" style={{ marginLeft: 6 }}>
+                      z katalogu baterií
+                    </span>
+                  ) : (
+                    <span className="nb-badge pozor" style={{ marginLeft: 6 }}>
+                      {vybrana.baterie.nakladova_cena_kc > 0 ? "zadaná ručně" : "bez ceny"}
+                    </span>
+                  )}
+                </h4>
+                {vybrana.baterie.nazev && (
+                  <Radek
+                    l="Produkt"
+                    v={
+                      vybrana.baterie.pocet_kusu > 1
+                        ? `${vybrana.baterie.nazev} × ${vybrana.baterie.pocet_kusu}`
+                        : vybrana.baterie.nazev
+                    }
+                  />
+                )}
+                <Radek l="Kapacita" v={`${cislo(vybrana.baterie.kapacita_kwh, 0)} kWh`} />
+                {vybrana.baterie.vyuzitelna_kapacita_kwh != null && (
+                  <Radek
+                    l="Využitelná kapacita"
+                    v={`${cislo(vybrana.baterie.vyuzitelna_kapacita_kwh, 0)} kWh`}
+                  />
+                )}
+                <Radek l="Výkon" v={`${cislo(vybrana.baterie.vykon_kw, 0)} kW`} />
+                <Radek l="Nákladová cena" v={kc(vybrana.baterie.nakladova_cena_kc)} />
+                <Radek l="Nájem pro zákazníka" v={`${kc(vybrana.baterie.najem_kc_mesic)}/měs`} />
+                <div className="gs-pozn" style={{ marginTop: 8 }}>
+                  {vybrana.baterie.z_katalogu
+                    ? "Velikost vyšla z přebytku FVE a na ni se z katalogu vybral nejlevnější produkt, který ji pokryje kapacitou i výkonem. Chceš jinou? Zadej kapacitu i cenu vlevo ručně."
+                    : vybrana.baterie.nakladova_cena_kc > 0
+                      ? "Baterie není z katalogu, takže nemá katalogovou nákladovou cenu – zkontroluj, že zadaná cena odpovídá skutečné."
+                      : "Baterie tu nemá cenu, takže čísla varianty neplatí – tenhle výpočet je ze starší verze. Spusť ho znovu a cena se doplní z katalogu baterií."}
                 </div>
               </div>
             )}

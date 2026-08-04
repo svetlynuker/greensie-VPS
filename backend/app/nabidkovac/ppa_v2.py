@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field, replace
-from typing import NamedTuple
+from typing import NamedTuple, Sequence
 from datetime import datetime
 
 from .ppa_fve import (
@@ -81,6 +81,13 @@ VYCHOZI_ODKUP_POPLATEK_PREDCASNE = 0.05
 VYCHOZI_UCINNOST_ROUND_TRIP = 0.90
 VYCHOZI_DOD = 0.90
 VYCHOZI_C_RATE = 0.5  # výkon = kapacita × C-rate, když se velikost navrhuje automaticky
+
+# Katalogové baterie: podíl kapacity, se kterým se reálně pracuje (SOC okno).
+# Záměrně stejná hodnota jako `peak_shaving.PODIL_VYUZITELNE_KAPACITY` – tentýž
+# produkt nesmí u PPA vyjít jinak velký než u peak shavingu.
+PODIL_VYUZITELNE_KAPACITY_KATALOG = 0.85
+# Kolik kusů jednoho produktu se zkouší poskládat (jako u peak shavingu).
+VYCHOZI_MAX_POCET_KUSU = 5
 
 # Horní mez pro bisekci ceny PPA (Kč/MWh) – nad tím už nabídka nemá smysl.
 _MAX_CENA_PPA_KC_MWH = 50_000.0
@@ -205,10 +212,134 @@ class Baterie:
     ucinnost_round_trip: float = VYCHOZI_UCINNOST_ROUND_TRIP
     dod: float = VYCHOZI_DOD
     nakladova_cena_kc: float = 0.0
+    # Konkrétní produkt z katalogu, když se baterie navrhla z něj. `None` =
+    # ruční zadání obchodníkem nebo holá heuristika (kapacita bez produktu).
+    produkt_id: int | None = None
+    produkt_nazev: str | None = None
+    pocet_kusu: int = 1
+    # Nákladová cena je odhad z doporučené prodejní ceny (viz `ProduktBaterie`).
+    cena_je_doporucena: bool = False
 
     @property
     def vyuzitelna_kapacita_kwh(self) -> float:
         return max(0.0, self.kapacita_kwh * self.dod)
+
+
+@dataclass
+class ProduktBaterie:
+    """Jeden produkt z katalogu `technologie` (typ = baterie).
+
+    Stejná data, ze kterých čerpá peak shaving (`peak_shaving.Baterie`) – PPA má
+    vlastní typ jen proto, že si z nich skládá `Baterie` pro svůj dispatch.
+
+    `cena_kc` je **nákladová** cena pro Greensie: marže a provize BESS se na ni
+    v ekonomice teprve nabalují (metodika kap. 1.1). Že je to opravdu náklad,
+    a ne cena pro zákazníka, plyne ze zdroje dat – ceník
+    `docs/importy/pricelist-Simulační matice-2026-07-17.xlsx` vydává dodavatel
+    a `baterie_seed` do `Technologie.cena_kc` mapuje jeho sloupec „dealer price
+    CZK / prodejní cena reálná", tedy cenu, za kterou nakupuje dealer (Greensie);
+    doporučená prodejní cena pro zákazníka je zvlášť v `extra.doporucena_cena_kc`
+    a je o dealerský diskont vyšší (v ceníku shodně 1/0,9). Pozor: samo pole
+    `Technologie.cena_kc` je v modelu vedené jako „prodejní cena bez DPH" a jinde
+    v appce (položky nabídky, peak shaving) se tak i používá – u BESS produktů
+    z ceníku v něm ale je dealerská cena.
+    """
+
+    id: int
+    nazev: str
+    vykon_kw: float
+    kapacita_kwh: float
+    cena_kc: float
+    ucinnost_rt: float = VYCHOZI_UCINNOST_ROUND_TRIP
+    uzitna_kapacita_kwh: float | None = None
+    max_vykon_stridacu_kw: float | None = None
+    # U konfigurací, kde ceník dealerskou cenu neuvádí (2 MW a víc), seed vzal
+    # doporučenou prodejní cenu. Nákladová cena je tam pak nadhodnocená o
+    # dealerský diskont, což se hlásí obchodníkovi v upozorněních.
+    cena_je_doporucena: bool = False
+
+
+def baterie_z_produktu(produkt: ProduktBaterie, pocet_kusu: int = 1) -> Baterie:
+    """Katalogový produkt × počet kusů → `Baterie` pro dispatch a ekonomiku.
+
+    Derivace je záměrně shodná s `peak_shaving.spocti_variantu`: jmenovitá
+    kapacita × počet kusů jde do `kapacita_kwh`, ale simulace pracuje jen
+    s **využitelnou** částí – užitná kapacita z katalogu (fallback jmenovitá)
+    × počet kusů × 0,85 (SOC okno). Protože PPA počítá využitelnou kapacitu
+    jako `kapacita_kwh × dod`, dopočítá se `dod` tak, aby dala tentýž výsledek.
+    Výkon je součet přes kusy, zastropovaný reálným výkonem střídačů z katalogu
+    (ten je uvedený na kus).
+    """
+    pocet = max(1, int(pocet_kusu))
+    jmenovita = max(0.0, produkt.kapacita_kwh) * pocet
+    zaklad = produkt.uzitna_kapacita_kwh
+    if not zaklad or zaklad <= 0:
+        zaklad = produkt.kapacita_kwh
+    vyuzitelna = max(0.0, zaklad) * pocet * PODIL_VYUZITELNE_KAPACITY_KATALOG
+    vykon = max(0.0, produkt.vykon_kw) * pocet
+    if produkt.max_vykon_stridacu_kw and produkt.max_vykon_stridacu_kw > 0:
+        vykon = min(vykon, produkt.max_vykon_stridacu_kw * pocet)
+    ucinnost = produkt.ucinnost_rt if 0 < produkt.ucinnost_rt <= 1 else VYCHOZI_UCINNOST_ROUND_TRIP
+    return Baterie(
+        kapacita_kwh=jmenovita,
+        vykon_kw=vykon,
+        ucinnost_round_trip=ucinnost,
+        dod=(vyuzitelna / jmenovita) if jmenovita > 0 else 0.0,
+        nakladova_cena_kc=max(0.0, produkt.cena_kc) * pocet,
+        produkt_id=produkt.id,
+        produkt_nazev=produkt.nazev,
+        pocet_kusu=pocet,
+        cena_je_doporucena=produkt.cena_je_doporucena,
+    )
+
+
+def vyber_baterii_z_katalogu(
+    katalog: Sequence[ProduktBaterie],
+    cilova_vyuzitelna_kwh: float,
+    cilovy_vykon_kw: float = 0.0,
+    max_pocet_kusu: int = VYCHOZI_MAX_POCET_KUSU,
+) -> Baterie | None:
+    """Nejvhodnější produkt × počet kusů z katalogu na navrženou velikost.
+
+    Pravidlo je třístupňové – kapacita sama nestačí, protože katalog obsahuje
+    i konfigurace s velkou kapacitou a malým výkonem (1 650 kWh / 150 kW), do
+    kterých se denní přebytek FVE nestihne uložit:
+
+    1. kombinace, které pokryjí **kapacitu i výkon** → nejlevnější z nich,
+    2. jinak kombinace, které pokryjí kapacitu → nejlevnější (volající ohlásí,
+       že výkon je nižší, než heuristika navrhla),
+    3. jinak největší dosažitelná kapacita (katalog na návrh nestačí).
+
+    Při shodě ceny vyhrává menší kapacita, ať se nekupuje víc, než je potřeba.
+    Vrací `None`, jen když v katalogu není žádný použitelný produkt (nebo je cíl
+    nulový); volající pak zůstane u holé heuristiky.
+    """
+    if cilova_vyuzitelna_kwh <= 0:
+        return None
+    kandidati: list[Baterie] = []
+    for produkt in katalog:
+        if produkt.kapacita_kwh <= 0 or produkt.vykon_kw <= 0 or produkt.cena_kc <= 0:
+            continue
+        for pocet in range(1, max(1, int(max_pocet_kusu)) + 1):
+            kandidati.append(baterie_z_produktu(produkt, pocet))
+    if not kandidati:
+        return None
+
+    # `produkt_id` a `pocet_kusu` v klíči jsou jen deterministický tie-break, ať
+    # se při shodných cenách nevybírá podle pořadí v databázi.
+    def klic(b: Baterie) -> tuple:
+        return (b.nakladova_cena_kc, b.vyuzitelna_kapacita_kwh, b.pocet_kusu, b.produkt_id or 0)
+
+    doost_kapacity = [
+        b for b in kandidati if b.vyuzitelna_kapacita_kwh >= cilova_vyuzitelna_kwh - 1e-9
+    ]
+    if doost_kapacity:
+        doost_obojiho = [b for b in doost_kapacity if b.vykon_kw >= cilovy_vykon_kw - 1e-9]
+        return min(doost_obojiho or doost_kapacity, key=klic)
+    return max(
+        kandidati,
+        key=lambda b: (b.vyuzitelna_kapacita_kwh, -b.nakladova_cena_kc, -(b.produkt_id or 0)),
+    )
 
 
 class Tok(NamedTuple):
@@ -967,7 +1098,11 @@ class VstupPPA2:
     # a smlouvy o výkupu/sdílení, proto se zadává per nabídku.
     cena_exportu_kc_mwh: float | None = None
     s_baterii: bool = True
-    baterie: Baterie | None = None  # None + s_baterii → navrhne se heuristicky
+    baterie: Baterie | None = None  # None + s_baterii → navrhne se z katalogu
+    # Katalog baterií (`technologie`, typ = baterie) – tentýž zdroj, ze kterého
+    # čerpá peak shaving. Když je prázdný, návrh zůstane u holé heuristiky bez
+    # ceny a varianta se označí jako neplatná (chybí CAPEX).
+    baterie_katalog: tuple[ProduktBaterie, ...] = ()
     lat_deg: float = VYCHOZI_LAT
     sklon_st: float = 35.0
     azimut_st: float = 0.0
@@ -1094,8 +1229,18 @@ def spocti_variantu(
         "s_baterii": bool(baterie and baterie.kapacita_kwh > 0),
         "baterie": (
             {
-                "kapacita_kwh": baterie.kapacita_kwh,
-                "vykon_kw": baterie.vykon_kw,
+                "produkt_id": baterie.produkt_id,
+                "nazev": baterie.produkt_nazev,
+                "pocet_kusu": baterie.pocet_kusu,
+                "z_katalogu": baterie.produkt_id is not None,
+                "kapacita_kwh": round(baterie.kapacita_kwh, 1),
+                # Se kterou částí kapacity simulace opravdu pracuje (SOC okno).
+                "vyuzitelna_kapacita_kwh": round(baterie.vyuzitelna_kapacita_kwh, 1),
+                "vykon_kw": round(baterie.vykon_kw, 1),
+                # `dod` i účinnost se ukládají, aby graf průběhu šel dopočítat
+                # z uložené varianty a nerozešel se s ekonomikou.
+                "dod": round(baterie.dod, 4),
+                "ucinnost_round_trip": round(baterie.ucinnost_round_trip, 4),
                 "nakladova_cena_kc": baterie.nakladova_cena_kc,
                 "najem_kc_mesic": round(najem_mesicni, 2),
             }
@@ -1257,10 +1402,55 @@ def spocti_ppa2(vstup: VstupPPA2) -> dict:
     if vstup.s_baterii:
         baterie = vstup.baterie
         if baterie is None and bez is not None:
-            # Heuristika: baterie se navrhne z denního přebytku FVE, která by vyšla
+            # Heuristika: velikost se navrhne z denního přebytku FVE, která by vyšla
             # bez baterie – pak se s ní velikost FVE dopočítá znovu (kap. 3.4).
             vyroba_bez = [bez["kwp"] * v for v in vyroba_1kwp]
-            baterie = navrhni_baterii(vyroba_bez, vstup.spotreba_kwh, vstup.casy)
+            navrh = navrhni_baterii(vyroba_bez, vstup.spotreba_kwh, vstup.casy)
+            baterie = navrh
+            # Heuristika dá jen kapacitu a výkon, ne cenu – bez CAPEX není varianta
+            # platná. Konkrétní produkt se proto vybere z katalogu baterií, ze
+            # kterého čerpá i peak shaving; katalogová cena je nákladová cena BESS.
+            cil = navrh.vyuzitelna_kapacita_kwh
+            if cil > 0 and vstup.baterie_katalog:
+                z_katalogu = vyber_baterii_z_katalogu(
+                    vstup.baterie_katalog, cil, navrh.vykon_kw
+                )
+                if z_katalogu is not None:
+                    baterie = z_katalogu
+                    if z_katalogu.cena_je_doporucena:
+                        upozorneni.append(
+                            f"U baterie {z_katalogu.produkt_nazev} ceník neuvádí dealerskou cenu, "
+                            "takže nákladová cena vychází z doporučené prodejní – je tím "
+                            "nadhodnocená o dealerský diskont (v ceníku 10 %) a nájem baterie "
+                            "vychází vyšší, než jaký by šlo nabídnout. Doplň skutečnou nákupní "
+                            "cenu do katalogu, nebo baterii zadej ručně."
+                        )
+                    if z_katalogu.vyuzitelna_kapacita_kwh < cil - 1e-9:
+                        upozorneni.append(
+                            f"Největší baterie v katalogu ({z_katalogu.produkt_nazev} × "
+                            f"{z_katalogu.pocet_kusu}, {z_katalogu.vyuzitelna_kapacita_kwh:.0f} kWh "
+                            f"využitelných) nepokryje navrženou velikost {cil:.0f} kWh – varianta "
+                            "počítá s menší baterií, samospotřeba tak může být nižší."
+                        )
+                    elif z_katalogu.vykon_kw < navrh.vykon_kw - 1e-9:
+                        upozorneni.append(
+                            f"Vybraná baterie {z_katalogu.produkt_nazev} × {z_katalogu.pocet_kusu} "
+                            f"má výkon {z_katalogu.vykon_kw:.0f} kW, návrh chtěl "
+                            f"{navrh.vykon_kw:.0f} kW – kapacitu pokryje, ale z přebytku FVE se "
+                            "nabíjí pomaleji, takže samospotřeba je nižší. V katalogu není "
+                            "výkonnější konfigurace, která by velikost pokryla."
+                        )
+                else:
+                    upozorneni.append(
+                        "V katalogu není žádná použitelná baterie (potřebuje výkon, kapacitu "
+                        "i cenu), takže se navrhla jen velikost bez ceny – doplň produkty "
+                        "do katalogu, nebo zadej baterii ručně."
+                    )
+            elif cil > 0:
+                upozorneni.append(
+                    "Katalog baterií je prázdný, navrhla se jen velikost bez ceny – doplň "
+                    "produkty do katalogu, nebo zadej baterii ručně."
+                )
         # Kontrola platí pro navrženou i pro ručně zadanou baterii: bez CAPEX
         # baterie chybí v modelu jak investice, tak nájem, ale samospotřebu
         # baterie zvedá – varianta pak tvrdí úsporu, která po zaplacení baterie
