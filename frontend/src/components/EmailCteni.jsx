@@ -105,6 +105,10 @@ export default function EmailCteni({
   onPreposlat,
   onPripojit,
   onOdpojit,
+  // Zvětšení na celou plochu modulu. Stav drží stránka, ne tenhle panel —
+  // schovat se musí sousední panely (složky, seznam), na které panel nedosáhne.
+  zvetseno = false,
+  onZvetsit,
 }) {
   const [pustitObrazky, setPustitObrazky] = useState(false);
   const [chybaPrilohy, setChybaPrilohy] = useState(null);
@@ -200,6 +204,22 @@ export default function EmailCteni({
         >
           Do koše
         </button>
+        {onZvetsit && (
+          /* Dlouhé nabídky a maily s tabulkou se do třetiny obrazovky nevejdou.
+             Zvětšení schová složky i seznam, takže zpráva má celou plochu modulu. */
+          <button
+            className="fm-btn"
+            aria-pressed={zvetseno}
+            title={
+              zvetseno
+                ? "Zmenšit zpět a vrátit seznam zpráv (Esc)"
+                : "Roztáhnout zprávu na celou plochu modulu"
+            }
+            onClick={() => onZvetsit(!zvetseno)}
+          >
+            {zvetseno ? "⤡ Zmenšit" : "⛶ Na celou plochu"}
+          </button>
+        )}
         <button className="fm-btn" onClick={onZavri} aria-label="Zavřít zprávu">
           ×
         </button>
@@ -279,8 +299,8 @@ export default function EmailCteni({
             sandbox="allow-popups allow-popups-to-escape-sandbox"
             srcDoc={dokument}
             /* Rám si výšku sám nespočítá (nemáme do něj přístup — a to je
-               záměr), takže dostane pevnou. Uvnitř se scrolluje. */
-            style={{ height: "min(calc(100vh - 420px), 900px)", minHeight: 260 }}
+               záměr), takže dostane pevnou z CSS. Uvnitř se scrolluje.
+               Výška je v CSS a ne tady, aby ji zvětšený stav mohl přebít. */
           />
         ) : (
           <pre className="em-telo-text">{zprava.telo_text || "(prázdná zpráva)"}</pre>

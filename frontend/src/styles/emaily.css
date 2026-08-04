@@ -281,7 +281,31 @@
   background: #fff;
   border-radius: 8px;
   display: block;
-  min-height: 200px;
+  /* Pevná výška, protože rám si ji sám nespočítá — do sandboxu nevidíme.
+     Uvnitř se scrolluje. Strop 900 px, ať na velkém monitoru není zpráva
+     nesmyslně dlouhá a lišta akcí zůstala v dohledu. */
+  height: min(calc(100vh - 420px), 900px);
+  min-height: 260px;
+}
+
+/* ---- čtení na celou plochu modulu ------------------------------------ */
+/* Nabídka, dlouhé vlákno nebo mail s tabulkou se do třetiny obrazovky nevejdou.
+   Ve zvětšení zmizí složky i seznam a čtení dostane celou mřížku modulu.
+   Selektory jsou přes atribut, takže přebijí i pravidla v @media níž —
+   zvětšení musí platit na notebooku stejně jako na velkém monitoru. */
+.em-app[data-zvetseno="ano"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.em-app[data-zvetseno="ano"] .em-panel-slozky,
+.em-app[data-zvetseno="ano"] .em-panel-seznam {
+  display: none;
+}
+
+/* Ve zvětšení padá strop 900 px: kdo si zprávu roztáhl, chce ji celou. */
+.em-app[data-zvetseno="ano"] .em-telo-html {
+  height: calc(100vh - 400px);
+  min-height: 300px;
 }
 
 .em-obrazky-lista {

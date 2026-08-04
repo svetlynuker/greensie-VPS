@@ -81,6 +81,9 @@ export default function Emaily() {
 
   const [otevrena, setOtevrena] = useState(null);
   const [nacitaZpravu, setNacitaZpravu] = useState(false);
+  // Čtení na celou plochu modulu (schová složky i seznam). Stav je tady, ne
+  // v panelu čtení — schovat se musí sousedi, na které panel nedosáhne.
+  const [zvetseno, setZvetseno] = useState(false);
   const [synchronizuje, setSynchronizuje] = useState(false);
   // `null` = zavřeno. Jinak předvyplněná data okna psaní (přijdou z backendu).
   const [psani, setPsani] = useState(null);
@@ -173,6 +176,25 @@ export default function Emaily() {
     }, OBNOVA_MS);
     return () => clearInterval(t);
   }, [ucet, nactiZpravy]);
+
+  // Zvětšení platí pro otevřenou zprávu. Jakmile žádná není (zavření, přesun,
+  // koš, přepnutí složky), musí se seznam vrátit sám — jinak by uživatel zůstal
+  // koukat na prázdný panel bez cesty zpátky.
+  useEffect(() => {
+    if (!otevrena) setZvetseno(false);
+  }, [otevrena]);
+
+  // Esc vrátí zvětšenou zprávu do tří panelů. Když je nad ní otevřené okno
+  // (psaní, pravidla, výběr klienta), Esc patří tomu oknu — jinak by jedno
+  // zmáčknutí zavřelo dvě věci.
+  useEffect(() => {
+    if (!zvetseno || psani || pravidla || pariZpravy) return undefined;
+    function naKlavesu(e) {
+      if (e.key === "Escape") setZvetseno(false);
+    }
+    window.addEventListener("keydown", naKlavesu);
+    return () => window.removeEventListener("keydown", naKlavesu);
+  }, [zvetseno, psani, pravidla, pariZpravy]);
 
   async function otevri(z) {
     setNacitaZpravu(true);
@@ -426,7 +448,11 @@ export default function Emaily() {
         </div>
       )}
 
-      <div className="em-app" data-mobil={otevrena ? "cteni" : "seznam"}>
+      <div
+        className="em-app"
+        data-mobil={otevrena ? "cteni" : "seznam"}
+        data-zvetseno={otevrena && zvetseno ? "ano" : "ne"}
+      >
         {/* ---- složky ---- */}
         <div className="em-panel em-panel-slozky">
           <div className="em-panel-hlava">
@@ -655,6 +681,8 @@ export default function Emaily() {
             onPresun={presun}
             onDoKose={doKose}
             onZavri={() => setOtevrena(null)}
+            zvetseno={zvetseno}
+            onZvetsit={setZvetseno}
             onPripojit={(z) => setPariZpravy([z.id])}
             onOdpojit={(z) => odpojOdKlienta([z.id])}
             onOdpovedet={(z, vsem) =>
