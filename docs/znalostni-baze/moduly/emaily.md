@@ -69,6 +69,10 @@ jeden — seznam, nebo otevřená zpráva.
 - **Vlaječka (★)** — označení „tohle si pamatuj". Je to tentýž příznak, který vidíš na Seznamu.
 - **Přesunout do složky** — rozbalovací seznam **Přesunout do…** v liště nad zprávou.
 - **Do koše** — přesune zprávu do Koše. **Natrvalo appka nemaže nic** (viz níž).
+- **Na celou plochu** — tlačítko **⛶ Na celou plochu** v liště nad zprávou schová složky i seznam
+  a zpráva se roztáhne na celou plochu modulu. Hodí se na nabídky, dlouhá vlákna a maily
+  s tabulkou. Zpátky tlačítkem **⤡ Zmenšit** nebo klávesou **Esc**; seznam se vrátí i sám, jakmile
+  zprávu zavřeš, přesuneš nebo dáš do koše.
 - **Stáhnout přílohu** — klikni na ni dole ve zprávě.
 - **Hledat** — políčko nad seznamem zpráv. Hledá v předmětu, odesílateli a náhledu textu
   ve stažené poště (viz omezení níž).
