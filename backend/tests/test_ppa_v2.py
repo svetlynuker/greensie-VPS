@@ -802,3 +802,209 @@ class TestSpoctiPpa2:
     def test_chybejici_diagram(self, vstup):
         vstup.casy = []
         assert "chyba" in ppa.spocti_ppa2(vstup)
+
+
+# ============================================================ návrh baterie z katalogu
+def _katalog_baterii() -> list[ppa.ProduktBaterie]:
+    """Výřez z ceníku BESS – tři velikosti jedné řady (jako v `baterie_seed`)."""
+    return [
+        ppa.ProduktBaterie(
+            id=1,
+            nazev="BESS 100 kW / 220 kWh",
+            vykon_kw=100.0,
+            kapacita_kwh=220.0,
+            cena_kc=1_803_170.7,
+            ucinnost_rt=0.95,
+            uzitna_kapacita_kwh=220.0,
+            max_vykon_stridacu_kw=100.0,
+        ),
+        ppa.ProduktBaterie(
+            id=2,
+            nazev="BESS 100 kW / 660 kWh",
+            vykon_kw=100.0,
+            kapacita_kwh=660.0,
+            cena_kc=4_294_502.1,
+            ucinnost_rt=0.95,
+            uzitna_kapacita_kwh=660.0,
+            max_vykon_stridacu_kw=100.0,
+        ),
+        ppa.ProduktBaterie(
+            id=3,
+            nazev="BESS 500 kW / 2200 kWh",
+            vykon_kw=500.0,
+            kapacita_kwh=2_200.0,
+            cena_kc=11_155_617.9,
+            ucinnost_rt=0.95,
+            uzitna_kapacita_kwh=2_200.0,
+            max_vykon_stridacu_kw=500.0,
+        ),
+    ]
+
+
+class TestBaterieZKatalogu:
+    """Kap. 3.4: velikost dá heuristika, produkt (a tím i cenu) katalog."""
+
+    def test_produkt_nese_cenu_i_identifikaci(self):
+        b = ppa.baterie_z_produktu(_katalog_baterii()[1], pocet_kusu=2)
+        assert (b.produkt_id, b.pocet_kusu) == (2, 2)
+        assert b.produkt_nazev == "BESS 100 kW / 660 kWh"
+        assert b.kapacita_kwh == pytest.approx(1_320.0)
+        assert b.vykon_kw == pytest.approx(200.0)
+        assert b.nakladova_cena_kc == pytest.approx(4_294_502.1 * 2)
+
+    def test_vyuzitelna_kapacita_je_shodna_s_peak_shavingem(self):
+        """Tentýž produkt nesmí u PPA vyjít jinak velký než u peak shavingu."""
+        from app.nabidkovac import peak_shaving as ps
+
+        produkt = _katalog_baterii()[1]
+        b = ppa.baterie_z_produktu(produkt, pocet_kusu=3)
+        ocekavana = produkt.uzitna_kapacita_kwh * 3 * ps.PODIL_VYUZITELNE_KAPACITY
+        assert b.vyuzitelna_kapacita_kwh == pytest.approx(ocekavana)
+
+    def test_vykon_zastropuje_stridac(self):
+        """Reálný výkon střídačů z katalogu je na kus a musí přebít jmenovitý."""
+        produkt = ppa.ProduktBaterie(
+            id=9, nazev="X", vykon_kw=250.0, kapacita_kwh=500.0, cena_kc=1.0,
+            max_vykon_stridacu_kw=100.0,
+        )
+        assert ppa.baterie_z_produktu(produkt, 2).vykon_kw == pytest.approx(200.0)
+
+    def test_vybere_nejlevnejsi_pokryvajici(self):
+        """Cíl 500 kWh využitelných: 660 kWh (561 využ.) pokryje, 220 ne."""
+        b = ppa.vyber_baterii_z_katalogu(_katalog_baterii(), 500.0)
+        assert b.produkt_id == 2 and b.pocet_kusu == 1
+        assert b.vyuzitelna_kapacita_kwh >= 500.0
+
+    def test_slozi_vic_kusu_kdyz_jeden_nestaci(self):
+        """Cíl 900 kWh: dva menší kusy jsou levnější než jeden velký."""
+        b = ppa.vyber_baterii_z_katalogu(_katalog_baterii(), 900.0)
+        assert b.vyuzitelna_kapacita_kwh >= 900.0
+        assert b.nakladova_cena_kc <= 11_155_617.9
+
+    def test_vykon_je_soucasti_kriteria(self):
+        """Kapacita sama nestačí – velká kapacita s malým výkonem se nenabije.
+
+        Katalog nabízí 2 200 kWh za 50 kW (levné) i 2 200 kWh za 500 kW (dražší).
+        Při cíli 1 800 kWh / 400 kW musí vyhrát ta výkonnější, i když je dražší.
+        """
+        katalog = [
+            ppa.ProduktBaterie(
+                id=1, nazev="Pomalá 50 kW / 2200 kWh", vykon_kw=50.0, kapacita_kwh=2_200.0,
+                cena_kc=8_000_000.0, uzitna_kapacita_kwh=2_200.0, max_vykon_stridacu_kw=50.0,
+            ),
+            ppa.ProduktBaterie(
+                id=2, nazev="Rychlá 500 kW / 2200 kWh", vykon_kw=500.0, kapacita_kwh=2_200.0,
+                cena_kc=11_000_000.0, uzitna_kapacita_kwh=2_200.0, max_vykon_stridacu_kw=500.0,
+            ),
+        ]
+        b = ppa.vyber_baterii_z_katalogu(katalog, 1_800.0, 400.0)
+        assert b.produkt_id == 2
+        # Bez požadavku na výkon zůstane v platnosti nejnižší cena.
+        assert ppa.vyber_baterii_z_katalogu(katalog, 1_800.0, 0.0).produkt_id == 1
+
+    def test_nedostatecny_vykon_je_fallback_ne_chyba(self):
+        """Když výkon nikdo nesplní, vybere se aspoň kapacita (a volající to hlásí)."""
+        katalog = [
+            ppa.ProduktBaterie(
+                id=1, nazev="Pomalá 50 kW / 2200 kWh", vykon_kw=50.0, kapacita_kwh=2_200.0,
+                cena_kc=8_000_000.0, uzitna_kapacita_kwh=2_200.0, max_vykon_stridacu_kw=50.0,
+            ),
+        ]
+        b = ppa.vyber_baterii_z_katalogu(katalog, 1_800.0, 900.0)
+        assert b is not None and b.produkt_id == 1
+        assert b.vyuzitelna_kapacita_kwh >= 1_800.0
+        assert b.vykon_kw < 900.0
+
+    def test_nepokryty_cil_vrati_nejvetsi(self):
+        """Katalog na cíl nestačí → největší dosažitelná, ne None."""
+        b = ppa.vyber_baterii_z_katalogu(_katalog_baterii(), 100_000.0)
+        assert b is not None
+        assert b.pocet_kusu == ppa.VYCHOZI_MAX_POCET_KUSU
+        assert b.produkt_id == 3
+
+    def test_prazdny_katalog_nic_nevybere(self):
+        assert ppa.vyber_baterii_z_katalogu([], 500.0) is None
+        assert ppa.vyber_baterii_z_katalogu(_katalog_baterii(), 0.0) is None
+
+    def test_produkt_bez_ceny_se_nepocita(self):
+        """Bez ceny by varianta neměla CAPEX – takový produkt do výběru nesmí."""
+        katalog = [ppa.ProduktBaterie(id=5, nazev="Bez ceny", vykon_kw=50.0, kapacita_kwh=200.0, cena_kc=0.0)]
+        assert ppa.vyber_baterii_z_katalogu(katalog, 10.0) is None
+
+
+class TestSpoctiPpa2SBaterii:
+    @pytest.fixture
+    def vstup(self):
+        casy, spotreba = _profil_denni_spotreba()
+        return ppa.VstupPPA2(
+            casy=casy,
+            spotreba_kwh=spotreba,
+            cena_silova_kc_mwh=3_500.0,
+            s_baterii=True,
+        )
+
+    def test_bez_katalogu_zustane_heuristika_bez_ceny(self, vstup):
+        """Dosavadní chování: velikost ano, cena ne – a výpočet to hlásí."""
+        v = ppa.spocti_ppa2(vstup)
+        bat = v["s_baterii"]["po_delkach"][0]["baterie"]
+        assert bat["kapacita_kwh"] > 0
+        assert bat["nakladova_cena_kc"] == 0
+        assert bat["z_katalogu"] is False
+        assert any("Nákladová cena baterie není zadaná" in u for u in v["upozorneni"])
+        assert any("Katalog baterií je prázdný" in u for u in v["upozorneni"])
+
+    def test_s_katalogem_ma_baterie_produkt_i_cenu(self, vstup):
+        """Zadání: bez ruční baterie se produkt vybere z katalogu baterií."""
+        vstup.baterie_katalog = tuple(_katalog_baterii())
+        v = ppa.spocti_ppa2(vstup)
+        bat = v["s_baterii"]["po_delkach"][0]["baterie"]
+        assert bat["z_katalogu"] is True
+        assert bat["produkt_id"] in (1, 2, 3)
+        assert bat["nazev"]
+        assert bat["pocet_kusu"] >= 1
+        assert bat["nakladova_cena_kc"] > 0
+        assert bat["vyuzitelna_kapacita_kwh"] > 0
+        assert bat["vykon_kw"] > 0
+        # Když má varianta CAPEX, upozornění o chybějící ceně nesmí padnout.
+        assert not any("Nákladová cena baterie není zadaná" in u for u in v["upozorneni"])
+
+    def test_katalog_pokryje_navrzenou_velikost(self, vstup):
+        """Vybraná baterie musí pokrýt to, co navrhla heuristika."""
+        vstup.baterie_katalog = tuple(_katalog_baterii())
+        v = ppa.spocti_ppa2(vstup)
+        bat = v["s_baterii"]["po_delkach"][0]["baterie"]
+        if not any("nepokryje navrženou velikost" in u for u in v["upozorneni"]):
+            bez = ppa.spocti_ppa2(
+                ppa.VstupPPA2(
+                    casy=vstup.casy,
+                    spotreba_kwh=vstup.spotreba_kwh,
+                    cena_silova_kc_mwh=vstup.cena_silova_kc_mwh,
+                    s_baterii=False,
+                )
+            )
+            vyroba = ppa.simuluj_vyrobu(
+                vstup.casy, bez["bez_baterie"]["kwp"], ppa.VYCHOZI_LAT, 35.0, 0.0,
+                ppa.VYCHOZI_MERNY_VYNOS_KWH_KWP,
+            )
+            navrh = ppa.navrhni_baterii(vyroba, vstup.spotreba_kwh, vstup.casy)
+            assert bat["vyuzitelna_kapacita_kwh"] >= navrh.vyuzitelna_kapacita_kwh - 0.05
+
+    def test_maly_katalog_hlasi_nedostatecnou_baterii(self, vstup):
+        """Když katalog nemá dost velkou baterii, musí to výpočet říct."""
+        vstup.baterie_katalog = (
+            ppa.ProduktBaterie(
+                id=7, nazev="Mini 5 kW / 10 kWh", vykon_kw=5.0, kapacita_kwh=10.0, cena_kc=120_000.0
+            ),
+        )
+        v = ppa.spocti_ppa2(vstup)
+        assert any("nepokryje navrženou velikost" in u for u in v["upozorneni"])
+        assert v["s_baterii"]["po_delkach"][0]["baterie"]["z_katalogu"] is True
+
+    def test_rucni_baterie_katalog_ignoruje(self, vstup):
+        """Ruční zadání má přednost – katalog do něj nesmí zasáhnout."""
+        vstup.baterie_katalog = tuple(_katalog_baterii())
+        vstup.baterie = ppa.Baterie(kapacita_kwh=333.0, vykon_kw=111.0, nakladova_cena_kc=2_000_000.0)
+        v = ppa.spocti_ppa2(vstup)
+        bat = v["s_baterii"]["po_delkach"][0]["baterie"]
+        assert bat["kapacita_kwh"] == pytest.approx(333.0)
+        assert bat["z_katalogu"] is False

@@ -111,6 +111,26 @@ def _num(x) -> float | None:
     return float(x) if x is not None else None
 
 
+def _dotaz_baterie_katalog(db: Session, ids: list[int] | None = None):
+    """Dotaz na použitelné baterie z katalogu – jeden zdroj pro peak shaving i PPA.
+
+    Filtr (kap. 3.2): typ = baterie, dostupná, s vyplněným výkonem i kapacitou.
+    Ten na kW/kWh je zároveň to, co ze simulací drží stranou bateriové KOMPONENTY
+    z prodejního ceníku (BMS, kabeláž, racky) – ty tahle čísla nemají.
+    `ids` = ruční výběr produktů obchodníkem (prázdné/None = celý katalog).
+    Na kladnost čísel a na cenu si volající filtruje sám při mapování.
+    """
+    dotaz = db.query(Technologie).filter(
+        Technologie.typ == "baterie",
+        Technologie.aktivni.is_(True),
+        Technologie.vykon_kw.isnot(None),
+        Technologie.kapacita_kwh.isnot(None),
+    )
+    if ids:
+        dotaz = dotaz.filter(Technologie.id.in_(ids))
+    return dotaz
+
+
 def _dokument_out(d: NabidkaDokument) -> DokumentOut:
     return DokumentOut(
         id=d.id,
@@ -1773,19 +1793,8 @@ def spocti_peak_shaving(
 
     # 3) katalog baterií (typ=baterie, aktivní, s výkonem i kapacitou – kap. 3.2).
     # `baterie_ids` ve vstupu = OZ si ručně vybral, které produkty počítat
-    # (prázdné/None = celý katalog).
-    # Filtr na kW/kWh je zároveň to, co ze simulace drží stranou bateriové
-    # KOMPONENTY z prodejního ceníku (BMS, kabeláž, racky) – ty tahle čísla
-    # nemají, takže se do výběru nikdy nedostanou.
-    dotaz_baterie = db.query(Technologie).filter(
-        Technologie.typ == "baterie",
-        Technologie.aktivni.is_(True),
-        Technologie.vykon_kw.isnot(None),
-        Technologie.kapacita_kwh.isnot(None),
-    )
-    if vstup.baterie_ids:
-        dotaz_baterie = dotaz_baterie.filter(Technologie.id.in_(vstup.baterie_ids))
-    tech = dotaz_baterie.all()
+    # (prázdné/None = celý katalog). Tentýž dotaz používá i návrh baterie u PPA.
+    tech = _dotaz_baterie_katalog(db, vstup.baterie_ids).all()
     if vstup.baterie_ids and not tech:
         raise HTTPException(
             status_code=422,
@@ -2384,9 +2393,19 @@ def ppa_prubeh(
     prvni = (blok.get("po_delkach") or [{}])[0]
     bat = prvni.get("baterie")
     if varianta == "s_baterii" and bat and bat.get("kapacita_kwh"):
+        # `dod` a účinnost z uložené varianty (u katalogové baterie se liší od
+        # defaultů) – jinak by graf pracoval s jinak velkou baterií než ekonomika.
+        # Starší uložené výpočty je nemají → spadne se na defaulty jako dřív.
         baterie = ppa_v2.Baterie(
             kapacita_kwh=float(bat["kapacita_kwh"]),
             vykon_kw=float(bat.get("vykon_kw") or 0.0),
+            ucinnost_round_trip=float(
+                bat.get("ucinnost_round_trip") or ppa_v2.VYCHOZI_UCINNOST_ROUND_TRIP
+            ),
+            dod=float(bat.get("dod") or ppa_v2.VYCHOZI_DOD),
+            produkt_id=bat.get("produkt_id"),
+            produkt_nazev=bat.get("nazev"),
+            pocet_kusu=int(bat.get("pocet_kusu") or 1),
         )
 
     rez = vst.get("rezervovany_vykon_dodavky_kw")
@@ -2405,7 +2424,12 @@ def ppa_prubeh(
         "casy_min": [int(round((c - zaklad).total_seconds() / 60)) for c in casy],
         **p,
         "baterie": (
-            {"kapacita_kwh": baterie.kapacita_kwh, "vykon_kw": baterie.vykon_kw}
+            {
+                "kapacita_kwh": baterie.kapacita_kwh,
+                "vykon_kw": baterie.vykon_kw,
+                "nazev": baterie.produkt_nazev,
+                "pocet_kusu": baterie.pocet_kusu,
+            }
             if baterie
             else None
         ),
@@ -2497,7 +2521,29 @@ def spocti_ppa(
             "Doplň GPS zákazníka pro přesnější simulaci výroby."
         )
 
-    # Baterie: buď zadaná, nebo se navrhne heuristicky (kapacita = None).
+    # Baterie: buď zadaná ručně, nebo (kapacita = None) se navrhne velikost
+    # z přebytku FVE a na ni se vybere konkrétní produkt z katalogu baterií –
+    # tentýž katalog, ze kterého čerpá peak shaving. Katalogová cena je nákladová
+    # cena BESS, takže varianta pak má i CAPEX a její čísla jsou platná.
+    baterie_katalog: tuple[ppa_v2.ProduktBaterie, ...] = ()
+    if vstup.s_baterii and not vstup.baterie_kapacita_kwh:
+        baterie_katalog = tuple(
+            ppa_v2.ProduktBaterie(
+                id=t.id,
+                nazev=t.nazev,
+                vykon_kw=float(t.vykon_kw),
+                kapacita_kwh=float(t.kapacita_kwh),
+                cena_kc=float(t.cena_kc) if t.cena_kc is not None else 0.0,
+                # Round-trip účinnost z katalogu; chybějící/nesmyslná → default.
+                # Toleruje zadání v procentech (stejná normalizace jako u PS).
+                ucinnost_rt=peak_shaving.normalizuj_ucinnost_rt(t.ucinnost),
+                uzitna_kapacita_kwh=_num((t.extra or {}).get("uzitna_kapacita_kwh")),
+                max_vykon_stridacu_kw=_num((t.extra or {}).get("max_vykon_stridacu_kw")),
+            )
+            for t in _dotaz_baterie_katalog(db).all()
+            if float(t.vykon_kw) > 0 and float(t.kapacita_kwh) > 0 and t.cena_kc
+        )
+
     baterie = None
     if vstup.s_baterii and vstup.baterie_kapacita_kwh:
         kap = float(vstup.baterie_kapacita_kwh)
@@ -2530,6 +2576,7 @@ def spocti_ppa(
         ),
         s_baterii=bool(vstup.s_baterii),
         baterie=baterie,
+        baterie_katalog=baterie_katalog,
         lat_deg=lat,
         sklon_st=float(vstup.sklon_st),
         azimut_st=float(vstup.azimut_st),
