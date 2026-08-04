@@ -46,6 +46,10 @@ _MIN_PODIL_CELEHO_MESICE = 0.9
 
 VYCHOZI_INTERVAL_H = 0.25
 
+# Kolik koncových intervalů se smí tiše odříznout jako „ocásek" z konvence konce
+# intervalu (viz `_odriz_koncovy_ocasek`).
+_MAX_INTERVALU_OCASKU = 2
+
 
 def _ocekavane_intervaly_mesice(rok: int, mesic: int, interval_h: float) -> float:
     dny = calendar.monthrange(rok, mesic)[1]
@@ -54,6 +58,34 @@ def _ocekavane_intervaly_mesice(rok: int, mesic: int, interval_h: float) -> floa
 
 def _rozsah_dni(casy: list[datetime]) -> float:
     return (max(casy) - min(casy)).total_seconds() / 86400.0
+
+
+def _odriz_koncovy_ocasek(
+    casy: list[datetime], hodnoty: list[float]
+) -> tuple[list[datetime], list[float]]:
+    """Odřízne pár koncových intervalů přetékajících do 13. kalendářního měsíce.
+
+    PND značí čtvrthodinu jejím KONCEM, takže poslední den exportu končí značkou
+    „24:00" = 00:00 dne následujícího (viz `profil_import`). Roční export tím
+    přeteče jediným intervalem do 13. měsíce – 1. 7. 2026 00:00 u profilu
+    7/2025–6/2026. To není „profil delší než rok", ale artefakt konvence, takže
+    se takový ocásek odřízne **tiše**: kdyby šel přes `orizni_na_posledni_rok`,
+    dostal by obchodník u každé nabídky matoucí upozornění, že byl profil delší
+    než rok. Ořezává se jen nejnovější měsíc a jen když je v něm zanedbatelný
+    počet intervalů – skutečně delší profil (dva ledny) tudy neprojde.
+    """
+    if len(casy) < 2:
+        return casy, hodnoty
+    pocty = Counter((c.year, c.month) for c in casy)
+    if len(pocty) <= 12:
+        return casy, hodnoty
+    nejnovejsi = max(pocty)
+    if pocty[nejnovejsi] > _MAX_INTERVALU_OCASKU:
+        return casy, hodnoty
+    dvojice = [
+        (c, h) for c, h in zip(casy, hodnoty) if (c.year, c.month) != nejnovejsi
+    ]
+    return [c for c, _ in dvojice], [h for _, h in dvojice]
 
 
 def orizni_na_posledni_rok(
@@ -74,10 +106,14 @@ def orizni_na_posledni_rok(
     chybu popíše `zkontroluj_pokryti`; s `pro_peak_shaving=True` se ořízne na
     klouzavé okno posledního roku (`DNI_KLOUZAVE_OKNO` dní od nejnovějšího
     záznamu) – překrývající se okrajové měsíce se pak sešijí přes číslo měsíce.
+    Nejdřív se tiše odřízne koncový „ocásek" z konvence konce intervalu
+    (`_odriz_koncovy_ocasek`), aby roční export nehlásil, že je delší než rok.
+
     Vrací (časy, hodnoty, ořezáno?).
     """
     if not casy:
         return casy, hodnoty, False
+    casy, hodnoty = _odriz_koncovy_ocasek(casy, hodnoty)
     pocty = Counter((c.year, c.month) for c in casy)
     if _rozsah_dni(casy) <= MAX_DNI_ROKU and len(pocty) <= 12:
         return casy, hodnoty, False

@@ -85,6 +85,78 @@ def test_rocni_profil_se_neorezava():
     assert casy2 is casy and hodnoty2 is hodnoty
 
 
+# ------------------------------------------- koncový ocásek z konvence PND (24:00)
+def _pnd_rocni_casy(zacatek: datetime, dni: int = 365):
+    """Značky tak, jak je dodává PND: konec čtvrthodiny, tedy 00:15 … 24:00.
+
+    Poslední značka dne je 00:00 dne následujícího, takže roční export přeteče
+    jedním intervalem do 13. kalendářního měsíce.
+    """
+    out = []
+    t = zacatek + timedelta(minutes=15)
+    konec = zacatek + timedelta(days=dni)
+    while t <= konec:
+        out.append(t)
+        t += timedelta(minutes=15)
+    return out
+
+
+def test_pnd_ocasek_se_orizne_tise_bez_upozorneni():
+    # Roční PND export 1. 7. 2025 – 1. 7. 2026 00:00: 13 kombinací rok×měsíc,
+    # ale třináctá má jediný interval. Obchodník nesmí dostat hlášku, že je
+    # profil delší než rok (NAB-26-0026).
+    casy = _pnd_rocni_casy(datetime(2025, 7, 1))
+    hodnoty = [1.0] * len(casy)
+    assert len({(c.year, c.month) for c in casy}) == 13
+    casy2, hodnoty2, orezano = pp.orizni_na_posledni_rok(casy, hodnoty, INTERVAL)
+    assert orezano is False, "ocásek se má odříznout tiše, ne jako dlouhý profil"
+    assert len({(c.year, c.month) for c in casy2}) == 12
+    assert len(casy2) == len(casy) - 1
+    assert len(hodnoty2) == len(casy2)
+    assert max(casy2) == datetime(2026, 6, 30, 23, 45)
+    ok, duvod = pp.zkontroluj_pokryti(casy2, INTERVAL)
+    assert ok, duvod
+
+
+def test_pnd_ocasek_se_orizne_i_pro_peak_shaving():
+    # Bez ořezu by se ten jeden interval z 7/2026 sešil s červencem 2025 a mohl
+    # zkreslit měsíční maximum, ze kterého se počítá rezervovaná kapacita.
+    casy = _pnd_rocni_casy(datetime(2025, 7, 1))
+    hodnoty = [1.0] * len(casy)
+    casy2, _, orezano = pp.orizni_na_posledni_rok(
+        casy, hodnoty, INTERVAL, pro_peak_shaving=True
+    )
+    assert orezano is False
+    assert {c.year for c in casy2 if c.month == 7} == {2025}
+
+
+def test_ocasek_neprojde_skutecne_dlouhemu_profilu():
+    # Regrese: tichý ořez se nesmí spustit na profilu, který je opravdu delší
+    # než rok (celý leden navíc) – ten musí projít standardním ořezem s hláškou.
+    casy = rok_casy(2025) + rok_casy(2026, mesice={1})
+    hodnoty = [1.0] * len(casy)
+    _, _, orezano = pp.orizni_na_posledni_rok(casy, hodnoty, INTERVAL)
+    assert orezano is True
+
+
+def test_ocasek_hodnoty_zustavaji_sparovane():
+    casy = _pnd_rocni_casy(datetime(2025, 7, 1))
+    hodnoty = list(range(len(casy)))
+    casy2, hodnoty2, _ = pp.orizni_na_posledni_rok(casy, hodnoty, INTERVAL)
+    assert hodnoty2 == hodnoty[:-1]
+    assert len(casy2) == len(hodnoty2)
+
+
+def test_ocasek_delsi_nez_dva_intervaly_se_netiskne_tise():
+    # Hranice: pět intervalů v 13. měsíci už není artefakt konvence.
+    casy = _pnd_rocni_casy(datetime(2025, 7, 1)) + [
+        datetime(2026, 7, 1, 0, 15) + timedelta(minutes=15 * i) for i in range(4)
+    ]
+    hodnoty = [1.0] * len(casy)
+    _, _, orezano = pp.orizni_na_posledni_rok(casy, hodnoty, INTERVAL)
+    assert orezano is True
+
+
 def _casy_od_do(zacatek, konec):
     """15min časové značky v intervalu [zacatek, konec)."""
     out = []

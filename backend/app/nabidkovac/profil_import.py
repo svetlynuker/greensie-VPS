@@ -1,9 +1,13 @@
 """Načtení 15minutového profilu odběru z nahraného souboru (peak shaving).
 
 Vstupem je typicky XLS export „PND" z portálu distributora (list `export`,
-sloupce `Datum` + `Profil +A [kW]` + `Status`, ~34 944 řádků na rok), případně
+sloupce `Datum` + `Profil +A [kW]` + `Status`, 35 040 řádků na rok), případně
 XLSX nebo CSV se stejnou logikou. Výstupem je seznam dvojic (čas, kW), který
 plní tabulku `spotreba_profil`, nad níž pak počítá jádro peak shavingu.
+
+Časová značka PND je KONEC čtvrthodiny, takže den končí hodnotou „24:00:00" –
+midnight dne následujícího. Převod téhle značky řeší `_parse_datum`; bez něj
+se z každého dne ztratí jeden interval.
 
 Bere se ČINNÝ VÝKON v kW (odběr), ne energie ani jalovina. Export PRE má jiný
 tvar než PND – vedle sloupce `Činný - výkon [kW]` nese i `Činná - spotřeba [kWh]`
@@ -17,7 +21,8 @@ exportu (pořadí/prázdné úvodní řádky).
 from __future__ import annotations
 
 import csv as _csv
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 
 # Formáty data, se kterými se v exportech setkáváme (PND: DD.MM.RRRR HH:MM:SS).
 _FORMATY_DATA = (
@@ -28,13 +33,15 @@ _FORMATY_DATA = (
     "%Y-%m-%dT%H:%M:%S",
 )
 
+# PND ukončuje den značkou „24:00:00" (poslední čtvrthodina 23:45–24:00), což je
+# midnight dne následujícího. `strptime` ani `fromisoformat` hodinu 24 nepřijmou,
+# takže se takový řádek bez převodu zahodí – a to je jeden interval z každého
+# dne, tedy 365 z 35 040 řádků ročně (~1 % profilu). Odhaleno na profilu
+# Technicplast (NAB-26-0026), kde se z 35 040 řádků naimportovalo jen 34 671.
+_RE_HODINA_24 = re.compile(r"([ T])24(:[0-5]\d)")
 
-def _parse_datum(v) -> datetime | None:
-    if isinstance(v, datetime):
-        return v
-    s = str(v).strip()
-    if not s:
-        return None
+
+def _parse_bez_posunu(s: str) -> datetime | None:
     for f in _FORMATY_DATA:
         try:
             return datetime.strptime(s, f)
@@ -44,6 +51,20 @@ def _parse_datum(v) -> datetime | None:
         return datetime.fromisoformat(s)
     except ValueError:
         return None
+
+
+def _parse_datum(v) -> datetime | None:
+    if isinstance(v, datetime):
+        return v
+    s = str(v).strip()
+    if not s:
+        return None
+    # Hodinu 24 přepíšeme na 00 a den posuneme o jeden dopředu (viz _RE_HODINA_24).
+    m = _RE_HODINA_24.search(s)
+    if m is None:
+        return _parse_bez_posunu(s)
+    cas = _parse_bez_posunu(s[: m.start()] + m.group(1) + "00" + m.group(2) + s[m.end() :])
+    return cas + timedelta(days=1) if cas is not None else None
 
 
 def _to_float(v) -> float | None:
