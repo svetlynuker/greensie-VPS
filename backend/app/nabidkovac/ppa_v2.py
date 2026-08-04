@@ -217,6 +217,8 @@ class Baterie:
     produkt_id: int | None = None
     produkt_nazev: str | None = None
     pocet_kusu: int = 1
+    # Nákladová cena je odhad z doporučené prodejní ceny (viz `ProduktBaterie`).
+    cena_je_doporucena: bool = False
 
     @property
     def vyuzitelna_kapacita_kwh(self) -> float:
@@ -229,8 +231,18 @@ class ProduktBaterie:
 
     Stejná data, ze kterých čerpá peak shaving (`peak_shaving.Baterie`) – PPA má
     vlastní typ jen proto, že si z nich skládá `Baterie` pro svůj dispatch.
-    `cena_kc` je katalogová reálná (dealer) cena, tedy **nákladová** cena pro
-    Greensie: marže a provize BESS se na ni v ekonomice teprve nabalují.
+
+    `cena_kc` je **nákladová** cena pro Greensie: marže a provize BESS se na ni
+    v ekonomice teprve nabalují (metodika kap. 1.1). Že je to opravdu náklad,
+    a ne cena pro zákazníka, plyne ze zdroje dat – ceník
+    `docs/importy/pricelist-Simulační matice-2026-07-17.xlsx` vydává dodavatel
+    a `baterie_seed` do `Technologie.cena_kc` mapuje jeho sloupec „dealer price
+    CZK / prodejní cena reálná", tedy cenu, za kterou nakupuje dealer (Greensie);
+    doporučená prodejní cena pro zákazníka je zvlášť v `extra.doporucena_cena_kc`
+    a je o dealerský diskont vyšší (v ceníku shodně 1/0,9). Pozor: samo pole
+    `Technologie.cena_kc` je v modelu vedené jako „prodejní cena bez DPH" a jinde
+    v appce (položky nabídky, peak shaving) se tak i používá – u BESS produktů
+    z ceníku v něm ale je dealerská cena.
     """
 
     id: int
@@ -241,6 +253,10 @@ class ProduktBaterie:
     ucinnost_rt: float = VYCHOZI_UCINNOST_ROUND_TRIP
     uzitna_kapacita_kwh: float | None = None
     max_vykon_stridacu_kw: float | None = None
+    # U konfigurací, kde ceník dealerskou cenu neuvádí (2 MW a víc), seed vzal
+    # doporučenou prodejní cenu. Nákladová cena je tam pak nadhodnocená o
+    # dealerský diskont, což se hlásí obchodníkovi v upozorněních.
+    cena_je_doporucena: bool = False
 
 
 def baterie_z_produktu(produkt: ProduktBaterie, pocet_kusu: int = 1) -> Baterie:
@@ -273,6 +289,7 @@ def baterie_z_produktu(produkt: ProduktBaterie, pocet_kusu: int = 1) -> Baterie:
         produkt_id=produkt.id,
         produkt_nazev=produkt.nazev,
         pocet_kusu=pocet,
+        cena_je_doporucena=produkt.cena_je_doporucena,
     )
 
 
@@ -1400,9 +1417,17 @@ def spocti_ppa2(vstup: VstupPPA2) -> dict:
                 )
                 if z_katalogu is not None:
                     baterie = z_katalogu
+                    if z_katalogu.cena_je_doporucena:
+                        upozorneni.append(
+                            f"U baterie {z_katalogu.produkt_nazev} ceník neuvádí dealerskou cenu, "
+                            "takže nákladová cena vychází z doporučené prodejní – je tím "
+                            "nadhodnocená o dealerský diskont (v ceníku 10 %) a nájem baterie "
+                            "vychází vyšší, než jaký by šlo nabídnout. Doplň skutečnou nákupní "
+                            "cenu do katalogu, nebo baterii zadej ručně."
+                        )
                     if z_katalogu.vyuzitelna_kapacita_kwh < cil - 1e-9:
                         upozorneni.append(
-                            f"Nejvyšší baterie v katalogu ({z_katalogu.produkt_nazev} × "
+                            f"Největší baterie v katalogu ({z_katalogu.produkt_nazev} × "
                             f"{z_katalogu.pocet_kusu}, {z_katalogu.vyuzitelna_kapacita_kwh:.0f} kWh "
                             f"využitelných) nepokryje navrženou velikost {cil:.0f} kWh – varianta "
                             "počítá s menší baterií, samospotřeba tak může být nižší."

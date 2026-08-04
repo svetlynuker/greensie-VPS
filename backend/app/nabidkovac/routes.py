@@ -2533,12 +2533,29 @@ def spocti_ppa(
                 nazev=t.nazev,
                 vykon_kw=float(t.vykon_kw),
                 kapacita_kwh=float(t.kapacita_kwh),
-                cena_kc=float(t.cena_kc) if t.cena_kc is not None else 0.0,
+                # PPA potřebuje NÁKLADOVOU cenu (nabaluje na ni marži BESS), takže
+                # přednost má nákupní cena, když ji produkt má. U baterií z ceníku
+                # BESS vyplněná není a `cena_kc` v sobě nese dealerskou cenu, což
+                # náklad je – viz docstring `ppa_v2.ProduktBaterie`.
+                cena_kc=float(
+                    t.cena_nakup_kc
+                    if t.cena_nakup_kc is not None and float(t.cena_nakup_kc) > 0
+                    else (t.cena_kc or 0.0)
+                ),
                 # Round-trip účinnost z katalogu; chybějící/nesmyslná → default.
                 # Toleruje zadání v procentech (stejná normalizace jako u PS).
                 ucinnost_rt=peak_shaving.normalizuj_ucinnost_rt(t.ucinnost),
                 uzitna_kapacita_kwh=_num((t.extra or {}).get("uzitna_kapacita_kwh")),
                 max_vykon_stridacu_kw=_num((t.extra or {}).get("max_vykon_stridacu_kw")),
+                # Konfigurace, u kterých ceník dealerskou cenu neuvádí, mají
+                # v `cena_kc` doporučenou prodejní cenu – náklad je pak o dealerský
+                # diskont nadhodnocený a výpočet to obchodníkovi řekne.
+                cena_je_doporucena=(
+                    (t.cena_nakup_kc is None or float(t.cena_nakup_kc) <= 0)
+                    and t.cena_kc is not None
+                    and _num((t.extra or {}).get("doporucena_cena_kc")) is not None
+                    and abs(float(t.cena_kc) - _num((t.extra or {}).get("doporucena_cena_kc"))) < 0.01
+                ),
             )
             for t in _dotaz_baterie_katalog(db).all()
             if float(t.vykon_kw) > 0 and float(t.kapacita_kwh) > 0 and t.cena_kc

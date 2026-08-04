@@ -1000,6 +1000,24 @@ class TestSpoctiPpa2SBaterii:
         assert any("nepokryje navrženou velikost" in u for u in v["upozorneni"])
         assert v["s_baterii"]["po_delkach"][0]["baterie"]["z_katalogu"] is True
 
+    def test_hlasi_cenu_odhadnutou_z_doporucene(self, vstup):
+        """2 MW+ konfigurace mají v ceníku jen doporučenou cenu – náklad je nahoře."""
+        vstup.baterie_katalog = (
+            ppa.ProduktBaterie(
+                id=8, nazev="BESS 500 kW / 2200 kWh", vykon_kw=500.0, kapacita_kwh=2_200.0,
+                cena_kc=12_395_131.0, uzitna_kapacita_kwh=2_200.0,
+                max_vykon_stridacu_kw=500.0, cena_je_doporucena=True,
+            ),
+        )
+        v = ppa.spocti_ppa2(vstup)
+        assert any("neuvádí dealerskou cenu" in u for u in v["upozorneni"])
+
+    def test_dealerska_cena_se_nehlasi(self, vstup):
+        """U produktu s dealerskou cenou žádné upozornění o ceně být nesmí."""
+        vstup.baterie_katalog = tuple(_katalog_baterii())
+        v = ppa.spocti_ppa2(vstup)
+        assert not any("neuvádí dealerskou cenu" in u for u in v["upozorneni"])
+
     def test_rucni_baterie_katalog_ignoruje(self, vstup):
         """Ruční zadání má přednost – katalog do něj nesmí zasáhnout."""
         vstup.baterie_katalog = tuple(_katalog_baterii())

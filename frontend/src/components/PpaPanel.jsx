@@ -833,8 +833,10 @@ export default function PpaPanel({ nabidka }) {
                 <Radek l="Nájem pro zákazníka" v={`${kc(vybrana.baterie.najem_kc_mesic)}/měs`} />
                 <div className="gs-pozn" style={{ marginTop: 8 }}>
                   {vybrana.baterie.z_katalogu
-                    ? "Velikost vyšla z přebytku FVE a na ni se z katalogu vybral nejlevnější produkt, který ji pokryje. Chceš jinou? Zadej kapacitu i cenu vlevo ručně."
-                    : "Baterie není z katalogu, takže nemá katalogovou nákladovou cenu – zkontroluj, že zadaná cena odpovídá skutečné."}
+                    ? "Velikost vyšla z přebytku FVE a na ni se z katalogu vybral nejlevnější produkt, který ji pokryje kapacitou i výkonem. Chceš jinou? Zadej kapacitu i cenu vlevo ručně."
+                    : vybrana.baterie.nakladova_cena_kc > 0
+                      ? "Baterie není z katalogu, takže nemá katalogovou nákladovou cenu – zkontroluj, že zadaná cena odpovídá skutečné."
+                      : "Baterie tu nemá cenu, takže čísla varianty neplatí – tenhle výpočet je ze starší verze. Spusť ho znovu a cena se doplní z katalogu baterií."}
                 </div>
               </div>
             )}
