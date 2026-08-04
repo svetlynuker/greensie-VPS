@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Testy importu profilu – detekce sloupců a deduplikace časů (audit SP-2)."""
+"""Testy importu profilu – detekce sloupců, hodina 24 a deduplikace časů (audit SP-2)."""
 
 from datetime import datetime
 
 import pytest
 
-from app.nabidkovac.profil_import import _najdi_sloupce, deduplikuj_casy
+from app.nabidkovac.profil_import import _najdi_sloupce, _parse_datum, deduplikuj_casy
 
 
 def test_pnd_hlavicka_bere_cinny_vykon():
@@ -39,6 +39,55 @@ def test_jalovina_kvar_se_nebere_jako_vykon():
     # Když je k dispozici jen jalovina [kVAr], sloupec výkonu není → chyba.
     with pytest.raises(ValueError):
         _najdi_sloupce(["Datum", "Profil +Ri [kVAr]", "Status"])
+
+
+# --------------------------------------------------------- hodina 24 (PND konec dne)
+def test_hodina_24_je_midnight_nasledujiciho_dne():
+    # PND ukončuje den značkou „24:00:00". Bez převodu se řádek zahodí a
+    # z profilu zmizí 365 intervalů ročně (~1 %) – viz NAB-26-0026.
+    assert _parse_datum("30.06.2026 24:00:00") == datetime(2026, 7, 1, 0, 0)
+
+
+def test_hodina_24_prelom_mesice_i_roku():
+    assert _parse_datum("31.12.2025 24:00:00") == datetime(2026, 1, 1, 0, 0)
+    assert _parse_datum("28.02.2026 24:00:00") == datetime(2026, 3, 1, 0, 0)
+    # přestupný rok: 2024 má 29. února
+    assert _parse_datum("28.02.2024 24:00:00") == datetime(2024, 2, 29, 0, 0)
+
+
+def test_hodina_24_ve_vsech_podporovanych_formatech():
+    ocekavano = datetime(2026, 7, 1, 0, 0)
+    assert _parse_datum("30.06.2026 24:00:00") == ocekavano
+    assert _parse_datum("30.06.2026 24:00") == ocekavano
+    assert _parse_datum("2026-06-30 24:00:00") == ocekavano
+    assert _parse_datum("2026-06-30 24:00") == ocekavano
+    assert _parse_datum("2026-06-30T24:00:00") == ocekavano
+
+
+def test_bezne_casy_zustavaji_nedotcene():
+    # Regrese: převod hodiny 24 nesmí sáhnout na nic jiného.
+    assert _parse_datum("01.07.2025 00:15:00") == datetime(2025, 7, 1, 0, 15)
+    assert _parse_datum("01.07.2025 23:45:00") == datetime(2025, 7, 1, 23, 45)
+    assert _parse_datum("2025-07-01 12:00:00") == datetime(2025, 7, 1, 12, 0)
+    assert _parse_datum(datetime(2025, 7, 1, 6, 30)) == datetime(2025, 7, 1, 6, 30)
+
+
+def test_cislo_24_v_datu_neposouva_den():
+    # Den 24 v datu ani rok 2024 nesmí spustit posun – vzor míří jen na hodinu.
+    assert _parse_datum("24.06.2026 10:15:00") == datetime(2026, 6, 24, 10, 15)
+    assert _parse_datum("24.06.2024 24:00:00") == datetime(2024, 6, 25, 0, 0)
+    assert _parse_datum("2024-06-24 08:00:00") == datetime(2024, 6, 24, 8, 0)
+
+
+def test_nesmyslny_cas_zustava_neplatny():
+    assert _parse_datum("30.06.2026 25:00:00") is None
+    assert _parse_datum("") is None
+    assert _parse_datum("naměřená data OK") is None
+
+
+def test_hodina_24_s_nenulovymi_minutami():
+    # PND to nedělá, ale kdyby: 24:15 dne D je 00:15 dne D+1.
+    assert _parse_datum("30.06.2026 24:15:00") == datetime(2026, 7, 1, 0, 15)
 
 
 def test_bez_duplicit_vraci_puvodni_body():

@@ -682,6 +682,37 @@ class TestSpoctiPpa2:
         assert d["baterie"]["najem_kc_mesic"] > 0
         assert d["kwp"] >= v["bez_baterie"]["kwp"]
 
+    def test_upozorni_na_baterii_bez_nakladove_ceny_i_kdyz_ji_zada_obchodnik(self, vstup):
+        """Baterie bez CAPEX = neplatná čísla, ať ji navrhla appka, nebo obchodník.
+
+        NAB-26-0026 (Technicplast): baterie 146 kWh byla zadaná ručně s nulovou
+        nákladovou cenou, takže v modelu chyběla investice i nájem, ale
+        samospotřebu zvedala – nabídka tvrdila úsporu 112 tis. Kč/rok, která po
+        zaplacení baterie přejde do ztráty. Varování se tehdy vázalo jen na
+        heuristicky navrženou baterii, takže tato nabídka prošla bez něj.
+        """
+        vstup.s_baterii = True
+        vstup.baterie = ppa.Baterie(kapacita_kwh=146.1, vykon_kw=73.0, nakladova_cena_kc=0.0)
+        v = ppa.spocti_ppa2(vstup)
+        hlaska = [u for u in v["upozorneni"] if "Nákladová cena baterie není zadaná" in u]
+        assert len(hlaska) == 1, v["upozorneni"]
+        assert "čísla nejsou platná" in hlaska[0]
+
+    def test_baterie_se_zadanou_cenou_nevaruje(self, vstup):
+        """Regrese: varování se nesmí objevit u řádně naceněné baterie."""
+        vstup.s_baterii = True
+        vstup.baterie = ppa.Baterie(kapacita_kwh=200.0, vykon_kw=100.0, nakladova_cena_kc=800_000.0)
+        v = ppa.spocti_ppa2(vstup)
+        assert not [u for u in v["upozorneni"] if "Nákladová cena baterie není zadaná" in u]
+
+    def test_upozorneni_na_baterii_bez_ceny_se_neduplikuje(self, vstup):
+        """Heuristicky navržená baterie (bez ceny) hlásí varování právě jednou."""
+        vstup.s_baterii = True
+        vstup.baterie = None  # → navrhne se heuristicky, nákladová cena zůstane 0
+        v = ppa.spocti_ppa2(vstup)
+        hlaska = [u for u in v["upozorneni"] if "Nákladová cena baterie není zadaná" in u]
+        assert len(hlaska) == 1, v["upozorneni"]
+
     def test_upozorni_kdyz_baterie_zhorsi_usporu(self, vstup):
         """Nájem baterie může převážit přínos samospotřeby – to nesmí zůstat skryté.
 

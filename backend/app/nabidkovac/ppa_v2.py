@@ -1261,11 +1261,20 @@ def spocti_ppa2(vstup: VstupPPA2) -> dict:
             # bez baterie – pak se s ní velikost FVE dopočítá znovu (kap. 3.4).
             vyroba_bez = [bez["kwp"] * v for v in vyroba_1kwp]
             baterie = navrhni_baterii(vyroba_bez, vstup.spotreba_kwh, vstup.casy)
-            if baterie.nakladova_cena_kc <= 0 and baterie.kapacita_kwh > 0:
-                upozorneni.append(
-                    "Nákladová cena baterie není zadaná – varianta s baterií počítá "
-                    "jen s pronájmem bez CAPEX baterie, čísla nejsou platná."
-                )
+        # Kontrola platí pro navrženou i pro ručně zadanou baterii: bez CAPEX
+        # baterie chybí v modelu jak investice, tak nájem, ale samospotřebu
+        # baterie zvedá – varianta pak tvrdí úsporu, která po zaplacení baterie
+        # zmizí. Dřív se hlásilo jen u heuristického návrhu, takže baterie zadaná
+        # obchodníkem s nulovou cenou prošla bez varování (NAB-26-0026).
+        if (
+            baterie is not None
+            and baterie.nakladova_cena_kc <= 0
+            and baterie.kapacita_kwh > 0
+        ):
+            upozorneni.append(
+                "Nákladová cena baterie není zadaná – varianta s baterií počítá "
+                "jen s pronájmem bez CAPEX baterie, čísla nejsou platná."
+            )
     s_bat = varianta_pro(baterie) if (baterie and baterie.kapacita_kwh > 0) else None
 
     # Upozornění se vyhodnocují nad variantou bez baterie (nebo s baterií, když FVE
