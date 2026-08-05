@@ -173,6 +173,7 @@ o kolik lze snížit), nájem baterie s odkupní cenou, pokrytí spotřeby.
 | Záložka | Co v ní je |
 |---|---|
 | Přehled | tabulka délek kontraktu (cena, sleva, kdo drží cenu, DSCR, IRR, úspora), rozpad přínosu, projekt a financování, detail baterie |
+| **Pro nás (investor)** | co vložíme, **kolik nás stojí úvěr** (úroky), co nám klient zaplatí za PPA a nájem, kdy se vrátí vlastní kapitál, a cash flow po letech se splátkou rozepsanou na úrok a úmor |
 | Srážení špiček | **rozpad úspory na rezervované kapacitě** jako u peak shavingu, graf měsíčních maxim (`GrafOdberu`), měsíční tabulka stropů |
 | Elektrárna | graf výroba vs. spotřeba (`GrafVyrobaSpotreba`), energetická bilance, detail elektrárny včetně rozpadu na pole |
 | Po letech | roční cash flow zákazníka s rokem odkupu |
@@ -184,6 +185,32 @@ Rozpad úspory na kilowattech drží stejný vzor jako peak shaving: **dnešní 
 → nejlevnější příkon bez investice → „úspora hned bez investice" → náklad
 s baterií → „přínos baterie" → roční úspora celkem**, včetně pojistky, že
 optimalizace může vyjít dráž než nedělat nic (nese rezervu, dnešní RP ne).
+
+### Pohled investora
+
+Modul dělá nabídku pro zákazníka, ale investorem je Greensie/SPV — a ta potřebuje
+vidět druhou stranu rovnice. Záložka „Pro nás" ji rozepisuje:
+
+**Co nás to stojí:** vlastní kapitál (20 % CAPEX, hned), **úroky z úvěru** za celou
+dobu, servis a EMS. Úmor se do nákladů nepočítá — jen vrací půjčenou jistinu;
+nákladem financování jsou úroky. Splátka je proto v roční tabulce rozepsaná na
+**úrok a úmor** (analyticky přes `ppa_v2.zustatek_uveru`, bez iterace kalendáře)
+a hlídá to test `test_urok_plus_umor_je_splatka`.
+
+**Co nám klient zaplatí:** za energii z PPA, za nájem baterie (10 let), za odkup
+baterie v roce 11, případně výkup přebytku.
+
+**Kdy se to vrátí:** `navratnost_vlastniho_kapitalu_roky` = rok, kdy kumulovaný
+cash flow překlopí nad vložený kapitál, s lineární interpolací v tom roce
+(„6,6 roku" je použitelnější než „mezi 6. a 7."). K tomu IRR vlastního kapitálu,
+NPV a nejtěsnější DSCR.
+
+Na reálném profilu u 15letého kontraktu: vložíme 2,2 mil., úroky nás stojí
+5,2 mil., klient zaplatí 20,2 mil. (14,7 za energii + 4,9 za nájem + 0,55 odkup),
+zisk po splátkách 5,6 mil., vrátí se za 6,6 roku při IRR 13,9 %.
+
+Delší kontrakt znamená víc zaplacených úroků, ale i víc příjmů a vyšší IRR —
+proto se délka nedoporučuje a vybírá ji obchodník podle toho, co klient podepíše.
 
 ### Dva scénáře rezervovaného příkonu
 
