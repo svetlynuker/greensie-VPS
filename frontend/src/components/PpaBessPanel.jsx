@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import GrafOdberu from "./GrafOdberu";
-import GrafPrubehuPpa from "./GrafPrubehuPpa";
+import GrafPrubehu from "./GrafPrubehu";
 import GrafVyrobaSpotreba from "./GrafVyrobaSpotreba";
 import {
   crmOdbernaMistaNabidky,
@@ -158,6 +158,11 @@ export default function PpaBessPanel({ nabidka }) {
   // Úloha prohledání katalogu na pozadí + jestli služba, která ji odbaví, běží.
   const [uloha, setUloha] = useState(null);
   const [sluzbaBezi, setSluzbaBezi] = useState(true);
+  // Scénář rezervovaného příkonu: "bez" = RP ze smlouvy zůstane, "se" = sníží
+  // se na hodnotu, kterou baterie umožní. Přepíná dlaždice, tabulku i graf —
+  // dřív graf kreslil vždycky scénář „bez", takže čára nového RP ležela na té
+  // staré a vypadalo to, že baterie s příkonem nic nedělá.
+  const [scenarRp, setScenarRp] = useState("se");
 
   const dokumenty = nabidka.dokumenty || [];
   const dokPodpis = dokumenty.map((d) => `${d.id}:${d.stav_zpracovani}`).join(",");
@@ -986,13 +991,31 @@ export default function PpaBessPanel({ nabidka }) {
     const prinos = aktivniRezim.prinos || {};
     const energie = aktivniRezim.energie || {};
     const vykon = aktivniRezim.vykon || {};
-    const ek = aktivniRezim.ekonomika_vykonu || {};
+    const ekBez = aktivniRezim.ekonomika_vykonu || {};
     const ekSnizeni = aktivniRezim.ekonomika_vykonu_se_snizenim || {};
+    // Který scénář se právě zobrazuje. „Se snížením" je výchozí, protože to je
+    // ta zajímavá hodnota — kolik příkonu baterie ušetří. Scénář „bez snížení"
+    // je konzervativní: smlouva o připojení zůstane, platí se jen za naměřenou
+    // špičku.
+    const seSnizenim = scenarRp === "se" && ekSnizeni.status === "spocitano";
+    const ek = seSnizenim ? ekSnizeni : ekBez;
     const maSazby = ek.status === "spocitano";
+    const lzeSnizit =
+      ekSnizeni.status === "spocitano" &&
+      ekBez.status === "spocitano" &&
+      ekSnizeni.rp_novy_kw < ekBez.rp_novy_kw - 0.5;
+    const prinosVykonu = seSnizenim
+      ? prinos.z_vykonu_se_snizenim_rp_kc
+      : prinos.z_vykonu_bez_snizeni_rp_kc;
+    const cistyScenar = rozpadDelky
+      ? seSnizenim
+        ? rozpadDelky.cisty_se_snizenim_rp_kc
+        : rozpadDelky.cisty_bez_snizeni_rp_kc
+      : seSnizenim
+        ? prinos.cisty_se_snizenim_rp_kc
+        : prinos.cisty_bez_snizeni_rp_kc;
     const fin = vybranaDelka?.financovani || {};
-    const cistyKZobrazeni = rozpadDelky
-      ? rozpadDelky.cisty_bez_snizeni_rp_kc
-      : prinos.cisty_bez_snizeni_rp_kc;
+    const cistyKZobrazeni = cistyScenar;
     const energieKZobrazeni = rozpadDelky ? rozpadDelky.z_energie_kc : prinos.z_energie_kc;
     const prubehData = prubehy[aktivniRezim.rezim];
     const rpJeFallbackRk = !n(rezPrikon);
@@ -1014,6 +1037,31 @@ export default function PpaBessPanel({ nabidka }) {
             </h3>
           </div>
           <span className="gs-mezera" style={{ flex: 1 }} />
+          {lzeSnizit && (
+            <div className="gs-prepinace">
+              <div className="gs-prepinac">
+                <span className="gs-ctrl-label">Rezervovaný příkon</span>
+                <div className="gs-seg" role="group" aria-label="Scénář rezervovaného příkonu">
+                  <button
+                    type="button"
+                    aria-pressed={scenarRp === "se"}
+                    onClick={() => setScenarRp("se")}
+                    title={`Smlouva o připojení se sníží na ${kw(ekSnizeni.rp_novy_kw)} — jednosměrná změna, zpětné navýšení je zpoplatněné.`}
+                  >
+                    snížit na {kw(ekSnizeni.rp_novy_kw)}
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={scenarRp === "bez"}
+                    onClick={() => setScenarRp("bez")}
+                    title="Smlouva o připojení zůstane, jak je. Platí se jen za naměřenou špičku — konzervativní varianta."
+                  >
+                    nechat {kw(ekBez.rp_novy_kw)}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           <span className={cistyKZobrazeni > 0 ? "nb-badge dobre" : "nb-badge spatne"}>
             {cistyKZobrazeni > 0 ? "✓ vydělá" : "nevyplatí se"}
           </span>
@@ -1041,40 +1089,65 @@ export default function PpaBessPanel({ nabidka }) {
           </div>
           <div className="gs-kpi" data-druh="penize">
             <div className="gs-kpi-label">Z kilowattů (srážení špiček)</div>
-            <div className="gs-kpi-value">{kc(prinos.z_vykonu_bez_snizeni_rp_kc)}</div>
+            <div className="gs-kpi-value">{kc(prinosVykonu)}</div>
             <div className="gs-kpi-sub">
               špička {kw(vykon.maximum_bez_baterie_kw)} → {kw(vykon.maximum_po_baterii_kw)} (o{" "}
               {kw(vykon.sraz_kw)} níž)
             </div>
           </div>
+          {/* Dlaždice rezervovaného příkonu — čte se z AKTIVNÍHO scénáře, takže
+              ve variantě „snížit" ukazuje hodnotu, kterou baterie umožní. */}
           <div className="gs-kpi">
             <div className="gs-kpi-label">
-              {maSazby && ek.rp_novy_kw !== ek.rp_soucasny_kw
-                ? "Nová rezervovaná kapacita"
+              {maSazby && ek.rp_novy_kw < ek.rp_soucasny_kw - 0.5
+                ? "Nový rezervovaný příkon"
                 : "Rezervovaný příkon"}
             </div>
             <div className="gs-kpi-value">
-              {maSazby ? kw(ek.rp_novy_kw ?? ek.rp_soucasny_kw) : kw(n(rezPrikon) || n(rezKapacita))}
+              {maSazby
+                ? kw(ek.rp_novy_kw ?? ek.rp_soucasny_kw)
+                : kw(n(rezPrikon) || n(rezKapacita))}
             </div>
             <div className="gs-kpi-sub">
-              {maSazby && ek.rp_novy_kw !== ek.rp_soucasny_kw
-                ? `dnes ${kw(ek.rp_soucasny_kw)} · lze snížit o ${kw(
-                    ek.rp_soucasny_kw - ek.rp_novy_kw
+              {!maSazby
+                ? "sazby 2027 chybí, nelze ocenit"
+                : ek.rp_novy_kw < ek.rp_soucasny_kw - 0.5
+                  ? `dnes ${kw(ek.rp_soucasny_kw)} · o ${kw(
+                      ek.rp_soucasny_kw - ek.rp_novy_kw
+                    )} níž · jednosměrná změna smlouvy`
+                  : lzeSnizit
+                    ? `beze změny smlouvy · šlo by až na ${kw(ekSnizeni.rp_novy_kw)}`
+                    : "beze změny smlouvy o připojení"}
+            </div>
+          </div>
+          <div className="gs-kpi" data-druh="penize">
+            <div className="gs-kpi-label">
+              NPV úspor{vybranaDelka ? ` (${vybranaDelka.delka_roky} let)` : ""}
+            </div>
+            <div className="gs-kpi-value">{kc(vybranaDelka?.npv_kc)}</div>
+            <div className="gs-kpi-sub">
+              {vybranaDelka?.irr !== null && vybranaDelka?.irr !== undefined
+                ? `IRR investora ${pct(vybranaDelka.irr, 1)} · DSCR ${cislo(
+                    vybranaDelka.dscr_min,
+                    2
                   )}`
-                : "beze změny smlouvy o připojení"}
+                : "diskontované na dnešní hodnotu"}
             </div>
           </div>
           <div className="gs-kpi" data-druh="riziko">
-            <div className="gs-kpi-label">Nájem baterie</div>
+            <div className="gs-kpi-label">Investice zákazníka</div>
             <div className="gs-kpi-value">
-              {bat ? kc(bat.najem_kc_mesic) : "—"}
-              {bat ? <span style={{ fontSize: 14 }}> /měs</span> : null}
+              {vybranaDelka?.rok_odkupu
+                ? kc(vybranaDelka.odkupni_cena_baterie_kc)
+                : "0 Kč"}
             </div>
             <div className="gs-kpi-sub">
               {bat
-                ? `fixní ${bat.doba_najmu_roky} let, pak odkup za ${kc(
-                    vybranaDelka?.odkupni_cena_baterie_kc
-                  )}`
+                ? vybranaDelka?.rok_odkupu
+                  ? `odkup baterie v roce ${vybranaDelka.rok_odkupu} · do té doby nájem ${kc(
+                      bat.najem_kc_mesic
+                    )}/měs`
+                  : `žádná · jen nájem ${kc(bat.najem_kc_mesic)}/měs po ${bat.doba_najmu_roky} let`
                 : "bez baterie"}
             </div>
           </div>
@@ -1082,7 +1155,8 @@ export default function PpaBessPanel({ nabidka }) {
             <div className="gs-kpi-label">Pokrytí spotřeby</div>
             <div className="gs-kpi-value">{pct(energie.pokryti_spotreby, 0)}</div>
             <div className="gs-kpi-sub">
-              z elektrárny · samospotřeba {pct(energie.mira_samospotreby)} výroby
+              z elektrárny · samospotřeba {pct(energie.mira_samospotreby)} výroby ·{" "}
+              {cislo(energie.cyklu_rok, 0)} cyklů baterie/rok
             </div>
           </div>
         </div>
@@ -1430,18 +1504,36 @@ export default function PpaBessPanel({ nabidka }) {
                             </b>
                           </td>
                         </tr>
-                        {ekSnizeni.status === "spocitano" &&
-                          ekSnizeni.rp_novy_kw !== ek.rp_novy_kw && (
-                            <tr>
-                              <td className="dim">
-                                Se snížením příkonu na {kw(ekSnizeni.rp_novy_kw)}{" "}
-                                <span style={{ fontSize: 11 }}>
-                                  (jednosměrná změna smlouvy o připojení)
-                                </span>
-                              </td>
-                              <td className="n dim">{kc(ekSnizeni.prinos_baterie)}</td>
-                            </tr>
-                          )}
+                        {/* Druhý scénář jako srovnání — ten zobrazený je v řádku
+                            výše. Přepínač je v hlavičce výsledku. */}
+                        {lzeSnizit && (
+                          <tr>
+                            <td className="dim">
+                              {seSnizenim ? (
+                                <>
+                                  Bez snížení příkonu (nechat {kw(ekBez.rp_novy_kw)}){" "}
+                                  <span style={{ fontSize: 11 }}>
+                                    (smlouva zůstane, platí se jen naměřená špička)
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  Se snížením příkonu na {kw(ekSnizeni.rp_novy_kw)}{" "}
+                                  <span style={{ fontSize: 11 }}>
+                                    (jednosměrná změna smlouvy o připojení)
+                                  </span>
+                                </>
+                              )}
+                            </td>
+                            <td className="n dim">
+                              {kc(
+                                seSnizenim
+                                  ? ekBez.prinos_baterie
+                                  : ekSnizeni.prinos_baterie
+                              )}
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -1463,12 +1555,32 @@ export default function PpaBessPanel({ nabidka }) {
                       rpSoucasna={ek.rp_soucasny_kw}
                       rpNova={ek.rp_novy_kw}
                       popisSoucasna="rezervovaný příkon nyní"
-                      popisNova="nový rezervovaný příkon"
+                      popisNova={
+                        seSnizenim ? "příkon po snížení smlouvy" : "příkon beze změny smlouvy"
+                      }
                     />
                     <div className="gs-pozn" style={{ marginTop: 8 }}>
                       Sloupce „bez baterie" jsou už <b>po odečtení výroby elektrárny</b> —
                       tedy co by zákazník naměřil, kdyby si postavil jen elektrárnu. Proti
-                      tomu se poctivě poměřuje, co přidala baterie.
+                      tomu se poctivě poměřuje, co přidala baterie.{" "}
+                      {seSnizenim ? (
+                        <>
+                          Spodní čára je příkon, na který lze smlouvu snížit (
+                          {kw(ek.rp_novy_kw)}) — musí zůstat nad nejvyšším měsíčním maximem
+                          po baterii ({kw(Math.max(...aktivniRezim.graf_maxima.s_baterii_kw))}
+                          ), plus rezerva na silnější rok.
+                        </>
+                      ) : (
+                        <>
+                          V tomhle scénáři se smlouva nemění, takže obě čáry leží na sobě —
+                          platí se jen za naměřenou špičku.{" "}
+                          {lzeSnizit && (
+                            <>
+                              Přepínačem vpravo nahoře uvidíš, kam by šel příkon snížit.
+                            </>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1777,16 +1889,32 @@ export default function PpaBessPanel({ nabidka }) {
               </div>
             )}
             {prubehData && (
-              <GrafPrubehuPpa
-                data={{
-                  ...prubehData,
-                  referencni: {
-                    rezervovany_vykon_dodavky_kw:
-                      prubehData.referencni?.rezervovany_prikon_kw ?? null,
-                  },
-                }}
-                popis={`Režim „${aktivniRezim.nazev}“. Čárkovaná čára je rezervovaný příkon, tečkovaná stav nabití baterie. Kolečkem přiblížíš, tažením posuneš.`}
-              />
+              <>
+                {/* Detailní graf z peak shavingu, ne ten jednodušší z PPA:
+                    má pás výkonu baterie, pás stavu nabití, schodovitou čáru
+                    stropu, přehledový pásek celého roku a vypíchnuté události. */}
+                <GrafPrubehu
+                  data={prubehData}
+                  popisDruheSerie="ukládání ze slunce"
+                  popisRoku={
+                    `Režim „${aktivniRezim.nazev}“ — 15minutová simulace celého roku. ` +
+                    `Horní pás je odběr ze sítě (před a po baterii) s čárou stropu, ` +
+                    `pod ním výkon baterie rozdělený na srážení špičky a ukládání ze ` +
+                    `slunce, a stav nabití. Klikni do přehledového pásku dole pro ` +
+                    `přesun výřezu, kolečkem přiblížíš.`
+                  }
+                />
+                {prubehData.souhrn && (
+                  <div className="gs-pozn" style={{ marginTop: 8 }}>
+                    Za rok baterie dodala{" "}
+                    <b>{cislo(prubehData.souhrn.vybito_kwh / 1000, 1)} MWh</b>, nabila{" "}
+                    {cislo(prubehData.souhrn.nabito_kwh / 1000, 1)} MWh (ztráty cyklováním{" "}
+                    {cislo(prubehData.souhrn.ztraty_kwh / 1000, 1)} MWh). Špička odběru{" "}
+                    {kw(prubehData.souhrn.max_odber_kw)} → ze sítě{" "}
+                    {kw(prubehData.souhrn.max_site_kw)}.
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}

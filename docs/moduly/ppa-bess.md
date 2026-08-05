@@ -177,13 +177,27 @@ o kolik lze snížit), nájem baterie s odkupní cenou, pokrytí spotřeby.
 | Elektrárna | graf výroba vs. spotřeba (`GrafVyrobaSpotreba`), energetická bilance, detail elektrárny včetně rozpadu na pole |
 | Po letech | roční cash flow zákazníka s rokem odkupu |
 | Co má baterie dělat | srovnání tří režimů, kliknutím se přepne celý výsledek |
-| Průběh | nitkový 15min graf (`GrafPrubehuPpa`) |
+| Průběh | detailní 15min graf (`GrafPrubehu`) — pás výkonu baterie rozdělený na srážení špičky a ukládání ze slunce, pás stavu nabití, schodovitá čára stropu, přehledový pásek roku a vypíchnuté události |
 | Katalog baterií | srovnání posouzených konfigurací (jen po prohledání katalogu) |
 
 Rozpad úspory na kilowattech drží stejný vzor jako peak shaving: **dnešní náklad
 → nejlevnější příkon bez investice → „úspora hned bez investice" → náklad
 s baterií → „přínos baterie" → roční úspora celkem**, včetně pojistky, že
 optimalizace může vyjít dráž než nedělat nic (nese rezervu, dnešní RP ne).
+
+### Dva scénáře rezervovaného příkonu
+
+Výpočet počítá oba a panel má v hlavičce **přepínač**:
+
+- **se snížením** (výchozí) — smlouva o připojení se sníží na hodnotu, kterou
+  baterie umožní. Jednosměrná změna, zpětné navýšení je zpoplatněné.
+- **bez snížení** — smlouva zůstane, platí se jen za naměřenou špičku.
+  Konzervativní varianta.
+
+Přepínač mění dlaždice, tabulku rozpadu **i graf**. Bez toho graf kreslil vždycky
+scénář „bez snížení", kde RP zůstává na dnešní hodnotě — čára „nové RP" tak
+ležela na té staré a vypadalo to, že baterie s příkonem nic nedělá. Na reálném
+profilu je rozdíl 447 → 263 kW, tedy 99 tis. Kč/rok.
 
 Grafy se skládají z **týchž měsíčních výsledků dispatchu** jako tabulky, takže se
 nemohou rozejít. Kontrakt panel ↔ jádro hlídá `TestKontraktSPanelem` — kdyby se

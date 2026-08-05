@@ -926,3 +926,128 @@ class TestKontraktSPanelem:
                          "naklad_ztrat_kc", "naklad_provozu_zakaznika_kc",
                          "vydaj_odkup_kc", "cisty_prinos_kc", "dscr"):
                 assert klic in d["roky"][0], f"roky[].{klic}"
+
+
+class TestDetailniGraf:
+    """Data pro detailní graf (`GrafPrubehu.jsx` z peak shavingu).
+
+    Ten graf je u tohohle modulu ten podstatný: má pás výkonu baterie rozdělený
+    na srážení špičky a ukládání ze slunce, pás stavu nabití, schodovitou čáru
+    stropu a přehledový pásek roku. Jednodušší graf z PPA nic z toho neumí.
+    """
+
+    def _prubeh(self):
+        odber = _odber_se_spickou(10)
+        vyroba = _vyroba_denni(10)
+        bat = _baterie()
+        return ppa_bess.prubeh_15min(
+            odber, vyroba, [1] * len(odber), bat, {1: 400.0}, 0.25
+        )
+
+    def test_ma_rady_pro_pas_baterie(self):
+        pr = self._prubeh()
+        for klic in ("odber_kw", "site_kw", "baterie_kw", "baterie_ps_kw",
+                     "baterie_obchod_kw", "soc_pct"):
+            assert klic in pr, klic
+            assert pr[klic] is not None and len(pr[klic]) == pr["pocet"], klic
+
+    def test_baterie_kw_je_soucet_obou_sluzeb(self):
+        """Konvence: kladné vybíjí, záporné nabíjí — jako u peak shavingu."""
+        pr = self._prubeh()
+        for i in range(pr["pocet"]):
+            assert pr["baterie_kw"][i] == pytest.approx(
+                pr["baterie_ps_kw"][i] + pr["baterie_obchod_kw"][i], abs=0.02
+            )
+
+    def test_useky_stropu_pokryji_cely_profil(self):
+        pr = self._prubeh()
+        useky = pr["useky_stropu"]
+        assert useky, "čára stropu by se neměla co kreslit"
+        assert useky[0]["od_index"] == 0
+        assert useky[-1]["do_index"] == pr["pocet"] - 1
+        # Úseky musí být souvislé a nepřekrývat se.
+        for a, b in zip(useky, useky[1:]):
+            assert b["od_index"] == a["do_index"] + 1
+
+    def test_useky_stropu_se_slucuji(self):
+        """Jeden strop na celý profil = jeden úsek, ne 35 tisíc."""
+        assert ppa_bess.useky_stropu([300.0] * 100) == [
+            {"od_index": 0, "do_index": 99, "strop_kw": 300.0}
+        ]
+
+    def test_useky_stropu_rozdeli_zmenu(self):
+        useky = ppa_bess.useky_stropu([300.0] * 5 + [250.0] * 5)
+        assert len(useky) == 2
+        assert useky[0] == {"od_index": 0, "do_index": 4, "strop_kw": 300.0}
+        assert useky[1] == {"od_index": 5, "do_index": 9, "strop_kw": 250.0}
+
+    def test_souhrn_ma_energie_baterie(self):
+        pr = self._prubeh()
+        s = pr["souhrn"]
+        for klic in ("nabito_kwh", "vybito_kwh", "ztraty_kwh", "max_odber_kw", "max_site_kw"):
+            assert klic in s, klic
+        # Ztráty nemohou být negativní ani větší než nabitá energie.
+        assert 0 <= s["ztraty_kwh"] <= s["nabito_kwh"] + 1e-6
+
+    def test_cena_je_none(self):
+        """PPA+BESS se nerozhoduje podle spotové ceny, takže cenový pás se
+        nemá kreslit."""
+        assert self._prubeh()["cena_kc_mwh"] is None
+
+
+class TestScenareRp:
+    """Oba scénáře rezervovaného příkonu – bez snížení a se snížením.
+
+    REGRESE: graf i dlaždice brali `rp_novy_kw` ze scénáře BEZ snížení, kde RP
+    zůstává na dnešní hodnotě. Čára „nové RP" tak ležela na té staré a vypadalo
+    to, že baterie s příkonem nic nedělá (nahlásil Dan 5. 8. 2026: „tvrdí mi že
+    bude 400 ale podle apky má být 254").
+    """
+
+    def test_oba_scenare_se_pocitaji(self):
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup())
+        for r in v["rezimy"]:
+            assert r["ekonomika_vykonu"]["status"] == "spocitano"
+            assert r["ekonomika_vykonu_se_snizenim"]["status"] == "spocitano"
+
+    def test_bez_snizeni_drzi_rp_ze_smlouvy(self):
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup())
+        for r in v["rezimy"]:
+            ek = r["ekonomika_vykonu"]
+            assert ek["rp_novy_kw"] == pytest.approx(ek["rp_soucasny_kw"]), (
+                "scénář bez snížení nesmí měnit rezervovaný příkon"
+            )
+
+    def test_se_snizenim_je_rp_nizsi_nebo_stejne(self):
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup())
+        for r in v["rezimy"]:
+            ek, eks = r["ekonomika_vykonu"], r["ekonomika_vykonu_se_snizenim"]
+            assert eks["rp_novy_kw"] <= ek["rp_novy_kw"] + 0.01
+
+    def test_snizene_rp_zustane_nad_maximem_po_baterii(self):
+        """Nižší RP než naměřené maximum by znamenalo penalizaci každý měsíc —
+        optimalizátor to smí, ale jen když se to i s penalizací vyplatí."""
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup())
+        for r in v["rezimy"]:
+            eks = r["ekonomika_vykonu_se_snizenim"]
+            if eks["mesicu_s_prekrocenim_rp"] == 0:
+                nejvyssi = max(r["graf_maxima"]["s_baterii_kw"])
+                assert eks["rp_novy_kw"] >= nejvyssi - 0.01, (
+                    f'RP {eks["rp_novy_kw"]} pod maximem {nejvyssi} bez hlášeného překročení'
+                )
+
+    def test_se_snizenim_neni_horsi_prinos(self):
+        """Snížení RP se přijme jen tehdy, když je aspoň tak dobré."""
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup())
+        for r in v["rezimy"]:
+            ek, eks = r["ekonomika_vykonu"], r["ekonomika_vykonu_se_snizenim"]
+            assert eks["prinos_baterie"] >= ek["prinos_baterie"] - 1.0
+
+    def test_prinos_v_obou_scenarich_je_ve_vystupu(self):
+        """Panel podle přepínače čte jeden nebo druhý."""
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup())
+        for r in v["rezimy"]:
+            assert r["prinos"]["z_vykonu_bez_snizeni_rp_kc"] is not None
+            assert r["prinos"]["z_vykonu_se_snizenim_rp_kc"] is not None
+            assert r["prinos"]["cisty_bez_snizeni_rp_kc"] is not None
+            assert r["prinos"]["cisty_se_snizenim_rp_kc"] is not None

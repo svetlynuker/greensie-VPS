@@ -2806,10 +2806,50 @@ def ppa_bess_prubeh(
         int(round((c - casy[0]).total_seconds() / 60.0)) for c in casy
     ]
     prubeh["rezim"] = rezim
+
+    # Referenční čáry: dnešní rezervovaný příkon a ten, který baterie umožní.
+    # „Nový" musí být ze scénáře SE SNÍŽENÍM příkonu – ve scénáři bez snížení
+    # zůstává RP na dnešní hodnotě, takže by čára ležela na té staré a vypadalo
+    # by to, že baterie s příkonem nic nedělá (nahlásil Dan 5. 8. 2026).
+    rp_dnes = vstup_ulozeny.get("rezervovany_prikon_kw") or vstup_ulozeny.get(
+        "rezervovana_kapacita_kw"
+    )
+    ek_snizeni = blok.get("ekonomika_vykonu_se_snizenim") or {}
+    ek_bez = blok.get("ekonomika_vykonu") or {}
+    rp_novy = None
+    if ek_snizeni.get("status") == "spocitano":
+        rp_novy = ek_snizeni.get("rp_novy_kw")
+    elif ek_bez.get("status") == "spocitano":
+        rp_novy = ek_bez.get("rp_novy_kw")
     prubeh["referencni"] = {
-        "rezervovany_prikon_kw": vstup_ulozeny.get("rezervovany_prikon_kw")
-        or vstup_ulozeny.get("rezervovana_kapacita_kw"),
+        # Klíče pro detailní graf z peak shavingu (`GrafPrubehu`).
+        "rk_soucasna_kw": round(float(rp_dnes), 2) if rp_dnes else None,
+        "rk_nova_kw": round(float(rp_novy), 2) if rp_novy else None,
+        "popisek_soucasna": "rezervovaný příkon nyní",
+        "popisek_nova": "příkon, který baterie umožní",
+        # Klíč pro jednodušší graf z PPA (`GrafPrubehuPpa`) – držíme oba, ať se
+        # dá mezi grafy přepnout bez zásahu do backendu.
+        "rezervovany_prikon_kw": rp_dnes,
     }
+    # Bez událostí by detailní graf neměl co vypíchnout; recykluje se ta samá
+    # funkce, jakou používá peak shaving, nad síťovým tokem po baterii.
+    try:
+        prubeh["udalosti"] = peak_shaving.udalosti_prubehu(
+            prubeh["odber_kw"],
+            prubeh["site_kw"],
+            prubeh["baterie_kw"],
+            prubeh["soc_pct"] or [],
+            [c.month for c in casy],
+            interval_h=interval_h,
+            rk_soucasna_kw=rp_dnes,
+            rk_nova_kw=rp_novy,
+        )
+        for u in prubeh["udalosti"]:
+            u["cas"] = _iso(casy[u["index"]])
+    except Exception:
+        # Události jsou zpříjemnění, ne podstata – kdyby se tvar dat rozešel,
+        # graf se má nakreslit i tak.
+        prubeh["udalosti"] = []
     return prubeh
 
 
