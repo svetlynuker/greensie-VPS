@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import GrafOdberu from "./GrafOdberu";
 import GrafPrubehuPpa from "./GrafPrubehuPpa";
+import GrafVyrobaSpotreba from "./GrafVyrobaSpotreba";
 import {
   crmOdbernaMistaNabidky,
   crmPouzijDiagramProNabidku,
@@ -984,21 +986,31 @@ export default function PpaBessPanel({ nabidka }) {
     const prinos = aktivniRezim.prinos || {};
     const energie = aktivniRezim.energie || {};
     const vykon = aktivniRezim.vykon || {};
+    const ek = aktivniRezim.ekonomika_vykonu || {};
+    const ekSnizeni = aktivniRezim.ekonomika_vykonu_se_snizenim || {};
+    const maSazby = ek.status === "spocitano";
+    const fin = vybranaDelka?.financovani || {};
     const cistyKZobrazeni = rozpadDelky
       ? rozpadDelky.cisty_bez_snizeni_rp_kc
       : prinos.cisty_bez_snizeni_rp_kc;
     const energieKZobrazeni = rozpadDelky ? rozpadDelky.z_energie_kc : prinos.z_energie_kc;
     const prubehData = prubehy[aktivniRezim.rezim];
+    const rpJeFallbackRk = !n(rezPrikon);
 
     obsah = (
       <>
-        {/* hlavička */}
+        {/* ---- hlavička ---- */}
         <div className="gs-res-h">
           <div>
-            <div className="gs-nadtitul">Doporučené řešení</div>
+            <div className="gs-nadtitul">
+              Doporučené řešení
+              {vybranaDelka ? ` · kontrakt na ${vybranaDelka.delka_roky} let` : ""}
+            </div>
             <h3 style={{ margin: 0 }}>
-              {kw(el.kwp)}p elektrárna
-              {bat ? ` + baterie ${cislo(bat.kapacita_kwh, 0)} kWh / ${cislo(bat.vykon_kw, 0)} kW` : ""}
+              {cislo(el.kwp, 0)} kWp elektrárna
+              {bat
+                ? ` + baterie ${cislo(bat.kapacita_kwh, 0)} kWh / ${cislo(bat.vykon_kw, 0)} kW`
+                : ""}
             </h3>
           </div>
           <span className="gs-mezera" style={{ flex: 1 }} />
@@ -1007,124 +1019,100 @@ export default function PpaBessPanel({ nabidka }) {
           </span>
         </div>
 
-        {/* dlaždice: rozpad přínosu */}
+        {/* ---- dlaždice: co to zákazníkovi přinese a odkud ---- */}
         <div className="gs-kpis">
           <div className="gs-kpi accent" data-druh="penize">
-            <span className="gs-kpi-label">Čistý přínos zákazníka</span>
-            <span className="gs-kpi-value">{kc(cistyKZobrazeni)}</span>
-            <span className="gs-kpi-sub">za rok, po zaplacení nájmu baterie</span>
+            <div className="gs-kpi-label">Čistý přínos zákazníka</div>
+            <div className="gs-kpi-value">{kc(cistyKZobrazeni)}</div>
+            <div className="gs-kpi-sub">
+              za rok, po zaplacení nájmu baterie
+              {vybranaDelka ? ` · celkem ${kc(vybranaDelka.uspora_celkem_kc)}` : ""}
+            </div>
           </div>
           <div className="gs-kpi" data-druh="penize">
-            <span className="gs-kpi-label">Z kilowatthodin</span>
-            <span className="gs-kpi-value">{kc(energieKZobrazeni)}</span>
-            <span className="gs-kpi-sub">
-              levnější energie z elektrárny ({mwh(energie.samospotreba_mwh)})
-            </span>
+            <div className="gs-kpi-label">Z kilowatthodin (elektrárna)</div>
+            <div className="gs-kpi-value">{kc(energieKZobrazeni)}</div>
+            <div className="gs-kpi-sub">
+              {mwh(energie.samospotreba_mwh)} levnější energie
+              {vybranaDelka?.cena_ppa_kc_mwh
+                ? ` · sleva ${pct(vybranaDelka.sleva)}`
+                : ""}
+            </div>
           </div>
           <div className="gs-kpi" data-druh="penize">
-            <span className="gs-kpi-label">Z kilowattů</span>
-            <span className="gs-kpi-value">{kc(prinos.z_vykonu_bez_snizeni_rp_kc)}</span>
-            <span className="gs-kpi-sub">
-              sražení špičky o {kw(vykon.sraz_kw)} ({kw(vykon.maximum_bez_baterie_kw)} →{" "}
-              {kw(vykon.maximum_po_baterii_kw)})
-            </span>
+            <div className="gs-kpi-label">Z kilowattů (srážení špiček)</div>
+            <div className="gs-kpi-value">{kc(prinos.z_vykonu_bez_snizeni_rp_kc)}</div>
+            <div className="gs-kpi-sub">
+              špička {kw(vykon.maximum_bez_baterie_kw)} → {kw(vykon.maximum_po_baterii_kw)} (o{" "}
+              {kw(vykon.sraz_kw)} níž)
+            </div>
+          </div>
+          <div className="gs-kpi">
+            <div className="gs-kpi-label">
+              {maSazby && ek.rp_novy_kw !== ek.rp_soucasny_kw
+                ? "Nová rezervovaná kapacita"
+                : "Rezervovaný příkon"}
+            </div>
+            <div className="gs-kpi-value">
+              {maSazby ? kw(ek.rp_novy_kw ?? ek.rp_soucasny_kw) : kw(n(rezPrikon) || n(rezKapacita))}
+            </div>
+            <div className="gs-kpi-sub">
+              {maSazby && ek.rp_novy_kw !== ek.rp_soucasny_kw
+                ? `dnes ${kw(ek.rp_soucasny_kw)} · lze snížit o ${kw(
+                    ek.rp_soucasny_kw - ek.rp_novy_kw
+                  )}`
+                : "beze změny smlouvy o připojení"}
+            </div>
           </div>
           <div className="gs-kpi" data-druh="riziko">
-            <span className="gs-kpi-label">Nájem baterie</span>
-            <span className="gs-kpi-value">
+            <div className="gs-kpi-label">Nájem baterie</div>
+            <div className="gs-kpi-value">
               {bat ? kc(bat.najem_kc_mesic) : "—"}
               {bat ? <span style={{ fontSize: 14 }}> /měs</span> : null}
-            </span>
-            <span className="gs-kpi-sub">
-              {bat ? `fixní ${bat.doba_najmu_roky} let, pak odkup` : "bez baterie"}
-            </span>
+            </div>
+            <div className="gs-kpi-sub">
+              {bat
+                ? `fixní ${bat.doba_najmu_roky} let, pak odkup za ${kc(
+                    vybranaDelka?.odkupni_cena_baterie_kc
+                  )}`
+                : "bez baterie"}
+            </div>
+          </div>
+          <div className="gs-kpi" data-druh="cas">
+            <div className="gs-kpi-label">Pokrytí spotřeby</div>
+            <div className="gs-kpi-value">{pct(energie.pokryti_spotreby, 0)}</div>
+            <div className="gs-kpi-sub">
+              z elektrárny · samospotřeba {pct(energie.mira_samospotreby)} výroby
+            </div>
           </div>
         </div>
 
-        {/* upozornění */}
-        {(vysledek.upozorneni || []).map((z, i) => (
-          <div className="nb-warn" key={i} style={{ marginTop: 8 }}>
-            <span>⚠️</span>
-            <span dangerouslySetInnerHTML={{ __html: zvyrazni(z) }} />
+        {/* ---- upozornění ---- */}
+        {(vysledek.upozorneni || []).length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "12px 0" }}>
+            {vysledek.upozorneni.map((z, i) => (
+              <div className="nb-warn" key={i}>
+                <span>⚠️</span>
+                <span dangerouslySetInnerHTML={{ __html: zvyrazni(z) }} />
+              </div>
+            ))}
           </div>
-        ))}
+        )}
 
-        {/* přepínač režimu */}
-        <div className="gs-sekce-t" style={{ marginTop: 18 }}>
-          Co má baterie dělat
-        </div>
-        <div className="gs-scroll" style={{ marginBottom: 4 }}>
-          <table className="gs-table">
-            <thead>
-              <tr>
-                <th>Režim</th>
-                <th className="n">Z kilowatthodin</th>
-                <th className="n">Z kilowattů</th>
-                <th className="n">Nájem</th>
-                <th className="n">Čistý přínos</th>
-                <th className="n">Sražení špičky</th>
-                <th className="n">Cyklů/rok</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rezimy.map((r) => {
-                const jeAktivni = r.rezim === aktivniRezim.rezim;
-                const rp = r.po_delkach?.length ? r.po_delkach[0] : null;
-                const rd = vybranaDelka && r.prinos_po_delkach
-                  ? r.prinos_po_delkach[String(vybranaDelka.delka_roky)]
-                  : null;
-                return (
-                  <tr
-                    key={r.rezim}
-                    onClick={() => setVybranyRezim(r.rezim)}
-                    style={{
-                      cursor: "pointer",
-                      background: jeAktivni
-                        ? "color-mix(in srgb, var(--brand) 9%, transparent)"
-                        : undefined,
-                    }}
-                    title="Kliknutím přepneš rozpad i graf na tenhle režim"
-                  >
-                    <td>
-                      {jeAktivni ? "◄ " : ""}
-                      {r.nazev}
-                      {r.doporuceny && (
-                        <span className="nb-badge dobre" style={{ marginLeft: 6 }}>
-                          doporučeno
-                        </span>
-                      )}
-                    </td>
-                    <td className="n">{kc(rd ? rd.z_energie_kc : r.prinos.z_energie_kc)}</td>
-                    <td className="n">{kc(r.prinos.z_vykonu_bez_snizeni_rp_kc)}</td>
-                    <td className="n">−{kc(r.prinos.najem_baterie_kc).replace(" Kč", "")} Kč</td>
-                    <td className="n">
-                      <b>{kc(rd ? rd.cisty_bez_snizeni_rp_kc : r.prinos.cisty_bez_snizeni_rp_kc)}</b>
-                    </td>
-                    <td className="n">{kw(r.vykon.sraz_kw)}</td>
-                    <td className="n">{cislo(r.energie.cyklu_rok, 0)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div className="gs-pozn">
-          Kombinovaný režim si drží rezervu na špičky a přebytek z elektrárny ukládá jen do
-          zbytku kapacity. Doporučuje se ten režim, který zákazníkovi skutečně vydělá nejvíc —
-          není to vždy kombinace.
-        </div>
-
-        {/* záložky */}
-        <div className="gs-tabs gs-tabs-odsazeni" role="tablist" style={{ marginTop: 18 }}>
+        {/* ---- záložky ---- */}
+        <div className="gs-tabs gs-tabs-odsazeni" role="tablist" aria-label="Části výsledku">
           {[
-            ["rozpad", "Délky kontraktu"],
+            ["prehled", "Přehled"],
+            ["spicky", "Srážení špiček"],
+            ["elektrarna", "Elektrárna"],
             ["roky", "Po letech"],
-            ["mesice", "Po měsících"],
+            ["rezimy", "Co má baterie dělat"],
             ["prubeh", "Průběh"],
             ...(vysledek.katalog ? [["katalog", "Katalog baterií"]] : []),
           ].map(([klic, nazev]) => (
             <button
               key={klic}
+              type="button"
               role="tab"
               aria-selected={zalozka === klic}
               onClick={() => setZalozka(klic)}
@@ -1134,21 +1122,21 @@ export default function PpaBessPanel({ nabidka }) {
           ))}
         </div>
 
-        {zalozka === "rozpad" && (
-          <div className="fm-card" style={{ padding: 0 }}>
-            <div className="gs-scroll" style={{ border: 0, boxShadow: "none" }}>
+        {/* ================= PŘEHLED ================= */}
+        {zalozka === "prehled" && (
+          <>
+            <div className="gs-scroll">
               <table className="gs-table">
                 <thead>
                   <tr>
                     <th>Délka</th>
                     <th className="n">Cena PPA</th>
                     <th className="n">Sleva</th>
-                    <th className="n">Úspora rok 1</th>
-                    <th className="n">Úspora celkem</th>
+                    <th>Drží cenu</th>
                     <th className="n">DSCR</th>
                     <th className="n">IRR</th>
-                    <th className="n">Odkup baterie</th>
-                    <th>Drží</th>
+                    <th className="n">Úspora rok 1</th>
+                    <th className="n">Úspora celkem</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1163,36 +1151,474 @@ export default function PpaBessPanel({ nabidka }) {
                             ? "var(--brand-wash)"
                             : undefined,
                       }}
+                      title="Klikni pro detail téhle délky"
                     >
                       <td>
-                        {vybranaDelka?.delka_roky === d.delka_roky ? "◄ " : ""}
-                        {d.delka_roky} let
+                        <b>{d.delka_roky} let</b>
                       </td>
                       <td className="n">{kcMwh(d.cena_ppa_kc_mwh)}</td>
-                      <td className="n">{pct(d.sleva)}</td>
+                      <td className="n">{d.sleva === null ? "—" : pct(d.sleva)}</td>
+                      <td>
+                        <span
+                          className={
+                            d.limitujici === "dscr"
+                              ? "nb-badge"
+                              : d.limitujici === "irr"
+                                ? "nb-badge pozor"
+                                : "nb-badge spatne"
+                          }
+                        >
+                          {d.limitujici === "dscr"
+                            ? "banka"
+                            : d.limitujici === "irr"
+                              ? "investor"
+                              : "nedosažitelné"}
+                        </span>
+                      </td>
+                      <td className="n">{cislo(d.dscr_min, 2)}</td>
+                      <td className="n">{d.irr === null ? "—" : pct(d.irr, 2)}</td>
                       <td className="n">{kc(d.uspora_rok1_kc)}</td>
                       <td className="n">{kc(d.uspora_celkem_kc)}</td>
-                      <td className="n">{cislo(d.dscr_min, 2)}</td>
-                      <td className="n">{d.irr === null ? "—" : pct(d.irr)}</td>
-                      <td className="n">
-                        {d.rok_odkupu
-                          ? `${kc(d.odkupni_cena_baterie_kc)} (rok ${d.rok_odkupu})`
-                          : "—"}
-                      </td>
-                      <td>{d.limitujici === "dscr" ? "banka" : d.limitujici === "irr" ? "investor" : "—"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <div className="gs-pozn" style={{ padding: "10px 14px" }}>
-              Cena PPA je nejnižší, se kterou projekt projde bankou (DSCR ≥ 1,30) i investorem.
-              Délku výpočet nedoporučuje — vybírá obchodník. U kontraktu na 10 let k odkupu
-              baterie nedojde, nájem skončí s kontraktem.
+            <div className="gs-pozn">
+              Délku nedoporučujeme — vyber podle toho, co zákazník podepíše. Delší kontrakt =
+              nižší splátka = nižší cena a větší sleva. „Drží cenu" říká, která podmínka je
+              ta těsná: u krátkého kontraktu banka (DSCR 1,30), u dlouhého investor (cílové
+              IRR). U kontraktu na 10 let k odkupu baterie nedojde — nájem skončí s kontraktem.
             </div>
-          </div>
+
+            <div className="gs-dva" style={{ marginTop: 14 }}>
+              <div className="fm-card" style={{ padding: 14 }}>
+                <h4 style={{ margin: "0 0 8px" }}>Přínos zákazníkovi (rok 1)</h4>
+                <Radek l="Z levnější energie (kWh)" v={kc(energieKZobrazeni)} />
+                <Radek
+                  l="Ze srážení špiček (kW)"
+                  v={kc(prinos.z_vykonu_bez_snizeni_rp_kc)}
+                />
+                {maSazby &&
+                  prinos.z_vykonu_se_snizenim_rp_kc !== prinos.z_vykonu_bez_snizeni_rp_kc && (
+                    <Radek
+                      l="… se snížením příkonu"
+                      v={kc(prinos.z_vykonu_se_snizenim_rp_kc)}
+                    />
+                  )}
+                <Radek l="Nájem baterie" v={`− ${kc(prinos.najem_baterie_kc)}`} />
+                {energie.ztraty_ze_site_mwh > 0 && (
+                  <Radek
+                    l="Ztráty síťového dobíjení"
+                    v={mwh(energie.ztraty_ze_site_mwh, 2)}
+                  />
+                )}
+                <div style={{ marginTop: 8, paddingTop: 8, borderTop: "2px solid var(--line)" }}>
+                  <Radek l={<b>Čistý přínos za rok</b>} v={<b>{kc(cistyKZobrazeni)}</b>} />
+                </div>
+              </div>
+              <div className="fm-card" style={{ padding: 14 }}>
+                <h4 style={{ margin: "0 0 8px" }}>Projekt a financování</h4>
+                <Radek l="CAPEX celkem (prodej do SPV)" v={kc(fin.capex_celkem_kc)} />
+                <Radek l="… z toho elektrárna" v={kc(fin.capex_fve_kc)} />
+                <Radek l="… z toho baterie" v={kc(fin.capex_bess_kc)} />
+                <Radek l="Vlastní kapitál" v={kc(fin.vlastni_kapital_kc)} />
+                <Radek l="Úvěr" v={kc(fin.uver_kc)} />
+                <Radek l="Provize obchodníka" v={kc(fin.provize_kc)} />
+                <Radek l="Zisk Greensie hned" v={kc(fin.zisk_greensie_kc)} />
+                <Radek l="Splátka (rok 1)" v={`${kc(fin.splatka_rok1_kc)}/rok`} />
+                <Radek l="Provozní náklady (rok 1)" v={`${kc(fin.provozni_naklady_rok1_kc)}/rok`} />
+              </div>
+            </div>
+
+            {bat && (
+              <div className="fm-card" style={{ padding: 14, marginTop: 14 }}>
+                <h4 style={{ margin: "0 0 8px" }}>
+                  Baterie
+                  {bat.z_katalogu ? (
+                    <span className="nb-badge dobre" style={{ marginLeft: 6 }}>
+                      z katalogu
+                    </span>
+                  ) : (
+                    <span className="nb-badge pozor" style={{ marginLeft: 6 }}>
+                      {bat.nakladova_cena_kc > 0 ? "zadaná ručně" : "bez ceny"}
+                    </span>
+                  )}
+                  {vysledek.katalog && (
+                    <span className="nb-badge dobre" style={{ marginLeft: 6 }}>
+                      vybraná z {vysledek.katalog.prohledano_konfiguraci} konfigurací
+                    </span>
+                  )}
+                </h4>
+                <div className="gs-dva">
+                  <div>
+                    {bat.nazev && (
+                      <Radek
+                        l="Produkt"
+                        v={bat.pocet_kusu > 1 ? `${bat.nazev} × ${bat.pocet_kusu}` : bat.nazev}
+                      />
+                    )}
+                    <Radek l="Kapacita (jmenovitá)" v={`${cislo(bat.kapacita_kwh, 0)} kWh`} />
+                    <Radek
+                      l="Kapacita (využitelná)"
+                      v={`${cislo(bat.vyuzitelna_kapacita_kwh, 0)} kWh`}
+                    />
+                    <Radek l="Výkon" v={kw(bat.vykon_kw)} />
+                    <Radek l="Účinnost (round-trip)" v={pct(bat.ucinnost_round_trip)} />
+                  </div>
+                  <div>
+                    <Radek l="Nákladová cena" v={kc(bat.nakladova_cena_kc)} />
+                    <Radek l="CAPEX do SPV" v={kc(bat.capex_kc)} />
+                    <Radek l="Nájem" v={`${kc(bat.najem_kc_mesic)}/měs`} />
+                    {bat.najem_zadan_rucne && (
+                      <Radek
+                        l="… z ceny by vyšel"
+                        v={`${kc(bat.najem_z_ceny_kc_mesic)}/měs`}
+                      />
+                    )}
+                    <Radek l="Doba nájmu" v={`${bat.doba_najmu_roky} let`} />
+                    <Radek l="Cyklů za rok" v={cislo(energie.cyklu_rok, 0)} />
+                  </div>
+                </div>
+                {bat.cena_je_doporucena && (
+                  <div className="gs-pozn pozor" style={{ marginTop: 8 }}>
+                    Ceník u téhle konfigurace neuvádí dealerskou cenu, takže nákladová cena
+                    vychází z doporučené prodejní — nájem je tím nadhodnocený.
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
 
+        {/* ================= SRÁŽENÍ ŠPIČEK ================= */}
+        {zalozka === "spicky" && (
+          <>
+            {!maSazby ? (
+              <div className="fm-card" style={{ padding: 18 }}>
+                <div className="nb-warn">
+                  <span>⚠️</span>
+                  <span>
+                    Sazby NTS 2027 pro tuhle hladinu a distributora nejsou v sazebníku, takže
+                    srážení špiček se nedá ocenit. Doplň je v Katalogu a výpočtech.
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="fm-card" style={{ padding: 0 }}>
+                  <div className="gs-karta-h" style={{ padding: "10px 14px" }}>
+                    <span className="gs-karta-nazev">
+                      Rozpad úspory na rezervované kapacitě (model NTS 2027)
+                    </span>
+                    <span className="gs-mezera" style={{ flex: 1 }} />
+                    {vysledek.sazby_2027_modelovy_odhad && (
+                      <span className="nb-badge pozor">sazby jsou modelový odhad</span>
+                    )}
+                  </div>
+                  <div className="gs-scroll" style={{ border: 0, boxShadow: "none" }}>
+                    <table className="gs-table">
+                      <tbody>
+                        <tr>
+                          <td>
+                            Náklad dnes{" "}
+                            <span style={{ color: "var(--muted)" }}>
+                              (RP {kw(ek.rp_soucasny_kw)})
+                            </span>
+                            {rpJeFallbackRk && (
+                              <div className="gs-pozn pozor">
+                                Příkon ze smlouvy nezadán → dosazena rezervovaná kapacita.
+                                Skutečný RP bývá vyšší, takže náklad i úspora jsou
+                                podhodnocené.
+                              </div>
+                            )}
+                          </td>
+                          <td className="n">{kc(ek.soucasny_rocni_naklad)}</td>
+                        </tr>
+                        {ek.naklad_optimalni_bez_baterie != null && (
+                          <>
+                            <tr>
+                              <td>
+                                Optimalizace příkonu bez baterie{" "}
+                                <span style={{ color: "var(--muted)" }}>
+                                  (RP {kw(ek.optimalni_rp_bez_baterie_kw)})
+                                </span>
+                              </td>
+                              <td className="n">{kc(ek.naklad_optimalni_bez_baterie)}</td>
+                            </tr>
+                            <tr className="soucet">
+                              <td>Úspora hned bez investice</td>
+                              <td className="n">{kc(ek.uspora_optimalizaci_bez_baterie)}</td>
+                            </tr>
+                            {/* Symetrická pojistka jako u peak shavingu: optimalizace
+                                nese rezervu, dnešní RP ze smlouvy ne — u zákazníka
+                                s velkým příkonem tak může vyjít dráž než nedělat nic. */}
+                            {ek.naklad_optimalni_bez_baterie > ek.soucasny_rocni_naklad && (
+                              <tr>
+                                <td colSpan={2} className="dim" style={{ fontSize: 11 }}>
+                                  Optimalizované RP (s rezervou{" "}
+                                  {cislo(vysledek.vstup?.rezerva_rk_procenta, 0)} %) by bylo
+                                  dražší než dnešní příkon ze smlouvy — bez investice není co
+                                  ušetřit, takže se přínos baterie počítá proti dnešnímu
+                                  nákladu.
+                                </td>
+                              </tr>
+                            )}
+                          </>
+                        )}
+                        <tr>
+                          <td>Náklad s baterií</td>
+                          <td className="n">{kc(ek.novy_rocni_naklad)}</td>
+                        </tr>
+                        {ek.mesicu_s_prekrocenim_rp > 0 && (
+                          <tr>
+                            <td className="dim">
+                              … z toho vědomé překročení RP{" "}
+                              <span style={{ fontSize: 11 }}>
+                                (v {ek.mesicu_s_prekrocenim_rp} měs. — nižší RP se i
+                                s penalizací vyplatí)
+                              </span>
+                            </td>
+                            <td className="n dim">{kc(ek.naklad_prekroceni_rp)}</td>
+                          </tr>
+                        )}
+                        {/* Ztráty cyklování se sem musí dopsat zvlášť: `ekonomika_2027`
+                            je nepočítá, protože jí předáváme hotová měsíční maxima
+                            z našeho dispatchu (viz peak_shaving.py:802–805). */}
+                        {energie.ztraty_ze_site_mwh > 0 && (
+                          <tr>
+                            <td className="dim">
+                              … z toho ztráty síťového dobíjení{" "}
+                              <span style={{ fontSize: 11 }}>
+                                ({mwh(energie.ztraty_ze_site_mwh, 2)} se v baterii ztratí)
+                              </span>
+                            </td>
+                            <td className="n dim">
+                              {kc(
+                                (energie.ztraty_ze_site_mwh || 0) *
+                                  (vysledek.vstup?.cena_zakaznika_kc_mwh || 0)
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                        <tr className="soucet">
+                          <td>Přínos baterie na výkonu</td>
+                          <td className="n">{kc(ek.prinos_baterie)}</td>
+                        </tr>
+                        <tr className="soucet">
+                          <td>Roční úspora na kilowattech celkem</td>
+                          <td className="n">{kc(ek.rocni_uspora)}</td>
+                        </tr>
+                        <tr>
+                          <td className="dim">Měsíců na tarifu T1 / T2</td>
+                          <td className="n dim">
+                            {ek.pocet_mesicu_t1} / {ek.pocet_mesicu_t2}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td>
+                            <b>Rezervovaný příkon (RP)</b>
+                          </td>
+                          <td className="n">
+                            <b>
+                              {kw(ek.rp_soucasny_kw)}
+                              {ek.rp_novy_kw !== ek.rp_soucasny_kw
+                                ? ` → ${kw(ek.rp_novy_kw)} (${
+                                    ek.rp_novy_kw < ek.rp_soucasny_kw ? "snížení" : "navýšení"
+                                  })`
+                                : " (beze změny smlouvy)"}
+                            </b>
+                          </td>
+                        </tr>
+                        {ekSnizeni.status === "spocitano" &&
+                          ekSnizeni.rp_novy_kw !== ek.rp_novy_kw && (
+                            <tr>
+                              <td className="dim">
+                                Se snížením příkonu na {kw(ekSnizeni.rp_novy_kw)}{" "}
+                                <span style={{ fontSize: 11 }}>
+                                  (jednosměrná změna smlouvy o připojení)
+                                </span>
+                              </td>
+                              <td className="n dim">{kc(ekSnizeni.prinos_baterie)}</td>
+                            </tr>
+                          )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="gs-pozn" style={{ padding: "10px 14px" }}>
+                    Baseline není dnešní stav, ale <b>nejlevnější příkon bez investice</b> —
+                    přínos baterie se tak nepočítá proti předimenzovanému RP ze smlouvy.
+                    Volba RP nese rezervu {cislo(vysledek.vstup?.rezerva_rk_procenta, 0)} %,
+                    protože strop je nalezený z jednoho historického roku.
+                  </div>
+                </div>
+
+                {aktivniRezim.graf_maxima && (
+                  <div className="fm-card" style={{ marginTop: 14 }}>
+                    <h4 style={{ margin: "0 0 8px" }}>Měsíční maxima odběru</h4>
+                    <GrafOdberu
+                      mesice={aktivniRezim.graf_maxima.mesice}
+                      bezBaterie={aktivniRezim.graf_maxima.bez_baterie_kw}
+                      sBaterii={aktivniRezim.graf_maxima.s_baterii_kw}
+                      rpSoucasna={ek.rp_soucasny_kw}
+                      rpNova={ek.rp_novy_kw}
+                      popisSoucasna="rezervovaný příkon nyní"
+                      popisNova="nový rezervovaný příkon"
+                    />
+                    <div className="gs-pozn" style={{ marginTop: 8 }}>
+                      Sloupce „bez baterie" jsou už <b>po odečtení výroby elektrárny</b> —
+                      tedy co by zákazník naměřil, kdyby si postavil jen elektrárnu. Proti
+                      tomu se poctivě poměřuje, co přidala baterie.
+                    </div>
+                  </div>
+                )}
+
+                <div className="fm-card" style={{ padding: 0, marginTop: 14 }}>
+                  <div className="gs-scroll okno" style={{ border: 0, boxShadow: "none" }}>
+                    <table className="gs-table">
+                      <thead>
+                        <tr>
+                          <th>Měsíc</th>
+                          <th className="n">Maximum bez baterie</th>
+                          <th className="n">Zvolený strop</th>
+                          <th className="n">Maximum po baterii</th>
+                          <th className="n">Nejnižší možný</th>
+                          <th className="n">Sražení</th>
+                          <th className="n">Na špičky</th>
+                          <th className="n">Cyklů</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(aktivniRezim.mesice || []).map((m) => (
+                          <tr key={m.mesic}>
+                            <td>{MESICE_NAZVY[m.mesic - 1] || m.mesic}</td>
+                            <td className="n">{kw(m.maximum_bez_baterie_kw)}</td>
+                            <td className="n">{kw(m.strop_kw)}</td>
+                            <td className="n">{kw(m.maximum_po_baterii_kw)}</td>
+                            <td className="n">{kw(m.nejnizsi_udrzitelny_kw)}</td>
+                            <td className="n">
+                              {kw(m.maximum_bez_baterie_kw - m.maximum_po_baterii_kw)}
+                            </td>
+                            <td className="n">{cislo(m.na_spicky_kwh, 0)} kWh</td>
+                            <td className="n">{cislo(m.cyklu, 1)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="gs-pozn" style={{ padding: "10px 14px" }}>
+                    Zvolený strop se u kombinovaného režimu hledá <b>ekonomicky</b>: pustit
+                    špičku výš znamená zaplatit víc za výkon, ale získat víc kapacity na
+                    uložení přebytku. Výchozím bodem je vždy nejnižší možný strop, tedy
+                    chování čistého peak shavingu — kombinace proto nestartuje z horší pozice.
+                  </div>
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {/* ================= ELEKTRÁRNA ================= */}
+        {zalozka === "elektrarna" && (
+          <>
+            {aktivniRezim.graf && (
+              <div className="fm-card">
+                <h4 style={{ margin: "0 0 8px" }}>Výroba elektrárny vs. spotřeba po měsících</h4>
+                <GrafVyrobaSpotreba graf={aktivniRezim.graf} />
+                <div className="gs-pozn" style={{ marginTop: 8 }}>
+                  Levý sloupec je spotřeba (kolik z ní kryje elektrárna a kolik se dokupuje),
+                  pravý výroba (kolik se spotřebuje na místě, kolik přeteče do sítě a kolik se
+                  ořízne). Do samospotřeby se počítá i energie, která k zákazníkovi dorazila
+                  přes baterii.
+                </div>
+              </div>
+            )}
+
+            <div className="gs-dva" style={{ marginTop: 14 }}>
+              <div className="fm-card" style={{ padding: 14 }}>
+                <h4 style={{ margin: "0 0 8px" }}>Energetická bilance (rok 1)</h4>
+                <Radek l="Spotřeba zákazníka" v={mwh(souhrn?.rocni_spotreba_mwh, 0)} />
+                <Radek l="Výroba elektrárny" v={mwh(el.vyroba_mwh, 0)} />
+                <Radek
+                  l="Samospotřeba celkem"
+                  v={`${mwh(energie.samospotreba_mwh)} (${pct(energie.mira_samospotreby)} výroby)`}
+                />
+                <Radek l="… přímo z elektrárny" v={mwh(energie.prima_samospotreba_mwh)} />
+                <Radek l="… přes baterii" v={mwh(energie.z_fve_pres_baterii_mwh)} />
+                <Radek l="Přetok do sítě" v={mwh(energie.export_mwh)} />
+                <Radek l="Pokrytí spotřeby z elektrárny" v={pct(energie.pokryti_spotreby)} />
+                <Radek
+                  l="Dokup ze sítě"
+                  v={mwh(
+                    (souhrn?.rocni_spotreba_mwh || 0) - (energie.samospotreba_mwh || 0),
+                    0
+                  )}
+                />
+              </div>
+              <div className="fm-card" style={{ padding: 14 }}>
+                <h4 style={{ margin: "0 0 8px" }}>Elektrárna</h4>
+                <Radek
+                  l={el.velikost_zadana_rucne ? "Zadaný výkon" : "Navržený výkon"}
+                  v={`${cislo(el.kwp, 0)} kWp`}
+                />
+                {!el.velikost_zadana_rucne && (
+                  <>
+                    <Radek
+                      l="Bez baterie by vyšlo"
+                      v={`${cislo(el.kwp_bez_baterie, 0)} kWp`}
+                    />
+                    {el.omezeno_max_kwp && (
+                      <Radek
+                        l="Bez stropu by vyšlo"
+                        v={`${cislo(el.kwp_bez_stropu, 0)} kWp`}
+                      />
+                    )}
+                  </>
+                )}
+                <Radek
+                  l="Měrný výnos"
+                  v={
+                    el.kwp > 0
+                      ? `${cislo((el.vyroba_mwh * 1000) / el.kwp, 0)} kWh/kWp`
+                      : "—"
+                  }
+                />
+                {(el.pole || []).length > 0 ? (
+                  <div style={{ marginTop: 8 }}>
+                    <div className="gs-pozn" style={{ marginBottom: 4 }}>
+                      Rozpad na pole:
+                    </div>
+                    {el.pole.map((f, i) => (
+                      <Radek
+                        key={i}
+                        l={`${f.orientace}, sklon ${cislo(f.sklon_st, 0)}°`}
+                        v={`${cislo(f.kwp, 0)} kWp → ${mwh(f.vyroba_mwh, 0)}`}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <Radek l="Sklon" v={`${cislo(vysledek.vstup?.sklon_st, 0)}°`} />
+                    <Radek
+                      l="Azimut"
+                      v={`${cislo(vysledek.vstup?.azimut_st, 0)}° (0 = jih)`}
+                    />
+                  </>
+                )}
+                {el.optimum?.kwp ? (
+                  <>
+                    <Radek l="Ekonomické optimum" v={`${cislo(el.optimum.kwp, 0)} kWp`} />
+                    <div className="gs-pozn" style={{ marginTop: 6 }}>
+                      {el.optimum.poznamka}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ================= PO LETECH ================= */}
         {zalozka === "roky" && vybranaDelka && (
           <div className="fm-card" style={{ padding: 0 }}>
             <div className="gs-scroll okno" style={{ border: 0, boxShadow: "none" }}>
@@ -1201,6 +1627,7 @@ export default function PpaBessPanel({ nabidka }) {
                   <tr>
                     <th>Rok</th>
                     <th className="n">Výroba</th>
+                    <th className="n">Samospotřeba</th>
                     <th className="n">Cena PPA</th>
                     <th className="n">Z kWh</th>
                     <th className="n">Z kW</th>
@@ -1217,16 +1644,27 @@ export default function PpaBessPanel({ nabidka }) {
                     <tr key={r.rok} className={r.vydaj_odkup_kc > 0 ? "soucet" : undefined}>
                       <td>{r.rok}</td>
                       <td className="n">{mwh(r.vyroba_mwh, 0)}</td>
+                      <td className="n">{mwh(r.samospotreba_mwh, 0)}</td>
                       <td className="n">{cislo(r.cena_ppa_kc_mwh, 0)}</td>
                       <td className="n">{kc(r.uspora_energie_kc)}</td>
                       <td className="n">{kc(r.uspora_vykon_kc)}</td>
-                      <td className="n">{r.najem_baterie_kc ? `−${cislo(r.najem_baterie_kc, 0)}` : "—"}</td>
-                      <td className="n">{r.naklad_ztrat_kc ? `−${cislo(r.naklad_ztrat_kc, 0)}` : "—"}</td>
                       <td className="n">
-                        {r.naklad_provozu_zakaznika_kc ? `−${cislo(r.naklad_provozu_zakaznika_kc, 0)}` : "—"}
+                        {r.najem_baterie_kc ? `−${cislo(r.najem_baterie_kc, 0)}` : "—"}
                       </td>
-                      <td className="n">{r.vydaj_odkup_kc ? `−${cislo(r.vydaj_odkup_kc, 0)}` : "—"}</td>
-                      <td className="n"><b>{kc(r.cisty_prinos_kc)}</b></td>
+                      <td className="n">
+                        {r.naklad_ztrat_kc ? `−${cislo(r.naklad_ztrat_kc, 0)}` : "—"}
+                      </td>
+                      <td className="n">
+                        {r.naklad_provozu_zakaznika_kc
+                          ? `−${cislo(r.naklad_provozu_zakaznika_kc, 0)}`
+                          : "—"}
+                      </td>
+                      <td className="n">
+                        {r.vydaj_odkup_kc ? `−${cislo(r.vydaj_odkup_kc, 0)}` : "—"}
+                      </td>
+                      <td className="n">
+                        <b>{kc(r.cisty_prinos_kc)}</b>
+                      </td>
                       <td className="n">{cislo(r.dscr, 2)}</td>
                     </tr>
                   ))}
@@ -1234,53 +1672,126 @@ export default function PpaBessPanel({ nabidka }) {
               </table>
             </div>
             <div className="gs-pozn" style={{ padding: "10px 14px" }}>
-              V roce {vybranaDelka.rok_odkupu || "—"} skončí nájem, klesne splátka a zákazník
-              baterii odkoupí — od té chvíle si platí servis a EMS sám. Odkup je kapitálový
-              výdaj, do DSCR nevstupuje.
+              {vybranaDelka.rok_odkupu ? (
+                <>
+                  V roce {vybranaDelka.rok_odkupu} skončí nájem, klesne splátka a zákazník
+                  baterii odkoupí za {kc(vybranaDelka.odkupni_cena_baterie_kc)} — od té chvíle
+                  si platí servis a EMS sám. Odkup je kapitálový výdaj, do DSCR nevstupuje.
+                </>
+              ) : (
+                <>
+                  U kontraktu na {vybranaDelka.delka_roky} let k odkupu baterie nedojde — nájem
+                  skončí s kontraktem.
+                </>
+              )}{" "}
+              Přínos ze srážení špiček klesá s degradací baterie, cena PPA se každé tři roky
+              skokově indexuje.
             </div>
           </div>
         )}
 
-        {zalozka === "mesice" && (
-          <div className="fm-card" style={{ padding: 0 }}>
-            <div className="gs-scroll" style={{ border: 0, boxShadow: "none" }}>
+        {/* ================= REŽIMY ================= */}
+        {zalozka === "rezimy" && (
+          <>
+            <div className="gs-scroll">
               <table className="gs-table">
                 <thead>
                   <tr>
-                    <th>Měsíc</th>
-                    <th className="n">Maximum bez baterie</th>
-                    <th className="n">Zvolený strop</th>
-                    <th className="n">Maximum po baterii</th>
-                    <th className="n">Nejnižší možný</th>
-                    <th className="n">Na špičky</th>
-                    <th className="n">Přes baterii</th>
-                    <th className="n">Cyklů</th>
+                    <th>Režim</th>
+                    <th className="n">Z kilowatthodin</th>
+                    <th className="n">Z kilowattů</th>
+                    <th className="n">Nájem</th>
+                    <th className="n">Čistý přínos</th>
+                    <th className="n">Sražení špičky</th>
+                    <th className="n">Samospotřeba</th>
+                    <th className="n">Cyklů/rok</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(aktivniRezim.mesice || []).map((m) => (
-                    <tr key={m.mesic}>
-                      <td>{MESICE_NAZVY[m.mesic - 1] || m.mesic}</td>
-                      <td className="n">{kw(m.maximum_bez_baterie_kw)}</td>
-                      <td className="n">{kw(m.strop_kw)}</td>
-                      <td className="n">{kw(m.maximum_po_baterii_kw)}</td>
-                      <td className="n">{kw(m.nejnizsi_udrzitelny_kw)}</td>
-                      <td className="n">{cislo(m.na_spicky_kwh, 0)} kWh</td>
-                      <td className="n">{cislo(m.z_baterie_kwh, 0)} kWh</td>
-                      <td className="n">{cislo(m.cyklu, 1)}</td>
-                    </tr>
-                  ))}
+                  {rezimy.map((r) => {
+                    const jeAktivni = r.rezim === aktivniRezim.rezim;
+                    const rd =
+                      vybranaDelka && r.prinos_po_delkach
+                        ? r.prinos_po_delkach[String(vybranaDelka.delka_roky)]
+                        : null;
+                    return (
+                      <tr
+                        key={r.rezim}
+                        onClick={() => setVybranyRezim(r.rezim)}
+                        style={{
+                          cursor: "pointer",
+                          background: jeAktivni
+                            ? "color-mix(in srgb, var(--brand) 9%, transparent)"
+                            : undefined,
+                        }}
+                        title="Kliknutím přepneš celý výsledek na tenhle režim"
+                      >
+                        <td>
+                          {jeAktivni ? "◄ " : ""}
+                          {r.nazev}
+                          {r.doporuceny && (
+                            <span className="nb-badge dobre" style={{ marginLeft: 6 }}>
+                              doporučeno
+                            </span>
+                          )}
+                        </td>
+                        <td className="n">
+                          {kc(rd ? rd.z_energie_kc : r.prinos.z_energie_kc)}
+                        </td>
+                        <td className="n">{kc(r.prinos.z_vykonu_bez_snizeni_rp_kc)}</td>
+                        <td className="n">−{cislo(r.prinos.najem_baterie_kc, 0)}</td>
+                        <td className="n">
+                          <b>
+                            {kc(
+                              rd ? rd.cisty_bez_snizeni_rp_kc : r.prinos.cisty_bez_snizeni_rp_kc
+                            )}
+                          </b>
+                        </td>
+                        <td className="n">{kw(r.vykon.sraz_kw)}</td>
+                        <td className="n">{pct(r.energie.mira_samospotreby, 0)}</td>
+                        <td className="n">{cislo(r.energie.cyklu_rok, 0)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
-            <div className="gs-pozn" style={{ padding: "10px 14px" }}>
-              Zvolený strop se u kombinovaného režimu hledá ekonomicky: pustit špičku výš
-              znamená zaplatit víc za výkon, ale získat víc kapacity na uložení přebytku.
-              Výchozím bodem je vždy nejnižší možný strop, tedy chování čistého peak shavingu.
+            <div className="gs-pozn">
+              Kombinovaný režim si drží rezervu na špičky a přebytek z elektrárny ukládá jen do
+              zbytku kapacity. Doporučuje se ten režim, který zákazníkovi <b>skutečně</b>{" "}
+              vydělá nejvíc — není to vždy kombinace, protože volba stropu se rozhoduje podle
+              odhadu ceny PPA a ten se s realitou rozejít může. Kliknutím na řádek přepneš
+              celý výsledek (dlaždice, grafy, tabulky) na jiný režim.
             </div>
+          </>
+        )}
+
+        {/* ================= PRŮBĚH ================= */}
+        {zalozka === "prubeh" && (
+          <div className="fm-card">
+            {prubehNacita && <div className="gs-pozn">Načítám průběh…</div>}
+            {prubehChyba && (
+              <div className="nb-warn">
+                <span>⚠️</span>
+                <span>{prubehChyba}</span>
+              </div>
+            )}
+            {prubehData && (
+              <GrafPrubehuPpa
+                data={{
+                  ...prubehData,
+                  referencni: {
+                    rezervovany_vykon_dodavky_kw:
+                      prubehData.referencni?.rezervovany_prikon_kw ?? null,
+                  },
+                }}
+                popis={`Režim „${aktivniRezim.nazev}“. Čárkovaná čára je rezervovaný příkon, tečkovaná stav nabití baterie. Kolečkem přiblížíš, tažením posuneš.`}
+              />
+            )}
           </div>
         )}
 
+        {/* ================= KATALOG ================= */}
         {zalozka === "katalog" && vysledek.katalog && (
           <div className="fm-card" style={{ padding: 0 }}>
             <div className="gs-scroll okno" style={{ border: 0, boxShadow: "none" }}>
@@ -1295,15 +1806,13 @@ export default function PpaBessPanel({ nabidka }) {
                     <th className="n">Nájem</th>
                     <th className="n">Sražení špičky</th>
                     <th className="n">Cyklů/rok</th>
-                    <th className="n">Pořadí podle</th>
+                    <th className="n">Pořadí</th>
                   </tr>
                 </thead>
                 <tbody>
                   {vysledek.katalog.varianty.map((v, i) => {
                     const jeVitez =
-                      bat &&
-                      v.produkt_id === bat.produkt_id &&
-                      v.pocet_kusu === bat.pocet_kusu;
+                      bat && v.produkt_id === bat.produkt_id && v.pocet_kusu === bat.pocet_kusu;
                     return (
                       <tr
                         key={`${v.produkt_id}-${v.pocet_kusu}`}
@@ -1339,96 +1848,11 @@ export default function PpaBessPanel({ nabidka }) {
             <div className="gs-pozn" style={{ padding: "10px 14px" }}>
               Prohledáno {vysledek.katalog.prohledano_konfiguraci} konfigurací z{" "}
               {vysledek.katalog.produktu_v_katalogu} produktů. {vysledek.katalog.poznamka}{" "}
-              Sloupec „pořadí" je ze screeningu — vítěz vlevo je ten, který po plném
-              dopočtu vyšel nejlépe, takže nemusí být první.
+              Sloupec „pořadí" je ze screeningu — vítěz (◄) je ten, který po plném dopočtu
+              vyšel nejlépe, takže nemusí být první.
             </div>
           </div>
         )}
-
-        {zalozka === "prubeh" && (
-          <div className="fm-card">
-            {prubehNacita && <div className="gs-pozn">Načítám průběh…</div>}
-            {prubehChyba && (
-              <div className="nb-warn">
-                <span>⚠️</span>
-                <span>{prubehChyba}</span>
-              </div>
-            )}
-            {prubehData && (
-              <GrafPrubehuPpa
-                data={{
-                  ...prubehData,
-                  // Graf kreslí referenční čáru z tohohle klíče. U PPA+BESS je
-                  // smysluplná hodnota rezervovaný příkon pro ODBĚR, ne limit
-                  // dodávky – proto se sem dosazuje on.
-                  referencni: {
-                    rezervovany_vykon_dodavky_kw:
-                      prubehData.referencni?.rezervovany_prikon_kw ?? null,
-                  },
-                }}
-                popis={`Režim „${aktivniRezim.nazev}“. Čárkovaná čára je rezervovaný příkon, tečkovaná stav nabití baterie. Kolečkem přiblížíš, tažením posuneš.`}
-              />
-            )}
-          </div>
-        )}
-
-        {/* technické detaily */}
-        <div className="gs-dva" style={{ marginTop: 18 }}>
-          <div className="fm-card">
-            <h4 style={{ marginTop: 0 }}>Elektrárna</h4>
-            <Radek
-              l={el.velikost_zadana_rucne ? "Zadaný výkon" : "Navržený výkon"}
-              v={`${cislo(el.kwp, 0)} kWp`}
-            />
-            {!el.velikost_zadana_rucne && (
-              <Radek l="Bez baterie by vyšlo" v={`${cislo(el.kwp_bez_baterie, 0)} kWp`} />
-            )}
-            <Radek l="Roční výroba" v={mwh(el.vyroba_mwh, 0)} />
-            {(el.pole || []).map((f, i) => (
-              <Radek
-                key={i}
-                l={`Pole ${i + 1} — ${f.orientace}, sklon ${cislo(f.sklon_st, 0)}°`}
-                v={`${cislo(f.kwp, 0)} kWp → ${mwh(f.vyroba_mwh, 0)}`}
-              />
-            ))}
-            <Radek l="Míra samospotřeby" v={pct(energie.mira_samospotreby)} />
-            <Radek l="Pokrytí spotřeby" v={pct(energie.pokryti_spotreby)} />
-            <Radek l="Přetok do sítě" v={mwh(energie.export_mwh)} />
-            {el.optimum?.kwp ? (
-              <>
-                <Radek l="Ekonomické optimum" v={`${cislo(el.optimum.kwp, 0)} kWp`} />
-                <div className="gs-pozn" style={{ marginTop: 6 }}>
-                  {el.optimum.poznamka}
-                </div>
-              </>
-            ) : null}
-          </div>
-          <div className="fm-card">
-            <h4 style={{ marginTop: 0 }}>Baterie</h4>
-            {bat ? (
-              <>
-                <Radek l="Produkt" v={bat.nazev || (bat.zadana_rucne ? "zadaná ručně" : "—")} />
-                <Radek
-                  l="Kapacita"
-                  v={`${cislo(bat.kapacita_kwh, 0)} kWh (${cislo(bat.vyuzitelna_kapacita_kwh, 0)} využitelných)`}
-                />
-                <Radek l="Výkon" v={`${cislo(bat.vykon_kw, 0)} kW`} />
-                <Radek l="Účinnost" v={pct(bat.ucinnost_round_trip)} />
-                <Radek l="Nákladová cena" v={kc(bat.nakladova_cena_kc)} />
-                <Radek l="Nájem" v={`${kc(bat.najem_kc_mesic)} / měsíc`} />
-                {bat.najem_zadan_rucne && (
-                  <Radek l="Z ceny by vyšel" v={`${kc(bat.najem_z_ceny_kc_mesic)} / měsíc`} />
-                )}
-                <Radek l="Doba nájmu" v={`${bat.doba_najmu_roky} let`} />
-                <Radek l="Na špičky" v={mwh(energie.na_spicky_mwh)} />
-                <Radek l="Přes baterii z elektrárny" v={mwh(energie.z_fve_pres_baterii_mwh)} />
-                <Radek l="Ztráty ze síťového dobíjení" v={mwh(energie.ztraty_ze_site_mwh, 2)} />
-              </>
-            ) : (
-              <div className="gs-pozn">Bez baterie — nepodařilo se ji navrhnout ani zadat.</div>
-            )}
-          </div>
-        </div>
       </>
     );
   }

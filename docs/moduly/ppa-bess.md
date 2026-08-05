@@ -159,6 +159,36 @@ Když služba neběží, endpoint `/ppa-bess/katalog/stav` vrací `sluzba_bezi: 
 a panel to řekne, místo aby točil kolečko donekonečna. Úlohy se nezařazují
 duplicitně: když už jedna pro nabídku čeká nebo běží, vrátí se ta stávající.
 
+## Co panel ukazuje
+
+Struktura držená záměrně blízko PPA a peak shavingu — obchodník má u nového
+modulu poznat stejná čísla na stejných místech.
+
+**Dlaždice:** čistý přínos zákazníka (za rok i celkem), z kilowatthodin,
+z kilowattů se sražením špičky, **nová rezervovaná kapacita** (dnes → nová,
+o kolik lze snížit), nájem baterie s odkupní cenou, pokrytí spotřeby.
+
+**Záložky:**
+
+| Záložka | Co v ní je |
+|---|---|
+| Přehled | tabulka délek kontraktu (cena, sleva, kdo drží cenu, DSCR, IRR, úspora), rozpad přínosu, projekt a financování, detail baterie |
+| Srážení špiček | **rozpad úspory na rezervované kapacitě** jako u peak shavingu, graf měsíčních maxim (`GrafOdberu`), měsíční tabulka stropů |
+| Elektrárna | graf výroba vs. spotřeba (`GrafVyrobaSpotreba`), energetická bilance, detail elektrárny včetně rozpadu na pole |
+| Po letech | roční cash flow zákazníka s rokem odkupu |
+| Co má baterie dělat | srovnání tří režimů, kliknutím se přepne celý výsledek |
+| Průběh | nitkový 15min graf (`GrafPrubehuPpa`) |
+| Katalog baterií | srovnání posouzených konfigurací (jen po prohledání katalogu) |
+
+Rozpad úspory na kilowattech drží stejný vzor jako peak shaving: **dnešní náklad
+→ nejlevnější příkon bez investice → „úspora hned bez investice" → náklad
+s baterií → „přínos baterie" → roční úspora celkem**, včetně pojistky, že
+optimalizace může vyjít dráž než nedělat nic (nese rezervu, dnešní RP ne).
+
+Grafy se skládají z **týchž měsíčních výsledků dispatchu** jako tabulky, takže se
+nemohou rozejít. Kontrakt panel ↔ jádro hlídá `TestKontraktSPanelem` — kdyby se
+klíč přejmenoval, backend nespadne a v UI by se jen objevilo „—".
+
 ## Co modul zatím nemá
 
 - **Nabídku pro zákazníka (PDF) ani výpočtový Excel.** `ppa_bess` schválně není
