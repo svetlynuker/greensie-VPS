@@ -2554,25 +2554,62 @@ def prubeh_15min(
         max(0.0, vyroba_kw[i] - samospotreba_kw[i] + min(0.0, solar_kw[i])) for i in range(n)
     ]
 
+    # Celkový výkon baterie: kladné vybíjí, záporné nabíjí. Stejná konvence jako
+    # `peak_shaving.prubeh_baterie`, aby detailní graf nemusel rozlišovat zdroj.
+    baterie_kw = [ps_kw[i] + solar_kw[i] for i in range(n)]
+    nabito = sum(-x for x in baterie_kw if x < 0) * interval_h
+    vybito = sum(x for x in baterie_kw if x > 0) * interval_h
+
     return {
         "pocet": n,
         "interval_min": int(round(interval_h * 60)),
+        # --- řady pro jednodušší graf z PPA (GrafVyrobaSpotreba/GrafPrubehuPpa)
         "spotreba_kw": [round(x, 2) for x in odber_kw],
         "vyroba_kw": [round(x, 2) for x in vyroba_kw],
         "samospotreba_kw": [round(x, 2) for x in samospotreba_kw],
         "pretok_kw": [round(x, 2) for x in pretok_kw],
         "orez_kw": [0.0] * n,
+        # --- řady pro DETAILNÍ graf z peak shavingu (GrafPrubehu): pás baterie,
+        # SOC, čára stropu a přehledový pásek. U tohohle modulu je detailní graf
+        # ten podstatný — je na něm vidět, jak baterie drží strop a jak se přes
+        # den plní ze slunce.
+        "odber_kw": [round(x, 2) for x in odber_kw],
         "site_kw": [round(x, 2) for x in site_kw],
+        "baterie_kw": [round(x, 2) for x in baterie_kw],
         "baterie_ps_kw": [round(x, 2) for x in ps_kw],
-        "baterie_solar_kw": [round(x, 2) for x in solar_kw],
+        # Druhá série pásu baterie. U peak shavingu je to obchod na spotu, tady
+        # solární posun — komponenta si popisek bere z propu, ne z názvu klíče.
+        "baterie_obchod_kw": [round(x, 2) for x in solar_kw],
         "stropy_kw": [round(x, 2) for x in stropy],
+        "useky_stropu": useky_stropu(stropy),
+        "cena_kc_mwh": None,  # PPA+BESS se nerozhoduje podle spotové ceny
         "soc_pct": [round(x, 1) for x in soc_pct] if ma_baterii else None,
         "baterie": bool(ma_baterii),
         "souhrn": {
             "max_spotreba_kw": max(odber_kw) if odber_kw else None,
+            "max_odber_kw": max(odber_kw) if odber_kw else None,
             "max_site_kw": max(site_kw) if site_kw else None,
             "max_vyroba_kw": max(vyroba_kw) if vyroba_kw else None,
             "max_pretok_kw": max(pretok_kw) if pretok_kw else None,
+            "nabito_kwh": round(nabito, 1),
+            "vybito_kwh": round(vybito, 1),
+            "ztraty_kwh": round(max(0.0, nabito - vybito), 1),
         },
     }
+
+
+def useky_stropu(stropy_kw: list[float]) -> list[dict]:
+    """Souvislé úseky stejného stropu – pro schodovitou čáru v detailním grafu.
+
+    Strop se mění po měsících, takže posílat 35 tisíc hodnot je zbytečné; graf
+    kreslí segmenty. Tvar je stejný jako u peak shavingu (`routes._useky_stropu`),
+    aby komponenta `GrafPrubehu` fungovala bez úprav.
+    """
+    useky: list[dict] = []
+    for i, s in enumerate(stropy_kw):
+        if useky and abs(useky[-1]["strop_kw"] - s) < 1e-9:
+            useky[-1]["do_index"] = i
+        else:
+            useky.append({"od_index": i, "do_index": i, "strop_kw": round(s, 2)})
+    return useky
 

@@ -138,7 +138,10 @@ function usePoSnimcich() {
   }, []);
 }
 
-export default function GrafPrubehu({ data, popisRoku }) {
+// `popisDruheSerie` – co je druhá složka výkonu baterie vedle srážení špičky.
+// U peak shavingu je to obchod na spotu, u PPA + BESS ukládání přebytku
+// z elektrárny; komponenta je jinak stejná, takže se popisek jen předá.
+export default function GrafPrubehu({ data, popisRoku, popisDruheSerie = "obchod" }) {
   const obalRef = useRef(null);
   const canvasRef = useRef(null);
   const prehledCanvasRef = useRef(null);
@@ -816,8 +819,9 @@ export default function GrafPrubehu({ data, popisRoku }) {
                   : `${Math.round(kose.bMin[kurzor.poradi])} … ${Math.round(kose.bMax[kurzor.poradi])} kW`}
               </b>
             </div>
-            {/* V obchodních režimech je zajímavé, kolik z výkonu šlo na
-                srážení špičky a kolik na obchod – to je jádro rozhodování. */}
+            {/* Kolik z výkonu šlo na srážení špičky a kolik na to druhé
+                (obchod u peak shavingu, ukládání ze slunce u PPA + BESS) –
+                to je jádro rozhodování dvoucílového dispatchu. */}
             {krok === 1 && data.baterie_ps_kw && data.baterie_obchod_kw && (
               <div
                 style={{
@@ -826,7 +830,7 @@ export default function GrafPrubehu({ data, popisRoku }) {
                   color: "var(--fm-muted)",
                 }}
               >
-                <span>z toho špička / obchod</span>
+                <span>z toho špička / {popisDruheSerie}</span>
                 <span>
                   {Math.round(data.baterie_ps_kw[kurzor.i])} / {Math.round(data.baterie_obchod_kw[kurzor.i])} kW
                 </span>
