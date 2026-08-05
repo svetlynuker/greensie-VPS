@@ -1051,3 +1051,140 @@ class TestScenareRp:
             assert r["prinos"]["z_vykonu_se_snizenim_rp_kc"] is not None
             assert r["prinos"]["cisty_bez_snizeni_rp_kc"] is not None
             assert r["prinos"]["cisty_se_snizenim_rp_kc"] is not None
+
+
+class TestInvestorskaStrana:
+    """Pohled investora: co vložíme, co nás stojí úvěr, co klient zaplatí.
+
+    Dan 5. 8. 2026: „potřebuju hlavně pro nás jako investora vidět náklady které
+    s tím budeme mít, kolik bude stát úvěr a proti tomu příjmy, co nám platí
+    klient za PPA a nájem baterie ať vyhodnotím jak se nám to vrátí."
+
+    Data cash flow investora existovala od začátku (DSCR se z nich testuje), ale
+    do `popis_json` se serializovala jen zákaznická strana.
+    """
+
+    def _cf(self, delka=20):
+        p = ppa_v2.ParametryEkonomiky()
+        pb = ppa_bess.ParametryPpaBess()
+        pf = ppa_v2.sestav_projekt(
+            600 * p.nakladova_cena_kc_kwp, p.marze_fve, p.provize_fve, delka, p
+        )
+        pbess = ppa_bess.sestav_projekt_bess(2_400_000.0, p)
+        return ppa_bess.spocti_cashflow(
+            600.0, 500.0, 50.0, 200_000.0, 5_000.0, 2_500.0, 3_760.0, pf, pbess, p, pb, delka
+        )
+
+    def test_urok_plus_umor_je_splatka(self):
+        """Kdyby to nesedělo, „kolik stojí úvěr" by bylo vymyšlené číslo."""
+        cf = self._cf()
+        for r in cf.roky:
+            assert r.urok_kc + r.umor_kc == pytest.approx(r.splatka_kc, abs=0.01), f"rok {r.rok}"
+        assert cf.uroky_celkem_kc + cf.umor_celkem_kc == pytest.approx(
+            sum(r.splatka_kc for r in cf.roky), abs=0.5
+        )
+
+    def test_umor_splati_celou_jistinu(self):
+        """Za dobu kontraktu se musí vrátit přesně to, co se půjčilo."""
+        cf = self._cf()
+        assert cf.umor_celkem_kc == pytest.approx(
+            cf.capex_kc - cf.vlastni_kapital_kc, rel=0.02
+        )
+
+    def test_zustatek_uveru_konci_na_nule(self):
+        cf = self._cf()
+        assert cf.roky[-1].zustatek_uveru_kc == pytest.approx(0.0, abs=1.0)
+
+    def test_zustatek_uveru_klesa(self):
+        cf = self._cf()
+        for a, b in zip(cf.roky, cf.roky[1:]):
+            assert b.zustatek_uveru_kc <= a.zustatek_uveru_kc + 0.01
+
+    def test_urok_klesa_umor_roste(self):
+        """Anuita: na začátku se platí hlavně úrok, na konci hlavně jistina."""
+        cf = self._cf()
+        assert cf.roky[0].urok_kc > cf.roky[-1].urok_kc
+        assert cf.roky[0].umor_kc < cf.roky[-1].umor_kc
+
+    def test_uroky_jsou_kladne_a_smysluplne(self):
+        cf = self._cf()
+        uver = cf.capex_kc - cf.vlastni_kapital_kc
+        # Za 20 let při 7,5 % musí úroky být řádově desítky procent jistiny.
+        assert 0.3 * uver < cf.uroky_celkem_kc < 1.5 * uver
+
+    def test_kumulovany_cf_zacina_pod_nulou(self):
+        """Nejdřív se vloží kapitál, teprve pak se vrací."""
+        cf = self._cf()
+        assert cf.roky[0].kumulovany_cf_kc < 0
+
+    def test_kumulovany_cf_je_soucet_zisku(self):
+        cf = self._cf()
+        soucet = -cf.vlastni_kapital_kc
+        for r in cf.roky:
+            soucet += r.zisk_po_splatkach_kc
+            assert r.kumulovany_cf_kc == pytest.approx(soucet, abs=0.01), f"rok {r.rok}"
+
+    def test_navratnost_vk_je_v_roce_prekloupnuti(self):
+        cf = self._cf()
+        assert cf.navratnost_vlastniho_kapitalu_roky is not None
+        n = cf.navratnost_vlastniho_kapitalu_roky
+        # V roce před návratností musí být kumulativ ještě negativní.
+        pred = [r for r in cf.roky if r.rok <= int(n)]
+        assert pred and pred[-1].kumulovany_cf_kc < 0 or n == int(n)
+        po = [r for r in cf.roky if r.rok >= int(n) + 1]
+        assert po and po[0].kumulovany_cf_kc >= 0
+
+    def test_prijmy_se_sectou_spravne(self):
+        cf = self._cf()
+        assert cf.prijmy_ppa_celkem_kc == pytest.approx(
+            sum(r.prijem_ppa_kc for r in cf.roky)
+        )
+        assert cf.prijmy_najem_celkem_kc == pytest.approx(
+            sum(r.najem_baterie_kc for r in cf.roky)
+        )
+
+    def test_najem_se_inkasuje_jen_deset_let(self):
+        cf = self._cf(20)
+        najmy = [r.najem_baterie_kc for r in cf.roky if r.najem_baterie_kc > 0]
+        assert len(najmy) == ppa_bess.DOBA_NAJMU_BATERIE_ROKY
+
+    def test_umor_v_roce_11_klesne(self):
+        """Úvěr na baterii je v roce 10 splacený, takže úmor i splátka klesnou."""
+        cf = self._cf(20)
+        assert cf.roky[10].umor_kc < cf.roky[9].umor_kc
+        assert cf.roky[10].splatka_kc < cf.roky[9].splatka_kc
+
+    def test_vystup_ma_investorsky_blok(self):
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup())
+        for d in v["po_delkach"]:
+            inv = d["investor"]
+            for klic in ("vlastni_kapital_kc", "uver_kc", "uroky_celkem_kc", "umor_celkem_kc",
+                         "dluhova_sluzba_celkem_kc", "naklady_provozni_celkem_kc",
+                         "prijmy_ppa_celkem_kc", "prijmy_najem_celkem_kc",
+                         "prijmy_export_celkem_kc", "prijmy_odkup_celkem_kc",
+                         "prijmy_celkem_kc", "zisk_po_splatkach_celkem_kc",
+                         "zisk_greensie_hned_kc", "provize_kc",
+                         "navratnost_vlastniho_kapitalu_roky", "irr", "npv_kc", "dscr_min"):
+                assert klic in inv, f"investor.{klic}"
+
+    def test_vystup_ma_rocni_tabulku_investora(self):
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup())
+        for d in v["po_delkach"]:
+            assert d["roky_investor"], "chybí roční tabulka investora"
+            for klic in ("rok", "prijem_ppa_kc", "prijem_najem_kc", "prijem_export_kc",
+                         "prijem_odkup_kc", "provozni_naklady_kc", "zdroje_kc",
+                         "splatka_kc", "urok_kc", "umor_kc", "zustatek_uveru_kc",
+                         "dscr", "zisk_po_splatkach_kc", "kumulovany_cf_kc"):
+                assert klic in d["roky_investor"][0], f"roky_investor[].{klic}"
+
+    def test_prijmy_prevysi_naklady_kdyz_projekt_prosel(self):
+        """Cena PPA se hledá tak, aby projekt prošel bankou i investorem —
+        příjmy tedy musí pokrýt dluhovou službu i provoz."""
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup())
+        for d in v["po_delkach"]:
+            if d["limitujici"] == "nedosazitelne":
+                continue
+            inv = d["investor"]
+            assert inv["prijmy_celkem_kc"] > (
+                inv["dluhova_sluzba_celkem_kc"] + inv["naklady_provozni_celkem_kc"]
+            ), d["delka_roky"]

@@ -1177,9 +1177,10 @@ export default function PpaBessPanel({ nabidka }) {
         <div className="gs-tabs gs-tabs-odsazeni" role="tablist" aria-label="Části výsledku">
           {[
             ["prehled", "Přehled"],
+            ["investor", "Pro nás (investor)"],
             ["spicky", "Srážení špiček"],
             ["elektrarna", "Elektrárna"],
-            ["roky", "Po letech"],
+            ["roky", "Zákazník po letech"],
             ["rezimy", "Co má baterie dělat"],
             ["prubeh", "Průběh"],
             ...(vysledek.katalog ? [["katalog", "Katalog baterií"]] : []),
@@ -1362,6 +1363,221 @@ export default function PpaBessPanel({ nabidka }) {
                 )}
               </div>
             )}
+          </>
+        )}
+
+        {/* ================= PRO NÁS (INVESTOR) ================= */}
+        {zalozka === "investor" && vybranaDelka && (
+          <>
+            {(() => {
+              const inv = vybranaDelka.investor || {};
+              const naklady =
+                (inv.vlastni_kapital_kc || 0) +
+                (inv.uroky_celkem_kc || 0) +
+                (inv.naklady_provozni_celkem_kc || 0);
+              return (
+                <>
+                  <div className="gs-kpis">
+                    <div className="gs-kpi" data-druh="riziko">
+                      <div className="gs-kpi-label">Vložíme (vlastní kapitál)</div>
+                      <div className="gs-kpi-value">{kc(inv.vlastni_kapital_kc)}</div>
+                      <div className="gs-kpi-sub">
+                        {pct(
+                          inv.vlastni_kapital_kc /
+                            Math.max(1, inv.vlastni_kapital_kc + inv.uver_kc),
+                          0
+                        )}{" "}
+                        z CAPEX · zbytek {kc(inv.uver_kc)} na úvěr
+                      </div>
+                    </div>
+                    <div className="gs-kpi" data-druh="riziko">
+                      <div className="gs-kpi-label">Úvěr nás bude stát</div>
+                      <div className="gs-kpi-value">{kc(inv.uroky_celkem_kc)}</div>
+                      <div className="gs-kpi-sub">
+                        úroky za {vybranaDelka.delka_roky} let · dluhová služba celkem{" "}
+                        {kc(inv.dluhova_sluzba_celkem_kc)}
+                      </div>
+                    </div>
+                    <div className="gs-kpi accent" data-druh="penize">
+                      <div className="gs-kpi-label">Klient nám zaplatí</div>
+                      <div className="gs-kpi-value">{kc(inv.prijmy_celkem_kc)}</div>
+                      <div className="gs-kpi-sub">
+                        PPA {kc(inv.prijmy_ppa_celkem_kc)} + nájem baterie{" "}
+                        {kc(inv.prijmy_najem_celkem_kc)}
+                        {inv.prijmy_odkup_celkem_kc > 0
+                          ? ` + odkup ${kc(inv.prijmy_odkup_celkem_kc)}`
+                          : ""}
+                      </div>
+                    </div>
+                    <div className="gs-kpi" data-druh="cas">
+                      <div className="gs-kpi-label">Vrátí se nám za</div>
+                      <div className="gs-kpi-value">
+                        {inv.navratnost_vlastniho_kapitalu_roky === null ||
+                        inv.navratnost_vlastniho_kapitalu_roky === undefined
+                          ? "nevrátí se"
+                          : `${cislo(inv.navratnost_vlastniho_kapitalu_roky, 1)} let`}
+                      </div>
+                      <div className="gs-kpi-sub">
+                        kdy kumulovaný zisk pokryje vložený kapitál
+                      </div>
+                    </div>
+                    <div className="gs-kpi accent" data-druh="penize">
+                      <div className="gs-kpi-label">Zisk po splátkách</div>
+                      <div className="gs-kpi-value">{kc(inv.zisk_po_splatkach_celkem_kc)}</div>
+                      <div className="gs-kpi-sub">
+                        za celý kontrakt · IRR {pct(inv.irr, 1)} · NPV {kc(inv.npv_kc)}
+                      </div>
+                    </div>
+                    <div className="gs-kpi" data-druh="penize">
+                      <div className="gs-kpi-label">Zisk Greensie hned</div>
+                      <div className="gs-kpi-value">{kc(inv.zisk_greensie_hned_kc)}</div>
+                      <div className="gs-kpi-sub">
+                        marže při prodeji do SPV · provize obchodníka {kc(inv.provize_kc)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="gs-dva" style={{ marginTop: 14 }}>
+                    <div className="fm-card" style={{ padding: 14 }}>
+                      <h4 style={{ margin: "0 0 8px" }}>Co nás to stojí</h4>
+                      <Radek l="Vlastní kapitál (hned)" v={kc(inv.vlastni_kapital_kc)} />
+                      <Radek l="Úroky z úvěru" v={kc(inv.uroky_celkem_kc)} />
+                      <Radek l="Servis a EMS" v={kc(inv.naklady_provozni_celkem_kc)} />
+                      <div
+                        style={{ marginTop: 8, paddingTop: 8, borderTop: "2px solid var(--line)" }}
+                      >
+                        <Radek l={<b>Celkem z naší kapsy</b>} v={<b>{kc(naklady)}</b>} />
+                      </div>
+                      <div className="gs-pozn" style={{ marginTop: 8 }}>
+                        Úmor {kc(inv.umor_celkem_kc)} se do nákladů nepočítá — jen vrací
+                        půjčenou jistinu. Nákladem financování jsou <b>úroky</b>.
+                      </div>
+                    </div>
+                    <div className="fm-card" style={{ padding: 14 }}>
+                      <h4 style={{ margin: "0 0 8px" }}>Co nám klient zaplatí</h4>
+                      <Radek l="Za energii z PPA" v={kc(inv.prijmy_ppa_celkem_kc)} />
+                      <Radek l="Za nájem baterie" v={kc(inv.prijmy_najem_celkem_kc)} />
+                      {inv.prijmy_export_celkem_kc > 0 && (
+                        <Radek l="Výkup přebytku" v={kc(inv.prijmy_export_celkem_kc)} />
+                      )}
+                      {inv.prijmy_odkup_celkem_kc > 0 && (
+                        <Radek
+                          l={`Odkup baterie (rok ${vybranaDelka.rok_odkupu})`}
+                          v={kc(inv.prijmy_odkup_celkem_kc)}
+                        />
+                      )}
+                      <div
+                        style={{ marginTop: 8, paddingTop: 8, borderTop: "2px solid var(--line)" }}
+                      >
+                        <Radek
+                          l={<b>Příjmy celkem</b>}
+                          v={<b>{kc(inv.prijmy_celkem_kc)}</b>}
+                        />
+                      </div>
+                      <div className="gs-pozn" style={{ marginTop: 8 }}>
+                        Výnos je úměrný <b>skutečné samospotřebě</b> klienta — pokles jeho
+                        spotřeby během kontraktu výnos snižuje. Reálné smlouvy to řeší
+                        minimálním odběrem (take-or-pay).
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="fm-card" style={{ padding: 0, marginTop: 14 }}>
+                    <div className="gs-karta-h" style={{ padding: "10px 14px" }}>
+                      <span className="gs-karta-nazev">
+                        Cash flow investora po letech ({vybranaDelka.delka_roky} let)
+                      </span>
+                      <span className="gs-mezera" style={{ flex: 1 }} />
+                      <span
+                        className={
+                          inv.dscr_min >= 1.3 ? "nb-badge dobre" : "nb-badge pozor"
+                        }
+                        title="Banka požaduje DSCR aspoň 1,30 v každém roce"
+                      >
+                        DSCR min {cislo(inv.dscr_min, 2)}
+                      </span>
+                    </div>
+                    <div className="gs-scroll okno" style={{ border: 0, boxShadow: "none" }}>
+                      <table className="gs-table">
+                        <thead>
+                          <tr>
+                            <th>Rok</th>
+                            <th className="n">PPA</th>
+                            <th className="n">Nájem</th>
+                            <th className="n">Odkup</th>
+                            <th className="n">Provoz</th>
+                            <th className="n">Zdroje</th>
+                            <th className="n">Splátka</th>
+                            <th className="n">z toho úrok</th>
+                            <th className="n">z toho úmor</th>
+                            <th className="n">Zůstatek úvěru</th>
+                            <th className="n">DSCR</th>
+                            <th className="n">Zisk</th>
+                            <th className="n">Kumulativně</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(vybranaDelka.roky_investor || []).map((r) => (
+                            <tr
+                              key={r.rok}
+                              className={r.prijem_odkup_kc > 0 ? "soucet" : undefined}
+                              style={
+                                r.kumulovany_cf_kc >= 0 &&
+                                (vybranaDelka.roky_investor.find((x) => x.rok === r.rok - 1)
+                                  ?.kumulovany_cf_kc ?? -1) < 0
+                                  ? { background: "var(--brand-wash)" }
+                                  : undefined
+                              }
+                              title={
+                                r.prijem_odkup_kc > 0
+                                  ? "Rok odkupu baterie klientem"
+                                  : undefined
+                              }
+                            >
+                              <td>{r.rok}</td>
+                              <td className="n">{cislo(r.prijem_ppa_kc, 0)}</td>
+                              <td className="n">
+                                {r.prijem_najem_kc ? cislo(r.prijem_najem_kc, 0) : "—"}
+                              </td>
+                              <td className="n">
+                                {r.prijem_odkup_kc ? cislo(r.prijem_odkup_kc, 0) : "—"}
+                              </td>
+                              <td className="n">−{cislo(r.provozni_naklady_kc, 0)}</td>
+                              <td className="n">{cislo(r.zdroje_kc, 0)}</td>
+                              <td className="n">−{cislo(r.splatka_kc, 0)}</td>
+                              <td className="n dim">{cislo(r.urok_kc, 0)}</td>
+                              <td className="n dim">{cislo(r.umor_kc, 0)}</td>
+                              <td className="n dim">{cislo(r.zustatek_uveru_kc, 0)}</td>
+                              <td className="n">{cislo(r.dscr, 2)}</td>
+                              <td className="n">
+                                <b>{cislo(r.zisk_po_splatkach_kc, 0)}</b>
+                              </td>
+                              <td className="n">
+                                <b>{cislo(r.kumulovany_cf_kc, 0)}</b>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="gs-pozn" style={{ padding: "10px 14px" }}>
+                      Hodnoty v Kč bez DPH. <b>Zdroje</b> = příjmy minus provozní náklady,
+                      tedy to, z čeho se platí banka; DSCR je jejich poměr ke splátce a banka
+                      chce aspoň 1,30 v <b>každém</b> roce. Zvýrazněný řádek je rok, kdy se
+                      vrátil vložený kapitál.
+                      {vybranaDelka.rok_odkupu ? (
+                        <>
+                          {" "}
+                          V roce {vybranaDelka.rok_odkupu} skončí nájem, doplatí se úvěr na
+                          baterii a klient ji odkoupí — proto tam zisk skokově vyroste.
+                        </>
+                      ) : null}{" "}
+                      Odkup je kapitálový příjem, do DSCR nevstupuje.
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
           </>
         )}
 

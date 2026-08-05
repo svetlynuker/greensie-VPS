@@ -878,8 +878,16 @@ class RokPpaBess:
     provozni_naklady_kc: float
     zdroje_kc: float  # provozní zdroje na dluhovou službu (bez odkupu)
     splatka_kc: float  # FVE + BESS, dokud úvěr na baterii běží
+    # Rozpad splátky: úrok je to, co úvěr **stojí**, úmor jen vrací půjčené.
+    # Bez tohohle rozpadu se z výsledku nedá říct, kolik financování sežere.
+    urok_kc: float
+    umor_kc: float
+    zustatek_uveru_kc: float  # na konci roku, FVE + BESS dohromady
     dscr: float | None
     zisk_po_splatkach_kc: float
+    # Kumulovaný cash flow vlastního kapitálu – kde překlopí do plusu, tam se
+    # investorovi vrátilo, co vložil.
+    kumulovany_cf_kc: float
 
     # --- zákazník
     uspora_energie_kc: float  # co nezaplatí síti za energii z elektrárny
@@ -912,6 +920,17 @@ class CashflowPpaBess:
     uspora_celkem_kc: float
     prinos_energie_celkem_kc: float
     prinos_vykon_celkem_kc: float
+    # --- souhrn za INVESTORA (SPV) za celý kontrakt, nediskontovaně
+    prijmy_ppa_celkem_kc: float  # co klient zaplatí za energii
+    prijmy_najem_celkem_kc: float  # co klient zaplatí za nájem baterie
+    prijmy_export_celkem_kc: float  # výkup / sdílení přebytku
+    prijmy_odkup_celkem_kc: float  # odkup baterie klientem
+    naklady_provozni_celkem_kc: float  # servis, EMS
+    uroky_celkem_kc: float  # kolik stojí úvěr
+    umor_celkem_kc: float  # kolik se vrátí bance z jistiny
+    # Kdy se investorovi vrátí vložený vlastní kapitál (roky, lineární
+    # interpolace v roce překlopení). `None` = v horizontu kontraktu ne.
+    navratnost_vlastniho_kapitalu_roky: float | None
 
 
 def spocti_cashflow(
@@ -949,7 +968,7 @@ def spocti_cashflow(
     až za horizont modelu, takže se nemodelují.
     """
     from .ppa_fve import _irr, _npv
-    from .ppa_v2 import ceny_po_letech
+    from .ppa_v2 import ceny_po_letech, zustatek_uveru
 
     n = max(1, int(delka_roky))
     ceny_ppa = ceny_po_letech(
@@ -1007,6 +1026,25 @@ def spocti_cashflow(
         prijem_ex = ex * ceny_exp[t - 1]
         odkup_prijem = odkupni_cena if (rok_odkupu is not None and t == rok_odkupu) else 0.0
 
+        # Rozpad splátky na úrok a úmor. Úmor je rozdíl zůstatků na začátku
+        # a na konci roku, úrok je zbytek splátky — analyticky přes
+        # `zustatek_uveru`, bez iterace kalendáře. Počítá se pro oba úvěry
+        # zvlášť, protože mají jinou splatnost (FVE délka kontraktu, BESS 10 let).
+        umor = 0.0
+        zustatek = 0.0
+        for projekt in (projekt_fve, projekt_bess):
+            if projekt.uver_kc <= 0:
+                continue
+            zac = zustatek_uveru(
+                projekt.uver_kc, p.urokova_sazba, projekt.delka_roky, (t - 1) * 12
+            )
+            kon = zustatek_uveru(
+                projekt.uver_kc, p.urokova_sazba, projekt.delka_roky, t * 12
+            )
+            umor += max(0.0, zac - kon)
+            zustatek += kon
+        urok = max(0.0, splatka - umor)
+
         zdroje = prijem_ppa + prijem_ex + najem_letos - naklady
         dscr = (zdroje / splatka) if splatka > 0 else None
         zisk = zdroje + odkup_prijem - splatka
@@ -1047,8 +1085,12 @@ def spocti_cashflow(
                 provozni_naklady_kc=naklady,
                 zdroje_kc=zdroje,
                 splatka_kc=splatka,
+                urok_kc=urok,
+                umor_kc=umor,
+                zustatek_uveru_kc=zustatek,
                 dscr=dscr,
                 zisk_po_splatkach_kc=zisk,
+                kumulovany_cf_kc=0.0,  # dopočítá se po smyčce
                 uspora_energie_kc=uspora_energie,
                 uspora_vykon_kc=uspora_vykon,
                 naklad_najmu_kc=najem_letos,
@@ -1059,6 +1101,22 @@ def spocti_cashflow(
             )
         )
         cf.append(zisk)
+
+    # Kumulovaný cash flow vlastního kapitálu a rok, kdy překlopí do plusu.
+    vlozeno = projekt_fve.vlastni_kapital_kc + projekt_bess.vlastni_kapital_kc
+    kum = -vlozeno
+    navratnost_vk = None
+    for r in roky:
+        predchozi = kum
+        kum += r.zisk_po_splatkach_kc
+        r.kumulovany_cf_kc = kum
+        if navratnost_vk is None and predchozi < 0 <= kum:
+            # Lineární interpolace v roce překlopení – „vrátí se ve 7,4. roce"
+            # je použitelnější než „mezi 7. a 8.".
+            if r.zisk_po_splatkach_kc > 0:
+                navratnost_vk = (r.rok - 1) + (-predchozi) / r.zisk_po_splatkach_kc
+            else:
+                navratnost_vk = float(r.rok)
 
     dscr_hodnoty = [r.dscr for r in roky if r.dscr is not None]
     capex_celkem = projekt_fve.capex_kc + projekt_bess.capex_kc
@@ -1079,6 +1137,14 @@ def spocti_cashflow(
         uspora_celkem_kc=sum(r.cisty_prinos_zakaznika_kc for r in roky),
         prinos_energie_celkem_kc=sum(r.uspora_energie_kc for r in roky),
         prinos_vykon_celkem_kc=sum(r.uspora_vykon_kc for r in roky),
+        prijmy_ppa_celkem_kc=sum(r.prijem_ppa_kc for r in roky),
+        prijmy_najem_celkem_kc=sum(r.najem_baterie_kc for r in roky),
+        prijmy_export_celkem_kc=sum(r.prijem_export_kc for r in roky),
+        prijmy_odkup_celkem_kc=sum(r.prijem_odkup_kc for r in roky),
+        naklady_provozni_celkem_kc=sum(r.provozni_naklady_kc for r in roky),
+        uroky_celkem_kc=sum(r.urok_kc for r in roky),
+        umor_celkem_kc=sum(r.umor_kc for r in roky),
+        navratnost_vlastniho_kapitalu_roky=navratnost_vk,
     )
 
 
@@ -1892,6 +1958,69 @@ def _delka_json(
         "uspora_celkem_kc": round(cf.uspora_celkem_kc, 2),
         "prinos_energie_celkem_kc": round(cf.prinos_energie_celkem_kc, 2),
         "prinos_vykon_celkem_kc": round(cf.prinos_vykon_celkem_kc, 2),
+        # --- INVESTORSKÁ STRANA: co vložíme, co nás stojí úvěr, co nám klient
+        # zaplatí a kdy se nám to vrátí. Bez tohohle bloku šlo z výsledku vyčíst
+        # jen to, co získá zákazník.
+        "investor": {
+            # Co jde z naší kapsy
+            "vlastni_kapital_kc": round(cf.vlastni_kapital_kc, 2),
+            "uver_kc": round(cf.capex_kc - cf.vlastni_kapital_kc, 2),
+            "uroky_celkem_kc": round(cf.uroky_celkem_kc, 2),
+            "umor_celkem_kc": round(cf.umor_celkem_kc, 2),
+            "dluhova_sluzba_celkem_kc": round(cf.uroky_celkem_kc + cf.umor_celkem_kc, 2),
+            "naklady_provozni_celkem_kc": round(cf.naklady_provozni_celkem_kc, 2),
+            # Co nám klient zaplatí
+            "prijmy_ppa_celkem_kc": round(cf.prijmy_ppa_celkem_kc, 2),
+            "prijmy_najem_celkem_kc": round(cf.prijmy_najem_celkem_kc, 2),
+            "prijmy_export_celkem_kc": round(cf.prijmy_export_celkem_kc, 2),
+            "prijmy_odkup_celkem_kc": round(cf.prijmy_odkup_celkem_kc, 2),
+            "prijmy_celkem_kc": round(
+                cf.prijmy_ppa_celkem_kc
+                + cf.prijmy_najem_celkem_kc
+                + cf.prijmy_export_celkem_kc
+                + cf.prijmy_odkup_celkem_kc,
+                2,
+            ),
+            # Výsledek
+            "zisk_po_splatkach_celkem_kc": round(
+                sum(r.zisk_po_splatkach_kc for r in cf.roky), 2
+            ),
+            "zisk_greensie_hned_kc": round(cf.zisk_greensie_kc, 2),
+            "provize_kc": round(cf.provize_kc, 2),
+            "navratnost_vlastniho_kapitalu_roky": (
+                round(cf.navratnost_vlastniho_kapitalu_roky, 2)
+                if cf.navratnost_vlastniho_kapitalu_roky is not None
+                else None
+            ),
+            "irr": round(cf.irr, 4) if cf.irr is not None else None,
+            "npv_kc": round(cf.npv_kc, 2),
+            "dscr_min": round(cf.dscr_min, 3) if cf.dscr_min is not None else None,
+        },
+        "roky_investor": [
+            {
+                "rok": r.rok,
+                "vyroba_mwh": round(r.vyroba_mwh, 3),
+                "samospotreba_mwh": round(r.samospotreba_mwh, 3),
+                "cena_ppa_kc_mwh": round(r.cena_ppa_kc_mwh, 2),
+                # Příjmy
+                "prijem_ppa_kc": round(r.prijem_ppa_kc, 2),
+                "prijem_najem_kc": round(r.najem_baterie_kc, 2),
+                "prijem_export_kc": round(r.prijem_export_kc, 2),
+                "prijem_odkup_kc": round(r.prijem_odkup_kc, 2),
+                # Náklady
+                "provozni_naklady_kc": round(r.provozni_naklady_kc, 2),
+                "zdroje_kc": round(r.zdroje_kc, 2),
+                # Dluhová služba rozepsaná
+                "splatka_kc": round(r.splatka_kc, 2),
+                "urok_kc": round(r.urok_kc, 2),
+                "umor_kc": round(r.umor_kc, 2),
+                "zustatek_uveru_kc": round(r.zustatek_uveru_kc, 2),
+                "dscr": round(r.dscr, 3) if r.dscr is not None else None,
+                "zisk_po_splatkach_kc": round(r.zisk_po_splatkach_kc, 2),
+                "kumulovany_cf_kc": round(r.kumulovany_cf_kc, 2),
+            }
+            for r in cf.roky
+        ],
         "roky": [
             {
                 "rok": r.rok,
