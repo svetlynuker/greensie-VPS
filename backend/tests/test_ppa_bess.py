@@ -76,6 +76,16 @@ def _vyroba_denni(dny: int, max_kw=900.0) -> list[float]:
     return out
 
 
+@pytest.fixture(scope="module")
+def v():
+    """Jeden spočítaný výsledek pro celou třídu kontraktních testů.
+
+    Modulová fixture schválně: výpočet nad ročním profilem trvá sekundy a
+    kontraktní testy jen čtou klíče, takže není důvod ho opakovat šestnáctkrát.
+    """
+    return ppa_bess.spocti_ppa_bess(_rocni_vstup())
+
+
 def _baterie(kapacita=400.0, vykon=200.0, cena=3_000_000.0, rt=0.88, dod=0.9):
     return ppa_v2.Baterie(
         kapacita_kwh=kapacita,
@@ -782,3 +792,137 @@ class TestProhledaniKatalogu:
         )
         pocty = {v["pocet_kusu"] for v in r["varianty"]}
         assert pocty & {2, 3}, f"zkoušely se jen jednotlivé kusy: {pocty}"
+
+
+class TestKontraktSPanelem:
+    """Panel `PpaBessPanel.jsx` čte konkrétní cesty v `popis_json`.
+
+    Když se klíč v jádru přejmenuje, backend nespadne — v UI se jen objeví „—",
+    což se snadno přehlédne. Stejná pojistka jako
+    `test_ppa_nastaveni.test_vysledek_ma_vsechna_pole_ktera_panel_cte`.
+    """
+
+    def test_vstup(self, v):
+        for klic in ("cena_zakaznika_kc_mwh", "rezerva_rk_procenta", "sklon_st", "azimut_st",
+                     "rezervovana_kapacita_kw", "rezervovany_prikon_kw"):
+            assert klic in v["vstup"], f"vstup.{klic}"
+
+    def test_elektrarna(self, v):
+        for klic in ("kwp", "kwp_bez_baterie", "kwp_bez_stropu", "omezeno_max_kwp",
+                     "vyroba_mwh", "optimum", "velikost_zadana_rucne", "pole"):
+            assert klic in v["elektrarna"], f"elektrarna.{klic}"
+
+    def test_baterie(self, v):
+        b = v["baterie"]
+        assert b is not None
+        for klic in ("produkt_id", "nazev", "pocet_kusu", "z_katalogu", "zadana_rucne",
+                     "kapacita_kwh", "vyuzitelna_kapacita_kwh", "vykon_kw",
+                     "ucinnost_round_trip", "nakladova_cena_kc", "capex_kc",
+                     "najem_kc_mesic", "najem_z_ceny_kc_mesic", "najem_zadan_rucne",
+                     "doba_najmu_roky", "cena_je_doporucena"):
+            assert klic in b, f"baterie.{klic}"
+
+    def test_rezim_ma_vsechny_bloky(self, v):
+        for r in v["rezimy"]:
+            for klic in ("rezim", "nazev", "energie", "vykon", "prinos", "mesice",
+                         "ekonomika_vykonu", "ekonomika_vykonu_se_snizenim",
+                         "graf", "graf_maxima", "po_delkach", "doporuceny",
+                         "prinos_po_delkach"):
+                assert klic in r, f'rezim {r.get("rezim")}: chybí {klic}'
+
+    def test_energie_rezimu(self, v):
+        for r in v["rezimy"]:
+            for klic in ("samospotreba_mwh", "prima_samospotreba_mwh",
+                         "z_fve_pres_baterii_mwh", "na_spicky_mwh", "export_mwh",
+                         "ztraty_ze_site_mwh", "cyklu_rok", "mira_samospotreby",
+                         "pokryti_spotreby"):
+                assert klic in r["energie"], f"energie.{klic}"
+
+    def test_vykon_rezimu(self, v):
+        for r in v["rezimy"]:
+            for klic in ("maximum_bez_baterie_kw", "maximum_po_baterii_kw", "sraz_kw",
+                         "rp_novy_kw"):
+                assert klic in r["vykon"], f"vykon.{klic}"
+
+    def test_prinos_rezimu(self, v):
+        for r in v["rezimy"]:
+            for klic in ("z_energie_kc", "z_vykonu_bez_snizeni_rp_kc",
+                         "z_vykonu_se_snizenim_rp_kc", "najem_baterie_kc",
+                         "cisty_bez_snizeni_rp_kc", "cisty_se_snizenim_rp_kc"):
+                assert klic in r["prinos"], f"prinos.{klic}"
+
+    def test_mesicni_radek(self, v):
+        for r in v["rezimy"]:
+            assert r["mesice"], f'rezim {r["rezim"]} nemá měsíce'
+            for klic in ("mesic", "strop_kw", "nejnizsi_udrzitelny_kw",
+                         "maximum_bez_baterie_kw", "maximum_po_baterii_kw",
+                         "z_baterie_kwh", "na_spicky_kwh", "cyklu", "kandidatu"):
+                assert klic in r["mesice"][0], f"mesice[].{klic}"
+
+    def test_ekonomika_vykonu_ma_klice_pro_tabulku(self, v):
+        """Tabulka rozpadu úspory na kW čte přesně tyhle klíče."""
+        for r in v["rezimy"]:
+            e = r["ekonomika_vykonu"]
+            assert e.get("status") == "spocitano", e
+            for klic in ("soucasny_rocni_naklad", "naklad_optimalni_bez_baterie",
+                         "optimalni_rp_bez_baterie_kw", "uspora_optimalizaci_bez_baterie",
+                         "novy_rocni_naklad", "prinos_baterie", "rocni_uspora",
+                         "rp_soucasny_kw", "rp_novy_kw", "mesicu_s_prekrocenim_rp",
+                         "naklad_prekroceni_rp", "pocet_mesicu_t1", "pocet_mesicu_t2"):
+                assert klic in e, f"ekonomika_vykonu.{klic}"
+
+    def test_graf_vyroba_spotreba_ma_tvar_pro_komponentu(self, v):
+        """`GrafVyrobaSpotreba.jsx` destrukturuje přesně tyhle klíče."""
+        for r in v["rezimy"]:
+            g = r["graf"]
+            for klic in ("mesice", "spotreba_kwh", "vyroba_kwh", "samospotreba_kwh",
+                         "export_kwh", "orez_kwh", "dokup_kwh"):
+                assert klic in g, f"graf.{klic}"
+                assert len(g[klic]) == 12, f"graf.{klic} musí mít 12 měsíců"
+
+    def test_graf_maxima_ma_tvar_pro_komponentu(self, v):
+        """`GrafOdberu.jsx` bere mesice / bezBaterie / sBaterii."""
+        for r in v["rezimy"]:
+            g = r["graf_maxima"]
+            for klic in ("mesice", "bez_baterie_kw", "s_baterii_kw", "stropy_kw"):
+                assert klic in g, f"graf_maxima.{klic}"
+            assert len(g["mesice"]) == len(g["bez_baterie_kw"]) == len(g["s_baterii_kw"])
+
+    def test_graf_nesecte_vic_nez_vyroba(self, v):
+        """Graf se skládá z týchž měsíčních výsledků jako tabulky, takže
+        samospotřeba + přetok + ořez nesmí přerůst výrobu."""
+        for r in v["rezimy"]:
+            g = r["graf"]
+            for i in range(12):
+                soucet = g["samospotreba_kwh"][i] + g["export_kwh"][i] + g["orez_kwh"][i]
+                assert soucet <= g["vyroba_kwh"][i] + 1.0, f'měsíc {i + 1} v {r["rezim"]}'
+
+    def test_graf_maxima_po_baterii_neni_vyssi(self, v):
+        for r in v["rezimy"]:
+            g = r["graf_maxima"]
+            for i, m in enumerate(g["mesice"]):
+                assert g["s_baterii_kw"][i] <= g["bez_baterie_kw"][i] + 0.01, f"měsíc {m}"
+
+    def test_delka_ma_financovani(self, v):
+        for d in v["po_delkach"]:
+            for klic in ("capex_celkem_kc", "capex_fve_kc", "capex_bess_kc",
+                         "vlastni_kapital_kc", "uver_kc", "provize_kc",
+                         "zisk_greensie_kc", "splatka_rok1_kc", "najem_baterie_kc_mesic",
+                         "provozni_naklady_rok1_kc"):
+                assert klic in d["financovani"], f"financovani.{klic}"
+
+    def test_delka_ma_vsechna_pole(self, v):
+        for d in v["po_delkach"]:
+            for klic in ("delka_roky", "cena_ppa_kc_mwh", "sleva", "limitujici",
+                         "dscr_min", "irr", "npv_kc", "odkupni_cena_baterie_kc",
+                         "rok_odkupu", "uspora_rok1_kc", "uspora_celkem_kc",
+                         "prinos_energie_celkem_kc", "prinos_vykon_celkem_kc", "roky"):
+                assert klic in d, f"po_delkach[].{klic}"
+
+    def test_rocni_radek_ma_vsechna_pole(self, v):
+        for d in v["po_delkach"]:
+            for klic in ("rok", "vyroba_mwh", "samospotreba_mwh", "cena_ppa_kc_mwh",
+                         "uspora_energie_kc", "uspora_vykon_kc", "najem_baterie_kc",
+                         "naklad_ztrat_kc", "naklad_provozu_zakaznika_kc",
+                         "vydaj_odkup_kc", "cisty_prinos_kc", "dscr"):
+                assert klic in d["roky"][0], f"roky[].{klic}"

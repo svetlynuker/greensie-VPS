@@ -499,6 +499,16 @@ class MesicniVolba:
     ps_vybito_kwh: float
     cyklu: float
     kandidatu: int = 0
+    # Energetická bilance měsíce – podklad pro graf výroba vs. spotřeba. Dispatch
+    # ji spočítá tak jako tak (jede po měsících), takže se tu jen nezahazuje;
+    # skládat ji znovu druhým průchodem by znamenalo počítat dvakrát totéž.
+    spotreba_kwh: float = 0.0
+    vyroba_kwh: float = 0.0
+    prima_samospotreba_kwh: float = 0.0
+    z_fve_pres_baterii_kwh: float = 0.0
+    export_kwh: float = 0.0
+    orezano_kwh: float = 0.0
+    ze_site_kwh: float = 0.0
 
 
 @dataclass
@@ -741,6 +751,15 @@ def simuluj_rok(
                 ps_vybito_kwh=r.ps_vybito_kwh,
                 cyklu=r.cyklu,
                 kandidatu=len(kandidati[m]),
+                spotreba_kwh=sum(odber_kwh[i] for i in indexy[m]),
+                vyroba_kwh=sum(
+                    (vyroba_kwh[i] if i < len(vyroba_kwh) else 0.0) for i in indexy[m]
+                ),
+                prima_samospotreba_kwh=r.prima_samospotreba_kwh,
+                z_fve_pres_baterii_kwh=r.nabito_z_fve_kwh * eta_rt,
+                export_kwh=r.export_kwh,
+                orezano_kwh=r.orezano_kwh,
+                ze_site_kwh=r.ze_site_kwh,
             )
         )
         vysledek.prima_samospotreba_kwh += r.prima_samospotreba_kwh
@@ -1436,6 +1455,57 @@ def spocti_rezim(
     return vysledek, rok
 
 
+def graf_vyroba_spotreba(volby: list[MesicniVolba]) -> dict:
+    """Měsíční agregáty pro graf výroba vs. spotřeba.
+
+    Tvar odpovídá tomu, co čeká komponenta `GrafVyrobaSpotreba.jsx` – stejná,
+    jakou používá PPA panel, takže se nemusí psát nový graf. Skládá se
+    z měsíčních výsledků dispatchu, ne novým průchodem: čísla v grafu se tak
+    nemohou rozejít s tabulkami.
+
+    `samospotreba_kwh` je přímá samospotřeba **plus** to, co dorazilo přes
+    baterii — v grafu jde o „spotřebu krytou z elektrárny", a je jedno, jestli
+    energie tekla přímo nebo se cestou zastavila v baterii.
+    """
+    mesice = list(range(1, 13))
+    podle_mesice = {v.mesic: v for v in volby}
+    r2 = lambda hodnoty: [round(x, 2) for x in hodnoty]  # noqa: E731
+
+    def per_mesic(fce) -> list[float]:
+        return [fce(podle_mesice[m]) if m in podle_mesice else 0.0 for m in mesice]
+
+    return {
+        "mesice": mesice,
+        "spotreba_kwh": r2(per_mesic(lambda v: v.spotreba_kwh)),
+        "vyroba_kwh": r2(per_mesic(lambda v: v.vyroba_kwh)),
+        "samospotreba_kwh": r2(
+            per_mesic(lambda v: v.prima_samospotreba_kwh + v.z_fve_pres_baterii_kwh)
+        ),
+        "export_kwh": r2(per_mesic(lambda v: v.export_kwh)),
+        "orez_kwh": r2(per_mesic(lambda v: v.orezano_kwh)),
+        # Dokup = co se skutečně odebralo ze sítě (síťový tok po baterii).
+        "dokup_kwh": r2(per_mesic(lambda v: v.ze_site_kwh)),
+    }
+
+
+def graf_maxima(volby: list[MesicniVolba]) -> dict:
+    """Měsíční maxima odběru bez baterie vs. po baterii.
+
+    Tvar pro komponentu `GrafOdberu.jsx` (tu používá peak shaving). Maxima
+    „bez baterie" jsou už **po odečtení výroby elektrárny** – tedy co by
+    zákazník naměřil, kdyby si postavil jen elektrárnu. Proti tomu se poctivě
+    poměřuje, co přidala baterie.
+    """
+    ms = sorted(v.mesic for v in volby)
+    podle_mesice = {v.mesic: v for v in volby}
+    return {
+        "mesice": ms,
+        "bez_baterie_kw": [round(podle_mesice[m].maximum_bez_baterie_kw, 2) for m in ms],
+        "s_baterii_kw": [round(podle_mesice[m].maximum_po_baterii_kw, 2) for m in ms],
+        "stropy_kw": [round(podle_mesice[m].strop_kw, 2) for m in ms],
+    }
+
+
 def _rezim_json(
     v: VysledekRezimu,
     prinos_energie_kc: float,
@@ -1509,8 +1579,17 @@ def _rezim_json(
             }
             for mv in v.volby
         ],
+        # Rozpad úspory na rezervované kapacitě z `peak_shaving.ekonomika_2027`
+        # (19 klíčů: současný náklad, fér baseline bez investice, přínos baterie,
+        # nové RP, měsíce s překročením…). Panel z toho staví stejnou tabulku,
+        # jakou má peak shaving — obchodník nemá u nového modulu hledat, kde se
+        # kilowatty rozpadly.
         "ekonomika_vykonu": v.ekonomika_vykonu,
         "ekonomika_vykonu_se_snizenim": v.ekonomika_vykonu_se_snizenim,
+        # Data pro grafy. Skládají se z týchž měsíčních výsledků jako tabulky,
+        # takže se nemohou rozejít.
+        "graf": graf_vyroba_spotreba(v.volby),
+        "graf_maxima": graf_maxima(v.volby),
     }
 
 
@@ -1781,6 +1860,22 @@ def _delka_json(
         "delka_roky": delka_roky,
         "cena_ppa_kc_mwh": None if nedosazitelne else round(minc.cena_kc_mwh, 2),
         "sleva": None if nedosazitelne else round(sleva, 4),
+        # Financování rozepsané jako u PPA – obchodník potřebuje vidět, z čeho
+        # cena vychází, ne jen výsledné číslo.
+        "financovani": {
+            "capex_celkem_kc": round(cf.capex_kc, 2),
+            "capex_fve_kc": round(cf.capex_fve_kc, 2),
+            "capex_bess_kc": round(cf.capex_bess_kc, 2),
+            "vlastni_kapital_kc": round(cf.vlastni_kapital_kc, 2),
+            "uver_kc": round(cf.capex_kc - cf.vlastni_kapital_kc, 2),
+            "provize_kc": round(cf.provize_kc, 2),
+            "zisk_greensie_kc": round(cf.zisk_greensie_kc, 2),
+            "splatka_rok1_kc": round(cf.roky[0].splatka_kc if cf.roky else 0.0, 2),
+            "najem_baterie_kc_mesic": round(najem_kc_mesic, 2),
+            "provozni_naklady_rok1_kc": round(
+                cf.roky[0].provozni_naklady_kc if cf.roky else 0.0, 2
+            ),
+        },
         "limitujici": minc.limitujici,
         "dscr_min": round(cf.dscr_min, 3) if cf.dscr_min is not None else None,
         "irr": round(cf.irr, 4) if cf.irr is not None else None,
