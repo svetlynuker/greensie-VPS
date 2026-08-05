@@ -183,6 +183,7 @@ const POPISY = {
   "/nabidkovac/katalog": ["Katalog technologií", "Ceny, parametry a výpočty"],
   "/nabidkovac/ppa": ["Nabídkovač", "PPA pro FVE"],
   "/nabidkovac/peak_shaving": ["Nabídkovač", "Peak shaving"],
+  "/nabidkovac/ppa_bess": ["Nabídkovač", "PPA + BESS"],
   "/nabidkovac/prodej": ["Nabídkovač", "Prodej FVE"],
   "/nabidkovac/nabidka": ["Nabídka", "Detail zakázky"],
   "/konektor": ["Konektor Raynet ↔ Disk", "Synchronizace klientů a dokumentů"],
@@ -227,6 +228,10 @@ export function strankaManualu(pathname) {
   // Kalkulátory mají vlastní stránku manuálu – ta obecná o Nabídkovači
   // nevysvětluje ani jedno políčko výpočtu.
   if (pathname.startsWith("/nabidkovac/peak_shaving")) return "nabidkovac-peak-shaving";
+  // PPA + BESS musí být PŘED obecným `/nabidkovac/ppa`, jinak by ho pochytilo
+  // ono a podstrčilo manuál k PPA FVE. Vlastní stránka manuálu ještě není,
+  // takže zatím vede na PPA FVE – ale vědomě, ne omylem.
+  if (pathname.startsWith("/nabidkovac/ppa_bess")) return "nabidkovac-ppa-fve";
   if (pathname.startsWith("/nabidkovac/ppa")) return "nabidkovac-ppa-fve";
   if (pathname.startsWith("/nabidkovac")) return "nabidkovac";
   if (pathname.startsWith("/admin")) return "admin-nastaveni";

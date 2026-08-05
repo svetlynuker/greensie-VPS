@@ -119,6 +119,15 @@ PRAVA = [
     {"klic": "zmeny", "nazev": "Otevřít Přehled změn"},
     {"klic": "nabidkovac", "nazev": "Nabídkovač – vytvářet/upravovat nabídky (OZ)"},
     {"klic": "nabidkovac_katalog", "nazev": "Nabídkovač – editace katalogu a výpočtů (vedení)"},
+    # PPA + BESS je nový výpočet, který se teprve ověřuje na reálných datech
+    # (zadání Dana 5. 8. 2026: „práva dej zatím jen adminovi"). Právo se
+    # schválně **nepřiděluje žádné skupině** – supersprávce má všechna práva
+    # automaticky, takže modul zatím vidí jen on, a až se čísla ověří, stačí
+    # právo přidělit v Admin nastavení bez sahání do kódu.
+    #
+    # Je to jedna branka, ne druhá vedle existující: bez `nabidkovac` není kde
+    # nabídku založit, bez tohohle práva se podsekce ani nezobrazí.
+    {"klic": "nabidkovac_ppa_bess", "nazev": "Nabídkovač – PPA + BESS (ve zkoušce, jen vedení)"},
     # Hromadný export SEZNAMŮ do souboru (zadání Dana 3. 8. 2026: „aby si nikdo,
     # kdo nemá právo, nemohl exportovat třeba seznam kontaktů"). Vlastní právo
     # schválně — podívat se na záznam a odnést si celou databázi v jednom souboru

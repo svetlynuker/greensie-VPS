@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import { nactiMe, logout } from "../api";
-import { PODSEKCE } from "../nabidkovac";
+import { PODSEKCE, muzeDoPodsekce } from "../nabidkovac";
 import "../styles/nabidkovac.css";
 
 export default function Nabidkovac() {
@@ -50,7 +50,7 @@ export default function Nabidkovac() {
         </div>
 
         <div className="nb-tiles">
-          {PODSEKCE.map((s) => (
+          {PODSEKCE.filter((s) => muzeDoPodsekce(me, s)).map((s) => (
             <button
               key={s.klic}
               className="fm-card nb-tile"

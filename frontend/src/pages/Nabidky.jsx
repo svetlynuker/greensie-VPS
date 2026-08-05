@@ -22,7 +22,12 @@ import { fmtDatum } from "../crm";
 import usePouzitFiltr from "../pouzitFiltr";
 import "../styles/crm.css";
 
-const TYPY = { ppa: "PPA", prodej: "Prodej", peak_shaving: "Peak shaving" };
+const TYPY = {
+  ppa: "PPA",
+  prodej: "Prodej",
+  peak_shaving: "Peak shaving",
+  ppa_bess: "PPA + BESS",
+};
 
 /**
  * Sekce Nabídky – obchodní přehled napříč případy.

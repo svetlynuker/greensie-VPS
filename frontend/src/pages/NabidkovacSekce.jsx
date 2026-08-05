@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import { nactiMe, logout, nabidkySeznam, nabidkaZaloz } from "../api";
-import { PODSEKCE, STAV_NABIDKY, fmtDatum } from "../nabidkovac";
+import { PODSEKCE, STAV_NABIDKY, fmtDatum, muzeDoPodsekce } from "../nabidkovac";
 import "../styles/nabidkovac.css";
 
 export default function NabidkovacSekce() {
@@ -28,6 +28,11 @@ export default function NabidkovacSekce() {
         }
         if (!m.prava?.includes("nabidkovac")) {
           navigate("/rozcestnik");
+          return;
+        }
+        // Podsekce s vlastním právem (PPA + BESS) se nesmí otevřít ani přes URL.
+        if (!muzeDoPodsekce(m, sekce)) {
+          navigate("/nabidkovac");
           return;
         }
         setMe(m);

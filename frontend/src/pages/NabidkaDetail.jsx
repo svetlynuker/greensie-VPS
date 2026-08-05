@@ -4,6 +4,7 @@ import Layout from "../components/Layout";
 import DokumentUpload from "../components/DokumentUpload";
 import PeakShavingPanel from "../components/PeakShavingPanel";
 import PpaPanel from "../components/PpaPanel";
+import PpaBessPanel from "../components/PpaBessPanel";
 import ProdejPanel from "../components/ProdejPanel";
 import EmailOkno from "../components/EmailOkno";
 import PdfNabidky from "../components/PdfNabidky";
@@ -319,6 +320,8 @@ export default function NabidkaDetail() {
         {/* Navržená řešení — všechny tři linie mají stejný pracovní stůl */}
         {nabidka.typ === "peak_shaving" ? (
           <PeakShavingPanel nabidka={nabidka} />
+        ) : nabidka.typ === "ppa_bess" ? (
+          <PpaBessPanel nabidka={nabidka} />
         ) : nabidka.typ === "ppa" ? (
           <PpaPanel nabidka={nabidka} />
         ) : (

@@ -16,6 +16,7 @@ from pathlib import Path
 KOREN = Path(__file__).resolve().parents[2]
 ROUTES = KOREN / "backend" / "app" / "nabidkovac" / "routes.py"
 PPA_V2 = KOREN / "backend" / "app" / "nabidkovac" / "ppa_v2.py"
+PPA_BESS = KOREN / "backend" / "app" / "nabidkovac" / "ppa_bess.py"
 KATALOG = KOREN / "frontend" / "src" / "pages" / "NabidkovacKatalog.jsx"
 
 
@@ -26,6 +27,11 @@ def klice_ktere_backend_cte() -> set[str]:
     i export do Excelu), zbytek (měrný výnos, cíl samospotřeby…) čte routes.py
     přímo. Prohledávají se obě místa – jinak by se test rozbil při každém
     přesunu, aniž by se kontrakt s adminem změnil.
+
+    PPA + BESS má vlastní čtečku (`ppa_bess._p`), protože potřebuje tři
+    parametry, které v PPA nemají obdobu (zbytková hodnota baterie po nájmu,
+    degradace přínosu, cena energie pro ocenění ztrát). Prohledává se proto
+    i ten modul – jinak by klíč `ppa_bess_*` v adminu vypadal jako mrtvý.
     """
     klice: set[str] = set()
     # `_ppa_param(nastaveni, "klic"` v routes.py – i přes zalomení řádku
@@ -35,6 +41,10 @@ def klice_ktere_backend_cte() -> set[str]:
     # `_param(parametry, "klic"` v ppa_v2.py
     klice |= set(
         re.findall(r'_param\(\s*parametry,\s*"([^"]+)"', PPA_V2.read_text(encoding="utf-8"), re.S)
+    )
+    # `_p(parametry, "klic"` v ppa_bess.py
+    klice |= set(
+        re.findall(r'_p\(\s*parametry,\s*"([^"]+)"', PPA_BESS.read_text(encoding="utf-8"), re.S)
     )
     return klice
 

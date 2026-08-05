@@ -133,6 +133,13 @@ const PPA_POLE = [
   // --- odkup technologie zákazníkem
   { klic: "ppa_odkup_poplatek_rocni", label: "Odkup – poplatek (0.005 = 0,5 %/rok)" },
   { klic: "ppa_odkup_poplatek_predcasne", label: "Odkup – předčasné splacení úvěru (0.05 = 5 %)" },
+  // --- PPA + BESS: za kolik si zákazník odkoupí baterii po skončení nájmu.
+  // Odkupní tabulka PPA se tu použít nedá – odvozuje cenu ze zbytku úvěru,
+  // a ten je po deseti letech nulový, takže by baterie vyšla skoro zdarma.
+  {
+    klic: "ppa_bess_zbytkova_hodnota_podil",
+    label: "PPA+BESS – zbytková hodnota baterie po nájmu (0.15 = 15 % CAPEX)",
+  },
 ];
 
 // Peak shaving – manažerské parametry (vypoctova_nastaveni.parametry).
