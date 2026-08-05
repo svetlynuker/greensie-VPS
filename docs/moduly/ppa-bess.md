@@ -119,19 +119,58 @@ DSCR 4,4.
 Odkup je **kapitálový** příjem, takže do DSCR nevstupuje: banka poměřuje provozní
 zdroje proti dluhové službě. Do IRR vlastního kapitálu vstupuje.
 
+## Výběr baterie: tři cesty
+
+| Cesta | Kdy | Jak dlouho |
+|---|---|---|
+| **odhad** | rychlá kontrola | sekundy, synchronně |
+| **prohledání katalogu** | reálná nabídka | ~2 minuty, na pozadí |
+| **ruční zadání** | baterie je známá | sekundy, synchronně |
+
+**Odhad** je heuristika z PPA (medián denního přebytku) + nejlevnější produkt,
+který velikost pokryje. Umí přestřelit o řád — na reálné nabídce navrhla 220 kWh
+k elektrárně 4 kWp. Model pak aspoň upozorní, že se baterie nevyplatí.
+
+**Prohledání katalogu** (`prohledej_katalog`) ocení každou konfiguraci a řadí
+podle peněz. Na reálném profilu (881 MWh, špička 406 kW) prošlo **168 konfigurací
+za 1,8 minuty** a našlo baterii o **52 785 Kč/rok lepší** než odhad. Dvě úrovně:
+
+1. **screening** — každá konfigurace v režimu `spicky` s hrubým odhadem hodnoty
+   kWh; počet kusů roste jen dokud přínos roste (greedy, jako
+   `peak_shaving.vyber_reseni`), takže z 420 konfigurací se počítá 168,
+2. **detail** — nejlepších pět se prohnat plným výpočtem se všemi režimy.
+
+Screeningová čísla ve srovnání jsou proto **jen pro řazení** — po plném dopočtu
+vycházejí jinak (a lépe). Panel to říká pod tabulkou.
+
+### Běh na pozadí
+
+`prohledej_katalog` běží ve vlastní službě `greensie-vypocty`
+(`app/nabidkovac/vypocet_worker.py`), ne v uvicornu — minuty čistého CPU ve web
+procesu znamenají 502. Úloha se zařadí do `nabidkovac_vypocet_fronta`, worker ji
+přebere podmíněným UPDATE (zámek proti dvěma instancím), propisuje pokrok každé
+dvě sekundy a na konci uloží `navrhovana_reseni`.
+
+Vstup skládá **stejná funkce jako endpoint** (`routes.sestav_vstup_ppa_bess`) —
+kdyby si ji worker skládal sám, počítal by po změně nastavení nebo sazebníku
+s jinými čísly než appka a nikdo by si toho nevšiml.
+
+Když služba neběží, endpoint `/ppa-bess/katalog/stav` vrací `sluzba_bezi: false`
+a panel to řekne, místo aby točil kolečko donekonečna. Úlohy se nezařazují
+duplicitně: když už jedna pro nabídku čeká nebo běží, vrátí se ta stávající.
+
 ## Co modul zatím nemá
 
 - **Nabídku pro zákazníka (PDF) ani výpočtový Excel.** `ppa_bess` schválně není
   v `sablona_katalog.PODPOROVANE_TYPY` — nejdřív se ověřují čísla na reálných
   datech, pak se řeší výstup.
-- **Prohledání celého katalogu baterií podle přínosu.** Zatím se použije
-  heuristika z PPA (medián denního přebytku) a na ni se vybere produkt
-  z katalogu. To umí přestřelit — model pak upozorní, že se baterie nevyplatí.
-  Kompletní projití katalogu poběží mimo web proces (vlastní služba podle vzoru
-  `greensie-email.service`), protože nad ročním diagramem by web proces spadl.
 - **Omezení počtu cyklů.** Dispatch může baterii protočit 300× a víc za rok;
   model na to upozorní, ale neomezuje to (peak shaving to reguluje nákladem
   opotřebení).
+- **Souběh elektrárny a baterie při prohledávání.** Screening drží velikost
+  elektrárny pevnou, aby byly konfigurace srovnatelné; teprve detailní průchod
+  ji dopočítá znovu ke konkrétní baterii. Hledat obojí naráz by znamenalo
+  násobit dvě smyčky.
 
 ## Právo
 

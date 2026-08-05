@@ -457,6 +457,20 @@ export function ppaBessPrubeh(nabidkaId, rezim = "kombinace") {
   );
 }
 
+// Prohledání celého katalogu baterií jde do fronty a odbaví ho služba
+// greensie-vypocty — 168 konfigurací nad ročním diagramem trvá skoro dvě minuty
+// a web proces by to neunesl.
+export function ppaBessKatalog(nabidkaId, data) {
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/ppa-bess/katalog`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function ppaBessKatalogStav(nabidkaId) {
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/ppa-bess/katalog/stav`);
+}
+
 // ---- Nabídkový výstup (šablona pro zákazníka / PDF) ----
 export function nabidkaVystup(nabidkaId, typReseni, vychozi = false) {
   const q = vychozi ? "?vychozi=1" : "";

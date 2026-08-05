@@ -3,9 +3,12 @@ import GrafPrubehuPpa from "./GrafPrubehuPpa";
 import {
   crmOdbernaMistaNabidky,
   crmPouzijDiagramProNabidku,
+  ppaBessKatalog,
+  ppaBessKatalogStav,
   ppaBessProfilSouhrn,
   ppaBessPrubeh,
   ppaBessVypocet,
+  nabidkaDetail,
   profilZpracuj,
 } from "../api";
 
@@ -119,8 +122,12 @@ export default function PpaBessPanel({ nabidka }) {
   // Rozpad elektrárny na pole. Prázdný seznam = velikost se navrhne z cíle
   // samospotřeby nad jednou orientací (sklon/azimut výše).
   const [pole, setPole] = useState(u.pole || []);
-  // Baterie: ručně, nebo návrh z katalogu
-  const [baterieRucne, setBaterieRucne] = useState(!!u.baterieRucne);
+  // Jak se vybírá baterie: "heuristika" (návrh z přebytku, počítá hned),
+  // "rucne" (zadám konkrétní), "katalog" (prohledat celý katalog na pozadí).
+  const [zdrojBaterie, setZdrojBaterie] = useState(
+    u.baterieRucne ? "rucne" : u.zdrojBaterie || "heuristika"
+  );
+  // Parametry ruční baterie (platí, když `zdrojBaterie === "rucne"`).
   const [batKapacita, setBatKapacita] = useState(String(u.batKapacita ?? ""));
   const [batVykon, setBatVykon] = useState(String(u.batVykon ?? ""));
   const [batUcinnost, setBatUcinnost] = useState(String(u.batUcinnost ?? ""));
@@ -146,6 +153,9 @@ export default function PpaBessPanel({ nabidka }) {
   const [prubehy, setPrubehy] = useState({});
   const [prubehNacita, setPrubehNacita] = useState(false);
   const [prubehChyba, setPrubehChyba] = useState(null);
+  // Úloha prohledání katalogu na pozadí + jestli služba, která ji odbaví, běží.
+  const [uloha, setUloha] = useState(null);
+  const [sluzbaBezi, setSluzbaBezi] = useState(true);
 
   const dokumenty = nabidka.dokumenty || [];
   const dokPodpis = dokumenty.map((d) => `${d.id}:${d.stav_zpracovani}`).join(",");
@@ -165,7 +175,7 @@ export default function PpaBessPanel({ nabidka }) {
         JSON.stringify({
           distributor, hladina, rezKapacita, rezPrikon, cenaSilova, regulovane,
           maxKwp, cilSs, sklon, azimut, cenaExportu, rezVykonDodavky, pole,
-          baterieRucne, batKapacita, batVykon, batUcinnost, batPodil, batCena, najemRucne,
+          zdrojBaterie, batKapacita, batVykon, batUcinnost, batPodil, batCena, najemRucne,
         })
       );
     } catch {
@@ -174,7 +184,7 @@ export default function PpaBessPanel({ nabidka }) {
   }, [
     nabidka.id, distributor, hladina, rezKapacita, rezPrikon, cenaSilova, regulovane,
     maxKwp, cilSs, sklon, azimut, cenaExportu, rezVykonDodavky, pole,
-    baterieRucne, batKapacita, batVykon, batUcinnost, batPodil, batCena, najemRucne,
+    zdrojBaterie, batKapacita, batVykon, batUcinnost, batPodil, batCena, najemRucne,
   ]);
 
   const profilDoklady = dokumenty.filter(
@@ -187,6 +197,10 @@ export default function PpaBessPanel({ nabidka }) {
   );
 
   // ---- validace (derivovaná, žádná knihovna)
+  const baterieRucne = zdrojBaterie === "rucne";
+  const jdeNaPozadi = zdrojBaterie === "katalog";
+  const ulohaBezi = !!uloha && ["ceka", "bezi"].includes(uloha.stav);
+
   const profilOk = !!souhrn && souhrn.pocet > 0;
   const cenaOk = (n(cenaSilova) || 0) > 0;
   const rkOk = (n(rezKapacita) || 0) > 0;
@@ -237,53 +251,111 @@ export default function PpaBessPanel({ nabidka }) {
     }
   }
 
+  /** Vstup pro backend – sestavuje se stejně pro synchronní i frontovou cestu. */
+  function sestavData() {
+    const data = {
+      distributor,
+      napetova_hladina: hladina,
+      rezervovana_kapacita_kw: n(rezKapacita),
+      rezervovany_prikon_kw: n(rezPrikon),
+      cena_silova_kc_mwh: n(cenaSilova),
+      vyhnutelne_regulovane_kc_mwh: n(regulovane),
+      max_kwp: n(maxKwp),
+      cil_mira_samospotreby: (n(cilSs) || 80) / 100,
+      sklon_st: n(sklon) ?? 35,
+      azimut_st: n(azimut) ?? 0,
+      cena_exportu_kc_mwh: n(cenaExportu),
+      rezervovany_vykon_dodavky_kw: n(rezVykonDodavky),
+      baterie_najem_kc_mesic: n(najemRucne),
+      pole: maPole
+        ? polePlatna.map((f) => ({
+            kwp: n(f.kwp),
+            sklon_st: n(f.sklon) ?? 35,
+            azimut_st: n(f.azimut) ?? 0,
+          }))
+        : null,
+    };
+    if (baterieRucne) {
+      data.baterie_kapacita_kwh = n(batKapacita);
+      data.baterie_vykon_kw = n(batVykon);
+      data.baterie_ucinnost_rt = n(batUcinnost);
+      data.baterie_vyuzitelny_podil = n(batPodil) === null ? null : n(batPodil) / 100;
+      data.baterie_nakladova_cena_kc = n(batCena);
+    }
+    return data;
+  }
+
   async function spocitat() {
     setPocita(true);
     setChyba(null);
     setZprava(null);
     try {
-      const data = {
-        distributor,
-        napetova_hladina: hladina,
-        rezervovana_kapacita_kw: n(rezKapacita),
-        rezervovany_prikon_kw: n(rezPrikon),
-        cena_silova_kc_mwh: n(cenaSilova),
-        vyhnutelne_regulovane_kc_mwh: n(regulovane),
-        max_kwp: n(maxKwp),
-        cil_mira_samospotreby: (n(cilSs) || 80) / 100,
-        sklon_st: n(sklon) ?? 35,
-        azimut_st: n(azimut) ?? 0,
-        cena_exportu_kc_mwh: n(cenaExportu),
-        rezervovany_vykon_dodavky_kw: n(rezVykonDodavky),
-        baterie_najem_kc_mesic: n(najemRucne),
-        pole: maPole
-          ? polePlatna.map((f) => ({
-              kwp: n(f.kwp),
-              sklon_st: n(f.sklon) ?? 35,
-              azimut_st: n(f.azimut) ?? 0,
-            }))
-          : null,
-      };
-      if (baterieRucne) {
-        data.baterie_kapacita_kwh = n(batKapacita);
-        data.baterie_vykon_kw = n(batVykon);
-        data.baterie_ucinnost_rt = n(batUcinnost);
-        data.baterie_vyuzitelny_podil = n(batPodil) === null ? null : n(batPodil) / 100;
-        data.baterie_nakladova_cena_kc = n(batCena);
+      if (zdrojBaterie === "katalog") {
+        // Dlouhá cesta: úloha jde do fronty, výsledek dorazí, až doběhne.
+        const r = await ppaBessKatalog(nabidka.id, sestavData());
+        setUloha(r);
+        setZprava(
+          r.jiz_bezela
+            ? "Výpočet už pro tuhle nabídku běží — připojuji se k němu."
+            : "Zařazeno do fronty. Prohledání katalogu trvá pár minut."
+        );
+      } else {
+        const odpoved = await ppaBessVypocet(nabidka.id, sestavData());
+        setVysledek(odpoved.popis_json);
+        setVybranyRezim(null);
+        setDelka(null);
+        setPrubehy({});
+        setZalozka("rozpad");
+        setZprava("Spočítáno a uloženo.");
       }
-      const odpoved = await ppaBessVypocet(nabidka.id, data);
-      setVysledek(odpoved.popis_json);
-      setVybranyRezim(null);
-      setDelka(null);
-      setPrubehy({});
-      setZalozka("rozpad");
-      setZprava("Spočítáno a uloženo.");
     } catch (e) {
       setChyba(e.message);
     } finally {
       setPocita(false);
     }
   }
+
+  // Stav úlohy na pozadí: jednou při otevření (kdyby výpočet běžel z jiné
+  // obrazovky) a pak v intervalu, dokud běží.
+  useEffect(() => {
+    let zruseno = false;
+    let timer = null;
+
+    async function zjisti() {
+      try {
+        const r = await ppaBessKatalogStav(nabidka.id);
+        if (zruseno) return;
+        setSluzbaBezi(r.sluzba_bezi !== false);
+        setUloha(r.uloha || null);
+        const bezi = r.uloha && ["ceka", "bezi"].includes(r.uloha.stav);
+        if (bezi) {
+          // Dvě sekundy: worker propisuje pokrok stejně často, takže se
+          // ukazatel hýbe a přitom to nezatěžuje ani appku, ani databázi.
+          timer = setTimeout(zjisti, 2000);
+        } else if (r.uloha?.stav === "hotovo" && r.uloha.reseni_id) {
+          // Dobehlo – dotáhni hotové řešení do panelu.
+          const detail = await nabidkaDetail(nabidka.id);
+          if (zruseno) return;
+          const nase = (detail.reseni || []).filter((x) => x.typ_reseni === "ppa_bess");
+          if (nase.length) {
+            setVysledek(nase[nase.length - 1].popis_json);
+            setVybranyRezim(null);
+            setDelka(null);
+            setPrubehy({});
+            setZprava("Katalog prohledán, výsledek je níž.");
+          }
+        }
+      } catch {
+        /* stav se nepodařilo zjistit – zkusí se při další akci */
+      }
+    }
+
+    zjisti();
+    return () => {
+      zruseno = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [nabidka.id, uloha?.id, uloha?.stav]);
 
   // ---- derivace z výsledku
   const rezimy = vysledek?.rezimy || [];
@@ -681,18 +753,42 @@ export default function PpaBessPanel({ nabidka }) {
           </div>
           <label className="gs-volba">
             <input
-              type="radio" name="pb-bat" checked={!baterieRucne}
-              onChange={() => setBaterieRucne(false)}
+              type="radio" name="pb-bat" checked={zdrojBaterie === "heuristika"}
+              onChange={() => setZdrojBaterie("heuristika")}
             />
-            <span>Navrhnout z katalogu</span>
+            <span>
+              Navrhnout velikost odhadem{" "}
+              <span style={{ color: "var(--muted)" }}>(spočítá hned, umí přestřelit)</span>
+            </span>
           </label>
           <label className="gs-volba">
             <input
-              type="radio" name="pb-bat" checked={baterieRucne}
-              onChange={() => setBaterieRucne(true)}
+              type="radio" name="pb-bat" checked={zdrojBaterie === "katalog"}
+              onChange={() => setZdrojBaterie("katalog")}
+            />
+            <span>
+              Prohledat celý katalog{" "}
+              <span style={{ color: "var(--muted)" }}>(pár minut na pozadí, najde nejlepší)</span>
+            </span>
+          </label>
+          <label className="gs-volba">
+            <input
+              type="radio" name="pb-bat" checked={zdrojBaterie === "rucne"}
+              onChange={() => setZdrojBaterie("rucne")}
             />
             <span>Zadám konkrétní baterii</span>
           </label>
+
+          {jdeNaPozadi && !sluzbaBezi && (
+            <div className="nb-warn" style={{ margin: "8px 0 0" }}>
+              <span>⚠️</span>
+              <span>
+                Služba, která výpočty na pozadí odbavuje, neběží — úloha by zůstala ve
+                frontě. Spusť ji přes <code>systemctl start greensie-vypocty</code>, nebo
+                zvol návrh odhadem.
+              </span>
+            </div>
+          )}
 
           {baterieRucne && (
             <>
@@ -783,10 +879,51 @@ export default function PpaBessPanel({ nabidka }) {
         <button
           className="fm-btn fm-primary"
           onClick={spocitat}
-          disabled={!vsePripraveno || pocita}
+          disabled={!vsePripraveno || pocita || ulohaBezi}
         >
-          {pocita ? "Počítám…" : "Spočítat PPA + BESS"}
+          {pocita
+            ? "Počítám…"
+            : ulohaBezi
+              ? "Počítá se na pozadí…"
+              : jdeNaPozadi
+                ? "Prohledat katalog na pozadí"
+                : "Spočítat PPA + BESS"}
         </button>
+
+        {/* Pokrok úlohy na pozadí. Ukazuje se i po znovuotevření obrazovky,
+            protože stav se čte ze serveru, ne ze stavu komponenty. */}
+        {uloha && ulohaBezi && (
+          <div style={{ marginTop: 10 }}>
+            <div className="gs-pozn">
+              {uloha.stav === "ceka" ? "Ve frontě…" : uloha.zprava || "Počítám…"}
+              {uloha.celkem_variant > 0 && (
+                <>
+                  {" "}
+                  — {uloha.hotovo_variant} z {uloha.celkem_variant} konfigurací
+                </>
+              )}
+            </div>
+            <div className="gs-pruh" style={{ marginTop: 6 }}>
+              <i
+                style={{
+                  width:
+                    uloha.celkem_variant > 0
+                      ? `${Math.min(100, (100 * uloha.hotovo_variant) / uloha.celkem_variant)}%`
+                      : "8%",
+                }}
+              />
+            </div>
+            <div className="gs-pozn" style={{ marginTop: 4 }}>
+              Můžeš odejít na jinou obrazovku, výpočet běží dál.
+            </div>
+          </div>
+        )}
+        {uloha && uloha.stav === "chyba" && (
+          <div className="nb-warn" style={{ marginTop: 10 }}>
+            <span>⚠️</span>
+            <span>Prohledání katalogu se nepovedlo: {uloha.chyba || "neznámá chyba"}</span>
+          </div>
+        )}
         <ul className="gs-chk">
           <li className={profilOk ? "gs-chk-ok" : "gs-chk-no"}>
             <span className="gs-chk-mark">{profilOk ? "✓" : "!"}</span>
@@ -984,6 +1121,7 @@ export default function PpaBessPanel({ nabidka }) {
             ["roky", "Po letech"],
             ["mesice", "Po měsících"],
             ["prubeh", "Průběh"],
+            ...(vysledek.katalog ? [["katalog", "Katalog baterií"]] : []),
           ].map(([klic, nazev]) => (
             <button
               key={klic}
@@ -1139,6 +1277,70 @@ export default function PpaBessPanel({ nabidka }) {
               Zvolený strop se u kombinovaného režimu hledá ekonomicky: pustit špičku výš
               znamená zaplatit víc za výkon, ale získat víc kapacity na uložení přebytku.
               Výchozím bodem je vždy nejnižší možný strop, tedy chování čistého peak shavingu.
+            </div>
+          </div>
+        )}
+
+        {zalozka === "katalog" && vysledek.katalog && (
+          <div className="fm-card" style={{ padding: 0 }}>
+            <div className="gs-scroll okno" style={{ border: 0, boxShadow: "none" }}>
+              <table className="gs-table">
+                <thead>
+                  <tr>
+                    <th>Baterie</th>
+                    <th className="n">Kusů</th>
+                    <th className="n">Kapacita</th>
+                    <th className="n">Výkon</th>
+                    <th className="n">Nákladová cena</th>
+                    <th className="n">Nájem</th>
+                    <th className="n">Sražení špičky</th>
+                    <th className="n">Cyklů/rok</th>
+                    <th className="n">Pořadí podle</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {vysledek.katalog.varianty.map((v, i) => {
+                    const jeVitez =
+                      bat &&
+                      v.produkt_id === bat.produkt_id &&
+                      v.pocet_kusu === bat.pocet_kusu;
+                    return (
+                      <tr
+                        key={`${v.produkt_id}-${v.pocet_kusu}`}
+                        style={{
+                          background: jeVitez
+                            ? "color-mix(in srgb, var(--brand) 9%, transparent)"
+                            : undefined,
+                        }}
+                      >
+                        <td>
+                          {jeVitez ? "◄ " : ""}
+                          {v.nazev}
+                          {v.cena_je_doporucena && (
+                            <span className="nb-badge pozor" style={{ marginLeft: 6 }}>
+                              cena z doporučené
+                            </span>
+                          )}
+                        </td>
+                        <td className="n">{v.pocet_kusu}</td>
+                        <td className="n">{cislo(v.kapacita_kwh, 0)} kWh</td>
+                        <td className="n">{kw(v.vykon_kw)}</td>
+                        <td className="n">{kc(v.nakladova_cena_kc)}</td>
+                        <td className="n">{kc(v.najem_kc_mesic)}</td>
+                        <td className="n">{kw(v.sraz_kw)}</td>
+                        <td className="n">{cislo(v.cyklu_rok, 0)}</td>
+                        <td className="n">{i + 1}.</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="gs-pozn" style={{ padding: "10px 14px" }}>
+              Prohledáno {vysledek.katalog.prohledano_konfiguraci} konfigurací z{" "}
+              {vysledek.katalog.produktu_v_katalogu} produktů. {vysledek.katalog.poznamka}{" "}
+              Sloupec „pořadí" je ze screeningu — vítěz vlevo je ten, který po plném
+              dopočtu vyšel nejlépe, takže nemusí být první.
             </div>
           </div>
         )}

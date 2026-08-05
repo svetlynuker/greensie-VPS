@@ -694,3 +694,91 @@ class TestParametryZNastaveni:
             ppa_bess.simuluj_rok(
                 [1.0] * 96, [0.0] * 96, [1] * 96, _baterie(), lambda m: 0.0, rezim="nesmysl"
             )
+
+
+class TestProhledaniKatalogu:
+    """Prohledání celého katalogu (fáze 2) – běží na pozadí ve workeru.
+
+    Heuristika z PPA navrhne velikost z mediánu denního přebytku a na ni vybere
+    nejlevnější produkt, který ji pokryje. To umí přestřelit o řád: na reálné
+    nabídce navrhla 220 kWh k elektrárně 4 kWp. Prohledání ocení každou
+    konfiguraci a řadí podle peněz.
+    """
+
+    def _katalog(self):
+        return (
+            ppa_v2.ProduktBaterie(id=1, nazev="malá", kapacita_kwh=100.0, vykon_kw=50.0,
+                                  cena_kc=900_000.0),
+            ppa_v2.ProduktBaterie(id=2, nazev="střední", kapacita_kwh=300.0, vykon_kw=150.0,
+                                  cena_kc=2_400_000.0),
+            ppa_v2.ProduktBaterie(id=3, nazev="velká", kapacita_kwh=1000.0, vykon_kw=500.0,
+                                  cena_kc=9_000_000.0),
+        )
+
+    def test_najde_vitize_a_vrati_srovnani(self):
+        r = ppa_bess.prohledej_katalog(
+            _rocni_vstup(baterie=None, baterie_katalog=self._katalog()),
+            max_pocet_kusu=2,
+            detailne_top=2,
+        )
+        assert r["vysledek"] is not None
+        assert r["prohledano"] > 0
+        assert len(r["varianty"]) > 0
+        # Srovnání se přibalí i do výsledku, aby ho panel měl z uloženého řešení.
+        assert r["vysledek"]["katalog"]["prohledano_konfiguraci"] == r["prohledano"]
+
+    def test_varianty_jsou_serazene_podle_prinosu(self):
+        r = ppa_bess.prohledej_katalog(
+            _rocni_vstup(baterie=None, baterie_katalog=self._katalog()),
+            max_pocet_kusu=2, detailne_top=1,
+        )
+        prinosy = [v["cisty_prinos_kc"] for v in r["varianty"]]
+        assert prinosy == sorted(prinosy, reverse=True)
+
+    def test_prazdny_katalog_neni_vyjimka(self):
+        r = ppa_bess.prohledej_katalog(_rocni_vstup(baterie=None, baterie_katalog=()))
+        assert r["vysledek"] is None
+        assert r["prohledano"] == 0
+        assert any("katalogu není" in u for u in r["upozorneni"])
+
+    def test_baterie_bez_ceny_se_preskoci(self):
+        katalog = (
+            ppa_v2.ProduktBaterie(id=9, nazev="bez ceny", kapacita_kwh=300.0,
+                                  vykon_kw=150.0, cena_kc=0.0),
+        )
+        r = ppa_bess.prohledej_katalog(_rocni_vstup(baterie=None, baterie_katalog=katalog))
+        assert r["vysledek"] is None
+        assert any("cenu" in u for u in r["upozorneni"])
+
+    def test_hlaseni_pokroku_se_vola(self):
+        """Worker tím plní ukazatel v panelu – bez toho by uživatel viděl kolečko."""
+        zaznamy = []
+        ppa_bess.prohledej_katalog(
+            _rocni_vstup(baterie=None, baterie_katalog=self._katalog()),
+            hlaseni=lambda h, c, z: zaznamy.append((h, c, z)),
+            max_pocet_kusu=1, detailne_top=1,
+        )
+        assert zaznamy, "hlášení pokroku se nikdy nevolalo"
+        assert all(c > 0 for _, c, _ in zaznamy), "celkový počet musí být kladný"
+        assert zaznamy[-1][0] >= zaznamy[0][0], "pokrok nesmí klesat"
+
+    def test_najde_lepsi_variantu_nez_heuristika(self):
+        """Smysl celé fáze 2: prohledání musí být aspoň tak dobré jako odhad."""
+        katalog = self._katalog()
+        vstup = _rocni_vstup(baterie=None, baterie_katalog=katalog)
+        heuristika = ppa_bess.spocti_ppa_bess(vstup)
+        prohledani = ppa_bess.prohledej_katalog(vstup, max_pocet_kusu=2, detailne_top=3)
+        assert prohledani["vysledek"] is not None
+        h = heuristika["po_delkach"][0]["uspora_rok1_kc"]
+        p = prohledani["vysledek"]["po_delkach"][0]["uspora_rok1_kc"]
+        assert p >= h - 1.0, f"prohledání ({p}) vyšlo horší než heuristika ({h})"
+
+    def test_greedy_nekonci_na_prvnim_kusu(self):
+        """Počet kusů se zvyšuje, dokud přínos roste – jinak by se víc kusů
+        nikdy nezkusilo a velké baterie by z katalogu vypadly."""
+        r = ppa_bess.prohledej_katalog(
+            _rocni_vstup(baterie=None, baterie_katalog=self._katalog()),
+            max_pocet_kusu=3, detailne_top=1,
+        )
+        pocty = {v["pocet_kusu"] for v in r["varianty"]}
+        assert pocty & {2, 3}, f"zkoušely se jen jednotlivé kusy: {pocty}"

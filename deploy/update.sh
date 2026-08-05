@@ -60,6 +60,18 @@ systemctl daemon-reload
 systemctl enable greensie-email >/dev/null
 systemctl restart greensie-email
 
+# Dlouhé výpočty nabídkovače (prohledání katalogu baterií u PPA + BESS) běží
+# taky jako vlastní služba — ze stejného důvodu jako pošta: minuty čistého CPU
+# uvnitř web procesu znamenají 502. NEMAZAT: bez tohohle kroku by se po git
+# pullu, který změní kód workeru, restartoval jen backend a výpočty by dál
+# jely ze staré verze. Panel navíc podle `systemctl is-active greensie-vypocty`
+# pozná, že služba neběží, a řekne to — takže vypnutá služba není tichá.
+echo "==> Nasazuji a restartuji službu výpočtů…"
+cp "${PROJEKT}/deploy/greensie-vypocty.service" /etc/systemd/system/greensie-vypocty.service
+systemctl daemon-reload
+systemctl enable greensie-vypocty >/dev/null
+systemctl restart greensie-vypocty
+
 # Konfiguraci Caddy je nutné nasadit ze repa, ne jen reloadovat. NEMAZAT:
 # `systemctl reload caddy` načte /etc/caddy/Caddyfile — kdyby se sem nová verze
 # nezkopírovala, reload by vrátil STAROU konfiguraci a změna vhostu z repa
@@ -73,3 +85,4 @@ systemctl reload caddy
 
 echo "HOTOVO. Nová verze běží na https://app.greensie.cz"
 echo "     Stav stahování pošty:  systemctl status greensie-email"
+echo "     Stav výpočtů:          systemctl status greensie-vypocty"
