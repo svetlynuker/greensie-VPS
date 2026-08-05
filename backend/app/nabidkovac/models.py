@@ -726,3 +726,64 @@ class GenerovanaNabidkaPdf(Base):
     vygenerovano_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     vygeneroval = relationship("User")
+
+
+# --------------------------------------------------------------- fronta výpočtů
+# Stavy úlohy ve frontě. `bezi` drží worker, aby dvě instance nevzaly totéž.
+STAVY_VYPOCTU = ("ceka", "bezi", "hotovo", "chyba", "zruseno")
+
+
+class VypocetFronta(Base):
+    """Fronta dlouhých výpočtů, které web proces neunese.
+
+    Prohledání celého katalogu baterií (84 produktů × 1–5 kusů) nad ročním
+    15min diagramem trvá minuty. Uvnitř uvicornu by to dotlačilo appku k 502 –
+    stejná zkušenost jako s konektorem a se stahováním pošty (rozhodnutí Dana
+    o samostatných procesech). Úloha se proto jen zařadí sem a odbaví ji
+    `app/nabidkovac/vypocet_worker.py` jako vlastní služba.
+
+    Tvar tabulky je záměrně stejný jako u `konektor_job_queue`: typ + payload +
+    stav + pokus + chyba. Navíc drží **pokrok** (`hotovo_variant` z `celkem_variant`),
+    aby panel mohl ukázat „120 ze 420" místo neurčitého kolečka, a `vysledek_json`,
+    do kterého worker uloží hotový výpočet.
+
+    Proč se výsledek neukládá rovnou do `navrhovana_reseni`: dokud výpočet
+    nedoběhne, není co uložit, a kdyby se uložil rozdělaný, panel by ho ukázal
+    jako hotovou nabídku. Worker proto zapíše `navrhovana_reseni` teprve na
+    konci a tady zůstane jen záznam o průběhu.
+    """
+
+    __tablename__ = "nabidkovac_vypocet_fronta"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nabidka_id = Column(
+        Integer, ForeignKey("nabidky.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Druh úlohy, ať se fronta dá použít i pro další dlouhé výpočty
+    # ("ppa_bess_katalog" je zatím jediný).
+    typ = Column(String, nullable=False, index=True)
+    # Vstup výpočtu tak, jak ho poslal panel (schéma `PpaBessVstup`).
+    vstup_json = Column(JSONB, nullable=False)
+    stav = Column(String, nullable=False, default="ceka", server_default="ceka", index=True)
+
+    # Pokrok pro UI. `celkem_variant` zná až worker (po dotazu na katalog),
+    # takže dokud je 0, panel ukáže jen „počítá se".
+    celkem_variant = Column(Integer, nullable=False, default=0, server_default="0")
+    hotovo_variant = Column(Integer, nullable=False, default=0, server_default="0")
+    # Krátká zpráva o tom, co worker právě dělá („prohledávám katalog…").
+    zprava = Column(String, nullable=False, default="", server_default="")
+
+    vysledek_json = Column(JSONB, nullable=True)
+    # Řešení, které worker nakonec uložil – panel si podle něj najde výsledek.
+    reseni_id = Column(
+        Integer, ForeignKey("navrhovana_reseni.id", ondelete="SET NULL"), nullable=True
+    )
+    chyba = Column(Text, nullable=True)
+    pokusu = Column(Integer, nullable=False, default=0, server_default="0")
+
+    zadal_user_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True
+    )
+    vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    zahajeno_at = Column(DateTime(timezone=True), nullable=True)
+    dokonceno_at = Column(DateTime(timezone=True), nullable=True)

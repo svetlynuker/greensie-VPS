@@ -1,0 +1,42 @@
+[Unit]
+# Dlouhé výpočty nabídkovače (prohledání katalogu baterií u PPA + BESS) běží
+# jako VLASTNÍ proces, ne uvnitř backendu — rozhodnutí Dana z 5. 8. 2026.
+# Prohledání 168 konfigurací nad ročním 15min diagramem trvá skoro dvě minuty
+# čistého CPU; uvnitř web procesu by to appku dotlačilo k 502 (stejná zkušenost
+# jako s konektorem a se stahováním pošty).
+#
+# Důsledek, se kterým se počítá: appka a výpočty se restartují nezávisle. Když
+# tahle služba neběží, appka funguje dál — jen se zařazené výpočty neodbaví
+# a panel to ukáže (`sluzba_bezi` v /ppa-bess/katalog/stav), místo aby točil
+# kolečko donekonečna.
+Description=Greensie výpočty (prohledání katalogu baterií, PPA + BESS)
+After=network.target postgresql.service greensie-backend.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=dan
+Group=dan
+WorkingDirectory=/home/dan/projects/greensie-app/backend
+# .env se NEnačítá přes EnvironmentFile schválně: dělá to `app/database.py`
+# přes `load_dotenv` (stejně jako u backendu a u pošty). Systemd navíc neumí
+# hodnoty s mezerami stejně jako dotenv, takže dva různé parsery jednoho
+# souboru by byly zdroj tichých rozdílů. Potřebuje jen DATABASE_URL.
+ExecStart=/home/dan/projects/greensie-app/backend/venv/bin/python -m app.nabidkovac.vypocet_worker
+Restart=always
+RestartSec=10
+# Worker reaguje na SIGTERM (dokončí rozdělanou úlohu a skončí), takže
+# `systemctl stop` nemusí nic zabíjet. Timeout je delší než u pošty, protože
+# jedna úloha může běžet minuty — kdyby se zabila v půlce, zůstala by ve stavu
+# „bezi" a nikdo by ji už nepřevzal.
+KillSignal=SIGTERM
+TimeoutStopSec=300
+
+# Výpočet je čistě CPU-bound a server má i další práci (web, pošta, konektor).
+# Nice + nižší priorita I/O drží appku responzivní, i když se na pozadí počítá.
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+
+[Install]
+WantedBy=multi-user.target

@@ -59,6 +59,7 @@ from app.nabidkovac.models import (
     SpotrebaProfil,
     Technologie,
     TechnologiePriloha,
+    VypocetFronta,
     VypoctovaNastaveni,
     VystupSablona,
 )
@@ -2812,23 +2813,16 @@ def ppa_bess_prubeh(
     return prubeh
 
 
-@router.post("/nabidky/{nabidka_id}/ppa-bess/vypocet")
-def spocti_ppa_bess(
-    nabidka_id: int,
-    vstup: PpaBessVstup,
-    user: User = Depends(vyzaduj_ppa_bess),
-    db: Session = Depends(get_db),
-):
-    """Spustí výpočet PPA + BESS a uloží výsledek (typ_reseni = ppa_bess).
+def sestav_vstup_ppa_bess(db: Session, nabidka_id: int, vstup: PpaBessVstup):
+    """Z požadavku panelu složí vstup výpočtu PPA + BESS.
 
-    Proti PPA v2 přidává ocenění kilowattů, takže potřebuje sazby NTS 2027
-    ze sazebníku. Když pro danou hladinu a distributora nejsou, výpočet
-    proběhne, ale přínos na výkonu chybí a je to v upozorněních – místo aby
-    se tipovalo.
+    Vytažené z endpointu schválně: **stejnou funkci volá i worker na pozadí**
+    (`app/nabidkovac/vypocet_worker.py`). Kdyby si worker vstup skládal sám,
+    počítal by po změně manažerského nastavení nebo sazebníku s jinými čísly než
+    appka — a nikdo by si toho nevšiml, protože obojí by „vyšlo".
 
-    Ruční zadání baterie se počítá **synchronně**: je to jedna varianta ve třech
-    režimech, tedy sekundy. Prohledání celého katalogu (fáze 2) pojede na
-    pozadí, protože to web proces neunese.
+    Vrací `(vstup_calc, upozorneni, nastaveni, sazba_2027)`. Validační chyby
+    hlásí jako `HTTPException`, takže se z endpointu i z workeru chovají stejně.
     """
     n = db.get(Nabidka, nabidka_id)
     if n is None:
@@ -2989,6 +2983,32 @@ def spocti_ppa_bess(
         parametry=parametry,
         parametry_bess=parametry_bess,
     )
+    return vstup_calc, upozorneni, nastaveni, sazba_2027
+
+
+@router.post("/nabidky/{nabidka_id}/ppa-bess/vypocet")
+def spocti_ppa_bess(
+    nabidka_id: int,
+    vstup: PpaBessVstup,
+    user: User = Depends(vyzaduj_ppa_bess),
+    db: Session = Depends(get_db),
+):
+    """Spustí výpočet PPA + BESS a uloží výsledek (typ_reseni = ppa_bess).
+
+    Proti PPA v2 přidává ocenění kilowattů, takže potřebuje sazby NTS 2027
+    ze sazebníku. Když pro danou hladinu a distributora nejsou, výpočet
+    proběhne, ale přínos na výkonu chybí a je to v upozorněních – místo aby
+    se tipovalo.
+
+    **Synchronní cesta**: počítá se jedna baterie (ruční zadání, nebo návrh
+    z katalogu heuristikou) ve třech režimech, tedy sekundy. Prohledání celého
+    katalogu jde do fronty (`/ppa-bess/katalog`), protože 168 konfigurací nad
+    ročním diagramem trvá skoro dvě minuty a to by web proces neunesl.
+    """
+    vstup_calc, upozorneni, nastaveni, sazba_2027 = sestav_vstup_ppa_bess(
+        db, nabidka_id, vstup
+    )
+    n = db.get(Nabidka, nabidka_id)
 
     vysledek = ppa_bess.spocti_ppa_bess(vstup_calc)
     if vysledek.get("chyba"):
@@ -3014,6 +3034,122 @@ def spocti_ppa_bess(
     db.commit()
     db.refresh(reseni)
     return {"reseni_id": reseni.id, "popis_json": popis_json}
+
+
+@router.post("/nabidky/{nabidka_id}/ppa-bess/katalog")
+def zarad_ppa_bess_katalog(
+    nabidka_id: int,
+    vstup: PpaBessVstup,
+    user: User = Depends(vyzaduj_ppa_bess),
+    db: Session = Depends(get_db),
+):
+    """Zařadí prohledání celého katalogu baterií do fronty na pozadí.
+
+    Vrací se hned, výpočet odbaví `greensie-vypocty`. Vstup se **zvaliduje už
+    tady** (přes `sestav_vstup_ppa_bess`), aby se chyba v zadání ohlásila
+    okamžitě a ne až za dvě minuty jako spadlá úloha.
+
+    Když už pro nabídku úloha čeká nebo běží, druhá se nezařadí — vrátí se ta
+    stávající. Jinak by dvě kliknutí spustila dva stejné výpočty a soutěžila
+    o tatáž jádra.
+    """
+    if db.get(Nabidka, nabidka_id) is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    # Validace vstupu (a tím i profilu, sazeb a nastavení) na místě.
+    sestav_vstup_ppa_bess(db, nabidka_id, vstup)
+
+    bezici = (
+        db.query(VypocetFronta)
+        .filter(
+            VypocetFronta.nabidka_id == nabidka_id,
+            VypocetFronta.typ == "ppa_bess_katalog",
+            VypocetFronta.stav.in_(("ceka", "bezi")),
+        )
+        .order_by(VypocetFronta.id.desc())
+        .first()
+    )
+    if bezici is not None:
+        return _uloha_out(bezici, jiz_bezela=True)
+
+    uloha = VypocetFronta(
+        nabidka_id=nabidka_id,
+        typ="ppa_bess_katalog",
+        vstup_json=vstup.model_dump(mode="json"),
+        stav="ceka",
+        zprava="Ve frontě",
+        zadal_user_id=user.id,
+    )
+    db.add(uloha)
+    db.commit()
+    db.refresh(uloha)
+    return _uloha_out(uloha)
+
+
+@router.get("/nabidky/{nabidka_id}/ppa-bess/katalog/stav")
+def stav_ppa_bess_katalog(
+    nabidka_id: int,
+    user: User = Depends(vyzaduj_ppa_bess),
+    db: Session = Depends(get_db),
+):
+    """Stav poslední úlohy prohledání katalogu (panel se na to ptá v intervalu).
+
+    Vrací i `sluzba_bezi`: když worker neběží, úloha zůstane ve stavu „čeká"
+    navěky a panel to musí říct, ne točit kolečko donekonečna.
+    """
+    uloha = (
+        db.query(VypocetFronta)
+        .filter(
+            VypocetFronta.nabidka_id == nabidka_id,
+            VypocetFronta.typ == "ppa_bess_katalog",
+        )
+        .order_by(VypocetFronta.id.desc())
+        .first()
+    )
+    if uloha is None:
+        return {"uloha": None, "sluzba_bezi": _vypocty_sluzba_bezi()}
+    return {"uloha": _uloha_out(uloha), "sluzba_bezi": _vypocty_sluzba_bezi()}
+
+
+def _uloha_out(u: VypocetFronta, jiz_bezela: bool = False) -> dict:
+    """Úloha z fronty pro UI."""
+    return {
+        "id": u.id,
+        "stav": u.stav,
+        "zprava": u.zprava or "",
+        "hotovo_variant": u.hotovo_variant,
+        "celkem_variant": u.celkem_variant,
+        "reseni_id": u.reseni_id,
+        "chyba": u.chyba,
+        "pokusu": u.pokusu,
+        "vytvoreno_at": _iso(u.vytvoreno_at),
+        "zahajeno_at": _iso(u.zahajeno_at),
+        "dokonceno_at": _iso(u.dokonceno_at),
+        "prohledano_konfiguraci": (u.vysledek_json or {}).get("prohledano_konfiguraci"),
+        "jiz_bezela": jiz_bezela,
+    }
+
+
+def _vypocty_sluzba_bezi() -> bool:
+    """Běží služba `greensie-vypocty`?
+
+    Bez ní se zařazené úlohy nikdy neodbaví. Panel to musí ukázat, jinak by
+    obchodník čekal na výsledek, který nikdy nepřijde. Když se stav zjistit
+    nedá (jiný systém, chybějící systemctl), hlásí se `True` – radši nechat
+    ukazatel běžet než tvrdit, že služba neběží, když o tom nic nevíme.
+    """
+    import shutil
+    import subprocess
+
+    if shutil.which("systemctl") is None:
+        return True
+    try:
+        hotovo = subprocess.run(
+            ["systemctl", "is-active", "greensie-vypocty"],
+            capture_output=True, text=True, timeout=3,
+        )
+        return hotovo.stdout.strip() == "active"
+    except Exception:
+        return True
 
 
 # ================= Nabídková šablona / výstup (PDF pro zákazníka) =================

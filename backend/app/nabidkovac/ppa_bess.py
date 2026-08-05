@@ -63,7 +63,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from . import peak_shaving
-from .ppa_v2 import Baterie, ProduktBaterie
+from .ppa_v2 import Baterie, ProduktBaterie, baterie_z_produktu
 
 # Nájem baterie se platí pevných 10 let bez ohledu na délku kontraktu na
 # elektrárnu (rozhodnutí Dana 5. 8. 2026). Na tuhle dobu se počítá i anuita
@@ -1511,6 +1511,249 @@ def _rezim_json(
         ],
         "ekonomika_vykonu": v.ekonomika_vykonu,
         "ekonomika_vykonu_se_snizenim": v.ekonomika_vykonu_se_snizenim,
+    }
+
+
+@dataclass
+class VariantaKatalogu:
+    """Jedna posouzená konfigurace z katalogu (produkt × počet kusů)."""
+
+    produkt_id: int
+    nazev: str
+    pocet_kusu: int
+    kapacita_kwh: float
+    vyuzitelna_kapacita_kwh: float
+    vykon_kw: float
+    nakladova_cena_kc: float
+    najem_kc_mesic: float
+    # Přínos v roce 1: energie (za nejdražší nabízenou cenu) + výkon − nájem.
+    prinos_energie_kc: float
+    prinos_vykon_kc: float
+    cisty_prinos_kc: float
+    sraz_kw: float
+    mira_samospotreby: float
+    cyklu: float
+    cena_je_doporucena: bool = False
+
+
+def prohledej_katalog(
+    vstup: VstupPpaBess,
+    hlaseni=None,
+    max_pocet_kusu: int = 5,
+    detailne_top: int = 5,
+) -> dict:
+    """Projde celý katalog baterií a najde tu s nejvyšším čistým přínosem.
+
+    Tohle je to, co heuristika z PPA neumí: ta navrhne velikost z mediánu
+    denního přebytku a na ni vybere nejlevnější produkt, který ji pokryje – což
+    umí přestřelit o řád (na reálné nabídce navrhla 220 kWh k elektrárně 4 kWp).
+    Tady se každá konfigurace **skutečně ocení** a řadí se podle peněz.
+
+    Běží **mimo web proces** (`vypocet_worker.py`): 84 produktů × 1–5 kusů nad
+    ročním diagramem je řádově minuty, uvnitř uvicornu by to skončilo 502.
+
+    Dvě úrovně, aby to bylo únosné:
+
+    1. **Screening** – každá konfigurace se ocení v režimu `spicky` (jeden
+       dispatch místo tří) a s hrubým odhadem hodnoty kWh. Počet kusů se
+       zvyšuje jen dokud přínos roste (greedy, stejně jako
+       `peak_shaving.vyber_reseni`), takže se typicky nezkouší všech pět.
+    2. **Detail** – nejlepších `detailne_top` konfigurací se prohnat plným
+       výpočtem (`spocti_ppa_bess`) se všemi třemi režimy a celou ekonomikou.
+
+    `hlaseni(hotovo, celkem, zprava)` je volitelný callback pro pokrok – worker
+    jím plní `nabidkovac_vypocet_fronta`, aby panel mohl ukázat „120 ze 420".
+
+    Vrací `{"vysledek": <plný výpočet nejlepší>, "varianty": [...], "prohledano": N}`.
+    Když katalog nic použitelného nemá, `vysledek` je `None` a je to
+    v upozorněních.
+    """
+    from .ppa_fve import simuluj_vyrobu
+    from .ppa_v2 import ParametryEkonomiky, VYCHOZI_MIN_SLEVA, sestav_projekt
+
+    p = vstup.parametry or ParametryEkonomiky()
+    pb = vstup.parametry_bess or ParametryPpaBess()
+    katalog = tuple(
+        x for x in (vstup.baterie_katalog or ()) if x.kapacita_kwh > 0 and x.vykon_kw > 0
+    )
+    if not katalog:
+        return {
+            "vysledek": None,
+            "varianty": [],
+            "prohledano": 0,
+            "upozorneni": [
+                "V katalogu není použitelná baterie (potřebuje výkon, kapacitu i cenu)."
+            ],
+        }
+
+    interval_h = vstup.interval_h or _odvod_interval_h(vstup.casy)
+    mesice = [c.month for c in vstup.casy]
+    cena_zakaznika = vstup.cena_silova_kc_mwh + vstup.vyhnutelne_regulovane_kc_mwh
+    hodnota_kwh = cena_zakaznika * VYCHOZI_MIN_SLEVA
+
+    # Elektrárna se pro screening drží pevná – jinak by se pro každou baterii
+    # hledala jiná velikost a varianty by nebyly srovnatelné. Doladí se až
+    # v detailním průchodu, kde `spocti_ppa_bess` velikost dopočítá znovu.
+    if vstup.pole:
+        vyroba_kwh = [0.0] * len(vstup.casy)
+        for f in vstup.pole:
+            for i, x in enumerate(
+                simuluj_vyrobu(
+                    vstup.casy, f.kwp, vstup.lat_deg, f.sklon_st, f.azimut_st,
+                    vstup.merny_vynos_kwh_kwp,
+                )
+            ):
+                vyroba_kwh[i] += x
+    else:
+        from .ppa_v2 import navrhni_kwp_na_cil
+
+        vyroba_1kwp = simuluj_vyrobu(
+            vstup.casy, 1.0, vstup.lat_deg, vstup.sklon_st, vstup.azimut_st,
+            vstup.merny_vynos_kwh_kwp,
+        )
+        kwp_screening = navrhni_kwp_na_cil(
+            vyroba_1kwp, vstup.spotreba_kwh, vstup.cil_mira_samospotreby, None,
+            vstup.rezervovany_vykon_dodavky_kw, interval_h, vstup.max_kwp,
+        )
+        vyroba_kwh = [kwp_screening * v for v in vyroba_1kwp]
+
+    # Horní mez počtu úloh pro odhad pokroku (greedy jich udělá méně).
+    celkem_odhad = len(katalog) * max(1, max_pocet_kusu)
+    hotovo = 0
+
+    def oznam(zprava: str) -> None:
+        if hlaseni is not None:
+            hlaseni(hotovo, celkem_odhad, zprava)
+
+    oznam(f"Prohledávám katalog: {len(katalog)} produktů")
+
+    varianty: list[VariantaKatalogu] = []
+    for produkt in katalog:
+        if produkt.cena_kc <= 0:
+            continue
+        predchozi_cisty = None
+        for pocet in range(1, max(1, max_pocet_kusu) + 1):
+            baterie = baterie_z_produktu(produkt, pocet)
+            if baterie.vyuzitelna_kapacita_kwh <= 0 or baterie.vykon_kw <= 0:
+                break
+            vr, _ = spocti_rezim(
+                vstup, vyroba_kwh, mesice, baterie, REZIM_SPICKY, interval_h, hodnota_kwh, pb
+            )
+            projekt_bess = sestav_projekt_bess(baterie.nakladova_cena_kc, p)
+            najem_m = (
+                vstup.najem_kc_mesic_rucne
+                if vstup.najem_kc_mesic_rucne is not None
+                else najem_baterie_kc_mesic(projekt_bess, p)
+            )
+            prinos_energie = vr.samospotreba_kwh / 1000.0 * hodnota_kwh
+            cisty = prinos_energie + vr.uspora_vykon_bez_snizeni_rp_kc - najem_m * 12.0
+            varianty.append(
+                VariantaKatalogu(
+                    produkt_id=produkt.id,
+                    nazev=produkt.nazev,
+                    pocet_kusu=pocet,
+                    kapacita_kwh=baterie.kapacita_kwh,
+                    vyuzitelna_kapacita_kwh=baterie.vyuzitelna_kapacita_kwh,
+                    vykon_kw=baterie.vykon_kw,
+                    nakladova_cena_kc=baterie.nakladova_cena_kc,
+                    najem_kc_mesic=najem_m,
+                    prinos_energie_kc=prinos_energie,
+                    prinos_vykon_kc=vr.uspora_vykon_bez_snizeni_rp_kc,
+                    cisty_prinos_kc=cisty,
+                    sraz_kw=max(0.0, vr.maximum_bez_baterie_kw - vr.maximum_po_baterii_kw),
+                    mira_samospotreby=vr.mira_samospotreby,
+                    cyklu=vr.cyklu,
+                    cena_je_doporucena=baterie.cena_je_doporucena,
+                )
+            )
+            hotovo += 1
+            oznam(f"{produkt.nazev} × {pocet}")
+            # Greedy: další kus už nezlepšuje, takže víc jich nemá smysl zkoušet.
+            # Předpokládá se unimodalita v počtu kusů (stejně jako u peak shavingu).
+            if predchozi_cisty is not None and cisty <= predchozi_cisty + 1e-6:
+                break
+            predchozi_cisty = cisty
+
+    if not varianty:
+        return {
+            "vysledek": None,
+            "varianty": [],
+            "prohledano": hotovo,
+            "upozorneni": ["Žádná baterie z katalogu nemá vyplněnou cenu."],
+        }
+
+    varianty.sort(key=lambda v: -v.cisty_prinos_kc)
+    top = varianty[: max(1, detailne_top)]
+    oznam(f"Dopočítávám {len(top)} nejlepších konfigurací")
+
+    from dataclasses import replace as _replace
+
+    nejlepsi = None
+    nejlepsi_vysledek = None
+    for i, v in enumerate(top, start=1):
+        produkt = next(x for x in katalog if x.id == v.produkt_id)
+        baterie = baterie_z_produktu(produkt, v.pocet_kusu)
+        vysledek = spocti_ppa_bess(_replace(vstup, baterie=baterie, baterie_katalog=()))
+        if vysledek.get("chyba"):
+            continue
+        radky = vysledek.get("po_delkach") or []
+        uspora = radky[0]["uspora_rok1_kc"] if radky else float("-inf")
+        if nejlepsi is None or uspora > nejlepsi:
+            nejlepsi, nejlepsi_vysledek = uspora, vysledek
+        oznam(f"Detail {i} z {len(top)}: {v.nazev} × {v.pocet_kusu}")
+
+    if nejlepsi_vysledek is None:
+        return {
+            "vysledek": None,
+            "varianty": [_varianta_katalogu_json(v) for v in varianty[:50]],
+            "prohledano": hotovo,
+            "upozorneni": ["Ani jedna konfigurace z katalogu nedala platný výsledek."],
+        }
+
+    # Do výsledku se přibalí srovnání konfigurací, ať je vidět, co se zvažovalo
+    # a o kolik je vítěz lepší. Omezeno na 50 řádků – víc už nikdo nečte a
+    # `popis_json` by zbytečně narostl.
+    nejlepsi_vysledek["katalog"] = {
+        "prohledano_konfiguraci": hotovo,
+        "produktu_v_katalogu": len(katalog),
+        "varianty": [_varianta_katalogu_json(v) for v in varianty[:50]],
+        "poznamka": (
+            "Screening ocenil každou konfiguraci v režimu srážení špiček s hrubým odhadem "
+            "hodnoty kWh; nejlepších pět se pak dopočítalo celou ekonomikou. Počet kusů "
+            "se zvyšoval jen dokud přínos rostl."
+        ),
+    }
+    if len(varianty) > 50:
+        nejlepsi_vysledek.setdefault("upozorneni", []).append(
+            f"Ve srovnání je 50 nejlepších konfigurací z {len(varianty)} posouzených – "
+            "zbytek byl horší a do výstupu se nevešel."
+        )
+    return {
+        "vysledek": nejlepsi_vysledek,
+        "varianty": [_varianta_katalogu_json(v) for v in varianty[:50]],
+        "prohledano": hotovo,
+        "upozorneni": [],
+    }
+
+
+def _varianta_katalogu_json(v: VariantaKatalogu) -> dict:
+    """Jedna konfigurace ze srovnání katalogu k serializaci."""
+    return {
+        "produkt_id": v.produkt_id,
+        "nazev": v.nazev,
+        "pocet_kusu": v.pocet_kusu,
+        "kapacita_kwh": round(v.kapacita_kwh, 1),
+        "vyuzitelna_kapacita_kwh": round(v.vyuzitelna_kapacita_kwh, 1),
+        "vykon_kw": round(v.vykon_kw, 1),
+        "nakladova_cena_kc": round(v.nakladova_cena_kc, 2),
+        "najem_kc_mesic": round(v.najem_kc_mesic, 2),
+        "prinos_energie_kc": round(v.prinos_energie_kc, 2),
+        "prinos_vykon_kc": round(v.prinos_vykon_kc, 2),
+        "cisty_prinos_kc": round(v.cisty_prinos_kc, 2),
+        "sraz_kw": round(v.sraz_kw, 2),
+        "mira_samospotreby": round(v.mira_samospotreby, 4),
+        "cyklu_rok": round(v.cyklu, 1),
+        "cena_je_doporucena": v.cena_je_doporucena,
     }
 
 
