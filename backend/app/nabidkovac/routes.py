@@ -2689,8 +2689,25 @@ def ppa_bess_profil_souhrn(
     user: User = Depends(vyzaduj_ppa_bess),
     db: Session = Depends(get_db),
 ):
-    """Souhrn nahraného profilu – stejný tvar jako u PPA a peak shavingu."""
-    return _profil_souhrn(db, nabidka_id)
+    """Souhrn nahraného profilu.
+
+    Stejný tvar jako u PPA, tedy **včetně roční spotřeby v MWh** – panel ji
+    zobrazuje. Souhrn z peak shavingu (`_profil_souhrn`) ji nemá a v UI by se
+    místo čísla objevilo „None MWh".
+    """
+    if db.get(Nabidka, nabidka_id) is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    casy, spotreba_kwh, interval_h = _profil_spotreby_kwh(db, nabidka_id)
+    if not casy:
+        return {"pocet": 0}
+    return {
+        "pocet": len(casy),
+        "od": _iso(min(casy)),
+        "do": _iso(max(casy)),
+        "interval_h": interval_h,
+        "rocni_spotreba_mwh": round(sum(spotreba_kwh) / 1000.0, 2),
+        "max_kw": round(max(spotreba_kwh) / interval_h, 2) if interval_h > 0 else None,
+    }
 
 
 @router.get("/nabidky/{nabidka_id}/ppa-bess/prubeh")
