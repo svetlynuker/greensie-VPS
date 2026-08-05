@@ -40,7 +40,11 @@ TYPY_TECHNOLOGIE = ("fve_panel", "invertor", "baterie", "jina")
 # `kombinace` není další produktová linie – je to nabídka, která SPOJUJE hotovou
 # PPA a peak shaving nabídku téhož případu do jednoho dokumentu pro zákazníka,
 # který chce obojí. Nic nepočítá (viz `nabidkovac/kombinace.py`).
-TYPY_NABIDKY = ("ppa", "prodej", "peak_shaving", "kombinace")
+# `ppa_bess` je vlastní výpočet, ne spojení dvou hotových: elektrárnu i baterii
+# navrhne z jednoho profilu a rozhodne, kolik kapacity dát na srážení špiček
+# a kolik na samospotřebu (viz `nabidkovac/ppa_bess.py`). Má vlastní právo
+# `nabidkovac_ppa_bess`, takže ho zatím vidí jen supersprávce.
+TYPY_NABIDKY = ("ppa", "prodej", "peak_shaving", "kombinace", "ppa_bess")
 
 # Životní cyklus nabídky. Výpočet nikdy neběží nad nezkontrolovanými daty
 # (viz kap. 1 SPEC) → mezistav "zkontrolovano_oz" je povinná brána před "spocitano".

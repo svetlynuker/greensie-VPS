@@ -214,6 +214,7 @@ NAZVY_TYPU_NABIDKY = {
     "prodej": "Prodej",
     "peak_shaving": "Peak shaving",
     "kombinace": "Kombinace opatření",
+    "ppa_bess": "PPA + BESS",
 }
 
 

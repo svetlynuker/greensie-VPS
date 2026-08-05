@@ -43,7 +43,13 @@ VYCHOZI_KATEGORIE: list[dict] = [
 
 # „Kombinace" je typ nabídky, ne kategorie případu – vzniká spojením dvou
 # hotových nabídek, ne volbou u případu. Do nabídky typů pro kategorii nepatří.
-TYPY_NABIDKY_PRO_KATEGORII = tuple(t for t in TYPY_NABIDKY if t != "kombinace")
+#
+# „PPA + BESS" je vynechané z jiného důvodu: výpočet se teprve ověřuje na
+# reálných datech a má vlastní právo, které nikdo nemá přidělené. Nabízet ho
+# u kategorií by znamenalo, že si ho vedení přiřadí a OZ pak narazí na 403.
+# Až se právo začne přidělovat, stačí ho odsud přestat vylučovat.
+_MIMO_KATEGORIE = ("kombinace", "ppa_bess")
+TYPY_NABIDKY_PRO_KATEGORII = tuple(t for t in TYPY_NABIDKY if t not in _MIMO_KATEGORIE)
 
 
 def seed_kategorie(db: Session) -> None:

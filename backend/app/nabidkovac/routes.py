@@ -27,6 +27,7 @@ from app.nabidkovac import (
     pdf as pdf_modul,
     peak_shaving,
     polozky as polozky_modul,
+    ppa_bess,
     ppa_fve,
     ppa_tvar,
     ppa_v2,
@@ -61,7 +62,12 @@ from app.nabidkovac.models import (
     VypoctovaNastaveni,
     VystupSablona,
 )
-from app.nabidkovac.permissions import muze_katalog, vyzaduj_katalog, vyzaduj_nabidkovac
+from app.nabidkovac.permissions import (
+    muze_katalog,
+    vyzaduj_katalog,
+    vyzaduj_nabidkovac,
+    vyzaduj_ppa_bess,
+)
 from app.nabidkovac.schemas import (
     DokumentOut,
     DokumentUprava,
@@ -76,6 +82,7 @@ from app.nabidkovac.schemas import (
     PolozkyOut,
     PolozkySouhrn,
     PolozkyVstup,
+    PpaBessVstup,
     PpaVstup,
     PrilohaOut,
     PrilohaUprava,
@@ -129,6 +136,49 @@ def _dotaz_baterie_katalog(db: Session, ids: list[int] | None = None):
     if ids:
         dotaz = dotaz.filter(Technologie.id.in_(ids))
     return dotaz
+
+
+def _produkty_baterie_ppa(
+    db: Session, ids: list[int] | None = None
+) -> tuple[ppa_v2.ProduktBaterie, ...]:
+    """Katalog baterií ve tvaru, ve kterém s ním počítá PPA (a PPA + BESS).
+
+    Jedno místo pro obě cesty – kdyby si každá mapovala sama, jeden modul by po
+    změně katalogu počítal s jinou cenou než druhý a nikdo by si toho nevšiml.
+    """
+    return tuple(
+        ppa_v2.ProduktBaterie(
+            id=t.id,
+            nazev=t.nazev,
+            vykon_kw=float(t.vykon_kw),
+            kapacita_kwh=float(t.kapacita_kwh),
+            # PPA potřebuje NÁKLADOVOU cenu (nabaluje na ni marži BESS), takže
+            # přednost má nákupní cena, když ji produkt má. U baterií z ceníku
+            # BESS vyplněná není a `cena_kc` v sobě nese dealerskou cenu, což
+            # náklad je – viz docstring `ppa_v2.ProduktBaterie`.
+            cena_kc=float(
+                t.cena_nakup_kc
+                if t.cena_nakup_kc is not None and float(t.cena_nakup_kc) > 0
+                else (t.cena_kc or 0.0)
+            ),
+            # Round-trip účinnost z katalogu; chybějící/nesmyslná → default.
+            # Toleruje zadání v procentech (stejná normalizace jako u PS).
+            ucinnost_rt=peak_shaving.normalizuj_ucinnost_rt(t.ucinnost),
+            uzitna_kapacita_kwh=_num((t.extra or {}).get("uzitna_kapacita_kwh")),
+            max_vykon_stridacu_kw=_num((t.extra or {}).get("max_vykon_stridacu_kw")),
+            # Konfigurace, u kterých ceník dealerskou cenu neuvádí, mají
+            # v `cena_kc` doporučenou prodejní cenu – náklad je pak o dealerský
+            # diskont nadhodnocený a výpočet to obchodníkovi řekne.
+            cena_je_doporucena=(
+                (t.cena_nakup_kc is None or float(t.cena_nakup_kc) <= 0)
+                and t.cena_kc is not None
+                and _num((t.extra or {}).get("doporucena_cena_kc")) is not None
+                and abs(float(t.cena_kc) - _num((t.extra or {}).get("doporucena_cena_kc"))) < 0.01
+            ),
+        )
+        for t in _dotaz_baterie_katalog(db, ids).all()
+        if float(t.vykon_kw) > 0 and float(t.kapacita_kwh) > 0 and t.cena_kc
+    )
 
 
 def _dokument_out(d: NabidkaDokument) -> DokumentOut:
@@ -2527,39 +2577,7 @@ def spocti_ppa(
     # cena BESS, takže varianta pak má i CAPEX a její čísla jsou platná.
     baterie_katalog: tuple[ppa_v2.ProduktBaterie, ...] = ()
     if vstup.s_baterii and not vstup.baterie_kapacita_kwh:
-        baterie_katalog = tuple(
-            ppa_v2.ProduktBaterie(
-                id=t.id,
-                nazev=t.nazev,
-                vykon_kw=float(t.vykon_kw),
-                kapacita_kwh=float(t.kapacita_kwh),
-                # PPA potřebuje NÁKLADOVOU cenu (nabaluje na ni marži BESS), takže
-                # přednost má nákupní cena, když ji produkt má. U baterií z ceníku
-                # BESS vyplněná není a `cena_kc` v sobě nese dealerskou cenu, což
-                # náklad je – viz docstring `ppa_v2.ProduktBaterie`.
-                cena_kc=float(
-                    t.cena_nakup_kc
-                    if t.cena_nakup_kc is not None and float(t.cena_nakup_kc) > 0
-                    else (t.cena_kc or 0.0)
-                ),
-                # Round-trip účinnost z katalogu; chybějící/nesmyslná → default.
-                # Toleruje zadání v procentech (stejná normalizace jako u PS).
-                ucinnost_rt=peak_shaving.normalizuj_ucinnost_rt(t.ucinnost),
-                uzitna_kapacita_kwh=_num((t.extra or {}).get("uzitna_kapacita_kwh")),
-                max_vykon_stridacu_kw=_num((t.extra or {}).get("max_vykon_stridacu_kw")),
-                # Konfigurace, u kterých ceník dealerskou cenu neuvádí, mají
-                # v `cena_kc` doporučenou prodejní cenu – náklad je pak o dealerský
-                # diskont nadhodnocený a výpočet to obchodníkovi řekne.
-                cena_je_doporucena=(
-                    (t.cena_nakup_kc is None or float(t.cena_nakup_kc) <= 0)
-                    and t.cena_kc is not None
-                    and _num((t.extra or {}).get("doporucena_cena_kc")) is not None
-                    and abs(float(t.cena_kc) - _num((t.extra or {}).get("doporucena_cena_kc"))) < 0.01
-                ),
-            )
-            for t in _dotaz_baterie_katalog(db).all()
-            if float(t.vykon_kw) > 0 and float(t.kapacita_kwh) > 0 and t.cena_kc
-        )
+        baterie_katalog = _produkty_baterie_ppa(db)
 
     baterie = None
     if vstup.s_baterii and vstup.baterie_kapacita_kwh:
@@ -2654,6 +2672,340 @@ def spocti_ppa(
     }
 
     reseni = NavrhovaneReseni(nabidka_id=nabidka_id, typ_reseni="ppa", popis_json=popis_json)
+    db.add(reseni)
+    if nastaveni is not None:
+        n.vypoctova_nastaveni_id = nastaveni.id
+    if n.stav in ("koncept", "data_nahrana", "zkontrolovano_oz"):
+        n.stav = "spocitano"
+    db.commit()
+    db.refresh(reseni)
+    return {"reseni_id": reseni.id, "popis_json": popis_json}
+
+
+# ============================== PPA + BESS ==============================
+@router.get("/nabidky/{nabidka_id}/ppa-bess/profil-souhrn")
+def ppa_bess_profil_souhrn(
+    nabidka_id: int,
+    user: User = Depends(vyzaduj_ppa_bess),
+    db: Session = Depends(get_db),
+):
+    """Souhrn nahraného profilu.
+
+    Stejný tvar jako u PPA, tedy **včetně roční spotřeby v MWh** – panel ji
+    zobrazuje. Souhrn z peak shavingu (`_profil_souhrn`) ji nemá a v UI by se
+    místo čísla objevilo „None MWh".
+    """
+    if db.get(Nabidka, nabidka_id) is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    casy, spotreba_kwh, interval_h = _profil_spotreby_kwh(db, nabidka_id)
+    if not casy:
+        return {"pocet": 0}
+    return {
+        "pocet": len(casy),
+        "od": _iso(min(casy)),
+        "do": _iso(max(casy)),
+        "interval_h": interval_h,
+        "rocni_spotreba_mwh": round(sum(spotreba_kwh) / 1000.0, 2),
+        "max_kw": round(max(spotreba_kwh) / interval_h, 2) if interval_h > 0 else None,
+    }
+
+
+@router.get("/nabidky/{nabidka_id}/ppa-bess/prubeh")
+def ppa_bess_prubeh(
+    nabidka_id: int,
+    rezim: str = Query("kombinace"),
+    user: User = Depends(vyzaduj_ppa_bess),
+    db: Session = Depends(get_db),
+):
+    """15min průběh pro nitkový graf – dopočítá se z uloženého řešení.
+
+    Do `popis_json` se neukládá (~35 tis. hodnot na řadu). Stropy se berou
+    z uloženého výsledku, takže graf ukazuje **tentýž** dispatch, ze kterého
+    vyšla ekonomika – ne nový, spočítaný jinak.
+    """
+    if rezim not in ppa_bess.REZIMY:
+        raise HTTPException(status_code=422, detail=f"Neznámý režim baterie: {rezim}")
+    reseni = _posledni_reseni(db, nabidka_id, "ppa_bess")
+    if reseni is None:
+        raise HTTPException(status_code=422, detail="Nabídka ještě není spočítaná.")
+    popis = reseni.popis_json or {}
+    blok = next((r for r in (popis.get("rezimy") or []) if r.get("rezim") == rezim), None)
+    if blok is None:
+        raise HTTPException(status_code=422, detail="Uložený výpočet tenhle režim neobsahuje.")
+
+    casy, spotreba_kwh, interval_h = _profil_spotreby_kwh(db, nabidka_id)
+    if not casy:
+        raise HTTPException(status_code=422, detail="Nabídka nemá nahraný profil spotřeby.")
+    casy, spotreba_kwh, _ = _zvaliduj_a_orizni_profil(casy, spotreba_kwh, interval_h)
+
+    n = db.get(Nabidka, nabidka_id)
+    vstup_ulozeny = popis.get("vstup") or {}
+    kwp = float((popis.get("elektrarna") or {}).get("kwp") or 0.0)
+    lat = float(n.zakaznik_gps_lat) if (n and n.zakaznik_gps_lat is not None) else ppa_v2.VYCHOZI_LAT
+    nastaveni = db.query(VypoctovaNastaveni).order_by(VypoctovaNastaveni.verze.desc()).first()
+    merny_vynos = _ppa_param(
+        nastaveni, "ppa_merny_vynos_kwh_kwp", ppa_v2.VYCHOZI_MERNY_VYNOS_KWH_KWP
+    )
+    vynos = merny_vynos if merny_vynos > 0 else ppa_v2.VYCHOZI_MERNY_VYNOS_KWH_KWP
+    # Výroba se musí skládat stejně jako při výpočtu, jinak by graf ukazoval jiný
+    # tvar než ekonomika: u ručně zadaných polí se sčítá po polích, u navržené
+    # velikosti jde o jednu orientaci.
+    ulozena_pole = (popis.get("elektrarna") or {}).get("pole") or []
+    if ulozena_pole:
+        vyroba_kwh = [0.0] * len(casy)
+        for f in ulozena_pole:
+            dil = ppa_v2.simuluj_vyrobu(
+                casy,
+                float(f.get("kwp") or 0.0),
+                lat,
+                float(f.get("sklon_st") or 35.0),
+                float(f.get("azimut_st") or 0.0),
+                vynos,
+            )
+            for i, x in enumerate(dil):
+                vyroba_kwh[i] += x
+    else:
+        vyroba_kwh = [
+            kwp * x
+            for x in ppa_v2.simuluj_vyrobu(
+                casy,
+                1.0,
+                lat,
+                float(vstup_ulozeny.get("sklon_st") or 35.0),
+                float(vstup_ulozeny.get("azimut_st") or 0.0),
+                vynos,
+            )
+        ]
+
+    bat_json = popis.get("baterie") or None
+    baterie = None
+    if bat_json:
+        baterie = ppa_v2.Baterie(
+            kapacita_kwh=float(bat_json.get("kapacita_kwh") or 0.0),
+            vykon_kw=float(bat_json.get("vykon_kw") or 0.0),
+            ucinnost_round_trip=float(
+                bat_json.get("ucinnost_round_trip") or ppa_v2.VYCHOZI_UCINNOST_ROUND_TRIP
+            ),
+            dod=float(bat_json.get("dod") or ppa_v2.VYCHOZI_DOD),
+        )
+    stropy = {int(m["mesic"]): float(m["strop_kw"]) for m in (blok.get("mesice") or [])}
+
+    prubeh = ppa_bess.prubeh_15min(
+        spotreba_kwh,
+        vyroba_kwh,
+        [c.month for c in casy],
+        baterie,
+        stropy,
+        interval_h,
+        rezervovany_vykon_dodavky_kw=vstup_ulozeny.get("rezervovany_vykon_dodavky_kw"),
+        rezim=rezim,
+    )
+    prubeh["od"] = _iso(casy[0]) if casy else None
+    prubeh["casy_min"] = [
+        int(round((c - casy[0]).total_seconds() / 60.0)) for c in casy
+    ]
+    prubeh["rezim"] = rezim
+    prubeh["referencni"] = {
+        "rezervovany_prikon_kw": vstup_ulozeny.get("rezervovany_prikon_kw")
+        or vstup_ulozeny.get("rezervovana_kapacita_kw"),
+    }
+    return prubeh
+
+
+@router.post("/nabidky/{nabidka_id}/ppa-bess/vypocet")
+def spocti_ppa_bess(
+    nabidka_id: int,
+    vstup: PpaBessVstup,
+    user: User = Depends(vyzaduj_ppa_bess),
+    db: Session = Depends(get_db),
+):
+    """Spustí výpočet PPA + BESS a uloží výsledek (typ_reseni = ppa_bess).
+
+    Proti PPA v2 přidává ocenění kilowattů, takže potřebuje sazby NTS 2027
+    ze sazebníku. Když pro danou hladinu a distributora nejsou, výpočet
+    proběhne, ale přínos na výkonu chybí a je to v upozorněních – místo aby
+    se tipovalo.
+
+    Ruční zadání baterie se počítá **synchronně**: je to jedna varianta ve třech
+    režimech, tedy sekundy. Prohledání celého katalogu (fáze 2) pojede na
+    pozadí, protože to web proces neunese.
+    """
+    n = db.get(Nabidka, nabidka_id)
+    if n is None:
+        raise HTTPException(status_code=404, detail="Nabídka neexistuje")
+    if vstup.cena_silova_kc_mwh <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="Zadej silovou složku ceny, kterou zákazník platí dnes (Kč/MWh).",
+        )
+    if vstup.rezervovana_kapacita_kw <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="Zadej rezervovanou kapacitu (kW) – bez ní se nedá ocenit srážení špiček.",
+        )
+    if vstup.max_kwp is not None and vstup.max_kwp <= 0:
+        raise HTTPException(
+            status_code=422, detail="Strop velikosti elektrárny (kWp) musí být kladný."
+        )
+    if vstup.napetova_hladina not in ("vn", "vvn"):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "PPA + BESS zatím počítáme jen na VN a VVN – na NN není nakalibrovaná "
+                "ani výroba, ani tarifní struktura."
+            ),
+        )
+
+    casy, spotreba_kwh, interval_h = _profil_spotreby_kwh(db, nabidka_id)
+    if not casy:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Nabídka nemá nahraný 15min profil spotřeby. Nahraj a načti profil "
+                "(sekce Podklady), bez něj nejde PPA + BESS počítat."
+            ),
+        )
+    casy, spotreba_kwh, upozorneni = _zvaliduj_a_orizni_profil(casy, spotreba_kwh, interval_h)
+
+    # ---- manažerské nastavení
+    nastaveni = db.query(VypoctovaNastaveni).order_by(VypoctovaNastaveni.verze.desc()).first()
+    parametry_json = nastaveni.parametry if nastaveni is not None else None
+    parametry = ppa_v2.parametry_z_nastaveni(parametry_json)
+    parametry_bess = ppa_bess.parametry_z_nastaveni(parametry_json)
+
+    merny_vynos = _ppa_param(
+        nastaveni, "ppa_merny_vynos_kwh_kwp", ppa_v2.VYCHOZI_MERNY_VYNOS_KWH_KWP
+    )
+    if merny_vynos <= 0:
+        merny_vynos = ppa_v2.VYCHOZI_MERNY_VYNOS_KWH_KWP
+
+    cil = vstup.cil_mira_samospotreby
+    if cil is None:
+        cil = _ppa_param(
+            nastaveni, "ppa_cil_mira_samospotreby", ppa_v2.VYCHOZI_CIL_MIRA_SAMOSPOTREBY
+        )
+    if not (0 < cil <= 1):
+        raise HTTPException(status_code=422, detail="Cíl samospotřeby musí být v rozmezí 0–100 %.")
+
+    regulovane = vstup.vyhnutelne_regulovane_kc_mwh
+    if regulovane is None:
+        regulovane = _ppa_param(
+            nastaveni,
+            "ppa_vyhnutelne_regulovane_kc_mwh",
+            ppa_v2.VYCHOZI_VYHNUTELNE_REGULOVANE_KC_MWH,
+        )
+    rezerva_rk = _ppa_param(
+        nastaveni, "ps_rezerva_rk_procenta", peak_shaving.VYCHOZI_REZERVA_RK_PROCENTA
+    )
+
+    # ---- sazby NTS 2027 (jen vn/vvn, stejně jako u peak shavingu)
+    sazba_2027 = _najdi_sazbu(db, vstup.distributor, vstup.napetova_hladina, "nova_2027", 2027)
+    parametry_2027 = dict(sazba_2027.parametry or {}) if sazba_2027 is not None else None
+    je_modelovy_2027 = bool(sazba_2027.je_modelovy_odhad) if sazba_2027 is not None else True
+
+    # ---- lokalita
+    lat = ppa_v2.VYCHOZI_LAT
+    if n.zakaznik_gps_lat is not None:
+        lat = float(n.zakaznik_gps_lat)
+    else:
+        upozorneni.append(
+            f"Nabídka nemá GPS – použita výchozí šířka {ppa_v2.VYCHOZI_LAT}° (střed ČR). "
+            "Doplň GPS zákazníka pro přesnější simulaci výroby."
+        )
+
+    # ---- baterie: ruční zadání má přednost před katalogem
+    baterie = None
+    baterie_katalog: tuple[ppa_v2.ProduktBaterie, ...] = ()
+    if vstup.baterie_kapacita_kwh and vstup.baterie_vykon_kw:
+        if vstup.baterie_kapacita_kwh <= 0 or vstup.baterie_vykon_kw <= 0:
+            raise HTTPException(
+                status_code=422, detail="Kapacita i výkon baterie musí být kladné."
+            )
+        baterie = ppa_v2.Baterie(
+            kapacita_kwh=float(vstup.baterie_kapacita_kwh),
+            vykon_kw=float(vstup.baterie_vykon_kw),
+            ucinnost_round_trip=(
+                peak_shaving.normalizuj_ucinnost_rt(vstup.baterie_ucinnost_rt)
+                if vstup.baterie_ucinnost_rt is not None
+                else ppa_v2.VYCHOZI_UCINNOST_ROUND_TRIP
+            ),
+            dod=(
+                float(vstup.baterie_vyuzitelny_podil)
+                if vstup.baterie_vyuzitelny_podil
+                else ppa_v2.VYCHOZI_DOD
+            ),
+            nakladova_cena_kc=float(vstup.baterie_nakladova_cena_kc or 0.0),
+        )
+    elif vstup.baterie_kapacita_kwh or vstup.baterie_vykon_kw:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "U ruční baterie zadej kapacitu i výkon – jen jedno z toho k simulaci "
+                "nestačí."
+            ),
+        )
+    else:
+        baterie_katalog = _produkty_baterie_ppa(db, vstup.baterie_ids)
+
+    vstup_calc = ppa_bess.VstupPpaBess(
+        casy=casy,
+        spotreba_kwh=spotreba_kwh,
+        cena_silova_kc_mwh=float(vstup.cena_silova_kc_mwh),
+        rezervovana_kapacita_kw=float(vstup.rezervovana_kapacita_kw),
+        rezervovany_prikon_kw=(
+            float(vstup.rezervovany_prikon_kw) if vstup.rezervovany_prikon_kw else None
+        ),
+        hladina="VVN" if vstup.napetova_hladina == "vvn" else "VN",
+        parametry_2027=parametry_2027,
+        je_modelovy_odhad_2027=je_modelovy_2027,
+        vyhnutelne_regulovane_kc_mwh=float(regulovane),
+        cil_mira_samospotreby=float(cil),
+        cena_exportu_kc_mwh=vstup.cena_exportu_kc_mwh,
+        max_kwp=vstup.max_kwp,
+        rezervovany_vykon_dodavky_kw=vstup.rezervovany_vykon_dodavky_kw,
+        lat_deg=lat,
+        sklon_st=vstup.sklon_st,
+        azimut_st=vstup.azimut_st,
+        pole=tuple(
+            ppa_bess.PoleFve(
+                kwp=float(f.kwp), sklon_st=float(f.sklon_st), azimut_st=float(f.azimut_st)
+            )
+            for f in (vstup.pole or ())
+            if f.kwp and float(f.kwp) > 0
+        ),
+        merny_vynos_kwh_kwp=merny_vynos,
+        baterie=baterie,
+        baterie_katalog=baterie_katalog,
+        najem_kc_mesic_rucne=(
+            float(vstup.baterie_najem_kc_mesic)
+            if vstup.baterie_najem_kc_mesic is not None
+            else None
+        ),
+        nabizene_delky_roky=tuple(
+            vstup.nabizene_delky_roky or ppa_v2.VYCHOZI_NABIZENE_DELKY_ROKY
+        ),
+        rezerva_rk_procenta=rezerva_rk,
+        interval_h=interval_h,
+        parametry=parametry,
+        parametry_bess=parametry_bess,
+    )
+
+    vysledek = ppa_bess.spocti_ppa_bess(vstup_calc)
+    if vysledek.get("chyba"):
+        raise HTTPException(status_code=422, detail=vysledek["chyba"])
+
+    upozorneni.extend(vysledek.get("upozorneni") or [])
+    popis_json = {**vysledek, "upozorneni": upozorneni}
+    popis_json["vstup"] = {
+        **(vysledek.get("vstup") or {}),
+        "distributor": vstup.distributor,
+        "napetova_hladina": vstup.napetova_hladina,
+        "sazba_2027_id": sazba_2027.id if sazba_2027 is not None else None,
+    }
+
+    reseni = NavrhovaneReseni(
+        nabidka_id=nabidka_id, typ_reseni="ppa_bess", popis_json=popis_json
+    )
     db.add(reseni)
     if nastaveni is not None:
         n.vypoctova_nastaveni_id = nastaveni.id

@@ -10,7 +10,13 @@ import { crmKategorie, crmVytvorNabidku, nabidkaDetail, nabidkaPdfSeznam } from 
 import { STAV_NABIDKY } from "../nabidkovac";
 import "../styles/nabidkovac.css";
 
-const TYPY = { ppa: "PPA", prodej: "Prodej", peak_shaving: "Peak shaving", kombinace: "Kombinace" };
+const TYPY = {
+  ppa: "PPA",
+  prodej: "Prodej",
+  peak_shaving: "Peak shaving",
+  kombinace: "Kombinace",
+  ppa_bess: "PPA + BESS",
+};
 
 /**
  * Nabídky obchodního případu — celý výpočet přímo na kartě případu.

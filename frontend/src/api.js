@@ -437,6 +437,26 @@ export function ppaPrubeh(nabidkaId, varianta = "bez_baterie") {
   );
 }
 
+// ---- PPA + BESS (elektrárna i baterie z jednoho diagramu) ----
+export function ppaBessVypocet(nabidkaId, data) {
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/ppa-bess/vypocet`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function ppaBessProfilSouhrn(nabidkaId) {
+  return zavolej(`/nabidkovac/nabidky/${nabidkaId}/ppa-bess/profil-souhrn`);
+}
+
+// 15min průběh pro nitkový graf. Neukládá se do řešení (~35 tis. hodnot),
+// dopočítá se z uloženého výpočtu se stejnými stropy.
+export function ppaBessPrubeh(nabidkaId, rezim = "kombinace") {
+  return zavolej(
+    `/nabidkovac/nabidky/${nabidkaId}/ppa-bess/prubeh?rezim=${encodeURIComponent(rezim)}`
+  );
+}
+
 // ---- Nabídkový výstup (šablona pro zákazníka / PDF) ----
 export function nabidkaVystup(nabidkaId, typReseni, vychozi = false) {
   const q = vychozi ? "?vychozi=1" : "";

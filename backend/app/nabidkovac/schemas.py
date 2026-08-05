@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 # téhož a `VlastniPoleVstupy` by je musela rozlišovat.
 from app.crm.schemas import VlastniPoleOut
 
-TypNabidky = Literal["ppa", "prodej", "peak_shaving", "kombinace"]
+TypNabidky = Literal["ppa", "prodej", "peak_shaving", "kombinace", "ppa_bess"]
 StavNabidky = Literal["koncept", "data_nahrana", "zkontrolovano_oz", "spocitano", "hotovo"]
 TypTechnologie = Literal["fve_panel", "invertor", "baterie", "jina"]
 ZdrojPolozky = Literal["rucne", "bess_cenik", "raynet_import"]
@@ -348,6 +348,77 @@ class PpaVstup(BaseModel):
     baterie_nakladova_cena_kc: Optional[float] = None
 
     # Délky kontraktu, které se zákazníkovi nabídnou (default 10/15/20).
+    nabizene_delky_roky: Optional[list[int]] = None
+
+
+# ---- PPA + BESS (METODIKA-ppa-bess.md, viz nabidkovac/ppa_bess.py) ----
+class PpaBessPoleFve(BaseModel):
+    """Jedno pole elektrárny s vlastní orientací a výkonem.
+
+    Jméno je schválně dlouhé: v `app/**/schemas.py` se nesmí sejít dvě pydantic
+    třídy stejného jména (hlídá `tests/test_kolize_cest.py`), a „PoleFve" by se
+    o to samo koledovalo.
+    """
+
+    kwp: float
+    sklon_st: float = 35.0
+    azimut_st: float = 0.0  # 0 = jih, −90 = východ, +90 = západ
+
+
+class PpaBessVstup(BaseModel):
+    """Vstupy výpočtu PPA+BESS.
+
+    Proti `PpaVstup` přidává to, co je potřeba k ocenění kilowattů (rezervovaná
+    kapacita, rezervovaný příkon, distributor), a ruční zadání baterie včetně
+    ceny nebo sjednaného nájmu. Profil spotřeby se čte z `spotreba_profil`.
+
+    Volitelná pole (None) doplní `routes.py` z manažerského nastavení nebo
+    z kódových defaultů.
+    """
+
+    # --- co je potřeba vždy
+    distributor: Distributor
+    napetova_hladina: NapetovaHladina
+    # Rezervovaná kapacita z distribuční smlouvy (kW).
+    rezervovana_kapacita_kw: float
+    # Silová složka, kterou zákazník platí dnes (Kč/MWh).
+    cena_silova_kc_mwh: float
+    # Strop velikosti elektrárny (střecha / pozemek / připojení).
+    max_kwp: Optional[float] = None
+
+    # --- rezervovaný příkon ze smlouvy o připojení; prázdné = fallback na RK
+    rezervovany_prikon_kw: Optional[float] = None
+
+    # --- ceny a doplňky
+    vyhnutelne_regulovane_kc_mwh: Optional[float] = None
+    cil_mira_samospotreby: Optional[float] = None
+    cena_exportu_kc_mwh: Optional[float] = None
+    rezervovany_vykon_dodavky_kw: Optional[float] = None
+
+    # --- orientace elektrárny
+    # Použije se, když se velikost navrhuje (tj. `pole` je prázdné).
+    sklon_st: float = 35.0
+    azimut_st: float = 0.0  # 0 = jih, ±90 = V/Z, 180 = sever
+    # Rozpad na pole („na jih 200 kWp, na východ 100, na západ 100"). Když je
+    # vyplněný, velikost se NENAVRHUJE – je daná součtem výkonů, a `max_kwp`
+    # ani cíl samospotřeby ji už neovlivní.
+    pole: Optional[list[PpaBessPoleFve]] = None
+
+    # --- baterie: buď ručně, nebo z katalogu
+    # Ruční zadání má přednost. Kapacita a výkon jsou povinné, účinnost
+    # a využitelný podíl kapacity (SOC okno) mají default.
+    baterie_kapacita_kwh: Optional[float] = None
+    baterie_vykon_kw: Optional[float] = None
+    baterie_ucinnost_rt: Optional[float] = None
+    baterie_vyuzitelny_podil: Optional[float] = None
+    # Cena: nákladová (z ní se nájem dopočítá) a/nebo sjednaný nájem (vezme se,
+    # jak je). Když jsou obě, výpočet ukáže, jak se rozcházejí.
+    baterie_nakladova_cena_kc: Optional[float] = None
+    baterie_najem_kc_mesic: Optional[float] = None
+    # Zúžení katalogu, když se baterie nezadává ručně (id z `technologie`).
+    baterie_ids: Optional[list[int]] = None
+
+    # --- ostatní
     nabizene_delky_roky: Optional[list[int]] = None
 
 
