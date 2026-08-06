@@ -156,6 +156,15 @@ autosave neumí, je v [CRM → Úpravy se ukládají samy](crm.md).
 > Nabídka se z nich přepočítává do verzí, takže je ukládá až **Spočítat** — průběžné ukládání
 > by z každé rozepsané sazby udělalo novou verzi výpočtu.
 
+**Když je nad nabídkou někdo další, panel vstupů to řekne (od 6. 8. 2026).** V hlavičce
+*Vstupy výpočtu* se objeví kolečka s iniciálami a u tlačítka **Spočítat** věta, že přepočet
+uloží tvoje vstupy jako novou verzi a přepíše zadání, na kterém možná někdo pracuje.
+
+Je to schválně jen upozornění, ne zámek: rozpracované zadání zůstává v tvém prohlížeči, takže
+technicky se cizí vstupy přepsat *dají* — appka ti k tomu jen nedá dojít omylem. Když jsi
+u nabídky sám, nezobrazí se nic. Kdo pracuje na téže nabídce z jiného počítače, o rozepsaném
+zadání kolegy pořád neví; to by šlo vyřešit až ukládáním konceptu na server.
+
 #### Detail nabídky – sbalená karta Podklady (nahrávání dokumentů)
 | Prvek | Co dělá | Kdo vidí |
 |---|---|---|
