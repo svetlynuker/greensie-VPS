@@ -26,6 +26,7 @@ MODULY_ROUTERU = [
     "app.admin.routes",
     "app.nastaveni.routes",
     "app.matice.routes",
+    "app.pritomnost.routes",
     "app.finance.routes",
     "app.nabidkovac.routes",
     "app.crm.routes",

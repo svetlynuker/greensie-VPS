@@ -1,16 +1,16 @@
-from datetime import date, datetime
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.auth.models import User
 from app.database import get_db
-from app.matice import disk_parovani, freelo
+from app.matice import bunka_pole, disk_parovani, freelo
 from app.matice.models import Bunka, NastaveniBarev, NastaveniSynchronizace, Projekt, Sloupec
 from app.matice.permissions import muze_editovat, vyzaduj_editora, vyzaduj_projekty
+from app.matice.razitko import oznac_zmenu, razitko_matice
 from app.matice.schemas import (
     BarvyOut,
     BunkaOut,
+    BunkaPolePatch,
     BunkaVstup,
     DiskOdkazVstup,
     DiskParovaniVysledek,
@@ -20,6 +20,7 @@ from app.matice.schemas import (
     MaticeOut,
     ProjektOut,
     ProjektVstup,
+    RazitkoOut,
     SloupecVstup,
     SyncNastaveniOut,
     SyncNastaveniVstup,
@@ -33,16 +34,42 @@ router = APIRouter(prefix="/matice", tags=["matice"])
 
 # ---- pomocné ----
 def _parse_date(s):
-    if not s:
-        return None
+    """Datum z formuláře. Chybný vstup je chyba klienta → 422."""
     try:
-        return datetime.strptime(s[:10], "%Y-%m-%d").date()
+        return bunka_pole.parse_datum(s)
     except ValueError:
         raise HTTPException(status_code=422, detail=f"Neplatné datum: {s}")
 
 
-def _date_str(d):
-    return d.isoformat() if isinstance(d, date) else None
+_date_str = bunka_pole.datum_text
+
+
+def _jmena_uzivatelu(db: Session, ids) -> dict[int, str]:
+    """id → jméno pro autory posledních změn (jeden dotaz místo dotazu na buňku)."""
+    ids = {i for i in ids if i}
+    if not ids:
+        return {}
+    return {u.id: u.jmeno for u in db.query(User).filter(User.id.in_(ids)).all()}
+
+
+def _bunka_out(bunka: Bunka, jmena: dict[int, str] | None = None) -> BunkaOut:
+    jmena = jmena or {}
+    zmeneno = bunka.zmeneno_at
+    return BunkaOut(
+        stav=bunka.stav,
+        termin=_date_str(bunka.termin),
+        osoba=bunka.osoba,
+        poznamka=bunka.poznamka,
+        url=bunka.url,
+        # Změna bez uživatele = zapsal ji automat (synchronizace z Freela).
+        # Bez tohohle popisku by hláška o kolizi tvrdila „změnil (nikdo)“.
+        # Teoreticky sem spadne i změna člověka, kterého někdo mezitím smazal
+        # z appky (cizí klíč je ON DELETE SET NULL) — vzácné a neškodné.
+        zmenil=jmena.get(bunka.zmenil_id, "")
+        or ("automatická synchronizace" if zmeneno else ""),
+        zmeneno_at=zmeneno.isoformat() if zmeneno else None,
+        verze=bunka.verze or 0,
+    )
 
 
 def _ziskej_barvy(db: Session) -> NastaveniBarev:
@@ -95,15 +122,9 @@ def nacti_matici(user: User = Depends(vyzaduj_projekty), db: Session = Depends(g
 
     faze = [FazeOut(todo=f, ukoly=faze_map[f]) for f in poradi_fazi]
 
+    jmena = _jmena_uzivatelu(db, (b.zmenil_id for b in bunky))
     bunky_out = {
-        f"{b.projekt_id}||{b.sloupec_id}": BunkaOut(
-            stav=b.stav,
-            termin=_date_str(b.termin),
-            osoba=b.osoba,
-            poznamka=b.poznamka,
-            url=b.url,
-        )
-        for b in bunky
+        f"{b.projekt_id}||{b.sloupec_id}": _bunka_out(b, jmena) for b in bunky
     }
 
     return MaticeOut(
@@ -167,16 +188,111 @@ def uloz_bunku(
     bunka.osoba = vstup.osoba or ""
     bunka.poznamka = vstup.poznamka or ""
     bunka.upraveno_rucne = True
+    oznac_zmenu(bunka, user.id)
 
     db.commit()
     db.refresh(bunka)
-    return BunkaOut(
-        stav=bunka.stav,
-        termin=_date_str(bunka.termin),
-        osoba=bunka.osoba,
-        poznamka=bunka.poznamka,
-        url=bunka.url,
+    return _bunka_out(bunka, _jmena_uzivatelu(db, [bunka.zmenil_id]))
+
+
+# ---- editace jednoho pole buňky (automatické ukládání) ----
+@router.patch("/bunka", response_model=BunkaOut)
+def uloz_pole_bunky(
+    vstup: BunkaPolePatch,
+    user: User = Depends(vyzaduj_editora),
+    db: Session = Depends(get_db),
+):
+    """Uloží jedno pole buňky — základ automatického ukládání.
+
+    Proti `PUT /bunka` (celá buňka naráz) tady platí dvě věci: mění se jen to
+    pole, které člověk skutečně upravil, a před zápisem se ověří, že v DB je
+    pořád hodnota, kterou měl na obrazovce. Když ne, vrací 409 a NIC nepřepíše —
+    tiché přepsání cizí práce je přesně to, čemu se automatické ukládání musí
+    vyhnout.
+    """
+    if db.get(Projekt, vstup.projekt_id) is None:
+        raise HTTPException(status_code=404, detail="Projekt neexistuje")
+    if db.get(Sloupec, vstup.sloupec_id) is None:
+        raise HTTPException(status_code=404, detail="Sloupec neexistuje")
+
+    nast = ziskej_sync_nastaveni(db)
+
+    bunka = (
+        db.query(Bunka)
+        .filter(Bunka.projekt_id == vstup.projekt_id, Bunka.sloupec_id == vstup.sloupec_id)
+        .first()
     )
+    if bunka is None:
+        bunka = Bunka(projekt_id=vstup.projekt_id, sloupec_id=vstup.sloupec_id)
+        db.add(bunka)
+        db.flush()
+
+    # Kontrola kolize musí být PŘED zápisem do Freela: kdybychom to obrátili,
+    # ohlásili bychom Freelu změnu stavu, kterou pak sami odmítneme.
+    try:
+        bunka_pole.zkontroluj_kolizi(bunka, pole=vstup.pole, puvodni=vstup.puvodni)
+    except bunka_pole.Konflikt as k:
+        jmena = _jmena_uzivatelu(db, [k.zmenil_id])
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "zprava": "Mezitím to změnil někdo jiný.",
+                "pole": k.pole,
+                "aktualni": k.aktualni,
+                "kdo": jmena.get(k.zmenil_id, ""),
+                "kdy": k.zmeneno_at.isoformat() if k.zmeneno_at else None,
+            },
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    # Obousměrná synchronizace stavu do Freela — stejné pravidlo jako u PUT:
+    # zápis jde první, a když selže, stav se v appce neuloží (jinak by ho
+    # příští synchronizace z Freela přepsala zpátky).
+    if vstup.pole == "stav":
+        novy_stav = vstup.hodnota or None
+        if (
+            nast.zapis_stav_do_freela
+            and bunka.freelo_task_id
+            and novy_stav != bunka.stav
+            and novy_stav in ("done", "todo")
+        ):
+            try:
+                if novy_stav == "done":
+                    freelo.dokonci_ukol(bunka.freelo_task_id)
+                else:
+                    freelo.aktivuj_ukol(bunka.freelo_task_id)
+            except Exception as e:  # noqa: BLE001 - chybu ukážeme uživateli, stav neuložíme
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Zápis stavu do Freela selhal: {e}. Stav se neuložil, zkuste to prosím znovu.",
+                )
+
+    try:
+        bunka_pole.zapis_pole(
+            bunka, pole=vstup.pole, hodnota=vstup.hodnota, uzivatel_id=user.id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    db.commit()
+    db.refresh(bunka)
+    return _bunka_out(bunka, _jmena_uzivatelu(db, [bunka.zmenil_id]))
+
+
+# ---- razítko změn (pro automatické dotažení novinek) ----
+@router.get("/razitko", response_model=RazitkoOut)
+def nacti_razitko(
+    user: User = Depends(vyzaduj_projekty),
+    db: Session = Depends(get_db),
+):
+    """Podpis stavu matice. Změnil-li se, klient si načte `GET /matice` znovu.
+
+    Samostatný endpoint je tu pro případ, že by stránka chtěla jen kontrolovat
+    změny bez ohlašování přítomnosti; běžně přijde razítko rovnou v odpovědi
+    na `POST /pritomnost/tik`, takže se nikde nevolá dvakrát.
+    """
+    return RazitkoOut(razitko=razitko_matice(db))
 
 
 # ---- ruční projekt ----
@@ -198,6 +314,7 @@ def pridej_projekt(
         poradi=max_poradi,
     )
     db.add(p)
+    oznac_zmenu(p, user.id)
     db.commit()
     db.refresh(p)
     return _projekt_out(p)
@@ -215,6 +332,7 @@ def nastav_zobrazeni_projektu(
     if p is None:
         raise HTTPException(status_code=404, detail="Projekt neexistuje")
     p.skryty = vstup.skryty
+    oznac_zmenu(p, user.id)
     db.commit()
     db.refresh(p)
     return _projekt_out(p)
@@ -240,6 +358,7 @@ def uloz_disk_odkaz(
     url = (vstup.url or "").strip()
     p.disk_url = url
     p.disk_rucni = bool(url)
+    oznac_zmenu(p, user.id)
     db.commit()
     db.refresh(p)
     return _projekt_out(p)
@@ -330,9 +449,12 @@ def proved_synchronizaci(
             p = Projekt(freelo_id=fp["freelo_id"], nazev=fp["nazev"], url=fp["url"], poradi=poradi_p)
             poradi_p += 1
             db.add(p)
+            oznac_zmenu(p)
         else:
-            p.nazev = fp["nazev"]
-            p.url = fp["url"]
+            if p.nazev != fp["nazev"] or p.url != fp["url"]:
+                p.nazev = fp["nazev"]
+                p.url = fp["url"]
+                oznac_zmenu(p)
         projekt_dle_freelo[fp["freelo_id"]] = p
     db.flush()
 
@@ -373,6 +495,10 @@ def proved_synchronizaci(
             bunka.url = u["url"]
             bunka.freelo_task_id = u["freelo_task_id"]
             bunka.upraveno_rucne = False
+            # Bez razítka by se nová buňka z Freela u ostatních neobjevila,
+            # dokud by si stránku neobnovili ručně. `oznac_zmenu` bez uživatele
+            # = změnil to automat, ne člověk.
+            oznac_zmenu(bunka)
             novych += 1
         else:
             # url + freelo_task_id jsou čistá Freelo metadata (odkaz na úkol) →
@@ -391,6 +517,7 @@ def proved_synchronizaci(
                 zmeneno = True
             # poznámku (jen v appce) NIKDY nepřepisujeme/nemažeme
             if zmeneno:
+                oznac_zmenu(bunka)
                 prepsanych += 1
 
     db.commit()

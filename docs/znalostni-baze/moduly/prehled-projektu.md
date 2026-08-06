@@ -103,7 +103,22 @@ Otevře se klikem do buňky (jen editor). Obsahuje:
 | **Odpovědná osoba** | jméno (volný text) |
 | **Poznámka** | volný text; **žije jen v appce a Freelo ji nikdy nepřepíše** |
 | **Otevřít úkol ve Freelu ↗** | odkaz na úkol ve Freelu (jen když je buňka napojená na Freelo) |
-| **Zrušit / Uložit** | zavře bez uložení / uloží změny |
+| **Hotovo** | zavře okno; **neukládá** — změny jsou uložené už průběžně |
+
+**Ukládá se to samo (od 6. 8. 2026).** Tlačítko „Uložit" tu už není: každé pole se
+uloží samo — u textu asi půl sekundy po dopsání, u výběru stavu a data hned. Vlevo dole
+je vidět stav (*Ukládám… / Uloženo v 14:32 / Neuloženo*). Zavření okna čekající změnu
+ještě odešle, takže se posledních pár znaků neztratí.
+
+Ukládá se **jen to pole, které jsi změnil**. Dřív se posílala celá buňka naráz, takže dva
+lidé v jedné buňce si navzájem přepsali i pole, kterých se nedotkli — nejčastěji poznámku,
+a bez jakékoli hlášky.
+
+**Když do stejného pole mezitím zapsal někdo jiný**, appka nic nepřepíše a zeptá se:
+ukáže, kdo a co změnil, a nabídne *Přepsat mojí hodnotou* / *Nechat jejich*.
+
+> ⚠️ Prázdné pole je platná hodnota (= vymazat). Protože se ukládá průběžně, jsou
+> v databázi i rozepsané a nedokončené hodnoty — to je normální stav, ne chyba.
 
 > ⚠️ **Změna stavu se propíše zpět do Freela**, pokud je buňka napojená na Freelo úkol a je zapnutý
 > „zápis stavu do Freela" (výchozí ano). Když zápis do Freela selže, **stav se neuloží** a uvidíš chybu —
@@ -121,10 +136,24 @@ V obou případech: **úkoly, které Freelo nemá, se nemažou** a **poznámky s
 
 > 📸 SCREENSHOT: dialog „Načíst z Freela" se dvěma volbami
 
+### Kdo tu je se mnou
+V horní liště vedle názvu **„Přehled projektů"** jsou kolečka s iniciálami lidí, kteří mají
+pohled právě otevřený. Když někdo edituje konkrétní buňku, řekne to popisek u kolečka
+(*„Jméno — edituje: podpis SOP – OP-26-099"*) a **ta buňka má v tabulce zelený rámeček
+a tečku**. Je to schválně vidět dřív, než do buňky klikneš — dohodnout se je vždycky lepší
+než řešit kolizi potom.
+
+Kolečko zmizí samo do půl minuty po tom, co člověk stránku zavře (nebo si přepne na jinou
+záložku — appka pak přestane hlásit, že se dívá).
+
+**Změny od ostatních se dotahují samy** — do několika sekund, bez obnovování stránky.
+Platí to i pro to, co mezitím natáhla automatická synchronizace z Freela. Pole, které máš
+právě rozepsané, ti aktualizace nikdy nepřepíše.
+
 ### Jak na…
-- **Označit úkol jako hotový:** klik do buňky → Stav = *Hotovo* → Uložit. (Pokud je napojený na Freelo,
-  dokončí se i tam.)
-- **Nastavit termín/osobu:** klik do buňky → vyplň Termín / Odpovědná osoba → Uložit.
+- **Označit úkol jako hotový:** klik do buňky → Stav = *Hotovo*. Uloží se samo. (Pokud je úkol
+  napojený na Freelo, dokončí se i tam.)
+- **Nastavit termín/osobu:** klik do buňky → vyplň Termín / Odpovědná osoba. Uloží se samo.
 - **Přidat projekt, který není ve Freelu:** *+ Projekt* → název (klidně s číslem OP) a případně termín.
 - **Přidat nový úkol napříč projekty:** *+ Sloupec* → zadej fázi a název úkolu (vznikne nový sloupec).
 - **Uklidit si přehled:** *Zobrazení ▾* odškrtej fáze/úkoly, které nechceš vidět; táhnutím si srovnej pořadí.
@@ -183,22 +212,56 @@ beze změny. **Poznámka se nepřepisuje NIKDY.** U posledního běhu se uklád�
     sloupců podle pole `faze`.
   - `bunky` — průsečík projekt × sloupec (`stav` `done`/`todo`/`None`, `termin`, `osoba`, `poznamka`,
     `url`, `freelo_task_id`, `upraveno_rucne`). Unikát na dvojici (projekt, sloupec).
+    Od 6. 8. 2026 navíc `zmeneno_at`, `zmenil_id`, `verze` — kdo a kdy naposledy změnil.
+    `projekty` mají `zmeneno_at` taky.
+  - `pritomnost` (`backend/app/pritomnost/models.py`) — kdo má co otevřené: jeden řádek na
+    dvojici (uživatel, entita), obnovovaný tikem z prohlížeče.
   - `nastaveni_barev` — globální prahy barev, jeden řádek `id=1`.
   - `nastaveni_synchronizace` — globální nastavení auto-sync, jeden řádek `id=1`.
 - **API** (`backend/app/matice/routes.py`, prefix `/matice`):
   - `GET /matice` — celá matice (fáze, projekty, buňky, barvy, `muze_editovat`).
-  - `PUT /matice/bunka` — uložení/založení buňky (upsert); volitelný zápis stavu do Freela.
+  - `PUT /matice/bunka` — uložení/založení celé buňky (upsert). Frontend ho už nepoužívá,
+    zůstává kvůli zpětné kompatibilitě; **nové věci na něj nestavět** (přepisuje i pole,
+    kterých se člověk nedotkl).
+  - `PATCH /matice/bunka` — uložení **jednoho pole** (`pole`, `hodnota`, `puvodni`). Základ
+    automatického ukládání. Když se `puvodni` neshoduje s tím, co je v DB, vrací **409**
+    s `{zprava, pole, aktualni, kdo, kdy}` a **nic nepřepíše**. `puvodni: null` = přepiš
+    bez kontroly (člověk kolizi potvrdil). Volitelný zápis stavu do Freela jako u `PUT`.
+  - `GET /matice/razitko` — podpis stavu matice (`backend/app/matice/razitko.py`). Změní-li
+    se proti tomu, co klient drží, načte si `GET /matice` znovu. Běžně přichází rovnou
+    v odpovědi na tik přítomnosti, takže se nevolá dvakrát.
   - `POST /matice/projekt`, `POST /matice/sloupec` — ruční přidání.
   - `PUT /matice/projekt/{id}/zobrazeni` — skrýt/obnovit projekt.
   - `PUT /matice/projekt/{id}/disk`, `POST /matice/disk/sparovat` — odkazy na Disk a párování.
   - `PUT /matice/barvy` — prahy barev.
   - `POST /matice/freelo/nacist` — ruční synchronizace (`rezim` = `prepsat` / `bez_prepsani`).
   - `GET/PUT /matice/sync-nastaveni` — nastavení auto-sync (jen admin).
+- **Přítomnost** (`backend/app/pritomnost/`, prefix `/pritomnost`):
+  - `POST /pritomnost/tik` — „jsem tady, mám otevřené tohle"; v odpovědi vrací seznam
+    přítomných **a razítko změn**. Prohlížeč tiká každých 8 s a jen když je záložka vidět.
+  - `POST /pritomnost/odchod` — zavření stránky (jen aby kolečko zmizelo hned; nedoručený
+    odchod vyprší sám za 25 s).
+  - Přítomný = kdo tikl v posledních 25 s (`sluzba.OKNO_S`). Zavřená záložka zmizí sama —
+    kdyby se místo toho párovalo „přišel/odešel", každý spadlý prohlížeč by nechal ducha.
+  - Které moduly to umí, je v `pritomnost/registr.py` — jeden řádek na modul (právo + funkce
+    razítka). Neznámý typ endpoint odmítne (400), aby seznam přítomných nešel obejít bez práva.
 - **Klíčové soubory:** `routes.py` (API + jádro `proved_synchronizaci`), `models.py` (tabulky),
   `freelo.py` (volání Freela), `disk_parovani.py` (párování s Diskem), `scheduler.py` (plánovač),
   `schemas.py` (vstupy/výstupy), `permissions.py` (`muze_editovat`, `vyzaduj_editora`).
+  `bunka_pole.py` (ukládání po polích + kontrola kolize), `razitko.py` (podpis stavu + `oznac_zmenu`).
   Frontend: `pages/PrehledProjektu.jsx` + dialogy `components/BunkaDialog.jsx`, `FreeloDialog.jsx`,
-  `PridatDialog.jsx`, `ZobrazeniDropdown.jsx`.
+  `PridatDialog.jsx`, `ZobrazeniDropdown.jsx`, dále `hooks/useAutosave.js`,
+  `hooks/usePritomnost.js` a `components/Pritomni.jsx`, `components/StavUlozeni.jsx`
+  (obojí je společné, počítá se s použitím v dalších modulech).
+- **Proč razítko a ne seznam rozdílů:** matice je jeden malý dotaz, takže se natáhne celá.
+  Počítat „co přesně se změnilo od času X" by znamenalo držet historii změn — a při první
+  nepřesnosti by lidem tiše chyběla aktualizace. Podpis je tupý, ale nemůže lhát.
+- **Proč se kolize hlídá hodnotou, ne verzí:** `verze` roste i při změně jiného pole, takže
+  by appka hlásila kolizi u věcí, které si vzájemně nevadí. Porovnává se proto hodnota, se
+  kterou člověk začal psát (`puvodni`).
+- **`oznac_zmenu` musí volat i automat:** synchronizace z Freela a párování s Diskem ho volají
+  taky (bez uživatele → „automatická synchronizace"). Kdyby ne, razítko by se nezměnilo
+  a lidé by koukali na stará data, dokud stránku sami neobnoví.
 
 ### Časté potíže / co dělat, když…
 - **„Zápis stavu do Freela selhal"** při ukládání buňky → Freelo API nedostupné nebo úkol už ve Freelu
@@ -210,6 +273,13 @@ beze změny. **Poznámka se nepřepisuje NIKDY.** U posledního běhu se uklád�
   daný přepis zapnutý.
 - **Projekt nemá odkaz na Dokumenty** → automatické párování nenašlo číslo OP v názvu; vlož odkaz ručně
   (*📁 přidat odkaz*), tím se uzamkne (`disk_rucni`) proti přepsání.
+- **„Neuloženo" u editace buňky** → poslední pokus o uložení selhal (spadlá síť, vypršené
+  přihlášení, chyba Freela u změny stavu). Text chyby je vedle. Okno **nezavírej**, dokud
+  nezmizí — zavřením se čekající změna sice ještě odešle, ale když selže i to, je ztracená.
+- **„Mezitím to změnil někdo jiný"** → do stejného pole zapsal jiný člověk (nebo automatická
+  synchronizace). Nic se nepřepsalo; vyber *Přepsat mojí hodnotou* nebo *Nechat jejich*.
+- **Kolečko člověka nezmizelo, i když už odešel** → mizí do 25 s; když má počítač uspaný
+  s otevřenou záložkou, zmizí taky (skrytá záložka přestane hlásit přítomnost).
 
 ---
 

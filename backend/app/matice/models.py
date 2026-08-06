@@ -35,6 +35,11 @@ class Projekt(Base):
     disk_rucni = Column(Boolean, nullable=False, default=False, server_default="false")
     raynet_deal_id = Column(BigInteger, nullable=True)
 
+    # Čas poslední změny projektu. Vstupuje do razítka matice (viz razitko.py) —
+    # bez něj by se skrytí projektu ani vložený odkaz na Disk neprojevily
+    # ostatním, dokud by si stránku neobnovili ručně.
+    zmeneno_at = Column(DateTime(timezone=True), nullable=True, index=True)
+
     bunky = relationship("Bunka", back_populates="projekt", cascade="all, delete-orphan")
 
 
@@ -67,6 +72,17 @@ class Bunka(Base):
     freelo_task_id = Column(Integer, nullable=True)
     # True = buňka byla ručně upravena v appce → má přednost při načtení z Freela
     upraveno_rucne = Column(Boolean, nullable=False, default=False, server_default="false")
+
+    # Kdo a kdy buňku naposledy změnil. Slouží dvěma věcem: razítku matice
+    # (prohlížeč z něj pozná, že má načíst nová data) a hlášce o kolizi —
+    # při „mezitím to změnil někdo jiný“ musí být poznat KDO, jinak nemá
+    # člověk podle čeho se rozhodnout. `verze` roste s každou změnou; je jen
+    # informativní, kolizi hlídá porovnání hodnoty (viz bunka_pole.py).
+    zmeneno_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    zmenil_id = Column(
+        Integer, ForeignKey("uzivatele.id", ondelete="SET NULL"), nullable=True
+    )
+    verze = Column(Integer, nullable=False, default=0, server_default="0")
 
     projekt = relationship("Projekt", back_populates="bunky")
     sloupec = relationship("Sloupec", back_populates="bunky")

@@ -92,13 +92,30 @@ async function zavolej(cesta, moznosti = {}) {
   });
   if (!res.ok) {
     let detail = `Chyba ${res.status}`;
+    let data = null;
     try {
       const chyba = await res.json();
-      if (chyba.detail) detail = chyba.detail;
+      if (chyba.detail) {
+        data = chyba.detail;
+        if (typeof chyba.detail === "string") {
+          detail = chyba.detail;
+        } else if (Array.isArray(chyba.detail)) {
+          // validační chyba (422) přichází jako seznam položek
+          detail = chyba.detail.map((p) => p.msg).filter(Boolean).join("; ") || detail;
+        } else if (chyba.detail.zprava) {
+          // Kolize při automatickém ukládání (409) posílá detail jako objekt
+          // s tím, kdo a co změnil. Bez tohohle by v hlášce skončilo
+          // „[object Object]" a člověk by nevěděl, co se stalo.
+          detail = chyba.detail.zprava;
+        }
+      }
     } catch {
       // ponech výchozí hlášku
     }
-    throw new Error(detail);
+    const chybaVen = new Error(detail);
+    chybaVen.status = res.status;
+    chybaVen.data = data;
+    throw chybaVen;
   }
   return res.json();
 }
@@ -109,6 +126,41 @@ export function nactiMatici() {
 
 export function ulozBunku(data) {
   return zavolej("/matice/bunka", { method: "PUT", body: JSON.stringify(data) });
+}
+
+// Automatické ukládání: jedno pole buňky. `puvodni` je hodnota, kterou jsme
+// zobrazovali před editací — server podle ní pozná, že do pole mezitím zapsal
+// někdo jiný, a vrátí 409 místo tichého přepsání. `puvodni: null` = přepiš
+// bez kontroly (člověk už kolizi viděl a potvrdil ji).
+export function patchPoleBunky({ projekt_id, sloupec_id, pole, hodnota, puvodni }) {
+  return zavolej("/matice/bunka", {
+    method: "PATCH",
+    body: JSON.stringify({ projekt_id, sloupec_id, pole, hodnota, puvodni }),
+  });
+}
+
+export function nactiRazitkoMatice() {
+  return zavolej("/matice/razitko");
+}
+
+// ---- Přítomnost („kdo tu je") ----
+// Tik dělá dvě věci naráz: ohlásí, že tu jsem, a vrátí razítko změn. Proto
+// synchronizace nestojí ani jeden požadavek navíc.
+export function tikPritomnost({ entita_typ, entita_id = "", pole = "" }) {
+  return zavolej("/pritomnost/tik", {
+    method: "POST",
+    body: JSON.stringify({ entita_typ, entita_id, pole }),
+  });
+}
+
+export function odchodPritomnost({ entita_typ, entita_id = "" }) {
+  return zavolej("/pritomnost/odchod", {
+    method: "POST",
+    body: JSON.stringify({ entita_typ, entita_id }),
+    // keepalive: odchod se posílá při zavírání stránky, kdy už prohlížeč
+    // běžné požadavky ruší
+    keepalive: true,
+  });
 }
 
 export function pridejProjekt(data) {

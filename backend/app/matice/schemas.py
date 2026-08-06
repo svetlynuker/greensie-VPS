@@ -48,6 +48,11 @@ class BunkaOut(BaseModel):
     osoba: str = ""
     poznamka: str = ""
     url: str = ""
+    # Kdo a kdy naposledy změnil. Bez jména by hláška o kolizi říkala jen
+    # „mezitím se to změnilo“, což člověku k rozhodnutí nestačí.
+    zmenil: str = ""
+    zmeneno_at: Optional[str] = None
+    verze: int = 0
 
 
 class BarvyOut(BaseModel):
@@ -76,6 +81,24 @@ class BunkaVstup(BaseModel):
     termin: Optional[str] = None  # "YYYY-MM-DD" nebo prázdné
     osoba: str = ""
     poznamka: str = ""
+
+
+class BunkaPolePatch(BaseModel):
+    """Uložení JEDNOHO pole buňky (automatické ukládání, viz bunka_pole.py)."""
+
+    projekt_id: int
+    sloupec_id: int
+    pole: Literal["stav", "termin", "osoba", "poznamka"]
+    # Prázdný text = vymazat hodnotu. Rozepsaný / nedokončený obsah je při
+    # automatickém ukládání normální stav, ne chyba.
+    hodnota: str = ""
+    # Hodnota, kterou prohlížeč zobrazoval před editací. None = „přepiš bez
+    # kontroly“ (člověk už kolizi viděl a potvrdil ji).
+    puvodni: Optional[str] = None
+
+
+class RazitkoOut(BaseModel):
+    razitko: str
 
 
 class ProjektVstup(BaseModel):

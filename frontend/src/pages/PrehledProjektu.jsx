@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import BunkaDialog from "../components/BunkaDialog";
+import Pritomni from "../components/Pritomni";
+import { usePritomnost } from "../hooks/usePritomnost";
 import FreeloDialog from "../components/FreeloDialog";
 import PridatDialog from "../components/PridatDialog";
 import ZobrazeniDropdown from "../components/ZobrazeniDropdown";
@@ -11,7 +13,7 @@ import {
   nactiNastaveni,
   ulozNastaveni,
   logout,
-  ulozBunku,
+  patchPoleBunky,
   pridejProjekt,
   pridejSloupec,
   nacistZFreela,
@@ -192,6 +194,44 @@ export default function PrehledProjektu() {
     naplnBarvyText(d.barvy);
     return d;
   }
+
+  // ---- Synchronizace mezi lidmi ----
+  // Jeden tik dělá obojí: ohlásí „jsem tady, mám otevřenou tuhle buňku" a
+  // v odpovědi přinese razítko změn. Proto tu není žádný druhý dotaz a není
+  // potřeba trvalé spojení (WebSocket).
+  const otevrenaBunka = editace
+    ? bunkaKlic(editace.projekt.id, editace.ukol.sloupec_id)
+    : "";
+  const { pritomni, razitko } = usePritomnost({
+    entitaTyp: "matice",
+    pole: otevrenaBunka,
+    zapnuto: !!matice,
+  });
+
+  // Razítko se změnilo → někdo něco upravil, natáhneme matici znovu. První
+  // razítko se jen zapamatuje, jinak by se stránka po načtení obnovila dvakrát.
+  const razitkoRef = useRef(null);
+  useEffect(() => {
+    if (!razitko) return;
+    if (razitkoRef.current === null || razitkoRef.current === razitko) {
+      razitkoRef.current = razitko;
+      return;
+    }
+    razitkoRef.current = razitko;
+    nactiZnovu().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [razitko]);
+
+  // Klíč buňky → jména lidí, kteří ji mají zrovna otevřenou (bez sebe).
+  const editujiBunku = useMemo(() => {
+    const mapa = new Map();
+    (pritomni || []).forEach((c) => {
+      if (c.ja || !c.pole) return;
+      if (!mapa.has(c.pole)) mapa.set(c.pole, []);
+      mapa.get(c.pole).push(c.jmeno);
+    });
+    return mapa;
+  }, [pritomni]);
 
   // Ruční vložení / úprava / smazání odkazu na složku dokumentů projektu.
   // Prázdný vstup odkaz smaže a vrátí projekt do automatického párování.
@@ -386,20 +426,26 @@ export default function PrehledProjektu() {
 
   function otevriBunku(projekt, ukol) {
     if (!muze_editovat) return;
-    setEditace({ projekt, ukol, bunka: bunkaFor(projekt.id, ukol.sloupec_id) });
+    // Data buňky se do dialogu berou živě z matice (viz `editovanaBunka`), ne
+    // jako snímek – jinak by v otevřeném popupu nebylo vidět, co mezitím
+    // změnil někdo jiný.
+    setEditace({ projekt, ukol });
   }
 
-  async function ulozEditaci(data) {
-    const ulozena = await ulozBunku({
+  // Uložení JEDNOHO pole buňky. `puvodni` je hodnota, kterou jsme zobrazovali;
+  // server podle ní pozná cizí zápis a vrátí 409 místo tichého přepsání.
+  async function ulozPoleBunky(pole, hodnota, puvodni) {
+    if (!editace) return;
+    const klic = bunkaKlic(editace.projekt.id, editace.ukol.sloupec_id);
+    const ulozena = await patchPoleBunky({
       projekt_id: editace.projekt.id,
       sloupec_id: editace.ukol.sloupec_id,
-      ...data,
+      pole,
+      hodnota,
+      puvodni,
     });
-    setMatice((m) => ({
-      ...m,
-      bunky: { ...m.bunky, [bunkaKlic(editace.projekt.id, editace.ukol.sloupec_id)]: ulozena },
-    }));
-    setEditace(null);
+    setMatice((m) => (m ? { ...m, bunky: { ...m.bunky, [klic]: ulozena } } : m));
+    return ulozena;
   }
 
   async function nastavZobrazeni(projektId, skryty) {
@@ -456,6 +502,20 @@ export default function PrehledProjektu() {
             <span style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--fm-brand)" }} />
             Přehled projektů
           </span>
+          {/* Kdo je právě v pohledu. Popisek u kolečka řekne i to, kterou buňku
+              má člověk otevřenou – ať je kolize vidět dřív, než nastane. */}
+          <Pritomni
+            pritomni={pritomni}
+            popisekPole={(klic) => {
+              const [projektId, sloupecId] = String(klic).split("||");
+              const projekt = projekty.find((p) => String(p.id) === projektId);
+              const ukol = faze
+                .flatMap((f) => f.ukoly)
+                .find((u) => String(u.sloupec_id) === sloupecId);
+              if (!projekt && !ukol) return null;
+              return [ukol?.nazev, projekt?.nazev].filter(Boolean).join(" – ");
+            }}
+          />
           <button className="fm-btn fm-ghost" onClick={() => setNastrojeSkryte((v) => !v)}>
             {nastrojeSkryte ? "Zobrazit nástroje ▾" : "Skrýt nástroje ▴"}
           </button>
@@ -784,11 +844,20 @@ export default function PrehledProjektu() {
                         const c = bunkaFor(p.id, u.sloupec_id);
                         const grpStart = ci === 0 ? " fm-grp-start" : "";
                         const klik = muze_editovat ? " fm-klik" : "";
+                        // Buňku, kterou má někdo jiný právě otevřenou, označíme
+                        // rámečkem – kolizi je lepší zahlédnout předem než
+                        // řešit hláškou potom.
+                        const kdoEdituje = editujiBunku.get(bunkaKlic(p.id, u.sloupec_id));
+                        const editTitle = kdoEdituje
+                          ? `Právě edituje: ${kdoEdituje.join(", ")}`
+                          : undefined;
+                        const editClass = kdoEdituje ? " fm-edituje" : "";
                         if (!c || !c.stav) {
                           return (
                             <td
                               key={u.sloupec_id}
-                              className={"fm-cell fm-empty" + grpStart + klik}
+                              className={"fm-cell fm-empty" + grpStart + klik + editClass}
+                              title={editTitle}
                               onClick={() => otevriBunku(p, u)}
                             >
                               <span className="fm-cell-empty-hint">·</span>
@@ -813,8 +882,8 @@ export default function PrehledProjektu() {
                           return (
                             <td
                               key={u.sloupec_id}
-                              className={"fm-cell fm-s-done" + grpStart + klik}
-                              title={c.poznamka || undefined}
+                              className={"fm-cell fm-s-done" + grpStart + klik + editClass}
+                              title={editTitle || c.poznamka || undefined}
                               onClick={() => otevriBunku(p, u)}
                             >
                               <span className="fm-cell-status">
@@ -829,8 +898,8 @@ export default function PrehledProjektu() {
                         return (
                           <td
                             key={u.sloupec_id}
-                            className={`fm-cell fm-todo-lvl fm-lvl-${lvl}${grpStart}${klik}`}
-                            title={c.poznamka || undefined}
+                            className={`fm-cell fm-todo-lvl fm-lvl-${lvl}${grpStart}${klik}${editClass}`}
+                            title={editTitle || c.poznamka || undefined}
                             onClick={() => otevriBunku(p, u)}
                           >
                             <span className="fm-cell-status">
@@ -865,8 +934,11 @@ export default function PrehledProjektu() {
         <BunkaDialog
           projektNazev={editace.projekt.nazev}
           ukolNazev={editace.ukol.nazev}
-          bunka={editace.bunka}
-          onSave={ulozEditaci}
+          bunka={bunkaFor(editace.projekt.id, editace.ukol.sloupec_id)}
+          pritomni={pritomni.filter(
+            (c) => c.pole === bunkaKlic(editace.projekt.id, editace.ukol.sloupec_id),
+          )}
+          onUlozPole={ulozPoleBunky}
           onClose={() => setEditace(null)}
         />
       )}

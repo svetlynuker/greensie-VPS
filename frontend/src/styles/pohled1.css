@@ -408,6 +408,25 @@ td.fm-cell.fm-s-done {
   background: var(--fm-done-bg);
 }
 
+/* Buňka, kterou má právě otevřenou někdo jiný. Rámeček i tečka jsou tu proto,
+   aby to člověk viděl PŘED tím, než začne psát – kolizi vyřešenou předem
+   nikdo nemusí řešit hláškou potom. */
+td.fm-cell.fm-edituje {
+  position: relative;
+  box-shadow: inset 0 0 0 2px var(--fm-brand);
+}
+
+td.fm-cell.fm-edituje::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fm-brand);
+}
+
 .fm-cell-status {
   display: inline-flex;
   align-items: center;

@@ -22,6 +22,7 @@ from app.konektor import crypto
 from app.konektor.google_klient import FOLDER_MIME, DriveClient
 from app.konektor.models import KonektorEntityFolder, KonektorNastaveni
 from app.matice.models import Projekt
+from app.matice.razitko import oznac_zmenu
 
 # Číslo OP v názvu, tolerantně: „OP-26-0223", „op-26-99"… (velikost písmen nehraje
 # roli, počet číslic za druhou pomlčkou je proměnný). Bereme první výskyt.
@@ -104,6 +105,9 @@ def sparuj_projekt(db: Session, projekt: Projekt, drive: DriveClient) -> bool:
     if not url:
         return False
     projekt.disk_url = url
+    # Razítko změn: bez něj by se nalezený odkaz u ostatních neobjevil, dokud
+    # by si stránku neobnovili ručně (párování běží i automaticky).
+    oznac_zmenu(projekt)
     return True
 
 

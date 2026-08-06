@@ -11,6 +11,8 @@ from app.finance import models as finance_models  # noqa: F401 - registrace mode
 from app.finance.routes import router as finance_router
 from app.matice import models as matice_models  # noqa: F401 - registrace modelů
 from app.matice.routes import router as matice_router
+from app.pritomnost import models as pritomnost_models  # noqa: F401 - registrace modelů
+from app.pritomnost.routes import router as pritomnost_router
 from app.nabidkovac import models as nabidkovac_models  # noqa: F401 - registrace modelů
 from app.nabidkovac.routes import router as nabidkovac_router
 from app.nastaveni import models as nastaveni_models  # noqa: F401 - registrace modelů
@@ -682,6 +684,37 @@ def _lehka_migrace():
                     )
                 )
 
+        # Automatické ukládání vstupů (6. 8. 2026): buňka matice si pamatuje,
+        # kdo a kdy ji naposledy změnil. `zmeneno_at` nese razítko změn (z něj
+        # prohlížeč pozná, že má načíst nová data), `zmenil_id` jméno do hlášky
+        # o kolizi. `verze` je informativní — kolizi hlídá porovnání hodnoty,
+        # protože verze roste i při změně jiného pole. Cizí klíč na uživatele
+        # jen když ještě není (opakovaný start by na duplicitním spadl).
+        conn.execute(text("ALTER TABLE bunky ADD COLUMN IF NOT EXISTS zmeneno_at TIMESTAMPTZ"))
+        conn.execute(text("ALTER TABLE bunky ADD COLUMN IF NOT EXISTS zmenil_id INTEGER"))
+        conn.execute(
+            text("ALTER TABLE bunky ADD COLUMN IF NOT EXISTS verze INTEGER NOT NULL DEFAULT 0")
+        )
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_bunky_zmeneno_at ON bunky (zmeneno_at)")
+        )
+        conn.execute(
+            text(
+                "DO $$ BEGIN "
+                "IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+                "WHERE conname = 'fk_bunky_zmenil') THEN "
+                "ALTER TABLE bunky ADD CONSTRAINT fk_bunky_zmenil "
+                "FOREIGN KEY (zmenil_id) REFERENCES uzivatele(id) ON DELETE SET NULL; "
+                "END IF; END $$;"
+            )
+        )
+        # Projekt taky — bez toho by se skrytí projektu ani vložený odkaz na
+        # Disk neprojevily ostatním, dokud by si stránku neobnovili ručně.
+        conn.execute(text("ALTER TABLE projekty ADD COLUMN IF NOT EXISTS zmeneno_at TIMESTAMPTZ"))
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_projekty_zmeneno_at ON projekty (zmeneno_at)")
+        )
+
         # Osobní výjimky, které jen opisují práva skupiny, se zahodí. Vznikly
         # zaškrtáváním práv „pro jistotu znovu" a tiše lámaly odebírání: právo
         # odebrané ze skupiny zůstalo člověku ve výjimkách a nebylo poznat proč.
@@ -841,6 +874,7 @@ async def _validacni_chyba(request: Request, exc: RequestValidationError):
 
 app.include_router(auth_router)
 app.include_router(matice_router)
+app.include_router(pritomnost_router)
 app.include_router(finance_router)
 app.include_router(nabidkovac_router)
 app.include_router(nastaveni_router)
