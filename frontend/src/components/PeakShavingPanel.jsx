@@ -12,6 +12,7 @@ import {
   profilZpracuj,
   technologieSeznam,
 } from "../api";
+import PritomniVypocet from "./PritomniVypocet";
 
 // Kolik variant se ukáže ve „zkráceném" srovnání (zbytek po přepnutí na vše).
 const POCET_TOP_VARIANT = 3;
@@ -560,7 +561,7 @@ function Ekonomika2027({ dop, rpJeFallbackRk }) {
   );
 }
 
-export default function PeakShavingPanel({ nabidka }) {
+export default function PeakShavingPanel({ nabidka, pritomni = [] }) {
   // Zapamatované vstupy (poslední výpočet + rozepsané hodnoty z prohlížeče).
   const [ulozene] = useState(() => nactiUlozeneVstupy(nabidka));
   const [sazby, setSazby] = useState(null);
@@ -1000,6 +1001,9 @@ export default function PeakShavingPanel({ nabidka }) {
     <form className="gs-panel" onSubmit={(e) => e.preventDefault()}>
       <div className="gs-panel-h">
         <h3>Vstupy výpočtu</h3>
+        {/* Kdo další má nabídku otevřenou — vstupy výpočtu se neukládají
+            za pochodu, takže se dá cizí zadání přepsat. */}
+        <PritomniVypocet pritomni={pritomni} podoba="hlavicka" />
         <span style={{ flex: 1 }} />
         {vsePripraveno ? (
           <span className="nb-badge dobre">✓ připraveno</span>
@@ -1342,6 +1346,7 @@ export default function PeakShavingPanel({ nabidka }) {
 
       {/* Patička panelu: akce + co ještě chybí */}
       <div className="gs-panel-f">
+        <PritomniVypocet pritomni={pritomni} akce="Spočítat peak shaving" />
         <button className="fm-btn fm-primary" onClick={spocti} disabled={pocita || !vsePripraveno}>
           {pocita ? "Počítám…" : "Spočítat peak shaving"}
         </button>

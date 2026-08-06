@@ -13,6 +13,7 @@ import {
   nabidkaDetail,
   profilZpracuj,
 } from "../api";
+import PritomniVypocet from "./PritomniVypocet";
 
 /**
  * Panel výpočtu PPA + BESS.
@@ -165,7 +166,7 @@ function podpisZadani(v) {
   ]);
 }
 
-export default function PpaBessPanel({ nabidka }) {
+export default function PpaBessPanel({ nabidka, pritomni = [] }) {
   const u = nactiUlozeneVstupy(nabidka);
 
   // ---- vstupy
@@ -517,6 +518,7 @@ export default function PpaBessPanel({ nabidka }) {
     <form className="gs-panel" onSubmit={(e) => e.preventDefault()}>
       <div className="gs-panel-h">
         <h3>Vstupy výpočtu</h3>
+        <PritomniVypocet pritomni={pritomni} podoba="hlavicka" />
         <span style={{ flex: 1 }} />
         {vsePripraveno ? (
           <span className="nb-badge dobre">✓ připraveno</span>
@@ -1149,6 +1151,7 @@ export default function PpaBessPanel({ nabidka }) {
       </div>
 
       <div className="gs-panel-f">
+        <PritomniVypocet pritomni={pritomni} akce="Spočítat PPA + BESS" />
         <button
           className="fm-btn fm-primary"
           onClick={spocitat}

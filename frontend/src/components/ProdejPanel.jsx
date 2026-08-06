@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { ppaProfilSouhrn, profilZpracuj } from "../api";
+import PritomniVypocet from "./PritomniVypocet";
 
 function kw(x) {
   return x == null ? "—" : `${x.toLocaleString("cs-CZ", { maximumFractionDigits: 1 })} kW`;
@@ -24,7 +25,7 @@ const BUDE_POTREBA = [
   "obchodní marži a délku záruky, které se mají do ceny promítnout",
 ];
 
-export default function ProdejPanel({ nabidka }) {
+export default function ProdejPanel({ nabidka, pritomni = [] }) {
   const [souhrn, setSouhrn] = useState(null);
   const [zpracovavaId, setZpracovavaId] = useState(null);
   const [chyba, setChyba] = useState(null);
@@ -69,6 +70,7 @@ export default function ProdejPanel({ nabidka }) {
       <form className="gs-panel" onSubmit={(e) => e.preventDefault()}>
         <div className="gs-panel-h">
           <h3>Vstupy výpočtu</h3>
+          <PritomniVypocet pritomni={pritomni} podoba="hlavicka" />
           <span style={{ flex: 1 }} />
           <span className="nb-badge pozor">připravuje se</span>
         </div>
@@ -145,6 +147,7 @@ export default function ProdejPanel({ nabidka }) {
         </div>
 
         <div className="gs-panel-f">
+          <PritomniVypocet pritomni={pritomni} akce="Spočítat návrh" />
           <button className="fm-btn fm-primary" disabled title="Výpočet prodeje se připravuje">
             Spočítat návrh
           </button>

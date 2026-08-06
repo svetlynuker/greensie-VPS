@@ -464,15 +464,18 @@ export default function NabidkaDetail() {
           </div>
         </details>
 
-        {/* Navržená řešení — všechny tři linie mají stejný pracovní stůl */}
+        {/* Navržená řešení — všechny tři linie mají stejný pracovní stůl.
+            `pritomni` se předává schválně: vstupy výpočtu se neukládají za
+            pochodu, takže „Spočítat" umí přepsat cizí zadání. Panel na to
+            aspoň upozorní (viz PritomniVypocet). */}
         {nabidka.typ === "peak_shaving" ? (
-          <PeakShavingPanel nabidka={nabidka} />
+          <PeakShavingPanel nabidka={nabidka} pritomni={pritomni} />
         ) : nabidka.typ === "ppa_bess" ? (
-          <PpaBessPanel nabidka={nabidka} />
+          <PpaBessPanel nabidka={nabidka} pritomni={pritomni} />
         ) : nabidka.typ === "ppa" ? (
-          <PpaPanel nabidka={nabidka} />
+          <PpaPanel nabidka={nabidka} pritomni={pritomni} />
         ) : (
-          <ProdejPanel nabidka={nabidka} />
+          <ProdejPanel nabidka={nabidka} pritomni={pritomni} />
         )}
 
         {/* Rozpis položek (CRM-08). Je pod výpočtem schválně a je na něm

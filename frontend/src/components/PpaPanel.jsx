@@ -9,6 +9,7 @@ import {
   ppaVypocet,
   profilZpracuj,
 } from "../api";
+import PritomniVypocet from "./PritomniVypocet";
 
 // Panel PPA (výpočet v2 – docs/METODIKA-ppa-v2.md).
 //
@@ -42,7 +43,7 @@ function n(v) {
   return t === "" ? null : Number(t);
 }
 
-export default function PpaPanel({ nabidka }) {
+export default function PpaPanel({ nabidka, pritomni = [] }) {
   const [souhrn, setSouhrn] = useState(null);
   const [zpracovavaId, setZpracovavaId] = useState(null);
 
@@ -218,6 +219,7 @@ export default function PpaPanel({ nabidka }) {
     <form className="gs-panel" onSubmit={(e) => e.preventDefault()}>
       <div className="gs-panel-h">
         <h3>Vstupy výpočtu</h3>
+        <PritomniVypocet pritomni={pritomni} podoba="hlavicka" />
         <span style={{ flex: 1 }} />
         {vsePripraveno ? (
           <span className="nb-badge dobre">✓ připraveno</span>
@@ -552,6 +554,7 @@ export default function PpaPanel({ nabidka }) {
         </section>
 
         <div className="gs-panel-f">
+          <PritomniVypocet pritomni={pritomni} akce="Spočítat PPA" />
           <button className="fm-btn primary" onClick={spocitat} disabled={!vsePripraveno || pocita}>
             {pocita ? "Počítám…" : "Spočítat PPA"}
           </button>
