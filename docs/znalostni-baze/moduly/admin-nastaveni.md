@@ -24,6 +24,7 @@ sebou a stránka se musela rolovat; teď se přepíná nahoře a vidí se jen to
 |---|---|
 | **Firma** | údaje o nás jako o Greensie + automatický seznam interních kontaktů |
 | **Uživatelé** (s počtem) | tabulka všech účtů ve vlastním okně se scrollem, tlačítko *+ Přidat uživatele* |
+| **Přihlášení** | historie přihlášení — kdo, kdy, odkud a čím se do appky dostal (i nepovedené pokusy) |
 | **Skupiny a práva** (s počtem) | seznam skupin s jejich právy, tlačítko *+ Přidat skupinu* |
 | **Přehled projektů** | nastavení automatické synchronizace s Freelem (viz Pro admina / provoz) |
 
@@ -90,6 +91,7 @@ Celou stránku i všechna její tlačítka vidí **jen administrátor** (kdo má
 | Sloupec **Jméno** | tabulka | Jméno uživatele |
 | Sloupec **E-mail** | tabulka | Přihlašovací e-mail |
 | Sloupec **Přístup** | tabulka | Štítek **Supersprávce**, nebo text *Uživatel*; pod tím se u čekajících účtů ukáže „🔑 čeká na změnu hesla" |
+| Sloupec **Naposledy přihlášen** | tabulka | „před 2 h", „před 5 dny"… (přesný čas po najetí myší). Kliknutím se otevře záložka *Přihlášení* rovnou s filtrem na tohoto člověka. Kdo se ještě nikdy nepřihlásil, má „nikdy" |
 | Sloupec **Skupina** | tabulka | Název skupiny uživatele, nebo „—" |
 | Sloupec **Práva navíc** | tabulka | Barevné štítky práv přidělených jednotlivě (mimo skupinu), nebo „—" |
 | **Upravit** | sloupec Akce | Otevře okno úpravy účtu |
@@ -146,6 +148,31 @@ Zobrazí se **jednorázové heslo**, odkaz na appku a e-mail. Heslo se **ukáže
 | **Hotovo** | Zavře okno |
 
 > 📸 SCREENSHOT: okno „Přihlašovací údaje" s vygenerovaným heslem a tlačítkem „Kopírovat údaje"
+
+#### Záložka Přihlášení — historie přístupů
+
+Odpovídá na otázku „kdo se sem kdy dostal". Každý pokus o přihlášení je jeden řádek — povedený
+i nepovedený.
+
+| Prvek | Kde | Co dělá |
+|---|---|---|
+| **Výběr uživatele** | nad tabulkou | „Všichni uživatelé", nebo jen jeden konkrétní |
+| **Období** | nad tabulkou | Posledních 7 / 30 / 90 dní, nebo celá historie (výchozí 30 dní) |
+| **Hledání** | nad tabulkou | Hledá ve jménu, e-mailu, IP adrese i popisu zařízení |
+| **Jen nepovedené pokusy** | nad tabulkou | Schová úspěšná přihlášení |
+| **Varovný pruh** | nad tabulkou | Ukáže se, jen když za posledních 24 h byl aspoň jeden nepovedený pokus. Počítá se přes celou tabulku, filtr ho neschová |
+| Sloupec **Kdy** | tabulka | Datum a čas pokusu |
+| Sloupec **Kdo** | tabulka | Jméno v době přihlášení + e-mail. U nepovedeného pokusu na neexistující účet je „neznámý účet" |
+| Sloupec **Výsledek** | tabulka | ✓ přihlášen, nebo ✕ nepovedlo se + důvod (*špatné heslo* / *neznámý účet*) |
+| Sloupec **Odkud (IP)** | tabulka | IP adresa klienta |
+| Sloupec **Zařízení** | tabulka | Rozpoznaný prohlížeč a systém, např. „Chrome na Windows" |
+
+**Co s tím prakticky:** pár nepovedených pokusů za den je normální překlep v hesle. Když se ale
+opakují **z neznámé IP** nebo u účtu, který zrovna nikdo nepoužívá, resetuj dotyčnému heslo
+(záložka *Uživatelé* → **Reset hesla**).
+
+**Záznamy se nemažou.** Na rozdíl od modulu Logy tu není žádné „Vyčistit vše" — je to bezpečnostní
+stopa a ta se skoro vždycky prochází až zpětně.
 
 #### Záložka Skupiny a práva
 
@@ -223,6 +250,7 @@ Historický katalog položek starého dlaždicového rozcestníku: `projekty`, `
 ### Datový model (`backend/app/auth/models.py`)
 - **`uzivatele`** — `id`, `jmeno`, `email` (unikát), `heslo_hash`, `je_admin`, `musi_zmenit_heslo`, `skupina_id` (FK na `skupiny`, při smazání skupiny `SET NULL`), `extra_prava` (pole klíčů práv).
 - **`skupiny`** — `id`, `nazev` (unikát), `prava` (pole klíčů práv). Relace 1:N na uživatele (`clenove`).
+- **`prihlaseni`** (`backend/app/logy/models.py`) — historie přístupů: `cas`, `uzivatel_id`, `uzivatel_email`, `uzivatel_jmeno`, `uspech`, `duvod`, `ip`, `zarizeni`, `user_agent`. **Bez cizího klíče na `uzivatele`** — id i e-mail jsou kopie, aby řádek zůstal čitelný i po smazání účtu (stejný princip jako u `logy`).
 
 ### API (`backend/app/admin/routes.py`, prefix `/admin`, celé pod `vyzaduj_admina`)
 
@@ -234,12 +262,26 @@ Historický katalog položek starého dlaždicového rozcestníku: `projekty`, `
 | `PUT /admin/uzivatele/{id}` | Upraví jméno, e-mail, supersprávce, skupinu, práva navíc |
 | `POST /admin/uzivatele/{id}/reset-hesla` | Reset hesla (náhodné, nebo vlastní); vrátí nové heslo |
 | `DELETE /admin/uzivatele/{id}` | Smaže uživatele (pojistky výše) |
+| `GET /admin/prihlaseni` | Historie přihlášení; parametry `uzivatel_id`, `jen_neuspesne`, `dni` (výchozí 30), `hledej`, `limit` (výchozí 300). Vrací i `neuspechy_24h` pro varovný pruh |
 | `GET /admin/skupiny` | Seznam skupin (+ počet členů) |
 | `POST /admin/skupiny` | Založí skupinu |
 | `PUT /admin/skupiny/{id}` | Upraví název a práva skupiny |
 | `DELETE /admin/skupiny/{id}` | Smaže skupinu (členům se odebere) |
 
-**Bezpečnost:** odpovědi o uživateli (`UzivatelOut`) obsahují jen `id, jmeno, email, je_admin, musi_zmenit_heslo, skupina_id, extra_prava`. **`heslo_hash` se nikdy nevrací.** Jednorázové čitelné heslo je jen v odpovědi na vytvoření/reset (`HesloVysledek`).
+**Bezpečnost:** odpovědi o uživateli (`UzivatelOut`) obsahují jen `id, jmeno, email, je_admin, musi_zmenit_heslo, skupina_id, extra_prava, posledni_prihlaseni`. **`heslo_hash` se nikdy nevrací.** Jednorázové čitelné heslo je jen v odpovědi na vytvoření/reset (`HesloVysledek`).
+
+### Historie přihlášení — jak to zapisuje
+Zapisuje `app/logy/prihlaseni.py` přímo z endpointu `POST /auth/login`, u úspěchu i u nezdaru.
+Tři věci, na kterých záleží:
+- **U neznámého účtu se e-mail neukládá.** Do políčka s e-mailem si člověk občas napíše heslo a to
+  by pak zůstalo natrvalo v evidenci, kterou nikdo nemaže. Uloží se jen důvod „neznámý účet".
+- **IP se bere jako POSLEDNÍ prvek `X-Forwarded-For`** — ten přidává Caddy. Dřívější prvky si může
+  klient podvrhnout (stejné pravidlo jako v logovacím middleware).
+- **Zápis nikdy neshodí přihlášení** — je obalený `try/except`, evidence nesmí zabránit v přístupu.
+
+Při prvním startu po nasazení se historie **jednorázově doplní ze starých záznamů v `logy`**
+(`_lehka_migrace` v `app/main.py`), takže přehled nezačíná prázdný. Těmto starším řádkům chybí IP
+a zařízení — audit je neukládal. Import běží jen do prázdné tabulky, takže se neopakuje.
 
 ### Nastavení automatické synchronizace s Freelem
 Poslední karta na stránce; volá endpointy modulu Přehled projektů (matice):
@@ -266,12 +308,14 @@ Ovládací prvky karty a jejich klíče (tabulka `nastaveni_synchronizace`, jede
 
 ### Klíčové soubory
 - Frontend: `frontend/src/pages/AdminNastaveni.jsx` (karty, okna, tabulky), `frontend/src/api.js` (funkce `admin*`, `getSyncNastaveni`, `ulozSyncNastaveni`), `frontend/src/App.jsx` (routa `/admin`).
+- Historie přihlášení: `backend/app/logy/prihlaseni.py` (zápis, rozpoznání zařízení, souhrny), `backend/app/logy/models.py` (`Prihlaseni`), `backend/app/auth/routes.py` (volání při loginu), `backend/tests/test_prihlaseni.py`.
 - Backend: `backend/app/admin/routes.py` + `schemas.py`, `backend/app/auth/permissions.py` (`PRAVA`, `DLAZDICE`, `prava_uzivatele`, `muze_otevrit`, `muze_editovat`, `vyzaduj_admina`, `vygeneruj_heslo`, `hash_heslo`), `backend/app/auth/models.py` (`User`, `Skupina`), `backend/app/matice/routes.py` (sync-nastaveni), `backend/app/mailer.py` (odeslání údajů e-mailem).
 
 ### Časté potíže / co dělat, když…
 - **Stránka hlásí „Chyba: … 403"** → uživatel nemá právo `admin`. Přidej mu ho (jako supersprávce, přes skupinu, nebo přes práva navíc).
 - **„Uživatel s tímto e-mailem už existuje" / „…už existuje"** → e-mail nebo název skupiny musí být unikátní.
 - **„Nelze smazat posledního admina" / „Nemůžeš smazat sám sebe."** → pojistky; nech aspoň jednoho supersprávce a nemaž vlastní účet.
+- **V historii přihlášení chybí u starších řádků IP a zařízení** → tyhle záznamy se jednorázově přenesly z logů, kde se IP u přihlášení neukládala. Od zavedení přehledu se ukládá vždy.
 - **Uživatel nedostal přihlašovací e-mail** → SMTP nemusí být nastaven (`SMTP_HESLO` v `.env`). Heslo z okna zkopíruj a předej ručně.
 - **Uživatel se nemůže dostat dál po přihlášení** → má `musi_zmenit_heslo = true` a je veden na změnu hesla; to je záměr.
 

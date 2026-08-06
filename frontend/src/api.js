@@ -657,6 +657,18 @@ export function adminSmazSkupinu(id) {
   return zavolej(`/admin/skupiny/${id}`, { method: "DELETE" });
 }
 
+// Historie přihlášení – kdo a odkud se do appky dostal (i nepovedené pokusy).
+export function adminPrihlaseni({ uzivatelId, jenNeuspesne, dni, hledej, limit } = {}) {
+  const p = new URLSearchParams();
+  if (uzivatelId) p.set("uzivatel_id", String(uzivatelId));
+  if (jenNeuspesne) p.set("jen_neuspesne", "true");
+  if (dni) p.set("dni", String(dni));
+  if (hledej) p.set("hledej", hledej);
+  if (limit) p.set("limit", String(limit));
+  const q = p.toString();
+  return zavolej(`/admin/prihlaseni${q ? `?${q}` : ""}`);
+}
+
 // ---- Logy (provoz, chyby, audit) ----
 export function nactiLogy({ typ, hledej, limit } = {}) {
   const p = new URLSearchParams();

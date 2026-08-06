@@ -15,6 +15,7 @@ import {
   adminPridejSkupinu,
   adminUpravSkupinu,
   adminSmazSkupinu,
+  adminPrihlaseni,
   getSyncNastaveni,
   ulozSyncNastaveni,
 } from "../api";
@@ -28,6 +29,7 @@ import {
 const ZALOZKY = [
   { klic: "firma", nazev: "Firma" },
   { klic: "uzivatele", nazev: "Uživatelé" },
+  { klic: "prihlaseni", nazev: "Přihlášení" },
   { klic: "skupiny", nazev: "Skupiny a práva" },
   { klic: "projekty", nazev: "Přehled projektů" },
 ];
@@ -498,6 +500,198 @@ function SynchronizaceKarta() {
   );
 }
 
+/* ---------- karta: historie přihlášení ---------- */
+// „Kdy naposledy" v lidské řeči. Přesný čas zůstává v title atributu — v přehledu
+// se čte líp „před 2 h" než datum, které si musí člověk porovnat s dneškem.
+function predJakDlouho(iso) {
+  if (!iso) return null;
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 1) return "právě teď";
+  if (min < 60) return `před ${min} min`;
+  const hod = Math.round(min / 60);
+  if (hod < 24) return `před ${hod} h`;
+  const dni = Math.round(hod / 24);
+  if (dni < 31) return `před ${dni} dny`;
+  return new Date(iso).toLocaleDateString("cs-CZ");
+}
+
+function casPresne(iso) {
+  try {
+    return new Date(iso).toLocaleString("cs-CZ");
+  } catch {
+    return iso;
+  }
+}
+
+const OBDOBI = [
+  { klic: 7, nazev: "posledních 7 dní" },
+  { klic: 30, nazev: "posledních 30 dní" },
+  { klic: 90, nazev: "posledních 90 dní" },
+  { klic: 0, nazev: "celá historie" },
+];
+
+function PrihlaseniKarta({ uzivatele, vyber, onVyber }) {
+  const [data, setData] = useState(null);
+  const [chyba, setChyba] = useState(null);
+  const [jenNeuspesne, setJenNeuspesne] = useState(false);
+  const [dni, setDni] = useState(30);
+  const [hledej, setHledej] = useState("");
+  const [hledejQ, setHledejQ] = useState("");
+
+  // hledání se neposílá na každý úhoz, ale až 400 ms po dopsání
+  useEffect(() => {
+    const id = setTimeout(() => setHledejQ(hledej), 400);
+    return () => clearTimeout(id);
+  }, [hledej]);
+
+  useEffect(() => {
+    let platne = true;
+    adminPrihlaseni({
+      uzivatelId: vyber || undefined,
+      jenNeuspesne,
+      dni: dni || undefined,
+      hledej: hledejQ || undefined,
+      limit: 500,
+    })
+      .then((d) => {
+        if (!platne) return;
+        setData(d);
+        setChyba(null);
+      })
+      .catch((e) => platne && setChyba(e.message));
+    return () => {
+      platne = false;
+    };
+  }, [vyber, jenNeuspesne, dni, hledejQ]);
+
+  const zaznamy = data?.zaznamy || [];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div
+        className="fm-card"
+        style={{ padding: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}
+      >
+        <select
+          className="gs-input"
+          style={{ padding: "6px 8px" }}
+          value={vyber || ""}
+          onChange={(e) => onVyber(e.target.value ? Number(e.target.value) : null)}
+        >
+          <option value="">Všichni uživatelé</option>
+          {uzivatele.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.jmeno}
+            </option>
+          ))}
+        </select>
+
+        <select
+          className="gs-input"
+          style={{ padding: "6px 8px" }}
+          value={dni}
+          onChange={(e) => setDni(Number(e.target.value))}
+        >
+          {OBDOBI.map((o) => (
+            <option key={o.klic} value={o.klic}>
+              {o.nazev}
+            </option>
+          ))}
+        </select>
+
+        <input
+          type="text"
+          className="gs-input"
+          placeholder="Hledat ve jménu, e-mailu, IP nebo zařízení…"
+          value={hledej}
+          onChange={(e) => setHledej(e.target.value)}
+          style={{ padding: "6px 8px", minWidth: 240, flex: "1 1 240px" }}
+        />
+
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+          <input
+            type="checkbox"
+            checked={jenNeuspesne}
+            onChange={(e) => setJenNeuspesne(e.target.checked)}
+          />
+          Jen nepovedené pokusy
+        </label>
+      </div>
+
+      {data && data.neuspechy_24h > 0 && (
+        <div className="fm-card" style={{ padding: "8px 12px", fontSize: 13 }}>
+          <span style={{ color: "var(--st-warn)", fontWeight: 600 }}>
+            ⚠ Za posledních 24 hodin: {data.neuspechy_24h} nepovedených pokusů o přihlášení.
+          </span>{" "}
+          <span style={{ color: "var(--muted)" }}>
+            Většinou jde o překlep v hesle. Když se ale opakují z neznámé IP, stojí za to
+            dotyčnému resetovat heslo.
+          </span>
+        </div>
+      )}
+
+      {chyba && (
+        <div className="fm-card" style={{ padding: 12, color: "var(--st-crit)" }}>Chyba: {chyba}</div>
+      )}
+
+      <div className="gs-scroll okno" style={{ "--gs-okno": "calc(100vh - 330px)" }}>
+        <table className="gs-table">
+          <thead>
+            <tr>
+              <th>Kdy</th>
+              <th>Kdo</th>
+              <th>Výsledek</th>
+              <th>Odkud (IP)</th>
+              <th>Zařízení</th>
+            </tr>
+          </thead>
+          <tbody>
+            {zaznamy.map((z) => (
+              <tr key={z.id} className="staticky">
+                <td style={{ whiteSpace: "nowrap" }} title={casPresne(z.cas)}>
+                  {casPresne(z.cas)}
+                </td>
+                <td>
+                  <span style={{ fontWeight: 600 }}>{z.uzivatel_jmeno || "—"}</span>
+                  <div style={{ fontSize: 11, color: "var(--muted)" }}>{z.uzivatel_email || "neznámý účet"}</div>
+                </td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  {z.uspech ? (
+                    <span style={{ color: "var(--st-good)", fontWeight: 600 }}>✓ přihlášen</span>
+                  ) : (
+                    <span style={{ color: "var(--st-crit)", fontWeight: 600 }}>
+                      ✕ nepovedlo se
+                      {z.duvod ? <span style={{ fontWeight: 400 }}> — {z.duvod}</span> : null}
+                    </span>
+                  )}
+                </td>
+                <td style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>{z.ip || "—"}</td>
+                <td style={{ color: "var(--muted)" }}>{z.zarizeni || "—"}</td>
+              </tr>
+            ))}
+            {data && zaznamy.length === 0 && (
+              <tr className="staticky">
+                <td colSpan={5} className="gs-empty">Za zvolené období tu nic není.</td>
+              </tr>
+            )}
+            {!data && !chyba && (
+              <tr className="staticky">
+                <td colSpan={5} className="gs-empty">Načítám…</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="gs-pozn">
+        Zaznamenává se každé přihlášení i každý nepovedený pokus. Na rozdíl od Logů se tyhle
+        záznamy nemažou — otázka „kdo se sem kdy dostal" se řeší většinou až zpětně.
+        U záznamů z doby před zavedením přehledu chybí IP a zařízení.
+      </div>
+    </div>
+  );
+}
+
 export default function AdminNastaveni() {
   const [uzivatel, setUzivatel] = useState(null);
   const [ciselniky, setCiselniky] = useState(null);
@@ -509,6 +703,8 @@ export default function AdminNastaveni() {
   const [resetUzivatel, setResetUzivatel] = useState(null);
   const [hesloVysledek, setHesloVysledek] = useState(null);
   const [zalozka, setZalozka] = useState("firma");
+  // filtr historie přihlášení; drží ho stránka, ať přežije proklik z uživatelů
+  const [prihlaseniUzivatel, setPrihlaseniUzivatel] = useState(null);
   const navigate = useNavigate();
 
   const nazvyPrav = (klice) => {
@@ -644,6 +840,7 @@ export default function AdminNastaveni() {
                     <th>Jméno</th>
                     <th>E-mail</th>
                     <th>Přístup</th>
+                    <th>Naposledy přihlášen</th>
                     <th>Skupina</th>
                     <th>Práva navíc</th>
                     <th className="n">Akce</th>
@@ -660,6 +857,23 @@ export default function AdminNastaveni() {
                           <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>🔑 čeká na změnu hesla</div>
                         )}
                       </td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        {u.posledni_prihlaseni ? (
+                          <button
+                            type="button"
+                            title={`${casPresne(u.posledni_prihlaseni)} — zobrazit historii`}
+                            onClick={() => {
+                              setPrihlaseniUzivatel(u.id);
+                              setZalozka("prihlaseni");
+                            }}
+                            style={{ background: "none", border: 0, padding: 0, cursor: "pointer", color: "inherit", textDecoration: "underline dotted" }}
+                          >
+                            {predJakDlouho(u.posledni_prihlaseni)}
+                          </button>
+                        ) : (
+                          <span style={{ color: "var(--muted)" }}>nikdy</span>
+                        )}
+                      </td>
                       <td>{u.skupina_id ? nazevSkupiny(u.skupina_id) : <span style={{ color: "var(--muted)" }}>—</span>}</td>
                       <td>
                         <span style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
@@ -674,7 +888,7 @@ export default function AdminNastaveni() {
                     </tr>
                   ))}
                   {uzivatele.length === 0 && (
-                    <tr className="staticky"><td colSpan={6} className="gs-empty">Zatím žádní uživatelé.</td></tr>
+                    <tr className="staticky"><td colSpan={7} className="gs-empty">Zatím žádní uživatelé.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -683,6 +897,18 @@ export default function AdminNastaveni() {
               Nový uživatel dostane jednorázové heslo, které si při prvním přihlášení změní.
               Supersprávce vidí vše bez ohledu na skupinu.
             </div>
+          </div>
+        )}
+
+        {/* ---------- záložka: historie přihlášení ---------- */}
+        {zalozka === "prihlaseni" && (
+          <div role="tabpanel">
+            <div className="gs-sekce-t">Historie přihlášení</div>
+            <PrihlaseniKarta
+              uzivatele={uzivatele}
+              vyber={prihlaseniUzivatel}
+              onVyber={setPrihlaseniUzivatel}
+            />
           </div>
         )}
 

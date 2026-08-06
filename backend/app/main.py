@@ -658,6 +658,30 @@ def _lehka_migrace():
                     )
                 )
 
+        # Historie přihlášení (tabulka `prihlaseni`) je nová, ale přihlášení se
+        # dosud zapisovala do `logy` jako audit. Při prvním startu je odtud
+        # jednorázově přeneseme, ať přehled nezačíná prázdný — starší záznamy
+        # nemají IP ani zařízení (audit je neukládal), samotný čas a kdo ano.
+        # Běží jen do prázdné tabulky, takže se import nikdy neopakuje.
+        if inspect(engine).has_table("prihlaseni") and inspect(engine).has_table("logy"):
+            prazdna = conn.execute(text("SELECT NOT EXISTS (SELECT 1 FROM prihlaseni)")).scalar()
+            if prazdna:
+                conn.execute(
+                    text(
+                        "INSERT INTO prihlaseni "
+                        "  (cas, uzivatel_id, uzivatel_email, uzivatel_jmeno, uspech, duvod) "
+                        "SELECT l.cas, l.uzivatel_id, l.uzivatel_email, "
+                        "       substring(l.popis from '^Přihlášení: (.*)$'), "
+                        "       l.status_kod = 200, "
+                        "       CASE WHEN l.status_kod = 200 THEN NULL "
+                        "            WHEN l.popis LIKE '%neznámý účet%' THEN 'neznámý účet' "
+                        "            ELSE 'špatné heslo' END "
+                        "FROM logy l "
+                        "WHERE l.cesta = '/auth/login' "
+                        "  AND (l.popis LIKE 'Přihlášení:%' OR l.popis LIKE 'Neúspěšné přihlášení%')"
+                    )
+                )
+
         # Osobní výjimky, které jen opisují práva skupiny, se zahodí. Vznikly
         # zaškrtáváním práv „pro jistotu znovu" a tiše lámaly odebírání: právo
         # odebrané ze skupiny zůstalo člověku ve výjimkách a nebylo poznat proč.

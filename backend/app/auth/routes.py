@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.auth.models import (
@@ -23,12 +23,13 @@ from app.auth.permissions import (
 )
 from app.database import get_db
 from app.logy.audit import zaznamenej_audit
+from app.logy.prihlaseni import zaznamenej_prihlaseni
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=Token)
-def login(udaje: LoginRequest, db: Session = Depends(get_db)):
+def login(udaje: LoginRequest, request: Request, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == udaje.email).first()
     if user is None or not over_heslo(udaje.heslo, user.heslo_hash):
         # Neúspěšné přihlášení zaznamenáme kvůli auditu. Surový vstup ukládáme
@@ -44,6 +45,15 @@ def login(udaje: LoginRequest, db: Session = Depends(get_db)):
                 cesta="/auth/login",
                 status_kod=status.HTTP_401_UNAUTHORIZED,
             )
+            zaznamenej_prihlaseni(
+                db,
+                request=request,
+                uspech=False,
+                uzivatel_id=user.id,
+                uzivatel_email=user.email,
+                uzivatel_jmeno=user.jmeno,
+                duvod="špatné heslo",
+            )
         else:
             zaznamenej_audit(
                 db,
@@ -51,6 +61,12 @@ def login(udaje: LoginRequest, db: Session = Depends(get_db)):
                 metoda="POST",
                 cesta="/auth/login",
                 status_kod=status.HTTP_401_UNAUTHORIZED,
+            )
+            zaznamenej_prihlaseni(
+                db,
+                request=request,
+                uspech=False,
+                duvod="neznámý účet",
             )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -65,6 +81,14 @@ def login(udaje: LoginRequest, db: Session = Depends(get_db)):
         metoda="POST",
         cesta="/auth/login",
         status_kod=200,
+    )
+    zaznamenej_prihlaseni(
+        db,
+        request=request,
+        uspech=True,
+        uzivatel_id=user.id,
+        uzivatel_email=user.email,
+        uzivatel_jmeno=user.jmeno,
     )
     return Token(access_token=token)
 
