@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { technologieSeznam } from "../api";
+import { mezisoucetBezDph, radekBezDph } from "../rozpisSoucty";
 
 // Rozpis položek nabídky nebo objednávky (CRM-08).
 //
@@ -281,12 +282,8 @@ export default function RozpisPolozek({
 
   // Živý součet z rozepsaných řádků – ukazuje, jak se souhrn změní po uložení.
   // Uložený souhrn zůstává vedle, aby bylo jasné, co je zatím jen na obrazovce.
-  const zivyMezisoucet = radky.reduce((suma, r) => {
-    const mn = num(r.mnozstvi) ?? 0;
-    const cena = num(r.cena_jednotkova) ?? 0;
-    const sleva = num(r.sleva_procent) ?? 0;
-    return suma + mn * cena * (1 - sleva / 100);
-  }, 0);
+  // Vzorec je v `rozpisSoucty.js`, aby držel krok s `polozky.py` (hlídá test).
+  const zivyMezisoucet = mezisoucetBezDph(radky);
 
   return (
     <div className="fm-card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -326,10 +323,7 @@ export default function RozpisPolozek({
           </thead>
           <tbody>
             {radky.map((r, i) => {
-              const mn = num(r.mnozstvi) ?? 0;
-              const cena = num(r.cena_jednotkova) ?? 0;
-              const sleva = num(r.sleva_procent) ?? 0;
-              const celkem = mn * cena * (1 - sleva / 100);
+              const celkem = radekBezDph(r.mnozstvi, r.cena_jednotkova, r.sleva_procent);
               return (
                 <tr key={r.id ?? `novy-${i}`} className="staticky">
                   <td style={{ color: "var(--muted)", fontSize: 12 }}>{i + 1}</td>
@@ -411,7 +405,7 @@ export default function RozpisPolozek({
         )}
         {zmeneno && (
           <span style={{ color: "var(--st-warn, #b26a00)" }}>
-            Neuloženo — po uložení bude bez DPH {kc(Math.round(zivyMezisoucet * 100) / 100)}
+            Neuloženo — po uložení bude bez DPH {kc(zivyMezisoucet)}
           </span>
         )}
       </div>
