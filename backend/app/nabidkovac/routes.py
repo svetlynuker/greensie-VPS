@@ -194,6 +194,22 @@ def _dokument_out(d: NabidkaDokument) -> DokumentOut:
     )
 
 
+def _popis_reseni_out(r: NavrhovaneReseni) -> dict:
+    """Uložené řešení tak, jak ho má vidět FE.
+
+    Peak shaving se cestou ven dopočítává o odhad návratnosti za horizontem
+    (`doplnit_odhad_navratnosti`). Do 6. 8. 2026 si ten dopočet dělal prohlížeč
+    sám; teď je jediným zdrojem čísel server, a starší uložená řešení pole
+    v `popis_json` prostě nemají. Je to čistá funkce rozpisu po letech, takže se
+    dopočítá při každém načtení znovu a do DB se nic nepřepisuje – nabídka
+    zůstane přesně tím, co se spočítalo.
+    """
+    popis = r.popis_json or {}
+    if r.typ_reseni == "peak_shaving":
+        return peak_shaving.doplnit_odhad_navratnosti(popis)
+    return popis
+
+
 def _nabidka_detail(n: Nabidka, db: Session) -> NabidkaDetailOut:
     """Detail nabídky včetně definic vlastních polí (CRM-04).
 
@@ -224,7 +240,7 @@ def _nabidka_detail(n: Nabidka, db: Session) -> NabidkaDetailOut:
             ReseniOut(
                 id=r.id,
                 typ_reseni=r.typ_reseni,
-                popis_json=r.popis_json or {},
+                popis_json=_popis_reseni_out(r),
                 vybrano_zakaznikem=r.vybrano_zakaznikem,
             )
             for r in sorted(n.reseni, key=lambda x: x.id)
@@ -1486,6 +1502,11 @@ def _varianta_json(v: peak_shaving.Varianta) -> dict:
         ),
         # Reálná návratnost z kombinovaného cash flow – řídí `doporuceno`.
         "payback_roky": (round(v.payback_roky, 2) if v.payback_roky is not None else None),
+        # Odhad za horizontem NPV, když se v něm investice nevrátí (FE ho značí
+        # vlnovkou). None = odhad není potřeba, nebo se nevrátí nikdy.
+        "navratnost_odhad_roky": (
+            round(v.navratnost_odhad_roky, 2) if v.navratnost_odhad_roky is not None else None
+        ),
         # NPV na horizontu životnosti (PS-8/PS-9) – řídí výběr vítěze.
         "npv_kc": round(v.npv_kc, 2),
         "irr": round(v.irr, 4) if v.irr is not None else None,
@@ -1502,6 +1523,11 @@ def _varianta_json(v: peak_shaving.Varianta) -> dict:
                 "irr": round(x["irr"], 4) if x["irr"] is not None else None,
                 "payback_roky": (
                     round(x["payback_roky"], 2) if x["payback_roky"] is not None else None
+                ),
+                "navratnost_odhad_roky": (
+                    round(x["navratnost_odhad_roky"], 2)
+                    if x.get("navratnost_odhad_roky") is not None
+                    else None
                 ),
                 "doporuceno": x["doporuceno"],
                 "pouzit_model_2027": x["pouzit_model_2027"],

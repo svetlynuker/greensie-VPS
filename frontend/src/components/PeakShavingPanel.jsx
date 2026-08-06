@@ -184,56 +184,26 @@ function npvDleZakladu(v, zaklad) {
     npv_kc: v?.npv_kc,
     irr: v?.irr,
     payback_roky: v?.payback_roky,
+    navratnost_odhad_roky: v?.navratnost_odhad_roky,
     doporuceno: v?.doporuceno,
     pouzit_model_2027: v?.npv_pouzit_model_2027,
     roky: v?.roky,
   };
 }
 
-// Reálnou návratnost počítá server jen do horizontu NPV (default 10 let); co se
-// v něm nevrátí, nese `payback_roky = null`. Místo „nevrátí se" dopočítáme rok
-// za horizontem z rozpisu po letech: chybějící část investice se dělí cash flow
-// dalších let, které dál klesá stejným tempem jako na konci rozpisu (degradace
-// úspor). Je to odhad za hranicí modelu – v UI se proto značí vlnovkou.
-function navratnostZaHorizontem(rozpis) {
-  if (!rozpis?.length) return null;
-  const posledni = rozpis[rozpis.length - 1];
-  if (posledni.cf_kum_kc >= 0) return null; // vrátila se v horizontu (má payback)
-  let cf = posledni.cf_kc;
-  if (!(cf > 0)) return null; // úspora nepokryje ani provoz – nevrátí se nikdy
-  // Tempo poklesu z posledních dvou let rozpisu. Rostoucí CF neextrapolujeme
-  // (byl by to optimismus navíc), počítáme s ním jako s konstantním.
-  const predchozi = rozpis.length > 1 ? rozpis[rozpis.length - 2].cf_kc : null;
-  let q = predchozi > 0 ? cf / predchozi : 1;
-  if (!(q > 0) || q > 1) q = 1;
-  let dluh = -posledni.cf_kum_kc;
-  // Klesající řada má konečný součet cf·q/(1−q); když na dluh nestačí, nevrátí se.
-  if (q < 1 && (cf * q) / (1 - q) <= dluh) return null;
-  let let_ = rozpis.length;
-  for (let i = 0; i < 200 && dluh > 0; i++) {
-    cf *= q;
-    if (dluh <= cf) {
-      let_ += dluh / cf;
-      dluh = 0;
-    } else {
-      dluh -= cf;
-      let_ += 1;
-    }
-  }
-  return dluh > 0 ? null : let_;
-}
-
-// Návratnost k zobrazení – vždy číslo, ať už spočítané serverem, dopočítané za
-// horizontem, nebo (když ani to nejde, protože úspora nepokryje provoz) prostá.
-// `druh` říká, o které z těch tří jde, ať se dá číslo správně popsat.
+// Návratnost k zobrazení – vždy číslo, ať už spočítané serverem do horizontu
+// NPV (`payback_roky`), odhadnuté serverem za horizontem (`navratnost_odhad_roky`,
+// viz peak_shaving.navratnost_za_horizontem), nebo – když se nevrátí ani tak –
+// prostá. `druh` říká, o které z těch tří jde, ať se dá číslo správně popsat.
+//
+// Tady se JEN VYBÍRÁ ze serverových čísel. Do 6. 8. 2026 si odhad za horizontem
+// počítal prohlížeč sám; přesunuto na backend, ať výsledek nezávisí na tom, kdo
+// se na nabídku dívá. Nic nového se tu dopočítávat nesmí.
 function navratnostKZobrazeni(npv, prosta) {
   if (npv?.payback_roky != null) return { hodnota: npv.payback_roky, druh: "realna" };
-  if (npv?.payback_roky === undefined) {
-    // Starší uložený výsledek reálnou návratnost vůbec nemá.
-    return prosta != null ? { hodnota: prosta, druh: "prosta" } : null;
+  if (npv?.navratnost_odhad_roky != null) {
+    return { hodnota: npv.navratnost_odhad_roky, druh: "odhad" };
   }
-  const odhad = navratnostZaHorizontem(npv.roky);
-  if (odhad != null) return { hodnota: odhad, druh: "odhad" };
   return prosta != null ? { hodnota: prosta, druh: "prosta" } : null;
 }
 

@@ -1147,6 +1147,109 @@ def _payback_z_cash_flow(cena_kc: float, cf: list[float]) -> float | None:
     return None
 
 
+def navratnost_za_horizontem(roky: list[dict] | None) -> float | None:
+    """Odhad roku návratnosti ZA horizontem NPV (přesunuto z FE 6. 8. 2026).
+
+    `_payback_z_cash_flow` zná jen horizont modelu (default 10 let); co se v něm
+    nevrátí, nese `payback_roky = None`. Obchodníkovi ale „nevrátí se" nepomůže –
+    potřebuje vědět, jestli je to jedenáctý rok, nebo dvacátý. Chybějící část
+    investice se proto dělí cash flow dalších let, které dál klesá stejným tempem
+    jako na konci rozpisu (degradace úspor − O&M).
+
+    Je to odhad ZA hranicí modelu, ne výsledek výpočtu: v UI se značí vlnovkou.
+    Počítá se z rozpisu `_roky_cash_flow` (ne z holého cash flow) schválně –
+    stejná funkce tak umí dopočítat i starší uložené výsledky, které nesou právě
+    jen ten rozpis (`doplnit_odhad_navratnosti`).
+
+    Vrací None, když varianta odhad nepotřebuje (vrátila se v horizontu → má
+    `payback_roky`) nebo když se nevrátí nikdy (CF ≤ 0, nebo je klesající řada
+    v součtu menší než zbývající dluh).
+    """
+    if not roky:
+        return None
+    posledni = roky[-1]
+    kum = posledni.get("cf_kum_kc")
+    cf = posledni.get("cf_kc")
+    if kum is None or cf is None or kum >= 0:
+        return None  # vrátila se v horizontu (má payback), odhad není potřeba
+    if cf <= 0:
+        return None  # úspora nepokryje ani provoz – nevrátí se nikdy
+    # Tempo poklesu z posledních dvou let rozpisu. Rostoucí CF neextrapolujeme
+    # (byl by to optimismus navíc), počítáme s ním jako s konstantním.
+    predchozi = roky[-2].get("cf_kc") if len(roky) > 1 else None
+    q = cf / predchozi if predchozi and predchozi > 0 else 1.0
+    if q <= 0 or q > 1:
+        q = 1.0
+    dluh = -kum
+    # Klesající řada má konečný součet cf·q/(1−q); když na dluh nestačí, nevrátí se.
+    if q < 1 and (cf * q) / (1 - q) <= dluh:
+        return None
+    let = float(len(roky))
+    for _ in range(200):
+        if dluh <= 0:
+            break
+        cf *= q
+        if dluh <= cf:
+            let += dluh / cf
+            dluh = 0.0
+        else:
+            dluh -= cf
+            let += 1.0
+    return None if dluh > 0 else let
+
+
+def doplnit_odhad_navratnosti(popis_json: dict) -> dict:
+    """Doplní `navratnost_odhad_roky` do STARŠÍHO uloženého výsledku.
+
+    Do 6. 8. 2026 dopočet za horizontem dělal prohlížeč, takže uložená řešení
+    ho v sobě nemají. Bez tohohle doplnění by u starých nabídek místo „~14 let"
+    najednou svítila prostá návratnost – tedy jiné číslo než včera, aniž by se
+    cokoli přepočítalo.
+
+    Pracuje nad KOPIÍ (nic se neukládá zpět do DB): odhad je čistá funkce
+    rozpisu po letech, takže ho jde spočítat při každém načtení znovu a levně.
+    Varianty, které pole už mají (nové výpočty), se nechávají být.
+    """
+    if not isinstance(popis_json, dict):
+        return popis_json
+
+    def dopln(varianta):
+        if not isinstance(varianta, dict):
+            return varianta
+        v = dict(varianta)
+        if "navratnost_odhad_roky" not in v:
+            v["navratnost_odhad_roky"] = _zaokrouhli_navratnost(
+                navratnost_za_horizontem(v.get("roky"))
+            )
+        zaklady = v.get("npv_varianty")
+        if isinstance(zaklady, dict):
+            v["npv_varianty"] = {
+                klic: (
+                    {
+                        **z,
+                        "navratnost_odhad_roky": _zaokrouhli_navratnost(
+                            navratnost_za_horizontem(z.get("roky"))
+                        ),
+                    }
+                    if isinstance(z, dict) and "navratnost_odhad_roky" not in z
+                    else z
+                )
+                for klic, z in zaklady.items()
+            }
+        return v
+
+    popis = dict(popis_json)
+    if isinstance(popis.get("varianty"), list):
+        popis["varianty"] = [dopln(v) for v in popis["varianty"]]
+    if popis.get("doporucena") is not None:
+        popis["doporucena"] = dopln(popis["doporucena"])
+    return popis
+
+
+def _zaokrouhli_navratnost(hodnota: float | None) -> float | None:
+    return round(hodnota, 2) if hodnota is not None else None
+
+
 def _roky_cash_flow(
     cena_kc: float,
     cf: list[float],
@@ -1249,6 +1352,10 @@ class Varianta:
     # Reálná návratnost z cash flow modelu 2027 (vč. O&M a degradace) –
     # tohle číslo řídí `doporuceno` i tie-break při shodném NPV.
     payback_roky: float | None
+    # Odhad roku návratnosti ZA horizontem NPV, když `payback_roky` je None
+    # (viz `navratnost_za_horizontem`). Do rozhodování nevstupuje – je to číslo
+    # pro obchodníka, aby místo „nevrátí se" viděl řádové „~14 let".
+    navratnost_odhad_roky: float | None
     # NPV na horizontu životnosti (audit PS-8/PS-9) – řídí výběr vítěze.
     npv_kc: float
     irr: float | None
@@ -1490,13 +1597,20 @@ def spocti_variantu(
         # ne prostá návratnost „cena / úspora jednoho roku". Model 2026 do
         # rozhodování nevstupuje vůbec (rozhodnuto 27. 7. 2026).
         payback_k = _payback_z_cash_flow(cena, cf_k)
+        roky_k = _roky_cash_flow(cena, cf_k, nast_npv, pouzit_2027_k)
         npv_varianty[klic] = {
             "npv_kc": npv_k,
             "irr": irr_k,
             "payback_roky": payback_k,
+            # Když se v horizontu nevrátí, dopočítá se rok za ním (do 6. 8. 2026
+            # to dělal prohlížeč). Na `doporuceno` to nemá vliv – to dál stojí
+            # jen na reálné návratnosti uvnitř modelu.
+            "navratnost_odhad_roky": (
+                navratnost_za_horizontem(roky_k) if payback_k is None else None
+            ),
             "doporuceno": payback_k is not None and payback_k <= max_navratnost_roky,
             "pouzit_model_2027": pouzit_2027_k,
-            "roky": _roky_cash_flow(cena, cf_k, nast_npv, pouzit_2027_k),
+            "roky": roky_k,
         }
 
     vychozi = npv_varianty[zaklad_npv if zaklad_npv in npv_varianty else VYCHOZI_ZAKLAD_NPV]
@@ -1524,6 +1638,7 @@ def spocti_variantu(
         navratnost_2026=navratnost,
         navratnost_2027=navratnost_2027,
         payback_roky=payback,
+        navratnost_odhad_roky=vychozi["navratnost_odhad_roky"],
         npv_kc=npv,
         irr=irr,
         npv_horizont_roky=nast_npv.horizont_roky,

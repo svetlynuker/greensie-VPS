@@ -1321,3 +1321,110 @@ class TestObaZakladyNpv:
             npv_vitez = vysledek.doporucena.npv_kc
             assert all(v.npv_kc <= npv_vitez + 1e-6 for v in vysledek.varianty)
             assert all(v.zaklad_npv == zaklad for v in vysledek.varianty)
+
+
+# ------------------------------------------- návratnost za horizontem (FE→BE)
+class TestNavratnostZaHorizontem:
+    """Odhad roku návratnosti za horizontem NPV.
+
+    Do 6. 8. 2026 to počítal prohlížeč (`PeakShavingPanel.navratnostZaHorizontem`),
+    teď je to na serveru. Testy drží přesně to chování, které měl FE – ať se
+    obchodníkovi po přesunu nezmění čísla pod rukama.
+    """
+
+    @staticmethod
+    def _rozpis(investice, cf_roky):
+        """Minimální rozpis po letech (jen pole, která odhad čte)."""
+        kum = -investice
+        radky = []
+        for rok, cf in enumerate(cf_roky, start=1):
+            kum += cf
+            radky.append({"rok": rok, "cf_kc": cf, "cf_kum_kc": kum})
+        return radky
+
+    def test_vraceno_v_horizontu_nema_odhad(self):
+        # Kumulace končí v plusu → varianta má reálný payback, odhad je zbytečný.
+        rozpis = self._rozpis(100.0, [40.0] * 5)
+        assert ps.navratnost_za_horizontem(rozpis) is None
+
+    def test_konstantni_cf_dopocita_rok_za_horizontem(self):
+        # Investice 1000, 10 let po 50 → po horizontu chybí 500, dalších 10 let
+        # po 50 (tempo poklesu = 1, CF neklesá) → 20 let přesně.
+        rozpis = self._rozpis(1000.0, [50.0] * 10)
+        assert ps.navratnost_za_horizontem(rozpis) == pytest.approx(20.0)
+
+    def test_klesajici_cf_prodlouzi_navratnost(self):
+        # CF klesá o 10 % ročně (degradace úspor): za horizontem se ještě vrátí,
+        # ale později, než kdyby CF drželo hodnotu posledního roku.
+        cf = [100.0 * 0.9**i for i in range(10)]
+        rozpis = self._rozpis(800.0, cf)
+        odhad = ps.navratnost_za_horizontem(rozpis)
+        zbyva = 800.0 - sum(cf)
+        assert odhad is not None
+        assert odhad > 10.0 + zbyva / cf[-1]
+
+    def test_na_hrane_soucet_rady_presne_pokryje_dluh(self):
+        # Nekonečný součet klesající řady == zbývající dluh: v konečném čase se
+        # nevrátí, takže „nevrátí se". Hraniční případ, ať se chování nerozjede.
+        cf = [100.0 * 0.9**i for i in range(10)]
+        rozpis = self._rozpis(1000.0, cf)
+        assert ps.navratnost_za_horizontem(rozpis) is None
+
+    def test_prilis_strme_klesajici_cf_se_nevrati_nikdy(self):
+        # Součet klesající řady za horizontem nepokryje zbytek dluhu → None.
+        cf = [100.0 * 0.3**i for i in range(10)]
+        rozpis = self._rozpis(1_000_000.0, cf)
+        assert ps.navratnost_za_horizontem(rozpis) is None
+
+    def test_zaporne_cf_se_nevrati_nikdy(self):
+        # Úspora nepokryje ani O&M → nevrátí se, ať se čeká jakkoli dlouho.
+        rozpis = self._rozpis(1000.0, [-5.0] * 10)
+        assert ps.navratnost_za_horizontem(rozpis) is None
+
+    def test_rostouci_cf_se_neextrapoluje_nahoru(self):
+        # Rostoucí CF se bere jako konstantní (žádný optimismus navíc): po 5 letech
+        # chybí 670, poslední CF je 100 → 6,7 roku navíc. Kdyby se růst 80→100
+        # protahoval dál, vyšlo by míň – a to schválně nedělá.
+        rozpis = self._rozpis(1000.0, [40.0, 50.0, 60.0, 80.0, 100.0])
+        assert ps.navratnost_za_horizontem(rozpis) == pytest.approx(11.7)
+
+    def test_prazdny_rozpis(self):
+        assert ps.navratnost_za_horizontem([]) is None
+        assert ps.navratnost_za_horizontem(None) is None
+
+
+class TestDoplneniOdhaduDoUlozenych:
+    """Starší uložená řešení pole nemají – doplní se cestou ven z API."""
+
+    def _popis(self):
+        rozpis = TestNavratnostZaHorizontem._rozpis(1000.0, [50.0] * 10)
+        varianta = {
+            "nazev": "Stará varianta",
+            "payback_roky": None,
+            "roky": rozpis,
+            "npv_varianty": {"uspora": {"payback_roky": None, "roky": rozpis}},
+        }
+        return {"varianty": [varianta], "doporucena": varianta}
+
+    def test_dopocita_se_i_do_npv_variant(self):
+        out = ps.doplnit_odhad_navratnosti(self._popis())
+        assert out["varianty"][0]["navratnost_odhad_roky"] == pytest.approx(20.0)
+        assert out["doporucena"]["navratnost_odhad_roky"] == pytest.approx(20.0)
+        assert out["varianty"][0]["npv_varianty"]["uspora"][
+            "navratnost_odhad_roky"
+        ] == pytest.approx(20.0)
+
+    def test_puvodni_objekt_zustane_nedotcen(self):
+        # Dopočet nesmí přepsat uložené řešení – jede nad kopií.
+        popis = self._popis()
+        ps.doplnit_odhad_navratnosti(popis)
+        assert "navratnost_odhad_roky" not in popis["varianty"][0]
+
+    def test_nove_vysledky_se_neprepisuji(self):
+        popis = self._popis()
+        popis["varianty"][0]["navratnost_odhad_roky"] = 42.0
+        out = ps.doplnit_odhad_navratnosti(popis)
+        assert out["varianty"][0]["navratnost_odhad_roky"] == 42.0
+
+    def test_jine_reseni_projde_beze_zmeny(self):
+        assert ps.doplnit_odhad_navratnosti({"neco": 1}) == {"neco": 1}
