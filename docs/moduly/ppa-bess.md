@@ -280,14 +280,24 @@ na kartě nabídky, editor rozvržení, tisk do PDF.
 používá 22 na třech A4 stránkách (řešení → cena → špičky → úspora → graf →
 tabulka po letech → závěr).
 
-Dvě věci, které katalog rozhoduje za obchodníka:
+**Režim** nabídka nevybírá — ukazuje ten, který vyšel nejlépe (`_pb_rezim`), ne
+první v seznamu.
 
-- **doporučený režim** — nabídka ukazuje ten, který vyšel nejlépe, ne první
-  v seznamu (`_pb_rezim`),
-- **nejdelší nabízený kontrakt** — má největší slevu a nabídka má prodávat
-  (`_pb_delka`). Dlaždice i roční tabulka čtou z **téže** délky, jinak by si
-  odporovaly. Rozpad přínosu se navíc přepočítává přes `prinos_po_delkach`,
-  protože cena PPA se s délkou mění.
+**Délku kontraktu si obchodník vybírá** přepínačem v liště editoru. Bez volby se
+vezme nejdelší nabízená, protože má největší slevu. Volba se ukládá
+s rozvržením (`VystupKonfigurace.delka_kontraktu_roky`) a mění **všechno**: cenu
+PPA, slevu, rozpad úspory i celou roční tabulku. Proto se ukládá hned při změně,
+ne až tlačítkem *Uložit* — jinak by dlaždice ukazovaly starou délku.
+
+Dlaždice i roční tabulka čtou z **téže** délky, jinak by si odporovaly. Rozpad
+přínosu se navíc přepočítává přes `prinos_po_delkach`, protože cena PPA se
+s délkou mění. Neznámá délka (sada se po přepočtu změnila) spadne na nejdelší,
+takže se nabídka nerozbije.
+
+Volba se do resolverů dostává vložením do **kopie** popisu pod
+`KLIC_VOLBA_DELKY`. Extraktory jsou lambdy `(popis) -> hodnota`, takže volbu
+nelze předat parametrem bez změny signatury všech tří existujících typů; kopie
+zároveň zaručí, že uložený výsledek výpočtu zůstane nedotčený.
 
 Nový rezervovaný příkon se bere ze scénáře **se snížením** — zákazníka zajímá,
 na kolik lze příkon snížit, ne že zůstane.

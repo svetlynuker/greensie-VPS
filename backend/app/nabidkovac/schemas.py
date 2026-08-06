@@ -560,6 +560,17 @@ class VystupKonfigurace(BaseModel):
     hlavicka: VystupPas = VystupPas()
     zapati: VystupPas = VystupPas()
     vodoznak: VystupVodoznak = VystupVodoznak()
+    # Délka kontraktu, kterou nabídka ukazuje. Týká se typů, které počítají víc
+    # délek naráz (dnes `ppa_bess`): bez ní se vezme nejdelší nabízená, protože
+    # má největší slevu. Ukládá se s rozvržením, aby volba u nabídky zůstala.
+    delka_kontraktu_roky: Optional[int] = None
+
+    @field_validator("delka_kontraktu_roky")
+    @classmethod
+    def _hlidej_delku(cls, delka: Optional[int]) -> Optional[int]:
+        if delka is not None and not (1 <= delka <= 40):
+            raise ValueError("Délka kontraktu musí být 1–40 let.")
+        return delka
 
     @field_validator("stranky")
     @classmethod
@@ -626,6 +637,9 @@ class VystupOut(BaseModel):
     hodnoty: dict[str, Any] = {}  # {klic: {nazev, format, hodnota, hodnota_text}}
     tabulka: dict = {}  # {sloupce, radky}
     graf: Optional[dict] = None  # surová data grafu (dle typ_reseni)
+    # Délky kontraktu, mezi kterými se u tohohle typu dá vybírat. Prázdné =
+    # typ víc délek nepočítá a přepínač se v editoru neukáže.
+    nabizene_delky_roky: list[int] = []
 
 
 # ---- Rozpis položek nabídky / objednávky (CRM-08) ----

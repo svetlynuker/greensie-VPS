@@ -484,14 +484,45 @@ def _pb_rezim(popis: dict) -> dict:
     return prvni if isinstance(prvni, dict) else {}
 
 
+def _s_volbou_delky(popis_json: dict | None, delka: int | None) -> dict:
+    """Kopie popisu s vloženou volbou délky kontraktu.
+
+    Kopie schválně: `popis_json` je uložený výsledek výpočtu a resolver ho nesmí
+    měnit (hlídá to test `test_kopie_je_nezavisla`). Bez volby se vrací původní
+    dict, takže se nic nekopíruje zbytečně.
+    """
+    popis = popis_json or {}
+    if delka is None:
+        return popis
+    return {**popis, KLIC_VOLBA_DELKY: delka}
+
+
+#: Klíč, pod kterým resolver vloží do kopie popisu délku kontraktu zvolenou
+#: v editoru výstupu. Extraktory jsou lambdy `(popis) -> hodnota`, takže volbu
+#: nelze předat parametrem, aniž by se změnila signatura všech tří existujících
+#: typů. Podtržítko říká, že to není součást uloženého výsledku výpočtu.
+KLIC_VOLBA_DELKY = "_vybrana_delka_roky"
+
+
 def _pb_delka(popis: dict) -> dict:
-    """Nejdelší nabízený kontrakt – největší sleva pro zákazníka."""
+    """Kontrakt, který nabídka ukazuje.
+
+    Přednost má délka zvolená v editoru výstupu (`KLIC_VOLBA_DELKY`). Bez volby
+    se vezme **nejdelší** nabízená – má největší slevu a nabídka má prodávat.
+    Neznámá délka spadne na nejdelší, ať se nabídka nerozbije, když se sada
+    nabízených délek po přepočtu změní.
+    """
     delky = _g(popis, "po_delkach")
     if not isinstance(delky, list) or not delky:
         return {}
     platne = [d for d in delky if isinstance(d, dict)]
     if not platne:
         return {}
+    volba = popis.get(KLIC_VOLBA_DELKY)
+    if volba is not None:
+        vybrana = [d for d in platne if d.get("delka_roky") == volba]
+        if vybrana:
+            return vybrana[0]
     return max(platne, key=lambda d: d.get("delka_roky") or 0)
 
 
@@ -628,11 +659,18 @@ def katalog_pro_frontend(typ: str) -> dict:
 
 
 # ---- Resolver hodnot ---------------------------------------------------------
-def resolvni_hodnoty(typ: str, popis_json: dict | None) -> dict[str, dict]:
+def resolvni_hodnoty(
+    typ: str, popis_json: dict | None, delka_kontraktu_roky: int | None = None
+) -> dict[str, dict]:
     """Vrátí mapu {klic: {nazev, format, hodnota, hodnota_text}} pro všechna
     zákaznická pole daného typu. Chybějící hodnoty mají `hodnota=None` a
-    `hodnota_text="—"` (v náhledu se ukážou jako zástupné)."""
-    popis = popis_json or {}
+    `hodnota_text="—"` (v náhledu se ukážou jako zástupné).
+
+    `delka_kontraktu_roky` je volba z editoru výstupu – týká se typů, které
+    počítají víc délek naráz (`ppa_bess`). Vkládá se do **kopie** popisu, aby se
+    uložený výsledek výpočtu nezměnil.
+    """
+    popis = _s_volbou_delky(popis_json, delka_kontraktu_roky)
     out: dict[str, dict] = {}
     for pole in _POLE.get(typ, []):
         try:
@@ -648,10 +686,16 @@ def resolvni_hodnoty(typ: str, popis_json: dict | None) -> dict[str, dict]:
     return out
 
 
-def resolvni_tabulku(typ: str, popis_json: dict | None) -> dict:
+def resolvni_tabulku(
+    typ: str, popis_json: dict | None, delka_kontraktu_roky: int | None = None
+) -> dict:
     """Vrátí roční tabulku {sloupce:[...], radky:[[text,...],...]} – jen
-    zákaznické sloupce. PPA čte svůj výsledek, peak shaving `doporucena.roky`."""
-    popis = popis_json or {}
+    zákaznické sloupce. PPA čte svůj výsledek, peak shaving `doporucena.roky`.
+
+    `delka_kontraktu_roky` funguje stejně jako u `resolvni_hodnoty` – tabulka
+    musí být z TÉŽE délky jako dlaždice, jinak si čísla v nabídce odporují.
+    """
+    popis = _s_volbou_delky(popis_json, delka_kontraktu_roky)
     sloupce = _TABULKA.get(typ, [])
     if typ == "ppa":
         radky_zdroj = _pv(popis, "roky") or []
@@ -721,7 +765,9 @@ def _graf_ps_k_zobrazeni(graf: dict, popis: dict) -> dict:
     return out
 
 
-def graf_pro_typ(typ: str, popis_json: dict | None) -> dict | None:
+def graf_pro_typ(
+    typ: str, popis_json: dict | None, delka_kontraktu_roky: int | None = None
+) -> dict | None:
     """Surová data grafu pro daný typ (PPA výroba/spotřeba, PS měsíční maxima).
     Frontend podle `typ_reseni` vybere správnou grafovou komponentu.
 

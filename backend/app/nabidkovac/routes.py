@@ -3240,6 +3240,16 @@ def _vystup_out(db: Session, n: Nabidka, typ_reseni: str, vychozi: bool = False)
     reseni = _posledni_reseni(db, n.id, typ_reseni)
     popis = reseni.popis_json if reseni is not None else None
 
+    # Délka kontraktu, kterou má nabídka ukazovat. Bez volby si ji resolver
+    # zvolí sám (nejdelší nabízená). Týká se typů s víc délkami – dnes ppa_bess.
+    delka = (
+        konfigurace.get("delka_kontraktu_roky")
+        if isinstance(konfigurace, dict)
+        else getattr(konfigurace, "delka_kontraktu_roky", None)
+    )
+    # Které délky vůbec jde nabídnout – frontend z toho staví přepínač.
+    nabizene_delky = _nabizene_delky(typ_reseni, popis)
+
     return VystupOut(
         typ_reseni=typ_reseni,
         existuje_reseni=reseni is not None,
@@ -3251,9 +3261,30 @@ def _vystup_out(db: Session, n: Nabidka, typ_reseni: str, vychozi: bool = False)
             "adresa": n.zakaznik_adresa or "",
             "datum": _iso(datetime.now()),
         },
-        hodnoty=sablona_katalog.resolvni_hodnoty(typ_reseni, popis),
-        tabulka=sablona_katalog.resolvni_tabulku(typ_reseni, popis),
-        graf=sablona_katalog.graf_pro_typ(typ_reseni, popis),
+        hodnoty=sablona_katalog.resolvni_hodnoty(typ_reseni, popis, delka),
+        tabulka=sablona_katalog.resolvni_tabulku(typ_reseni, popis, delka),
+        graf=sablona_katalog.graf_pro_typ(typ_reseni, popis, delka),
+        nabizene_delky_roky=nabizene_delky,
+    )
+
+
+def _nabizene_delky(typ_reseni: str, popis: dict | None) -> list[int]:
+    """Délky kontraktu, mezi kterými se dá u nabídky vybírat.
+
+    Prázdný seznam znamená „tenhle typ víc délek nepočítá" a frontend přepínač
+    vůbec neukáže (PPA má délku danou zvolenou variantou, peak shaving žádnou).
+    """
+    if typ_reseni != "ppa_bess" or not popis:
+        return []
+    delky = popis.get("po_delkach")
+    if not isinstance(delky, list):
+        return []
+    return sorted(
+        {
+            int(d["delka_roky"])
+            for d in delky
+            if isinstance(d, dict) and d.get("delka_roky")
+        }
     )
 
 
