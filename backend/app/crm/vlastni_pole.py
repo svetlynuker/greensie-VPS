@@ -145,6 +145,46 @@ def _hodnota_vyber(pole: CrmVlastniPole, hodnota) -> str:
     return text
 
 
+def _ocisti_hodnotu(pole: CrmVlastniPole, hodnota):
+    """Hodnota jednoho vlastního pole v kanonické podobě podle jeho typu."""
+    if pole.typ == "cislo":
+        return _hodnota_cislo(pole, hodnota)
+    if pole.typ == "datum":
+        return _hodnota_datum(pole, hodnota)
+    if pole.typ == "ano_ne":
+        return _hodnota_ano_ne(hodnota)
+    if pole.typ == "vyber":
+        return _hodnota_vyber(pole, hodnota)
+    return str(hodnota).strip()  # text, dlouhy_text
+
+
+def je_prazdna_hodnota(hodnota) -> bool:
+    return hodnota is None or (isinstance(hodnota, str) and hodnota.strip() == "")
+
+
+def zpracuj_jedno(db: Session, entita: str, klic: str, hodnota) -> tuple[bool, object]:
+    """Očistí JEDNU hodnotu vlastního pole — pro ukládání po polích (autosave).
+
+    Vrací `(ulozit, hodnota)`. `ulozit=False` znamená „klíč v `extra` být nemá“
+    (prázdná hodnota, neznámé nebo výpočtové pole) — volající ho pak z `extra`
+    odebere.
+
+    Proti `zpracuj()` tu schválně NENÍ kontrola povinných polí: při automatickém
+    ukládání se v databázi nutně objevují rozpracované záznamy a 422 nad každým
+    stiskem klávesy by ukládání úplně zastavila. Povinnost se hlídá až tam, kde
+    na ní záleží — při přechodu stavu (viz `povinna_pole.py`).
+    """
+    pole = {p.klic: p for p in seznam(db, entita)}.get(klic)
+    if pole is None:
+        return False, None
+    # Výpočtové pole (CRM-34) se do `extra` neukládá — počítá se při zobrazení.
+    if (pole.vzorec or "").strip():
+        return False, None
+    if je_prazdna_hodnota(hodnota):
+        return False, None
+    return True, _ocisti_hodnotu(pole, hodnota)
+
+
 def zpracuj(db: Session, entita: str, vstup: dict | None) -> dict:
     """Očistí hodnoty vlastních polí před uložením do `extra`.
 
@@ -152,6 +192,10 @@ def zpracuj(db: Session, entita: str, vstup: dict | None) -> dict:
     - prázdná hodnota se neukládá vůbec (klíč z JSONB vypadne),
     - typ se zkontroluje a hodnota převede do kanonické podoby,
     - u povinného pole se prázdná hodnota odmítne.
+
+    POZOR: vrací NOVÝ slovník, takže klíč, který ve vstupu chybí, se uložením
+    smaže. Pro ukládání jednoho pole se proto tahle funkce použít nesmí —
+    na to je `zpracuj_jedno()` a sloučení se stavem v databázi.
     """
     definice = {p.klic: p for p in seznam(db, entita)}
     vstup = vstup or {}
@@ -161,23 +205,11 @@ def zpracuj(db: Session, entita: str, vstup: dict | None) -> dict:
         pole = definice.get(klic)
         if pole is None:
             continue
-        # Výpočtové pole (CRM-34) se do `extra` neukládá — počítá se při
-        # zobrazení. Uložená kopie by zastarala, jakmile se změní vstupy.
         if (pole.vzorec or "").strip():
             continue
-        je_prazdna = hodnota is None or (isinstance(hodnota, str) and hodnota.strip() == "")
-        if je_prazdna:
+        if je_prazdna_hodnota(hodnota):
             continue
-        if pole.typ == "cislo":
-            out[klic] = _hodnota_cislo(pole, hodnota)
-        elif pole.typ == "datum":
-            out[klic] = _hodnota_datum(pole, hodnota)
-        elif pole.typ == "ano_ne":
-            out[klic] = _hodnota_ano_ne(hodnota)
-        elif pole.typ == "vyber":
-            out[klic] = _hodnota_vyber(pole, hodnota)
-        else:  # text, dlouhy_text
-            out[klic] = str(hodnota).strip()
+        out[klic] = _ocisti_hodnotu(pole, hodnota)
 
     # Povinná pole až nakonec – ať hláška padne na to, co uživatel opravdu
     # nevyplnil, a ne na typovou chybu jiného pole.

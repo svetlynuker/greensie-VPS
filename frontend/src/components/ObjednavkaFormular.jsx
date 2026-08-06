@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import VlastniPoleVstupy from "./VlastniPoleVstupy";
 import RozpisPolozek from "./RozpisPolozek";
 import FakturacePanel from "./FakturacePanel";
+import Pritomni from "./Pritomni";
+import StavUlozeni from "./StavUlozeni";
+import { useZaznamAutosave } from "../hooks/useZaznamAutosave";
 import {
   crmObjednavkaDetail,
   crmObjednavkaPolozky,
@@ -15,7 +18,19 @@ import {
   crmSablony,
   crmUzivatele,
 } from "../api";
-import { fmtDatum } from "../crm";
+
+// Základní údaje objednávky – jen ty se ukládají samy. `stav`, `duvod_zruseni`
+// ani vlastnictví tu nejsou: backend je přes ukládání po polích odmítá (422),
+// protože mají vedlejší efekty (automatizace, notifikace, povinná pole).
+const POLE_UDAJE = ["nazev", "cena_kc", "datum_podpisu", "datum_dodani", "popis"];
+
+const NAZVY_POLI = {
+  nazev: "Název",
+  cena_kc: "Cena bez DPH",
+  datum_podpisu: "Datum podpisu",
+  datum_dodani: "Datum dodání",
+  popis: "Popis",
+};
 
 /**
  * Detail / založení objednávky v okně.
@@ -24,6 +39,19 @@ import { fmtDatum } from "../crm";
  * vlastní pole a **založení projektu**. Projekt totiž nesmí vzniknout
  * samostatně — objednávka je jeho jediná (spolu s případem) legální cesta na
  * svět, takže tlačítko patří sem.
+ *
+ * Okno slouží dvěma režimům a ukládá v každém jinak:
+ *
+ *  - **editace** (přišlo `objednavkaId`): blok základních údajů se ukládá sám,
+ *    pole po poli (`useZaznamAutosave`). Dva lidé nad jednou objednávkou si tak
+ *    navzájem nepřepíšou pole, kterých se ani nedotkli.
+ *  - **zakládání** (bez `objednavkaId`): autosave NEBĚŽÍ. Není co ukládat po
+ *    polích, dokud záznam neexistuje — PATCH by neměl kam jít. Formulář proto
+ *    drží hodnoty ve svém stavu a odešle je jedním „Založit objednávku“.
+ *
+ * Ostatní bloky (rozpis položek, fakturace, změna stavu, založení projektu)
+ * zůstávají na vědomém potvrzení: každý z nich něco přepočítá nebo vygeneruje
+ * další záznamy, což se nesmí spustit uprostřed psaní.
  */
 export default function ObjednavkaFormular({
   objednavkaId = null,
@@ -53,25 +81,88 @@ export default function ObjednavkaFormular({
   const [uklada, setUklada] = useState(false);
   const [chyba, setChyba] = useState(null);
 
-  useEffect(() => {
-    if (!objednavkaId) return;
-    crmObjednavkaDetail(objednavkaId)
-      .then((d) => {
-        setO(d);
-        setVlastniPole(d.vlastni_pole || []);
-        setForm({
-          nazev: d.nazev || "",
-          popis: d.popis || "",
-          cena_kc: d.cena_kc != null ? String(d.cena_kc) : "",
-          datum_podpisu: (d.datum_podpisu || "").slice(0, 10),
-          datum_dodani: (d.datum_dodani || "").slice(0, 10),
-          vlastnik_user_id: d.vlastnik_user_id,
-          spoluvlastnici: d.spoluvlastnici || [],
-          extra: d.extra || {},
-        });
-      })
-      .catch((e) => setChyba(e.message));
+  /** Natažení detailu. Používá se stejně pro první otevření i pro obnovu. */
+  const nactiDetail = useCallback(() => {
+    if (!objednavkaId) return Promise.resolve(null);
+    return crmObjednavkaDetail(objednavkaId).then((d) => {
+      setO(d);
+      setVlastniPole(d.vlastni_pole || []);
+      setForm({
+        nazev: d.nazev || "",
+        popis: d.popis || "",
+        cena_kc: d.cena_kc != null ? String(d.cena_kc) : "",
+        datum_podpisu: (d.datum_podpisu || "").slice(0, 10),
+        datum_dodani: (d.datum_dodani || "").slice(0, 10),
+        vlastnik_user_id: d.vlastnik_user_id,
+        spoluvlastnici: d.spoluvlastnici || [],
+        extra: d.extra || {},
+      });
+      return d;
+    });
   }, [objednavkaId]);
+
+  useEffect(() => {
+    nactiDetail().catch((e) => setChyba(e.message));
+  }, [nactiDetail]);
+
+  // Klíče, které autosave spravuje: základní údaje + vlastní pole (`extra:<klic>`).
+  // Vlastní pole nejdou vypsat dopředu, definuje je admin v CRM.
+  const poleAutosave = useMemo(
+    () => [...POLE_UDAJE, ...(vlastniPole || []).map((p) => `extra:${p.klic}`)],
+    [vlastniPole],
+  );
+
+  const {
+    hodnoty,
+    zmen: zmenPolem,
+    stav,
+    chyba: chybaUlozeni,
+    kdy,
+    pritomni,
+    razitko,
+    kolize,
+    prepis,
+    vezmiJejich,
+    dokonci,
+    onFokus,
+    onBlur,
+  } = useZaznamAutosave({
+    entita: "obj",
+    id: objednavkaId,
+    zaznam: o,
+    pole: poleAutosave,
+    entitaTyp: "crm_obj",
+    // TOHLE je ten rozdíl mezi zakládáním a editací: bez `objednavkaId` záznam
+    // v databázi neexistuje, takže se nesmí poslat ani jeden PATCH. Hodnoty si
+    // v tom případě drží formulář sám a odejdou naráz při založení.
+    zapnuto: jeUprava && Boolean(o),
+  });
+
+  // Razítko se změnilo → objednávku upravil někdo jiný (nebo já z jiného okna),
+  // případně se přepočítal součet rozpisu. Natáhneme ji znovu; rozepsané pole
+  // hook nepřepíše, takže to nic nesebere. První razítko se jen zapamatuje,
+  // jinak by se okno po otevření obnovilo zbytečně.
+  const razitkoRef = useRef(null);
+  useEffect(() => {
+    if (!razitko) return;
+    if (razitkoRef.current === null || razitkoRef.current === razitko) {
+      razitkoRef.current = razitko;
+      return;
+    }
+    razitkoRef.current = razitko;
+    nactiDetail().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [razitko]);
+
+  // Po každém vlastním uložení natáhneme detail hned, nečekáme na razítko:
+  // uložená cena přehodí příznak „zadaná ručně“ a ten se ukazuje pod polem.
+  const kdyRef = useRef(null);
+  useEffect(() => {
+    if (!kdy || kdyRef.current === kdy) return;
+    kdyRef.current = kdy;
+    nactiDetail().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kdy]);
 
   useEffect(() => {
     if (!muzeMenitVlastnika) return;
@@ -86,11 +177,47 @@ export default function ObjednavkaFormular({
     setForm((f) => ({ ...f, [klic]: hodnota }));
   }
 
-  async function uloz() {
+  /** Hodnota pole údajů: v editaci ji drží autosave, při zakládání formulář. */
+  function udaj(klic) {
+    return (jeUprava ? hodnoty[klic] : form[klic]) ?? "";
+  }
+
+  /**
+   * Zápis do pole údajů. `ihned` = hotové rozhodnutí (datum, výběr), u kterého
+   * nemá smysl čekat na dopsání.
+   */
+  function zmenUdaj(klic, hodnota, ihned = false) {
+    if (jeUprava) zmenPolem(klic, hodnota, ihned);
+    else zmen(klic, hodnota);
+  }
+
+  /**
+   * Fokus a odchod z pole — jen v editaci. Fokus říká kolegům, na čem člověk
+   * právě je, odchod doručí i posledních pár znaků, které ještě čekají.
+   */
+  function fokusPole(klic) {
+    if (!jeUprava) return {};
+    return { onFocus: () => onFokus(klic), onBlur: () => onBlur(klic) };
+  }
+
+  // Vlastní pole: v editaci se hodnoty berou z autosave (klíče `extra:<klic>`),
+  // při zakládání z formuláře. Výpočtová pole se jen zrcadlí — jejich vstup se
+  // nedá psát, takže se přes autosave nikdy neodešlou.
+  const extraHodnoty = useMemo(() => {
+    if (!jeUprava) return form.extra;
+    const vysledek = {};
+    (vlastniPole || []).forEach((p) => {
+      vysledek[p.klic] = hodnoty[`extra:${p.klic}`] ?? "";
+    });
+    return vysledek;
+  }, [jeUprava, form.extra, vlastniPole, hodnoty]);
+
+  /** Založení nové objednávky — jedním požadavkem, protože id ještě není. */
+  async function zaloz() {
     setUklada(true);
     setChyba(null);
     try {
-      const data = {
+      await crmObjednavkaZaloz({
         ...form,
         nazev: form.nazev.trim(),
         cena_kc: form.cena_kc.trim() === "" ? null : Number(form.cena_kc.replace(/\s/g, "").replace(",", ".")),
@@ -98,13 +225,9 @@ export default function ObjednavkaFormular({
         datum_dodani: form.datum_dodani || null,
         obchodni_pripad_id: pripad?.id,
         nabidka_id: nabidka?.id,
-      };
-      const vysledek = jeUprava
-        ? await crmObjednavkaUprav(objednavkaId, data)
-        : await crmObjednavkaZaloz(data);
-      setO(vysledek);
+      });
       await onZmena?.();
-      if (!jeUprava) onZavri();
+      onZavri();
     } catch (e) {
       setChyba(e.message);
     } finally {
@@ -112,9 +235,65 @@ export default function ObjednavkaFormular({
     }
   }
 
+  /**
+   * Vědomá akce, která musí jít starou cestou (PUT celého záznamu) — vlastnictví
+   * a příznak ruční ceny přes ukládání po polích nejdou.
+   *
+   * Nejdřív se doženou rozepsané změny a vezmou čerstvá data ze serveru, jinak
+   * by PUT vrátil do databáze text, který mezitím někdo přepsal.
+   */
+  async function ulozPresPut(zmeny) {
+    setUklada(true);
+    setChyba(null);
+    try {
+      await dokonci();
+      const cerstva = await crmObjednavkaDetail(objednavkaId);
+      await crmObjednavkaUprav(objednavkaId, {
+        nazev: cerstva.nazev || "",
+        popis: cerstva.popis || "",
+        cena_kc: cerstva.cena_kc,
+        cena_rucni: cerstva.cena_rucni,
+        datum_podpisu: cerstva.datum_podpisu || null,
+        datum_dodani: cerstva.datum_dodani || null,
+        vlastnik_user_id: cerstva.vlastnik_user_id,
+        spoluvlastnici: cerstva.spoluvlastnici || [],
+        extra: cerstva.extra || {},
+        ...zmeny,
+      });
+      await nactiDetail();
+      await onZmena?.();
+    } catch (e) {
+      setChyba(e.message);
+    } finally {
+      setUklada(false);
+    }
+  }
+
+  /** Čitelný název pole – i pro vlastní pole (klíč `extra:<klic>`). */
+  function nazevPole(klic) {
+    if (klic.startsWith("extra:")) {
+      const k = klic.slice(6);
+      return (vlastniPole || []).find((p) => p.klic === k)?.nazev || k;
+    }
+    return NAZVY_POLI[klic] || klic;
+  }
+
+  /** Konec práce s oknem: dožene neodeslané změny, ať se text neztratí. */
+  async function hotovo() {
+    if (jeUprava) {
+      await dokonci();
+      await onZmena?.();
+    }
+    onZavri();
+  }
+
   async function zalozProjekt() {
     setChyba(null);
     try {
+      // Nejdřív dopsat čekající změny. Bez toho by projekt mohl vzniknout
+      // s o jednu úpravu starším názvem: kliknutí na tlačítko sice vyvolá
+      // `blur` a s ním uložení, ale POST by ho mohl předběhnout.
+      await dokonci();
       const projekt = await crmProjektZaloz({
         objednavka_id: o.id,
         sablona_id: sablonaId ? Number(sablonaId) : null,
@@ -139,12 +318,23 @@ export default function ObjednavkaFormular({
   }
 
   return (
-    <div className="crm-okno-plast" onClick={onZavri}>
+    // Zavření okna jde přes `hotovo` – kliknutí mimo okno je taky odchod a
+    // posledních pár znaků musí ještě odejít na server.
+    <div className="crm-okno-plast" onClick={hotovo}>
       <div className="crm-okno" onClick={(e) => e.stopPropagation()}>
         <div className="crm-okno-hlava">
           <h2>{jeUprava ? `Objednávka ${o?.cislo || ""}` : "Nová objednávka"}</h2>
           <span className="crm-mezera" />
-          <button className="crm-zavrit" onClick={onZavri} aria-label="Zavřít">
+          {jeUprava && (
+            <>
+              {/* Kdo má objednávku otevřenou taky – ať je kolize vidět dřív, než
+                  nastane. Vedle je stav ukládání: bez tlačítka „Uložit“ nemá
+                  člověk jinak jak poznat, že text došel na server. */}
+              <Pritomni pritomni={pritomni} popisekPole={nazevPole} />
+              <StavUlozeni stav={stav} chyba={chybaUlozeni} kdy={kdy} />
+            </>
+          )}
+          <button className="crm-zavrit" onClick={hotovo} aria-label="Zavřít">
             ✕
           </button>
         </div>
@@ -180,9 +370,10 @@ export default function ObjednavkaFormular({
               <label className="crm-label">Název</label>
               <input
                 className="crm-pole"
-                value={form.nazev}
-                onChange={(e) => zmen("nazev", e.target.value)}
+                value={udaj("nazev")}
+                onChange={(e) => zmenUdaj("nazev", e.target.value)}
                 placeholder="např. Baterie 100 kWh včetně montáže"
+                {...fokusPole("nazev")}
               />
             </div>
             <div>
@@ -196,12 +387,17 @@ export default function ObjednavkaFormular({
               </label>
               <input
                 className="crm-pole"
-                value={form.cena_kc}
-                onChange={(e) => zmen("cena_kc", e.target.value)}
+                value={udaj("cena_kc")}
+                onChange={(e) => zmenUdaj("cena_kc", e.target.value)}
                 inputMode="decimal"
+                {...fokusPole("cena_kc")}
               />
               {/* Cena jde ze součtu rozpisu, dokud ji někdo nepřepíše ručně.
-                  Pak má přednost ruční hodnota a appka jen ukáže rozdíl. */}
+                  Pak má přednost ruční hodnota a appka jen ukáže rozdíl.
+                  Uložení ceny přes autosave si příznak „zadaná ručně“ nastaví
+                  samo, zpátky na součet ho ale dostane jen tohle tlačítko —
+                  příznak sám se po polích měnit nedá (a nemá: je to rozhodnutí,
+                  ne rozepsaná věta). */}
               {o?.cena_rucni && o?.soucet_polozek_kc != null && (
                 <p className="crm-tise" style={{ margin: "4px 0 0" }}>
                   Cena je zadaná ručně
@@ -214,10 +410,10 @@ export default function ObjednavkaFormular({
                   <button
                     type="button"
                     className="fm-btn crm-btn-maly"
-                    onClick={() => {
-                      zmen("cena_kc", String(o.soucet_polozek_kc));
-                      setForm((f) => ({ ...f, cena_rucni: false }));
-                    }}
+                    disabled={uklada}
+                    onClick={() =>
+                      ulozPresPut({ cena_kc: o.soucet_polozek_kc, cena_rucni: false })
+                    }
                   >
                     Vrátit na součet rozpisu
                   </button>
@@ -226,11 +422,14 @@ export default function ObjednavkaFormular({
             </div>
             <div>
               <label className="crm-label">Datum podpisu</label>
+              {/* Datum je hotové rozhodnutí, ne rozepsaná věta – jde na server
+                  bez prodlevy (`ihned`). */}
               <input
                 className="crm-pole"
                 type="date"
-                value={form.datum_podpisu}
-                onChange={(e) => zmen("datum_podpisu", e.target.value)}
+                value={udaj("datum_podpisu")}
+                onChange={(e) => zmenUdaj("datum_podpisu", e.target.value, true)}
+                {...fokusPole("datum_podpisu")}
               />
             </div>
             <div>
@@ -238,19 +437,27 @@ export default function ObjednavkaFormular({
               <input
                 className="crm-pole"
                 type="date"
-                value={form.datum_dodani}
-                onChange={(e) => zmen("datum_dodani", e.target.value)}
+                value={udaj("datum_dodani")}
+                onChange={(e) => zmenUdaj("datum_dodani", e.target.value, true)}
+                {...fokusPole("datum_dodani")}
               />
             </div>
             {muzeMenitVlastnika && (
               <div>
                 <label className="crm-label">Vlastník</label>
+                {/* Vlastnictví se přes ukládání po polích měnit nedá (backend ho
+                    odmítá): mění, kdo záznam vidí, a rozesílá notifikaci. V
+                    editaci proto jde starou cestou — celým PUTem nad čerstvými
+                    daty, hned po výběru. */}
                 <select
                   className="crm-pole"
                   value={form.vlastnik_user_id || ""}
-                  onChange={(e) =>
-                    zmen("vlastnik_user_id", e.target.value ? Number(e.target.value) : null)
-                  }
+                  disabled={uklada}
+                  onChange={(e) => {
+                    const novy = e.target.value ? Number(e.target.value) : null;
+                    zmen("vlastnik_user_id", novy);
+                    if (jeUprava) ulozPresPut({ vlastnik_user_id: novy });
+                  }}
                 >
                   <option value="">— já —</option>
                   {lidi.map((u) => (
@@ -266,17 +473,47 @@ export default function ObjednavkaFormular({
               <textarea
                 className="crm-pole"
                 rows={3}
-                value={form.popis}
-                onChange={(e) => zmen("popis", e.target.value)}
+                value={udaj("popis")}
+                onChange={(e) => zmenUdaj("popis", e.target.value)}
+                {...fokusPole("popis")}
               />
             </div>
 
+            {/* Vlastní pole: v editaci se hlásí po jednom (`onZmenaPole`), při
+                zakládání celé `extra` naráz. Ukládat celé `extra` po každém
+                znaku by přepisovalo i pole, kterých se člověk nedotkl. */}
             <VlastniPoleVstupy
               pole={vlastniPole}
-              hodnoty={form.extra}
-              onZmena={(extra) => zmen("extra", extra)}
+              hodnoty={extraHodnoty}
+              onZmena={jeUprava ? undefined : (extra) => zmen("extra", extra)}
+              onZmenaPole={
+                jeUprava
+                  ? (klic, hodnota, ihned) => zmenPolem(`extra:${klic}`, hodnota, ihned)
+                  : undefined
+              }
             />
           </div>
+
+          {/* Kolize: nic se nepřepsalo, člověk rozhodne, čí hodnota platí. */}
+          {kolize && (
+            <div className="crm-kolize">
+              <div>
+                <strong>{nazevPole(kolize.pole)}</strong> mezitím změnil
+                {kolize.kdo ? ` ${kolize.kdo}` : " někdo jiný"} na{" "}
+                <strong>{kolize.aktualni || "prázdné"}</strong>.
+                <br />
+                Ty píšeš <strong>{kolize.moje || "prázdné"}</strong>.
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button className="fm-btn fm-primary" onClick={prepis}>
+                  Přepsat mojí hodnotou
+                </button>
+                <button className="fm-btn" onClick={vezmiJejich}>
+                  Nechat jejich
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Rozpis položek (CRM-08) a fakturace (CRM-09). Obojí dává smysl až
               u existující objednávky – nová se nejdřív musí založit, aby měla id. */}
@@ -343,13 +580,29 @@ export default function ObjednavkaFormular({
               Smazat
             </button>
           )}
+          {jeUprava && (
+            <span className="crm-tise">
+              Údaje se ukládají samy, tlačítko jen zavře okno.
+            </span>
+          )}
           <span className="crm-mezera" />
-          <button className="fm-btn" onClick={onZavri}>
-            Zavřít
-          </button>
-          <button className="fm-btn fm-primary" onClick={uloz} disabled={uklada}>
-            {uklada ? "Ukládám…" : jeUprava ? "Uložit změny" : "Založit objednávku"}
-          </button>
+          {jeUprava ? (
+            <>
+              <StavUlozeni stav={stav} chyba={chybaUlozeni} kdy={kdy} />
+              <button className="fm-btn fm-primary" onClick={hotovo}>
+                Hotovo
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="fm-btn" onClick={onZavri}>
+                Zavřít
+              </button>
+              <button className="fm-btn fm-primary" onClick={zaloz} disabled={uklada}>
+                {uklada ? "Ukládám…" : "Založit objednávku"}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -143,6 +143,23 @@ export function nactiRazitkoMatice() {
   return zavolej("/matice/razitko");
 }
 
+// ---- Automatické ukládání záznamů CRM po polích ----
+// `entita`: „zakaznik" | „kontakt" | „om" | „op" | „obj" | „pro".
+// `pole`: sloupec, nebo vlastní pole jako „extra:<klic>".
+// `puvodni`: hodnota, kterou jsme zobrazovali (null = přepiš bez kontroly).
+// `usazeno`: true, když člověk pole opustil — teprve tehdy server spouští
+// automatizace „změní se pole", aby nezabíraly na nedopsaných mezihodnotách.
+export function patchPoleZaznamu({ entita, id, pole, hodnota, puvodni, usazeno = false }) {
+  return zavolej(`/crm/zaznam/${entita}/${id}/pole`, {
+    method: "PATCH",
+    body: JSON.stringify({ pole, hodnota, puvodni, usazeno }),
+  });
+}
+
+export function nactiRazitkoZaznamu({ entita, id }) {
+  return zavolej(`/crm/zaznam/${entita}/${id}/razitko`);
+}
+
 // ---- Přítomnost („kdo tu je") ----
 // Tik dělá dvě věci naráz: ohlásí, že tu jsem, a vrátí razítko změn. Proto
 // synchronizace nestojí ani jeden požadavek navíc.

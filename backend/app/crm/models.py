@@ -40,7 +40,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import relationship
 
-from app.database import Base
+from app.database import Base, ZmenaMixin
 
 # ---- Povolené hodnoty enumů -------------------------------------------------
 
@@ -434,7 +434,7 @@ class CrmVlastniPole(Base):
     )
 
 
-class Zakaznik(Base):
+class Zakaznik(Base, ZmenaMixin):
     """Lead nebo klient – jeden záznam, `typ` rozhoduje, v kterém pohledu je.
 
     `konvertovan_at` drží okamžik, kdy se z leadu stal klient (typicky při
@@ -499,7 +499,7 @@ class Zakaznik(Base):
     )
 
 
-class OdberneMisto(Base):
+class OdberneMisto(Base, ZmenaMixin):
     """Odběrné místo zákazníka – kde se elektřina odebírá a čím je zasmluvněná.
 
     Proč vlastní entita a ne pár polí na zákazníkovi: jedna firma má běžně víc
@@ -622,7 +622,7 @@ class CrmDiagram(Base):
     odberne_misto = relationship("OdberneMisto", back_populates="diagramy")
 
 
-class ZakaznikKontakt(Base):
+class ZakaznikKontakt(Base, ZmenaMixin):
     """Kontaktní osoba u zákazníka. `hlavni` = koho appka nabídne první."""
 
     __tablename__ = "crm_zakaznik_kontakty"
@@ -643,7 +643,7 @@ class ZakaznikKontakt(Base):
     zakaznik = relationship("Zakaznik", back_populates="kontakty")
 
 
-class ObchodniPripad(Base):
+class ObchodniPripad(Base, ZmenaMixin):
     """Obchodní případ – zastřešuje nabídky, objednávku a projekt jedné zakázky.
 
     `cislo` je viditelné ID z číselné řady appky (OP-26-0301). `raynet_code`
@@ -709,7 +709,7 @@ class ObchodniPripad(Base):
     vlastnik = relationship("User", foreign_keys=[vlastnik_user_id])
 
 
-class CrmAktivita(Base):
+class CrmAktivita(Base, ZmenaMixin):
     """Poznámka, aktivita (telefon, e-mail, schůzka, úkol) nebo událost v kalendáři.
 
     Jedna generická tabulka pro všechny entity CRM (`entita` + `zaznam_id`).
@@ -828,7 +828,7 @@ class CrmAktivita(Base):
 STAVY_KROKU = ("ceka", "probiha", "hotovo", "preskoceno")
 
 
-class Objednavka(Base):
+class Objednavka(Base, ZmenaMixin):
     """Objednávka – potvrzená zakázka, ze které se rozjíždí realizace.
 
     Vzniká z PŘIJATÉ nabídky (proto `nabidka_id`), takže si od ní může vzít
@@ -937,7 +937,7 @@ class ObjednavkaPolozka(Base):
     objednavka = relationship("Objednavka", back_populates="polozky")
 
 
-class CrmProjekt(Base):
+class CrmProjekt(Base, ZmenaMixin):
     """Realizační projekt. Vzniká JEN z objednávky nebo z obchodního případu.
 
     Samostatně vzniknout nesmí (zadání Dana) – proto je `obchodni_pripad_id`
@@ -1049,7 +1049,7 @@ class ProjektSablonaKrok(Base):
     sablona = relationship("ProjektSablona", back_populates="kroky")
 
 
-class ProjektKrok(Base):
+class ProjektKrok(Base, ZmenaMixin):
     """Konkrétní krok (úkol) projektu.
 
     `zavisi_na_id` je skutečný cizí klíč mezi kroky jednoho projektu – tady už

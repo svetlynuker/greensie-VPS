@@ -2,9 +2,23 @@
  * Vykreslení vlastních (admin definovaných) polí do formuláře.
  *
  * Definice přicházejí z backendu (`vlastni_pole`), hodnoty jsou v `extra`.
- * Komponenta nic neukládá — jen hlásí změny nahoru, aby se uložily spolu se
- * zbytkem formuláře (jinak by se záznam ukládal na dvakrát a při chybě by
- * zůstal půl uložený).
+ * Komponenta sama nic neukládá — jen hlásí změny nahoru. Hlásit je umí dvěma
+ * způsoby a záleží jen na tom, který prop formulář pošle:
+ *
+ *  - `onZmena(cele_extra)` — celý objekt `extra` naráz. To je pro formuláře
+ *    s tlačítkem „Uložit“: záznam se pak ukládá jedním požadavkem a při chybě
+ *    nezůstane půl uložený.
+ *  - `onZmenaPole(klic, hodnota, ihned)` — jedno pole zvlášť, pro formuláře
+ *    s automatickým ukládáním (`useZaznamAutosave`). Ukládat celé `extra` po
+ *    každém znaku by přepisovalo i pole, kterých se člověk nedotkl — včetně
+ *    cizích změn, tiše.
+ *
+ * `ihned` říká, jestli se má uložit bez prodlevy: u výběru, zaškrtávátka,
+ * data a čísla je změna hotové rozhodnutí, u textu je to rozepsaná věta a má
+ * smysl počkat, než člověk dopíše.
+ *
+ * Když přijdou oba propy, zavolají se oba (formulář může držet lokální kopii
+ * `extra` a zároveň ukládat po polích).
  */
 // Nabídkovač má vlastní sadu tříd (nb-*) a jinou mřížku než CRM. Kdyby se sem
 // natvrdo psaly crm-* třídy, pole by v detailu nabídky vypadala cize a přetekla
@@ -51,10 +65,17 @@ export function doSkupin(pole) {
   return skupiny;
 }
 
+// Typy, u kterých je změna hotové rozhodnutí, ne rozepsaná věta — ukládají se
+// bez prodlevy. Číslo se sem vejde taky: mění se přes vstup, ale člověk ho
+// buď zadá celé, nebo vůbec, a čekat na dopsání nemá u čeho.
+const IHNED_TYPY = new Set(["ano_ne", "vyber", "datum", "cislo"]);
+
 export default function VlastniPoleVstupy({
   pole,
   hodnoty,
   onZmena,
+  // Nepovinný: hlášení změny po jednom poli (automatické ukládání).
+  onZmenaPole,
   nadpis = "Doplňující údaje",
   styl = "crm",
   // Hodnoty běžných polí záznamu (kategorie, typ…) pro podmíněnou viditelnost.
@@ -66,8 +87,12 @@ export default function VlastniPoleVstupy({
   const videt = (pole || []).filter((p) => poleViditelne(p, zdroj));
   if (videt.length === 0) return null;
 
-  function zmen(klic, hodnota) {
-    onZmena({ ...(hodnoty || {}), [klic]: hodnota });
+  // Bere celou definici pole, ne jen klíč: z typu se pozná, jestli se má
+  // uložit hned. Kdyby se `ihned` psalo na každém volání zvlášť, dřív nebo
+  // později by u jednoho vstupu chybělo a ten by se ukládal s prodlevou.
+  function zmen(p, hodnota) {
+    if (onZmena) onZmena({ ...(hodnoty || {}), [p.klic]: hodnota });
+    if (onZmenaPole) onZmenaPole(p.klic, hodnota, IHNED_TYPY.has(p.typ));
   }
 
   return (
@@ -109,7 +134,7 @@ export default function VlastniPoleVstupy({
                 className={t.pole}
                 rows={3}
                 value={hodnota ?? ""}
-                onChange={(e) => zmen(p.klic, e.target.value)}
+                onChange={(e) => zmen(p, e.target.value)}
               />
             ) : p.typ === "ano_ne" ? (
               <label className="crm-zaskrtavaci">
@@ -117,7 +142,7 @@ export default function VlastniPoleVstupy({
                   id={`vp-${p.klic}`}
                   type="checkbox"
                   checked={Boolean(hodnota)}
-                  onChange={(e) => zmen(p.klic, e.target.checked)}
+                  onChange={(e) => zmen(p, e.target.checked)}
                 />
                 {hodnota ? "Ano" : "Ne"}
               </label>
@@ -126,7 +151,7 @@ export default function VlastniPoleVstupy({
                 id={`vp-${p.klic}`}
                 className={t.pole}
                 value={hodnota ?? ""}
-                onChange={(e) => zmen(p.klic, e.target.value)}
+                onChange={(e) => zmen(p, e.target.value)}
               >
                 <option value="">— nevybráno —</option>
                 {(p.volby || []).map((v) => (
@@ -142,7 +167,7 @@ export default function VlastniPoleVstupy({
                 type={p.typ === "datum" ? "date" : "text"}
                 inputMode={p.typ === "cislo" ? "decimal" : undefined}
                 value={hodnota ?? ""}
-                onChange={(e) => zmen(p.klic, e.target.value)}
+                onChange={(e) => zmen(p, e.target.value)}
               />
             )}
 

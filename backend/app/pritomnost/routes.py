@@ -10,8 +10,8 @@ from app.pritomnost.schemas import PritomnyOut, TikOut, TikVstup
 router = APIRouter(prefix="/pritomnost", tags=["pritomnost"])
 
 
-def _overy(user: User, vstup: TikVstup) -> None:
-    """Zkontroluje, že entita existuje v registru a člověk na ni má právo."""
+def _overy(db: Session, user: User, vstup: TikVstup) -> None:
+    """Ověří entitu, právo na modul a přístup ke konkrétnímu záznamu."""
     pravo = registr.pravo_pro(vstup.entita_typ)
     if pravo is None:
         raise HTTPException(
@@ -23,6 +23,11 @@ def _overy(user: User, vstup: TikVstup) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Na tento modul nemáš oprávnění.",
         )
+    # Druhá vrstva: v CRM vidí člověk bez práva `crm_vse` jen svoje záznamy.
+    # Odpověď je 404, ne 403 — cizí záznam se nemá projevit ani svou existencí,
+    # jinak by se zkoušením ID dalo zjistit, co firma vede a kdo na tom pracuje.
+    if not registr.ma_pristup(db, user, vstup.entita_typ, vstup.entita_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Záznam neexistuje")
 
 
 @router.post("/tik", response_model=TikOut)
@@ -36,7 +41,7 @@ def tik(
     Jeden požadavek dělá obojí schválně: prohlížeč tak nepotřebuje druhý
     dotaz na aktualizace a synchronizace nestojí ani jedno spojení navíc.
     """
-    _overy(user, vstup)
+    _overy(db, user, vstup)
 
     sluzba.zapis_tik(
         db,
@@ -61,7 +66,7 @@ def tik(
             )
             for c in lidi
         ],
-        razitko=registr.razitko(db, vstup.entita_typ),
+        razitko=registr.razitko(db, vstup.entita_typ, vstup.entita_id),
     )
 
 
@@ -75,7 +80,7 @@ def odchod(
 
     Není to nutné — nedoručený odchod vyprší sám za `sluzba.OKNO_S`.
     """
-    _overy(user, vstup)
+    _overy(db, user, vstup)
     sluzba.odhlas(
         db,
         uzivatel_id=user.id,

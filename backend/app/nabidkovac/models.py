@@ -28,7 +28,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
-from app.database import Base
+from app.database import Base, ZmenaMixin
 
 # ---- Povolené hodnoty enumů (drží se i tady kvůli validaci na backendu) ----
 
@@ -294,7 +294,7 @@ class SpotovaCena(Base):
     vytvoreno_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
-class Nabidka(Base):
+class Nabidka(Base, ZmenaMixin):
     """Hlavní záznam zakázky/nabídky (kap. 4.3 SPEC).
 
     `typ` = za jakým účelem OZ nabídku založil (z které podsekce vznikla),
@@ -361,7 +361,10 @@ class Nabidka(Base):
     # a případu; nabídka je v CRM měla jako jediná chybět (CRM-04).
     extra = Column(JSONB, nullable=False, default=dict, server_default="{}")
 
-    vytvoril = relationship("User")
+    # `foreign_keys` je nutné: od zavedení `ZmenaMixin` vedou na uživatele dva
+    # cizí klíče (autor nabídky a autor poslední změny), takže SQLAlchemy sám
+    # nepozná, který z nich tahle vazba používá.
+    vytvoril = relationship("User", foreign_keys=[vytvoril_user_id])
     dokumenty = relationship(
         "NabidkaDokument", back_populates="nabidka", cascade="all, delete-orphan"
     )

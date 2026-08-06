@@ -1,19 +1,21 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import GanttProjektu from "../components/GanttProjektu";
 import HistorieZmen from "../components/HistorieZmen";
 import Spendlik from "../components/Spendlik";
 import Aktivity from "../components/Aktivity";
+import Pritomni from "../components/Pritomni";
+import StavUlozeni from "../components/StavUlozeni";
 import ProjektKroky from "../components/ProjektKroky";
 import VlastniPoleVypis from "../components/VlastniPoleVypis";
 import VlastniPoleNastaveni from "../components/VlastniPoleNastaveni";
+import { useZaznamAutosave } from "../hooks/useZaznamAutosave";
 import {
   crmProjektDetail,
   crmProjektPouzijSablonu,
   crmProjektSmaz,
   crmProjektStav,
-  crmProjektUprav,
   crmSablony,
   crmStavy,
   logout,
@@ -27,6 +29,15 @@ const ZALOZKY = [
   { klic: "prehled", nazev: "Přehled" },
   { klic: "aktivity", nazev: "Aktivity a úkoly" },
 ];
+
+// Pole, která se na téhle stránce ukládají sama. Je tu jen zahájení — název,
+// popis a vlastní pole se z detailu projektu neupravují (mají svoje místo
+// v objednávce, resp. ve správě polí) a plánované předání se jen ukazuje,
+// protože ho počítají kroky. Stav projektu tu schválně NENÍ: přepíná fázi
+// realizace, takže patří na vědomé kliknutí, ne na ukládání za pochodu.
+const POLE = ["zahajeni"];
+
+const NAZVY_POLI = { zahajeni: "Zahájení", predani: "Plánované předání" };
 
 /**
  * Detail projektu – kroky realizace s termíny a návaznostmi.
@@ -48,6 +59,57 @@ export default function ProjektDetail() {
   const nactiZnovu = useCallback(async () => {
     setP(await crmProjektDetail(id));
   }, [id]);
+
+  const {
+    hodnoty,
+    zmen,
+    stav: stavUlozeni,
+    chyba: chybaUlozeni,
+    kdy,
+    pritomni,
+    razitko,
+    kolize,
+    prepis,
+    vezmiJejich,
+    onFokus,
+    onBlur,
+  } = useZaznamAutosave({
+    entita: "pro",
+    id,
+    zaznam: p,
+    pole: POLE,
+    entitaTyp: "crm_pro",
+    // Přítomnost („kdo tu je“) běží od chvíle, kdy je projekt načtený — kolegu
+    // má člověk vidět dřív, než sáhne na termín.
+    zapnuto: Boolean(p),
+  });
+
+  // Razítko se změnilo → někdo (nebo já z jiného okna) projekt upravil,
+  // natáhneme ho znovu. První razítko se jen zapamatuje, jinak by se stránka po
+  // načtení obnovila zbytečně. Rozepsané pole hook nepřepíše, takže to nic
+  // nesebere.
+  const razitkoRef = useRef(null);
+  useEffect(() => {
+    if (!razitko) return;
+    if (razitkoRef.current === null || razitkoRef.current === razitko) {
+      razitkoRef.current = razitko;
+      return;
+    }
+    razitkoRef.current = razitko;
+    nactiZnovu().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [razitko]);
+
+  // Po každém vlastním uložení natáhneme detail hned, nečekáme na razítko:
+  // změna zahájení přepočítá termíny všech kroků bez ručního termínu a ty musí
+  // být vidět okamžitě (dřív to zajišťovala odpověď na celý PUT).
+  const kdyRef = useRef(null);
+  useEffect(() => {
+    if (!kdy || kdyRef.current === kdy) return;
+    kdyRef.current = kdy;
+    nactiZnovu().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kdy]);
 
   useEffect(() => {
     Promise.all([nactiMe(), crmProjektDetail(id), crmStavy("pro"), crmSablony()])
@@ -90,23 +152,6 @@ export default function ProjektDetail() {
     if (!sablonaId) return;
     try {
       setP(await crmProjektPouzijSablonu(id, sablonaId));
-    } catch (e) {
-      setChyba(e.message);
-    }
-  }
-
-  async function ulozZahajeni(hodnota) {
-    try {
-      setP(
-        await crmProjektUprav(id, {
-          nazev: p.nazev || "",
-          popis: p.popis || "",
-          zahajeni: hodnota || null,
-          predani: p.predani || null,
-          freelo_projekt_id: p.freelo_projekt_id,
-          extra: p.extra || {},
-        })
-      );
     } catch (e) {
       setChyba(e.message);
     }
@@ -158,6 +203,11 @@ export default function ProjektDetail() {
             </div>
           </div>
           <span className="crm-mezera" />
+          {/* Kdo má projekt otevřený taky – ať je kolize vidět dřív, než
+              nastane. Vedle je stav ukládání: bez tlačítka „Uložit“ nemá člověk
+              jinak jak poznat, že termín došel na server. */}
+          <Pritomni pritomni={pritomni} popisekPole={(f) => NAZVY_POLI[f] || f} />
+          <StavUlozeni stav={stavUlozeni} chyba={chybaUlozeni} kdy={kdy} />
           <select
             className="crm-pole crm-pole-uzke"
             value={p.stav}
@@ -219,14 +269,20 @@ export default function ProjektDetail() {
                 <dt>Zahájení</dt>
                 <dd>
                   {/* Změna zahájení přepočítá termíny všech kroků, které nemají
-                      ruční termín – v tom je hodnota návazností. */}
+                      ruční termín – v tom je hodnota návazností. Datum je hotové
+                      rozhodnutí, ne rozepsaná věta, takže se ukládá bez prodlevy
+                      (`ihned`). */}
                   <input
                     className="crm-pole crm-pole-uzke"
                     type="date"
-                    value={(p.zahajeni || "").slice(0, 10)}
-                    onChange={(e) => ulozZahajeni(e.target.value)}
+                    value={hodnoty.zahajeni || ""}
+                    onChange={(e) => zmen("zahajeni", e.target.value, true)}
+                    onFocus={() => onFokus("zahajeni")}
+                    onBlur={() => onBlur("zahajeni")}
                   />
                 </dd>
+                {/* Plánované předání se jen ukazuje – počítá ho poslední krok
+                    realizace, takže tu není co ukládat. */}
                 <dt>Plánované předání</dt>
                 <dd>{fmtDatum(p.predani) || "—"}</dd>
                 <dt>Postup</dt>
@@ -240,8 +296,31 @@ export default function ProjektDetail() {
                   </>
                 )}
               </dl>
+
+              {/* Kolize: nic se nepřepsalo, člověk rozhodne, čí hodnota platí. */}
+              {kolize && (
+                <div className="crm-kolize">
+                  <div>
+                    <strong>{NAZVY_POLI[kolize.pole] || kolize.pole}</strong> mezitím změnil
+                    {kolize.kdo ? ` ${kolize.kdo}` : " někdo jiný"} na{" "}
+                    <strong>{fmtDatum(kolize.aktualni) || "prázdné"}</strong>.
+                    <br />
+                    Ty píšeš <strong>{fmtDatum(kolize.moje) || "prázdné"}</strong>.
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button className="fm-btn fm-primary" onClick={prepis}>
+                      Přepsat mojí hodnotou
+                    </button>
+                    <button className="fm-btn" onClick={vezmiJejich}>
+                      Nechat jejich
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {p.popis && <p className="crm-poznamka">{p.popis}</p>}
               <div className="crm-blok-pata">
+                <span className="crm-tise">Termín zahájení se ukládá sám.</span>
                 <span className="crm-mezera" />
                 <button className="fm-btn crm-btn-smazat" onClick={smaz}>
                   Smazat projekt

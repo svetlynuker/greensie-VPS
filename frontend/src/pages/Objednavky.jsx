@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import CrmTabulka from "../components/CrmTabulka";
@@ -18,6 +18,7 @@ import {
   logout,
   nactiMe,
 } from "../api";
+import { usePritomnost } from "../hooks/usePritomnost";
 import { fmtDatum, fmtKc, fmtKcKratce } from "../crm";
 import usePouzitFiltr from "../pouzitFiltr";
 import "../styles/crm.css";
@@ -73,6 +74,36 @@ export default function Objednavky() {
     setStavy(s);
     setSloupce(pole.filter((x) => x.v_seznamu));
   }, []);
+
+  // ---- Synchronizace mezi lidmi ----
+  // Razítko za celý seznam objednávek: jeden levný tik za 8 s přinese podpis
+  // poslední změny (včetně přesunu karty v kanbanu), a když se změní, seznam
+  // i kanban se natáhnou znovu. Kolečka přítomnosti tu schválně NEJSOU:
+  // „pět lidí je v seznamu" je šum a u seznamu se ani neví, kdo drží kterou
+  // kartu.
+  const { razitko } = usePritomnost({
+    entitaTyp: "crm_seznam_obj",
+    zapnuto: Boolean(kanban),
+  });
+
+  // Rozepsané hledání drží ref, ne závislost efektu: obnovení se musí poslat
+  // se STEJNÝM dotazem, jaký má stránka právě teď — jinak by cizí změna
+  // člověku zahodila hledání.
+  const hledatRef = useRef(hledat);
+  hledatRef.current = hledat;
+
+  // První razítko se jen zapamatuje, jinak by se stránka po otevření načetla
+  // dvakrát.
+  const razitkoRef = useRef(null);
+  useEffect(() => {
+    if (!razitko) return;
+    if (razitkoRef.current === null || razitkoRef.current === razitko) {
+      razitkoRef.current = razitko;
+      return;
+    }
+    razitkoRef.current = razitko;
+    nacti(hledatRef.current).catch(() => {});
+  }, [razitko, nacti]);
 
   useEffect(() => {
     nactiMe()

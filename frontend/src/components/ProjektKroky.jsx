@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { crmKrokPridej, crmKrokSmaz, crmKrokUprav, crmUzivatele } from "../api";
 import { fmtDatum, jePoTerminu } from "../crm";
+import { useAutosave } from "../hooks/useAutosave";
+import StavUlozeni from "./StavUlozeni";
 
 const STAVY = [
   { klic: "ceka", nazev: "Čeká" },
@@ -31,6 +33,45 @@ export default function ProjektKroky({ projekt, sablony, onZmena, onSablona }) {
   }, []);
 
   const kroky = projekt.kroky_seznam || [];
+
+  // Rozepsané hodnoty (klíč „<id kroku>:<pole>"). Dokud tu klíč je, má přednost
+  // před hodnotou ze serveru — jinak by aktualizace přepsala text pod rukama
+  // člověku, který ho právě píše. Původní kód místo toho používal
+  // `defaultValue`, takže se cizí změna názvu kroku NEPROJEVILA nikdy (React
+  // ho po prvním vykreslení už nepřepisuje).
+  const [rozepsane, setRozepsane] = useState({});
+  const rozepsaneRef = useRef({});
+
+  function nastavRozepsane(klic, hodnota) {
+    rozepsaneRef.current = { ...rozepsaneRef.current, [klic]: hodnota };
+    setRozepsane(rozepsaneRef.current);
+  }
+
+  function zapomen(klic) {
+    const zbytek = { ...rozepsaneRef.current };
+    delete zbytek[klic];
+    rozepsaneRef.current = zbytek;
+    setRozepsane(zbytek);
+  }
+
+  // Stav ukládání a debounce po jednotlivých polích. Klíč je „<id>:<pole>",
+  // takže psaní do jednoho kroku neodkládá uložení jiného.
+  const autosave = useAutosave(async (klic, { krok, zmeny }) => {
+    try {
+      onZmena(await crmKrokUprav(krok.id, zmeny));
+      setChyba(null);
+      zapomen(klic);
+    } catch (e) {
+      setChyba(e.message);
+      throw e;
+    }
+  });
+
+  function ulozPole(krok, pole, zmeny, { ihned = false } = {}) {
+    const klic = `${krok.id}:${pole}`;
+    if (ihned) autosave.hned(klic, { krok, zmeny });
+    else autosave.naplanuj(klic, { krok, zmeny });
+  }
 
   async function uprav(krok, zmeny) {
     setChyba(null);
@@ -78,6 +119,8 @@ export default function ProjektKroky({ projekt, sablony, onZmena, onSablona }) {
           </span>
         )}
         <span className="crm-mezera" />
+        {/* Kroky se ukládají samy, takže musí být vidět, jak na tom ukládání je. */}
+        <StavUlozeni stav={autosave.stav} chyba={autosave.chyba} kdy={autosave.kdy} />
         {/* Šablonu lze přidat i k rozjetému projektu – kroky se přidají za ty
             existující (např. „FVE" + „Dotace"). */}
         <select
@@ -130,10 +173,19 @@ export default function ProjektKroky({ projekt, sablony, onZmena, onSablona }) {
                   />
                   <input
                     className="crm-pole crm-krok-nazev"
-                    defaultValue={k.nazev}
+                    value={rozepsane[`${k.id}:nazev`] ?? k.nazev}
+                    onChange={(e) => {
+                      nastavRozepsane(`${k.id}:nazev`, e.target.value);
+                      const v = e.target.value.trim();
+                      if (v) ulozPole(k, "nazev", { nazev: v });
+                    }}
                     onBlur={(e) => {
                       const v = e.target.value.trim();
-                      if (v && v !== k.nazev) uprav(k, { nazev: v });
+                      // Prázdný název backend odmítne, takže se vrátíme
+                      // k uložené hodnotě, ať v poli nezůstane prázdno.
+                      if (!v) zapomen(`${k.id}:nazev`);
+                      else if (v !== k.nazev) ulozPole(k, "nazev", { nazev: v }, { ihned: true });
+                      else zapomen(`${k.id}:nazev`);
                     }}
                   />
                   <select
@@ -186,10 +238,18 @@ export default function ProjektKroky({ projekt, sablony, onZmena, onSablona }) {
                       className="crm-pole crm-pole-cislo"
                       type="number"
                       min={1}
-                      defaultValue={k.delka_dni}
+                      value={rozepsane[`${k.id}:delka_dni`] ?? String(k.delka_dni ?? "")}
+                      onChange={(e) => {
+                        nastavRozepsane(`${k.id}:delka_dni`, e.target.value);
+                        const v = Number(e.target.value);
+                        if (v > 0) ulozPole(k, "delka_dni", { delka_dni: v });
+                      }}
                       onBlur={(e) => {
                         const v = Number(e.target.value);
-                        if (v && v !== k.delka_dni) uprav(k, { delka_dni: v });
+                        if (!v || v <= 0) zapomen(`${k.id}:delka_dni`);
+                        else if (v !== k.delka_dni)
+                          ulozPole(k, "delka_dni", { delka_dni: v }, { ihned: true });
+                        else zapomen(`${k.id}:delka_dni`);
                       }}
                     />
                   </label>

@@ -26,17 +26,36 @@ pořád je cennější než žádný záznam.
 
 Stav se neloguje taky — má vlastní, bohatší historii (`crm_stav_historie`)
 a v UI by se pak každá změna zobrazila dvakrát.
+
+---- Slučovací okno (autosave) --------------------------------------------
+
+Od zavedení ukládání po polích neplatí „jedno uložení = jedno rozhodnutí“:
+napsání „Technicplast“ pošle několik uložení téhož pole za sebou. Bez
+slučování by v historii byly řádky „Tech“ → „Technic“ → „Technicpl“ a výpis
+(`zaznamy`, limit 100) by po jednom odpoledni psaní neobsahoval nic užitečného.
+Proto se opakovaná změna TÉHOŽ pole TÍMŽ člověkem do `OKNO_SLOUCENI_S` přilepí
+k existujícímu řádku, viz `_slouc`.
 """
 
 import logging
 from contextvars import ContextVar
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import event, inspect
+from sqlalchemy import delete, event, func, inspect, select, update
 from sqlalchemy.orm import Session
 
 log = logging.getLogger(__name__)
+
+# Jak dlouho se opakovaná změna téhož pole týmž člověkem považuje ještě za
+# TU SAMOU změnu (v sekundách).
+#
+# Pět minut je záměrný kompromis: jedno souvislé psaní nebo jedna oprava
+# jednoho pole se do něj celá vejde (autosave mezi znaky posílá uložení po
+# sekundách), takže z ní zůstane jeden řádek „z čeho → na co“. Delší okno by
+# už slévalo dvě SAMOSTATNÁ rozhodnutí ve stejném dni — ráno cena 2,5 mil.,
+# po obědě 1,9 mil. — a právě tahle informace je to, kvůli čemu audit existuje.
+OKNO_SLOUCENI_S = 300
 
 # Uživatel aktuálního requestu. Nastavuje `get_current_user`, čte událost.
 aktualni_uzivatel_id: ContextVar[int | None] = ContextVar("audit_uzivatel_id", default=None)
@@ -142,8 +161,6 @@ def _puvodni_radek(session: Session, obj):
     u každé změny hlásil „z prázdna na X" — a informace „z čeho se to změnilo",
     kvůli které log existuje, by chyběla přesně tam, kde je potřeba.
     """
-    from sqlalchemy import select
-
     tabulka = obj.__table__
     zaznam_id = getattr(obj, "id", None)
     if zaznam_id is None:
@@ -185,8 +202,103 @@ def _zaznamy_zmen(session: Session, obj) -> list[tuple[str, str, str]]:
     return out
 
 
+def _stari_s(kdy) -> float:
+    """Kolik sekund je řádku. Naivní čas bere jako UTC.
+
+    Produkce (PostgreSQL, `timestamptz`) vrací čas s časovou zónou, SQLite
+    v testech bez ní — a odečítat aware od naive je v Pythonu chyba. Doplnění
+    UTC je správné v obou případech: `func.now()` i `server_default` zapisují
+    v UTC.
+    """
+    if kdy is None:
+        return float("inf")  # bez času nevíme, jak je řádek starý → neslučovat
+    if kdy.tzinfo is None:
+        kdy = kdy.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - kdy).total_seconds()
+
+
+def _slouc(session: Session, entita: str, zaznam_id, pole: str, nova: str) -> bool:
+    """Přilepí změnu k předchozímu řádku téhož pole. True = nový nepřidávat.
+
+    Sloučí se jen řádek se stejnou čtveřicí (`entita`, `zaznam_id`, `pole`,
+    `zmenil_user_id`), druhu „zmena“ a mladší než `OKNO_SLOUCENI_S`. Čtveřice
+    včetně autora je podstatná: cizí změnu si nikdo přivlastnit nesmí, jinak by
+    v logu stálo, že cenu snížil ten, kdo pak jen opravil telefon.
+
+    `stara` se NIKDY nepřepisuje — drží hodnotu, ZE KTERÉ se to začalo měnit,
+    a to je celý smysl logu. Když se nová hodnota rovná té původní (člověk
+    napsal a vrátil zpět, A → B → A), řádek se smaže: „změnil z Praha na Praha“
+    není informace, jen šum.
+
+    ---- Proč surové SQL, a ne `session.query(CrmAudit)` ----
+    Voláme se z `before_flush`, tedy V PRŮBĚHU flushe. ORM dotaz by spustil
+    autoflush, což je další flush uvnitř flushe: SQLAlchemy na to zahlásí
+    „Session is already flushing“ a náš vlastní listener by se zavolal
+    rekurzivně. Vypnout autoflush by šlo, ale ORM `UPDATE`/`DELETE` nad
+    objektem by se stejně provedl až v dalším flushi (nebo v tomhle, podle
+    toho, kdy se objekt do session dostane) — což se nedá spolehlivě
+    předvídat. Surový SELECT/UPDATE/DELETE přes `session.connection()` jede
+    ve stejné transakci jako flush, vidí i řádky vložené dřív v téhle
+    transakci, provede se hned a žádný flush nevyvolá. Stejný důvod, proč tak
+    čte i `_puvodni_radek`.
+
+    Cenou je, že ORM o zápisu neví: kdyby si někdo v téže session držel načtený
+    objekt `CrmAudit`, měl by zastaralé hodnoty. Audit se ale nikde nečte
+    a nezapisuje současně — čte ho jen `zaznamy()` novým dotazem — takže to
+    nevadí.
+    """
+    from app.crm.models import CrmAudit
+
+    tabulka = CrmAudit.__table__
+    spojeni = session.connection()
+    radek = (
+        spojeni.execute(
+            select(tabulka.c.id, tabulka.c.stara, tabulka.c.kdy)
+            .where(
+                tabulka.c.entita == entita,
+                tabulka.c.zaznam_id == zaznam_id,
+                tabulka.c.pole == pole,
+                # `== None` se v SQL přeloží na IS NULL, takže se slučují
+                # i změny bez autora (skript, plánovač) mezi sebou.
+                tabulka.c.zmenil_user_id == aktualni_uzivatel_id.get(),
+                tabulka.c.druh == "zmena",  # vznik ani smazání se neslučují
+            )
+            # Slučuje se vždy do nejnovějšího řádku, takže v okně je nejvýš
+            # jeden. Řadí se podle `id`, které roste monotónně a nezávisí na
+            # přesnosti časů (SQLite je má na sekundy).
+            .order_by(tabulka.c.id.desc())
+            .limit(1)
+        )
+        .mappings()
+        .first()
+    )
+    if radek is None or _stari_s(radek["kdy"]) > OKNO_SLOUCENI_S:
+        return False
+
+    if nova == radek["stara"]:
+        spojeni.execute(delete(tabulka).where(tabulka.c.id == radek["id"]))
+        return True
+
+    spojeni.execute(
+        update(tabulka).where(tabulka.c.id == radek["id"]).values(nova=nova, kdy=func.now())
+    )
+    return True
+
+
 def _pridej(session: Session, entita: str, zaznam_id, druh: str, pole="", stara="", nova=""):
     from app.crm.models import CrmAudit
+
+    stara, nova = stara[:2000], nova[:2000]
+
+    # Slučování je vylepšení historie, ne povinnost: když z jakéhokoli důvodu
+    # selže, zapíše se běžný nový řádek. Audit nikdy nesmí o změnu přijít kvůli
+    # tomu, že se ji nepodařilo přilepit k předchozí.
+    if druh == "zmena":
+        try:
+            if _slouc(session, entita, zaznam_id or 0, pole, nova):
+                return
+        except Exception:  # noqa: BLE001
+            log.warning("Audit: slučovací okno selhalo, zapisuji nový řádek", exc_info=True)
 
     session.add(
         CrmAudit(
@@ -195,8 +307,8 @@ def _pridej(session: Session, entita: str, zaznam_id, druh: str, pole="", stara=
             zaznam_id=zaznam_id or 0,
             druh=druh,
             pole=pole,
-            stara=stara[:2000],
-            nova=nova[:2000],
+            stara=stara,  # zkráceno na 2000 znaků výš, ať sloučení porovnává totéž
+            nova=nova,
             zmenil_user_id=aktualni_uzivatel_id.get(),
         )
     )

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import ImportRaynet from "../components/ImportRaynet";
@@ -9,6 +9,7 @@ import OdkazRaynet from "../components/OdkazRaynet";
 import ZakaznikFormular from "../components/ZakaznikFormular";
 import RychleAkce from "../components/RychleAkce";
 import { nactiMe, logout, crmVlastniPole, crmZakaznici } from "../api";
+import { usePritomnost } from "../hooks/usePritomnost";
 import { POHLEDY_ZAKAZNIKU, fmtDatum } from "../crm";
 import usePouzitFiltr from "../pouzitFiltr";
 import "../styles/rychleAkce.css";
@@ -60,6 +61,36 @@ export default function Zakaznici() {
     },
     [pohled]
   );
+
+  // ---- Synchronizace mezi lidmi ----
+  // Razítko za celý seznam firem: jeden levný tik za 8 s přinese podpis
+  // poslední změny, a když se změní, seznam se natáhne znovu — ať nikdo
+  // nepracuje s firmou, kterou kolega mezitím přepsal nebo překlopil na
+  // klienta. Kolečka přítomnosti tu schválně NEJSOU: „pět lidí je v seznamu"
+  // je šum a u seznamu se ani neví, kdo drží kterou kartu.
+  const { razitko } = usePritomnost({
+    entitaTyp: "crm_seznam_zakaznik",
+    zapnuto: Boolean(zakaznici),
+  });
+
+  // Rozepsané hledání drží ref, ne závislost efektu: obnovení se musí poslat
+  // se STEJNÝM dotazem (a pohledem), jaký má stránka právě teď — jinak by
+  // cizí změna člověku zahodila hledání.
+  const hledatRef = useRef(hledat);
+  hledatRef.current = hledat;
+
+  // První razítko se jen zapamatuje, jinak by se stránka po otevření načetla
+  // dvakrát.
+  const razitkoRef = useRef(null);
+  useEffect(() => {
+    if (!razitko) return;
+    if (razitkoRef.current === null || razitkoRef.current === razitko) {
+      razitkoRef.current = razitko;
+      return;
+    }
+    razitkoRef.current = razitko;
+    nacti(hledatRef.current).catch(() => {});
+  }, [razitko, nacti]);
 
   useEffect(() => {
     if (!sekce) {

@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import DokumentUpload from "../components/DokumentUpload";
+import Pritomni from "../components/Pritomni";
+import StavUlozeni from "../components/StavUlozeni";
 import PeakShavingPanel from "../components/PeakShavingPanel";
 import PpaPanel from "../components/PpaPanel";
 import PpaBessPanel from "../components/PpaBessPanel";
@@ -15,18 +17,43 @@ import {
   nactiMe,
   logout,
   nabidkaDetail,
-  nabidkaUprav,
   nabidkaSmaz,
   nabidkaPolozky,
   nabidkaUlozPolozky,
   nabidkaPridejZKatalogu,
   nabidkaPdfSeznam,
 } from "../api";
+import { useZaznamAutosave } from "../hooks/useZaznamAutosave";
 import { PODSEKCE, STAV_NABIDKY, fmtDatum } from "../nabidkovac";
 import "../styles/nabidkovac.css";
 // Vlastní pole nesou crm-* třídy (podnadpis, nápověda, zaškrtávátko) – jsou
 // všechny prefixované, takže se do nabídkovače nepletou.
 import "../styles/crm.css";
+
+/**
+ * Pole bloku „Údaje zákazníka“, která backend umí uložit po jednom (whitelist
+ * v `crm/pole_zaznamu.py`, entita „nab“). Co tu není, server odmítne se 422,
+ * takže seznam musí být stejný jako tam.
+ *
+ * Vstupy výpočtu (profil spotřeby, sazby, parametry PPA/BESS) sem NEPATŘÍ:
+ * nabídka se z nich přepočítává do verzí, takže je ukládá až „Spočítat“.
+ */
+const POLE = ["zakaznik_nazev", "zakaznik_adresa", "zakaznik_gps_lat", "zakaznik_gps_lng"];
+
+const NAZVY_POLI = {
+  zakaznik_nazev: "Název zákazníka",
+  zakaznik_adresa: "Adresa",
+  zakaznik_gps_lat: "GPS šířka",
+  zakaznik_gps_lng: "GPS délka",
+};
+
+/** Čitelný název pole – pro kolečka přítomnosti i pro hlášku o kolizi. */
+function popisPole(klic) {
+  if (!klic) return "";
+  // Vlastní pole se hlásí jako „extra:dotace“; klíč je to nejlepší, co tu máme.
+  if (klic.startsWith("extra:")) return klic.slice(6);
+  return NAZVY_POLI[klic] || klic;
+}
 
 export default function NabidkaDetail() {
   const { id } = useParams();
@@ -35,7 +62,6 @@ export default function NabidkaDetail() {
   const [nabidka, setNabidka] = useState(null);
   const [chyba, setChyba] = useState(null);
   const [uklada, setUklada] = useState(false);
-  const [zprava, setZprava] = useState(null);
   // Údaje zákazníka a podklady se rozbalují na vyžádání – u rozpracované
   // nabídky by jen zabíraly místo, které patří výpočtu. U nové nabídky se
   // otevřou samy (viz useEffect níž), protože tam se teprve vyplňují.
@@ -45,14 +71,6 @@ export default function NabidkaDetail() {
   // kde se jen počítá, by se tahal zbytečně.
   const [rozpisOtevreny, setRozpisOtevreny] = useState(false);
 
-  // editovatelná pole zákazníka
-  const [nazev, setNazev] = useState("");
-  const [adresa, setAdresa] = useState("");
-  const [lat, setLat] = useState("");
-  const [lng, setLng] = useState("");
-  // Hodnoty vlastních polí (CRM-04). Ukládají se spolu se zbytkem formuláře,
-  // ne zvlášť – jinak by při chybě zůstala nabídka uložená jen napůl.
-  const [extra, setExtra] = useState({});
   const [spravaPoli, setSpravaPoli] = useState(false);
   // Odeslání nabídky zákazníkovi e-mailem (CRM-10).
   const [posilaEmail, setPosilaEmail] = useState(false);
@@ -63,19 +81,78 @@ export default function NabidkaDetail() {
   const posledniPdf = pdfka.find((z) => z.format !== "xlsx");
   const posledniXlsx = pdfka.find((z) => z.format === "xlsx");
 
-  function naplnFormular(n) {
-    setNazev(n.zakaznik_nazev || "");
-    setAdresa(n.zakaznik_adresa || "");
-    setLat(n.zakaznik_gps_lat != null ? String(n.zakaznik_gps_lat) : "");
-    setLng(n.zakaznik_gps_lng != null ? String(n.zakaznik_gps_lng) : "");
-    setExtra(n.extra || {});
-  }
-
-  async function nactiZnovu() {
+  const nactiZnovu = useCallback(async () => {
     const n = await nabidkaDetail(id);
     setNabidka(n);
     return n;
-  }
+  }, [id]);
+
+  // ---- Automatické ukládání údajů zákazníka ----
+  // Nad jednou nabídkou se schází obchodník i backoffice a staré ukládání
+  // celého bloku jedním PUT znamenalo, že kdo uložil poslední, přepsal
+  // i hodnoty, kterých se ani nedotkl. Ukládá se proto pole po poli.
+  //
+  // Výpočtové vlastní pole (CRM-34) se nevyplňuje, jen zobrazuje – do
+  // automatického ukládání nepatří, hodnotu si stejně přepočítá backend.
+  const vlastniPole = nabidka?.vlastni_pole;
+  const poleAutosave = useMemo(
+    () => [
+      ...POLE,
+      ...(vlastniPole || [])
+        .filter((p) => !(p.vzorec || "").trim())
+        .map((p) => `extra:${p.klic}`),
+    ],
+    [vlastniPole],
+  );
+
+  const {
+    hodnoty,
+    zmen,
+    stav,
+    chyba: chybaUlozeni,
+    kdy,
+    pritomni,
+    razitko,
+    kolize,
+    prepis,
+    vezmiJejich,
+    dokonci,
+    onFokus,
+    onBlur,
+  } = useZaznamAutosave({
+    entita: "nab",
+    id,
+    zaznam: nabidka,
+    pole: poleAutosave,
+    entitaTyp: "crm_nab",
+    zapnuto: Boolean(nabidka),
+  });
+
+  // Razítko se změnilo → nabídku upravil někdo jiný (nebo já z druhého okna),
+  // natáhneme ji znovu. První razítko se jen zapamatuje, jinak by se detail po
+  // otevření načetl dvakrát. Rozepsané pole hook nepřepíše (viz
+  // `useZaznamAutosave`), takže to nikomu nesebere text pod rukama.
+  const razitkoRef = useRef(null);
+  useEffect(() => {
+    if (!razitko) return;
+    if (razitkoRef.current === null || razitkoRef.current === razitko) {
+      razitkoRef.current = razitko;
+      return;
+    }
+    razitkoRef.current = razitko;
+    nactiZnovu().catch(() => {});
+  }, [razitko, nactiZnovu]);
+
+  // Vlastní pole: základ z posledního načtení (kvůli výpočtovým polím, která
+  // hook nespravuje), navrch to, co má člověk rozepsané.
+  const extraHodnoty = useMemo(() => {
+    const vysledek = { ...(nabidka?.extra || {}) };
+    (vlastniPole || []).forEach((p) => {
+      const klic = `extra:${p.klic}`;
+      if (klic in hodnoty) vysledek[p.klic] = hodnoty[klic];
+    });
+    return vysledek;
+  }, [nabidka, vlastniPole, hodnoty]);
 
   useEffect(() => {
     Promise.all([nactiMe(), nabidkaDetail(id)])
@@ -90,7 +167,6 @@ export default function NabidkaDetail() {
         }
         setMe(m);
         setNabidka(n);
-        naplnFormular(n);
         // Čerstvě založená nabídka: otevři to, co se v ní teprve vyplňuje.
         if (!n.zakaznik_nazev) setUpravaZakaznika(true);
         if (!(n.dokumenty || []).length) setPodkladyOtevrene(true);
@@ -116,21 +192,24 @@ export default function NabidkaDetail() {
       .catch(() => setPdfka([]));
   }, [id]);
 
-  async function uloz() {
+  /**
+   * „Hotovo“ už neukládá – pole se ukládají sama. Jen dožene, co se nestihlo
+   * odeslat (posledních pár znaků z rozepsaného pole), natáhne čerstvý záznam
+   * a blok zavře. Při nerozhodnuté kolizi zůstává otevřený: zavřít ho
+   * s neuloženým textem znamená ten text zahodit.
+   */
+  async function hotovo() {
+    if (uklada) return;
+    if (kolize) {
+      setChyba("Nejdřív rozhodni, čí hodnota u kolize platí — pak blok zavři.");
+      return;
+    }
     setUklada(true);
     setChyba(null);
-    setZprava(null);
     try {
-      const n = await nabidkaUprav(id, {
-        zakaznik_nazev: nazev.trim(),
-        zakaznik_adresa: adresa.trim(),
-        zakaznik_gps_lat: lat.trim() === "" ? null : Number(lat.replace(",", ".")),
-        zakaznik_gps_lng: lng.trim() === "" ? null : Number(lng.replace(",", ".")),
-        extra,
-      });
-      setNabidka(n);
-      setExtra(n.extra || {});
-      setZprava("Uloženo.");
+      await dokonci();
+      await nactiZnovu();
+      setUpravaZakaznika(false);
     } catch (e) {
       setChyba(e.message);
     } finally {
@@ -185,6 +264,13 @@ export default function NabidkaDetail() {
             </div>
           </div>
           <span className="nb-mezera" />
+          {/* Kdo má nabídku otevřenou taky – ať je vidět, s kým se člověk může
+              potkat, ještě než napíše první znak. Popisek u kolečka řekne i to,
+              na kterém poli kolega stojí. */}
+          <Pritomni pritomni={pritomni} popisekPole={popisPole} />
+          {/* Údaje zákazníka se ukládají samy – bez téhle hlášky by nebylo jak
+              poznat, že text došel na server. */}
+          <StavUlozeni stav={stav} chyba={chybaUlozeni} kdy={kdy} />
           <span className="nb-badge">{sekce?.nazev || nabidka.typ}</span>
           <span className="nb-badge">{STAV_NABIDKY[nabidka.stav] || nabidka.stav}</span>
           <button className="fm-btn" onClick={() => setUpravaZakaznika((s) => !s)}>
@@ -211,6 +297,29 @@ export default function NabidkaDetail() {
           {posledniPdf && <PdfNabidky pdf={posledniPdf} />}
           {posledniXlsx && <PdfNabidky pdf={posledniXlsx} />}
         </div>
+
+        {/* Kolize: nic se nepřepsalo, člověk rozhodne, čí hodnota platí. Je to
+            nad blokem schválně – kdyby panel byl uvnitř, po sbalení „Údajů
+            zákazníka“ by rozhodnutí zmizelo a hodnota by zůstala neuložená. */}
+        {kolize && (
+          <div className="crm-kolize">
+            <div>
+              <strong>{popisPole(kolize.pole)}</strong> mezitím změnil
+              {kolize.kdo ? ` ${kolize.kdo}` : " někdo jiný"} na{" "}
+              <strong>{kolize.aktualni || "prázdné"}</strong>.
+              <br />
+              Ty píšeš <strong>{kolize.moje || "prázdné"}</strong>.
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button className="fm-btn fm-primary" onClick={prepis}>
+                Přepsat mojí hodnotou
+              </button>
+              <button className="fm-btn" onClick={vezmiJejich}>
+                Nechat jejich
+              </button>
+            </div>
+          </div>
+        )}
 
         {pdfka.length > 0 && (
           <div className="fm-card nb-pdf-historie">
@@ -239,38 +348,74 @@ export default function NabidkaDetail() {
         {upravaZakaznika && (
           <div className="fm-card" style={{ padding: 18, marginBottom: 14 }}>
             <h3 style={{ margin: "0 0 12px", fontSize: 14 }}>Údaje zákazníka</h3>
+            <p className="crm-tise" style={{ margin: "0 0 12px" }}>
+              Údaje se ukládají samy, pole po poli – kolega nad stejnou nabídkou ti nic
+              nepřepíše. Tlačítko <b>Hotovo</b> blok jen zavře.
+            </p>
             <div className="nb-form-grid">
               <div style={{ gridColumn: "1 / -1" }}>
                 <label className="nb-label">Název zákazníka</label>
-                <input className="nb-pole" value={nazev} onChange={(e) => setNazev(e.target.value)} placeholder="např. Firma s.r.o." />
+                <input
+                  className="nb-pole"
+                  value={hodnoty.zakaznik_nazev ?? ""}
+                  onChange={(e) => zmen("zakaznik_nazev", e.target.value)}
+                  onFocus={() => onFokus("zakaznik_nazev")}
+                  onBlur={() => onBlur("zakaznik_nazev")}
+                  placeholder="např. Firma s.r.o."
+                />
               </div>
               <div style={{ gridColumn: "1 / -1" }}>
                 <label className="nb-label">Adresa</label>
-                <input className="nb-pole" value={adresa} onChange={(e) => setAdresa(e.target.value)} placeholder="Ulice, město" />
+                <input
+                  className="nb-pole"
+                  value={hodnoty.zakaznik_adresa ?? ""}
+                  onChange={(e) => zmen("zakaznik_adresa", e.target.value)}
+                  onFocus={() => onFokus("zakaznik_adresa")}
+                  onBlur={() => onBlur("zakaznik_adresa")}
+                  placeholder="Ulice, město"
+                />
               </div>
               <div>
                 <label className="nb-label">GPS šířka (lat) – pro budoucí PVGIS</label>
-                <input className="nb-pole" value={lat} onChange={(e) => setLat(e.target.value)} placeholder="např. 50.087" inputMode="decimal" />
+                <input
+                  className="nb-pole"
+                  value={hodnoty.zakaznik_gps_lat ?? ""}
+                  onChange={(e) => zmen("zakaznik_gps_lat", e.target.value)}
+                  onFocus={() => onFokus("zakaznik_gps_lat")}
+                  onBlur={() => onBlur("zakaznik_gps_lat")}
+                  placeholder="např. 50.087"
+                  inputMode="decimal"
+                />
               </div>
               <div>
                 <label className="nb-label">GPS délka (lng) – pro budoucí PVGIS</label>
-                <input className="nb-pole" value={lng} onChange={(e) => setLng(e.target.value)} placeholder="např. 14.421" inputMode="decimal" />
+                <input
+                  className="nb-pole"
+                  value={hodnoty.zakaznik_gps_lng ?? ""}
+                  onChange={(e) => zmen("zakaznik_gps_lng", e.target.value)}
+                  onFocus={() => onFokus("zakaznik_gps_lng")}
+                  onBlur={() => onBlur("zakaznik_gps_lng")}
+                  placeholder="např. 14.421"
+                  inputMode="decimal"
+                />
               </div>
 
-              {/* Vlastní pole nabídky – definuje je admin v CRM, ukládají se
-                  spolu s údaji zákazníka jedním tlačítkem níž. */}
+              {/* Vlastní pole nabídky – definuje je admin v CRM. Ukládají se
+                  taky po jednom: celé `extra` by přepsalo i klíče, kterých se
+                  člověk nedotkl (včetně cizích změn, tiše). */}
               <VlastniPoleVstupy
                 styl="nb"
                 pole={nabidka.vlastni_pole}
-                hodnoty={extra}
-                onZmena={setExtra}
+                hodnoty={extraHodnoty}
+                onZmenaPole={(klic, hodnota, ihned) => zmen(`extra:${klic}`, hodnota, ihned)}
               />
             </div>
-            {zprava && <div style={{ color: "var(--fm-brand-dk)", fontSize: 13, marginTop: 10 }}>{zprava}</div>}
             {chyba && <div style={{ color: "var(--st-crit)", fontSize: 13, marginTop: 10 }}>{chyba}</div>}
-            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-              <button className="fm-btn fm-primary" onClick={uloz} disabled={uklada}>
-                {uklada ? "Ukládám…" : "Uložit"}
+            <div style={{ display: "flex", gap: 8, marginTop: 14, alignItems: "center" }}>
+              {/* Hláška o ukládání je v hlavičce nabídky – ta je vidět pořád,
+                  takže druhá kopie tady by jen skákala. */}
+              <button className="fm-btn fm-primary" onClick={hotovo} disabled={uklada}>
+                {uklada ? "Dokončuji…" : "Hotovo"}
               </button>
               {/* Správa polí je vidět jen adminovi – běžnému OZ by nabízela
                   nastavení, do kterého stejně nesmí. */}
@@ -365,7 +510,7 @@ export default function NabidkaDetail() {
           zaznamId={nabidka.id}
           nazev={nabidka.cislo || `#${nabidka.id}`}
           onZavri={() => setPosilaEmail(false)}
-          onOdeslano={() => nactiZnovu().then(naplnFormular)}
+          onOdeslano={nactiZnovu}
         />
       )}
 
@@ -376,7 +521,7 @@ export default function NabidkaDetail() {
           onZavri={() => setSpravaPoli(false)}
           // Po změně definic se musí přenačíst detail, jinak by formulář
           // vykresloval pole podle staré definice.
-          onZmena={() => nactiZnovu().then(naplnFormular)}
+          onZmena={nactiZnovu}
         />
       )}
     </Layout>

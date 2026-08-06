@@ -339,6 +339,22 @@
   border-radius: 8px;
 }
 
+/* Kolize při automatickém ukládání: „tohle pole mezitím změnil někdo jiný“.
+   Není to `crm-chyba` — nic se neztratilo a nic se nerozbilo, jen se člověk
+   musí rozhodnout, čí hodnota platí. Proto rámeček a tlačítka, ne červená
+   hláška, kterou se dá jen odkliknout. */
+.crm-kolize {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--st-crit);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--st-crit) 6%, transparent);
+}
+
 /* ---- značky stavů ---- */
 .crm-znacka {
   display: inline-block;

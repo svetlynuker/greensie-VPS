@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import HistorieZmen from "../components/HistorieZmen";
 import Spendlik from "../components/Spendlik";
 import Aktivity from "../components/Aktivity";
 import DuvodProhry from "../components/DuvodProhry";
-import PripadFormular from "../components/PripadFormular";
+import Pritomni from "../components/Pritomni";
+import PripadFormular, { popisPole } from "../components/PripadFormular";
 import PripadNabidky from "../components/PripadNabidky";
 import PripadRealizace from "../components/PripadRealizace";
 import EmailOkno from "../components/EmailOkno";
@@ -25,6 +26,7 @@ import {
   logout,
   nactiMe,
 } from "../api";
+import { usePritomnost } from "../hooks/usePritomnost";
 import { fmtDatum, fmtKc, nazvyKategorii } from "../crm";
 import "../styles/crm.css";
 import "../styles/rychleAkce.css";
@@ -60,12 +62,46 @@ export default function ObchodniPripadDetail() {
   const [prohra, setProhra] = useState(null);
   const [spravaPoli, setSpravaPoli] = useState(false);
   const [chyba, setChyba] = useState(null);
+  // Pole, na kterém člověk stojí ve formuláři úprav – jde s tikem přítomnosti,
+  // aby kolega viděl nejen „je tady", ale i „píše do hodnoty".
+  const [fokusPole, setFokusPole] = useState("");
 
   const nactiZnovu = useCallback(async () => {
     const [detail, h] = await Promise.all([crmPripadDetail(id), crmPripadHistorie(id)]);
     setP(detail);
     setHistorie(h);
   }, [id]);
+
+  // ---- Synchronizace mezi lidmi ----
+  // Nad jedním případem se schází obchodník, vedoucí i backoffice, takže je to
+  // z celého CRM nejrizikovější obrazovka. Jeden tik dělá obojí: ohlásí „jsem
+  // tady, stojím na tomhle poli" a v odpovědi přinese razítko změn.
+  //
+  // Přítomnost tiká karta, ne formulář úprav. V tabulce je jeden řádek na
+  // uživatele a záznam, takže dva tiky ze stejné stránky by si navzájem
+  // přepisovaly `pole` a kolegům by editované pole poblikávalo.
+  const { pritomni, razitko } = usePritomnost({
+    entitaTyp: "crm_op",
+    entitaId: id,
+    pole: fokusPole,
+    zapnuto: Boolean(p),
+  });
+
+  // Razítko se změnilo → někdo (nebo já z jiného okna) případ upravil, natáhneme
+  // ho znovu. První razítko se jen zapamatuje, jinak by se karta po načtení
+  // obnovila zbytečně. Rozepsané pole ve formuláři hook nepřepíše (viz
+  // `useZaznamAutosave`), takže to nikomu nesebere text pod rukama.
+  const razitkoRef = useRef(null);
+  useEffect(() => {
+    if (!razitko) return;
+    if (razitkoRef.current === null || razitkoRef.current === razitko) {
+      razitkoRef.current = razitko;
+      return;
+    }
+    razitkoRef.current = razitko;
+    nactiZnovu().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [razitko]);
 
   useEffect(() => {
     crmKategorie()
@@ -182,6 +218,9 @@ export default function ObchodniPripadDetail() {
             </div>
           </div>
           <span className="crm-mezera" />
+          {/* Kdo má případ otevřený taky – ať je vidět, s kým se člověk může
+              potkat, ještě než klikne na „Upravit". */}
+          <Pritomni pritomni={pritomni} popisekPole={popisPole} />
           {/* Stav se dá přehodit i tady, ne jen přetažením v kanbanu. */}
           <select
             className="crm-pole crm-pole-uzke"
@@ -394,9 +433,18 @@ export default function ObchodniPripadDetail() {
         <PripadFormular
           pripad={p}
           muzeMenitVlastnika={me.prava?.includes("crm_vse")}
-          onZavri={() => setUpravuje(false)}
+          pritomni={pritomni}
+          onFokusPole={setFokusPole}
+          // „Zrušit" ve formuláři úprav není – pole se ukládají sama, takže
+          // zavírací gesta jdou přes „Hotovo". Fokus se musí zapomenout, jinak
+          // by kolegové viděli, že člověk pořád stojí na poli v zavřeném okně.
+          onZavri={() => {
+            setFokusPole("");
+            setUpravuje(false);
+          }}
           onHotovo={(novy) => {
             setP(novy);
+            setFokusPole("");
             setUpravuje(false);
           }}
         />

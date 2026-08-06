@@ -23,7 +23,10 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy.orm import Session
 
 from app.auth.models import User
-from app.crm import automatizace as automatizace_modul, kalendar, stavy as stavy_modul
+from app.crm import automatizace as automatizace_modul
+from app.crm import kalendar
+from app.crm import pole_zaznamu as pole_zaznamu_modul
+from app.crm import stavy as stavy_modul
 from app.crm.models import CrmAktivita, CrmStavHistorie, ObchodniPripad, Zakaznik
 from app.crm.pristup import smi_menit, vidi_zaznam
 
@@ -95,6 +98,7 @@ def zmen_stav(
         # kvůli které lidé přestanou appce věřit. Co se stalo, se vrací
         # volajícímu, aby to UI mohlo vypsat.
         automatika += automatizace_modul.po_zmene_stavu(db, "op", p, stav, user)
+        pole_zaznamu_modul.oznac_zmenu(p, user.id)
     db.commit()
     return {
         "zmeneno": len(zaznamy),

@@ -29,6 +29,7 @@ from app.konektor.disk_routes import router as disk_router
 from app.konektor.routes import router as konektor_router
 from app.crm import models as crm_models  # noqa: F401 - registrace modelů
 from app.crm.routes import router as crm_router
+from app.crm.routes_pole import router as crm_pole_router
 from app.crm.routes_realizace import router as crm_realizace_router
 from app.crm.email_routes import router as crm_email_router
 from app.manual.routes import router as manual_router
@@ -715,6 +716,54 @@ def _lehka_migrace():
             text("CREATE INDEX IF NOT EXISTS ix_projekty_zmeneno_at ON projekty (zmeneno_at)")
         )
 
+        # Automatické ukládání v CRM (6. 8. 2026): stejná trojice sloupců jako
+        # u matice. `aktualizovano_at`, které některé tabulky mají, nestačí —
+        # hýbe se při jakékoli změně a neříká KDO, takže hláška „mezitím to
+        # změnil Petr“ se z něj nepostaví. Tři tabulky (kontakty, aktivity,
+        # kroky) neměly ani to.
+        for tabulka in (
+            "crm_zakaznici",
+            "crm_zakaznik_kontakty",
+            "crm_odberna_mista",
+            "crm_obchodni_pripady",
+            "crm_aktivity",
+            "crm_objednavky",
+            "crm_projekty",
+            "crm_projekt_kroky",
+            # Nabídka není CRM tabulka, ale v pipeline stojí vedle případu
+            # a v detailu se u ní editují údaje zákazníka.
+            "nabidky",
+        ):
+            conn.execute(
+                text(f"ALTER TABLE {tabulka} ADD COLUMN IF NOT EXISTS zmeneno_at TIMESTAMPTZ")
+            )
+            conn.execute(
+                text(f"ALTER TABLE {tabulka} ADD COLUMN IF NOT EXISTS zmenil_id INTEGER")
+            )
+            conn.execute(
+                text(
+                    f"ALTER TABLE {tabulka} ADD COLUMN IF NOT EXISTS verze "
+                    "INTEGER NOT NULL DEFAULT 0"
+                )
+            )
+            conn.execute(
+                text(
+                    f"CREATE INDEX IF NOT EXISTS ix_{tabulka}_zmeneno_at "
+                    f"ON {tabulka} (zmeneno_at)"
+                )
+            )
+            # Cizí klíč jen když ještě není — opakovaný start by na duplicitním spadl.
+            conn.execute(
+                text(
+                    "DO $$ BEGIN "
+                    "IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+                    f"WHERE conname = 'fk_{tabulka}_zmenil') THEN "
+                    f"ALTER TABLE {tabulka} ADD CONSTRAINT fk_{tabulka}_zmenil "
+                    "FOREIGN KEY (zmenil_id) REFERENCES uzivatele(id) ON DELETE SET NULL; "
+                    "END IF; END $$;"
+                )
+            )
+
         # Osobní výjimky, které jen opisují práva skupiny, se zahodí. Vznikly
         # zaškrtáváním práv „pro jistotu znovu" a tiše lámaly odebírání: právo
         # odebrané ze skupiny zůstalo člověku ve výjimkách a nebylo poznat proč.
@@ -887,6 +936,9 @@ app.include_router(konektor_router)
 app.include_router(disk_router)
 app.include_router(crm_router)
 app.include_router(crm_realizace_router)
+# Ukládání záznamů CRM po polích. Vlastní prefix `/crm/zaznam`, aby se cesty
+# nemohly potkat s existujícími `/crm/...` (viz tests/test_kolize_cest.py).
+app.include_router(crm_pole_router)
 app.include_router(crm_email_router)
 app.include_router(manual_router)
 app.include_router(dashboard_router)

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
+import Pritomni from "../components/Pritomni";
 import HistorieZmen from "../components/HistorieZmen";
 import Spendlik from "../components/Spendlik";
 import Aktivity from "../components/Aktivity";
@@ -14,7 +15,7 @@ import EmailOkno from "../components/EmailOkno";
 import EmailHistorie from "../components/EmailHistorie";
 import RychleAkce from "../components/RychleAkce";
 import Timeline from "../components/Timeline";
-import ZakaznikFormular from "../components/ZakaznikFormular";
+import ZakaznikFormular, { NAZVY_POLI } from "../components/ZakaznikFormular";
 import {
   crmKategorie,
   crmPripady,
@@ -24,6 +25,7 @@ import {
   logout,
   nactiMe,
 } from "../api";
+import { usePritomnost } from "../hooks/usePritomnost";
 import { fmtDatum, fmtKc, nazvyKategorii } from "../crm";
 import "../styles/crm.css";
 import "../styles/rychleAkce.css";
@@ -97,6 +99,38 @@ export default function ZakaznikDetail() {
       });
   }, [id, navigate]);
 
+  const nactiDetail = useCallback(
+    () =>
+      crmZakaznikDetail(id)
+        .then(setZ)
+        .catch(() => {}),
+    [id],
+  );
+
+  // ---- Synchronizace mezi lidmi ----
+  // Jeden tik dělá obojí: ohlásí „mám otevřenou tuhle firmu" a v odpovědi
+  // přinese razítko změn. Když je otevřené okno úprav, přítomnost hlásí ono
+  // (a navíc s polem, ve kterém člověk píše) — dva tiky nad jedním záznamem by
+  // si navzájem přepisovaly, co kdo edituje.
+  const { pritomni, razitko } = usePritomnost({
+    entitaTyp: "crm_zakaznik",
+    entitaId: id,
+    zapnuto: Boolean(z) && !upravuje,
+  });
+
+  // Razítko se změnilo → někdo firmu upravil, natáhneme ji znovu. První razítko
+  // se jen zapamatuje, jinak by se karta po načtení obnovila zbytečně.
+  const razitkoRef = useRef(null);
+  useEffect(() => {
+    if (!razitko) return;
+    if (razitkoRef.current === null || razitkoRef.current === razitko) {
+      razitkoRef.current = razitko;
+      return;
+    }
+    razitkoRef.current = razitko;
+    nactiDetail();
+  }, [razitko, nactiDetail]);
+
   async function konvertuj() {
     try {
       setZ(await crmZakaznikKonvertuj(id));
@@ -146,6 +180,9 @@ export default function ZakaznikDetail() {
             </div>
           </div>
           <span className="crm-mezera" />
+          {/* Kdo má kartu otevřenou taky – ať je vidět, s kým se člověk může
+              potkat, ještě než něco přepíše. */}
+          <Pritomni pritomni={pritomni} popisekPole={(p) => NAZVY_POLI[p] || p} />
           <span className={`crm-znacka ${z.typ === "klient" ? "crm-barva-ok" : "crm-barva-info"}`}>
             {z.typ === "klient" ? "Klient" : "Lead"}
           </span>
@@ -315,9 +352,12 @@ export default function ZakaznikDetail() {
           zakaznik={z}
           muzeMenitVlastnika={me.prava?.includes("crm_vse")}
           onZavri={() => setUpravuje(false)}
+          // Okno úprav ukládá samo; při zavření vrátí čerstvý záznam, aby karta
+          // ukazovala i to, co si server dopočítal (výpočtová vlastní pole).
           onHotovo={(novy) => {
-            setZ(novy);
             setUpravuje(false);
+            if (novy) setZ(novy);
+            else nactiDetail();
           }}
         />
       )}
@@ -327,7 +367,7 @@ export default function ZakaznikDetail() {
           entita="zakaznik"
           nazevObrazovky="Zákazníci"
           onZavri={() => setSpravaPoli(false)}
-          onZmena={() => crmZakaznikDetail(id).then(setZ).catch(() => {})}
+          onZmena={nactiDetail}
         />
       )}
 

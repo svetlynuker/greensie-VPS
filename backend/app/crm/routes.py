@@ -23,6 +23,7 @@ from app.auth.permissions import get_current_user, muze_otevrit
 from app.crm import ares as ares_modul
 from app.crm import audit as audit_modul
 from app.crm import mapa as mapa_modul
+from app.crm import pole_zaznamu as pole_zaznamu_modul
 from app.crm import (
     automatizace as automatizace_modul,
     ciselne_rady,
@@ -1220,6 +1221,11 @@ def zmen_stav_pripadu(
         # CRM-31: automatika běží PŘED commitem, aby nová objednávka i poznámka
         # vznikly v jedné transakci s přesunem. Když spadne, přesun se uloží.
         automatizace_modul.po_zmene_stavu(db, "op", p, novy.klic, user)
+        # Razítko seznamu: bez tohohle by se cizí přesun karty v kanbanu
+        # u ostatních neprojevil, dokud by stránku neobnovili ručně. Uvnitř
+        # `if` schválně — přesun do stejného stavu není změna a nemá důvod
+        # posílat všechny ostatní znovu načítat data.
+        pole_zaznamu_modul.oznac_zmenu(p, user.id)
     db.commit()
     db.refresh(p)
     return _pripad_detail(db, p, user)
@@ -1517,6 +1523,9 @@ def zmen_stav_nabidky(
         )
         # CRM-31: typicky „nabídka odeslána → za 7 dní zavolat".
         automatizace_modul.po_zmene_stavu(db, "nab", n, novy.klic, user)
+        # Razítko seznamu: bez tohohle by se cizí přesun karty v kanbanu
+        # u ostatních neprojevil, dokud by stránku neobnovili ručně.
+        pole_zaznamu_modul.oznac_zmenu(n, user.id)
         db.commit()
         db.refresh(n)
     texty = pole_modul.hodnoty_pro_seznam(db, "nab", [n])
@@ -1790,6 +1799,10 @@ def uprav_aktivitu(
     if vstup.vysledek is not None:
         a.vysledek = vstup.vysledek.strip()
     kalendar.srovnej_termin(a)
+    # Razítko: aktivity a poznámky na kartě záznamu mění víc lidí. Bez značky
+    # „kdy a kdo“ by cizí úprava textu aktivity zůstala ostatním skrytá —
+    # razítko záznamu počítá aktivity, ale změna uvnitř jedné počet nemění.
+    pole_zaznamu_modul.oznac_zmenu(a, user.id)
 
     # Přenesení změn na zbytek série. Výsledek a stav se přenášejí schválně
     # taky: „zrušit celou sérii porad, protože se šéf vrací až v září" je
@@ -1818,6 +1831,7 @@ def uprav_aktivitu(
         if vstup.vysledek is not None:
             x.vysledek = a.vysledek
         kalendar.srovnej_termin(x)
+        pole_zaznamu_modul.oznac_zmenu(x, user.id)
 
     db.commit()
     db.refresh(a)

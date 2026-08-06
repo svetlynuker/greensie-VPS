@@ -1,9 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Layout from "../components/Layout";
+import Pritomni from "../components/Pritomni";
+import StavUlozeni from "../components/StavUlozeni";
 import { crmKontaktDetail, crmKontaktUpravZKarty, logout, nactiMe } from "../api";
+import { useZaznamAutosave } from "../hooks/useZaznamAutosave";
 import { fmtDatum, fmtDatumCas } from "../crm";
 import "../styles/crm.css";
+
+// Pole, která se ukládají sama. `hlavni` tu schválně NENÍ: přehazuje příznak
+// i ostatním osobám téže firmy, takže patří na vědomé kliknutí, ne na psaní.
+const POLE = ["jmeno", "funkce", "telefon", "email", "poznamka"];
+
+const NAZVY_POLI = {
+  jmeno: "Jméno",
+  funkce: "Funkce",
+  telefon: "Telefon",
+  email: "E-mail",
+  poznamka: "Poznámka",
+};
 
 /**
  * Karta kontaktní osoby.
@@ -12,6 +27,11 @@ import "../styles/crm.css";
  * obchodním případu, ne na člověku, takže by karta jen opisovala kartu
  * zákazníka. Případy firmy jsou tu jako kontext („o čem s ním je řeč"),
  * e-mailová historie naopak patří přímo osobě – ta je navázaná na ni.
+ *
+ * Úpravy se ukládají samy, pole po poli (`useZaznamAutosave`). Tlačítko
+ * „Uložit" tu proto není: posílalo celý objekt, takže dva lidé nad jednou
+ * osobou si navzájem přepsali i pole, kterých se ani nedotkli. „Hotovo" jen
+ * zavře režim úprav (a dožene, co se ještě nestihlo odeslat).
  */
 export default function KontaktDetail() {
   const { id } = useParams();
@@ -19,9 +39,38 @@ export default function KontaktDetail() {
   const [me, setMe] = useState(null);
   const [k, setK] = useState(null);
   const [upravuje, setUpravuje] = useState(false);
-  const [form, setForm] = useState(null);
-  const [uklada, setUklada] = useState(false);
   const [chyba, setChyba] = useState(null);
+
+  const {
+    hodnoty,
+    zmen,
+    stav,
+    chyba: chybaUlozeni,
+    kdy,
+    pritomni,
+    razitko,
+    kolize,
+    prepis,
+    vezmiJejich,
+    dokonci,
+    onFokus,
+    onBlur,
+  } = useZaznamAutosave({
+    entita: "kontakt",
+    id,
+    zaznam: k,
+    pole: POLE,
+    entitaTyp: "crm_kontakt",
+    // Přítomnost („kdo tu je") běží pořád, ne jen v režimu úprav — člověk má
+    // vidět kolegu ještě předtím, než klikne na „Upravit".
+    zapnuto: Boolean(k),
+  });
+
+  function nactiDetail() {
+    return crmKontaktDetail(id)
+      .then(setK)
+      .catch(() => {});
+  }
 
   useEffect(() => {
     Promise.all([nactiMe(), crmKontaktDetail(id)])
@@ -50,30 +99,69 @@ export default function KontaktDetail() {
       });
   }, [id, navigate]);
 
-  function zacniUpravu() {
-    setForm({
-      jmeno: k.jmeno || "",
-      funkce: k.funkce || "",
-      email: k.email || "",
-      telefon: k.telefon || "",
-      hlavni: Boolean(k.hlavni),
-      poznamka: k.poznamka || "",
-    });
-    setUpravuje(true);
+  // Razítko se změnilo → někdo (nebo já z jiného okna) osobu upravil, natáhneme
+  // ji znovu. První razítko se jen zapamatuje, jinak by se karta po načtení
+  // obnovila zbytečně. Rozepsané pole hook nepřepíše, takže to nic nesebere.
+  const razitkoRef = useRef(null);
+  useEffect(() => {
+    if (!razitko) return;
+    if (razitkoRef.current === null || razitkoRef.current === razitko) {
+      razitkoRef.current = razitko;
+      return;
+    }
+    razitkoRef.current = razitko;
+    nactiDetail();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [razitko]);
+
+  // Zrcadla pro `hotovo()`: po `await` je stav z renderu starý, a rozhodovat se
+  // podle něj by znamenalo zavřít úpravy nad neuloženým textem.
+  const kolizeRef = useRef(kolize);
+  kolizeRef.current = kolize;
+  const stavRef = useRef(stav);
+  stavRef.current = stav;
+
+  /** Konec úprav: dožene neodeslané změny a přinese čerstvá data pro výpis. */
+  async function hotovo() {
+    if (kolize) {
+      setChyba("Nejdřív rozhodni, čí hodnota u kolize platí — pak úpravy zavři.");
+      return;
+    }
+    await dokonci();
+    if (kolizeRef.current || stavRef.current === "chyba") {
+      setChyba("Něco se neuložilo – režim úprav nechávám otevřený, ať o text nepřijdeš.");
+      return;
+    }
     setChyba(null);
+    setUpravuje(false);
+    await nactiDetail();
   }
 
-  async function uloz() {
-    if (!form.jmeno.trim()) return;
-    setUklada(true);
+  /**
+   * Hlavní kontakt firmy — vědomá akce, ne autosave.
+   *
+   * Příznak se přehazuje i ostatním osobám téže firmy, takže se nesmí spustit
+   * uprostřed psaní. Jde starou cestou (PUT celého objektu), a proto se před ní
+   * dožene rozepsané pole a znovu načtou čerstvé údaje — jinak by PUT vrátil do
+   * databáze text, který mezitím někdo přepsal.
+   */
+  async function prepniHlavni() {
     setChyba(null);
     try {
-      setK(await crmKontaktUpravZKarty(id, form));
-      setUpravuje(false);
+      await dokonci();
+      const cerstvy = await crmKontaktDetail(id);
+      setK(
+        await crmKontaktUpravZKarty(id, {
+          jmeno: cerstvy.jmeno,
+          funkce: cerstvy.funkce,
+          email: cerstvy.email,
+          telefon: cerstvy.telefon,
+          poznamka: cerstvy.poznamka,
+          hlavni: !cerstvy.hlavni,
+        }),
+      );
     } catch (e) {
       setChyba(e.message);
-    } finally {
-      setUklada(false);
     }
   }
 
@@ -86,6 +174,10 @@ export default function KontaktDetail() {
   }
   if (!me || !k) return null;
 
+  // V režimu úprav je pravda o jménu v rozepsaném poli, ne v posledním
+  // natažení — jinak by nadpis karty ukazoval staré jméno.
+  const jmenoNadpis = (upravuje ? hodnoty.jmeno : k.jmeno) || k.jmeno;
+
   return (
     <Layout uzivatel={me.uzivatel}>
       <div className="crm-app">
@@ -95,9 +187,9 @@ export default function KontaktDetail() {
 
         <div className="crm-karta-hlava">
           <div style={{ minWidth: 0 }}>
-            <h1>{k.jmeno}</h1>
+            <h1>{jmenoNadpis}</h1>
             <div className="crm-karta-radek">
-              {k.funkce || "bez funkce"}
+              {(upravuje ? hodnoty.funkce : k.funkce) || "bez funkce"}
               {" · "}
               <Link to={`/zakaznici/detail/${k.zakaznik_id}`} className="crm-odkaz">
                 {k.zakaznik_nazev}
@@ -106,6 +198,10 @@ export default function KontaktDetail() {
             </div>
           </div>
           <span className="crm-mezera" />
+          {/* Kdo má kartu otevřenou taky – ať je vidět, s kým se člověk může
+              potkat, ještě než napíše první znak. */}
+          <Pritomni pritomni={pritomni} popisekPole={(p) => NAZVY_POLI[p] || p} />
+          <StavUlozeni stav={stav} chyba={chybaUlozeni} kdy={kdy} />
           {k.hlavni && <span className="crm-znacka crm-barva-ok">hlavní kontakt</span>}
           <span
             className={`crm-znacka ${
@@ -114,8 +210,17 @@ export default function KontaktDetail() {
           >
             {k.zakaznik_typ === "klient" ? "Klient" : "Lead"}
           </span>
+          {k.muze_editovat && (
+            <button
+              className="fm-btn"
+              onClick={prepniHlavni}
+              title="Příznak se přehodí i ostatním osobám firmy"
+            >
+              {k.hlavni ? "Zrušit hlavní kontakt" : "Nastavit jako hlavní"}
+            </button>
+          )}
           {k.muze_editovat && !upravuje && (
-            <button className="fm-btn" onClick={zacniUpravu}>
+            <button className="fm-btn" onClick={() => setUpravuje(true)}>
               Upravit
             </button>
           )}
@@ -133,16 +238,29 @@ export default function KontaktDetail() {
                     <label className="crm-label">Jméno *</label>
                     <input
                       className="crm-pole"
-                      value={form.jmeno}
-                      onChange={(e) => setForm({ ...form, jmeno: e.target.value })}
+                      value={hodnoty.jmeno}
+                      onChange={(e) => zmen("jmeno", e.target.value)}
+                      onFocus={() => onFokus("jmeno")}
+                      onBlur={() => onBlur("jmeno")}
                     />
+                    {/* Jméno se neblokuje, jen se na prázdné upozorní: při
+                        ukládání za pochodu je rozepsaný (i chvíli prázdný) stav
+                        normální, a zamknout vstup by znamenalo, že si člověk
+                        jméno nemůže přepsat od začátku. */}
+                    {!hodnoty.jmeno.trim() && (
+                      <p className="crm-tise" style={{ color: "var(--st-crit)" }}>
+                        Bez jména osobu nikdo v seznamu nenajde.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="crm-label">Funkce</label>
                     <input
                       className="crm-pole"
-                      value={form.funkce}
-                      onChange={(e) => setForm({ ...form, funkce: e.target.value })}
+                      value={hodnoty.funkce}
+                      onChange={(e) => zmen("funkce", e.target.value)}
+                      onFocus={() => onFokus("funkce")}
+                      onBlur={() => onBlur("funkce")}
                       placeholder="jednatel, energetik…"
                     />
                   </div>
@@ -150,16 +268,20 @@ export default function KontaktDetail() {
                     <label className="crm-label">Telefon</label>
                     <input
                       className="crm-pole"
-                      value={form.telefon}
-                      onChange={(e) => setForm({ ...form, telefon: e.target.value })}
+                      value={hodnoty.telefon}
+                      onChange={(e) => zmen("telefon", e.target.value)}
+                      onFocus={() => onFokus("telefon")}
+                      onBlur={() => onBlur("telefon")}
                     />
                   </div>
                   <div>
                     <label className="crm-label">E-mail</label>
                     <input
                       className="crm-pole"
-                      value={form.email}
-                      onChange={(e) => setForm({ ...form, email: e.target.value })}
+                      value={hodnoty.email}
+                      onChange={(e) => zmen("email", e.target.value)}
+                      onFocus={() => onFokus("email")}
+                      onBlur={() => onBlur("email")}
                     />
                   </div>
                 </div>
@@ -169,28 +291,42 @@ export default function KontaktDetail() {
                 <textarea
                   className="crm-pole"
                   rows={3}
-                  value={form.poznamka}
-                  onChange={(e) => setForm({ ...form, poznamka: e.target.value })}
+                  value={hodnoty.poznamka}
+                  onChange={(e) => zmen("poznamka", e.target.value)}
+                  onFocus={() => onFokus("poznamka")}
+                  onBlur={() => onBlur("poznamka")}
                 />
-                <label className="crm-zaskrtavaci">
-                  <input
-                    type="checkbox"
-                    checked={form.hlavni}
-                    onChange={(e) => setForm({ ...form, hlavni: e.target.checked })}
-                  />
-                  Hlavní kontakt firmy
-                </label>
+
+                {/* Kolize: nic se nepřepsalo, člověk rozhodne, čí hodnota platí. */}
+                {kolize && (
+                  <div className="crm-kolize">
+                    <div>
+                      <strong>{NAZVY_POLI[kolize.pole] || kolize.pole}</strong> mezitím změnil
+                      {kolize.kdo ? ` ${kolize.kdo}` : " někdo jiný"} na{" "}
+                      <strong>{kolize.aktualni || "prázdné"}</strong>.
+                      <br />
+                      Ty píšeš <strong>{kolize.moje || "prázdné"}</strong>.
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button className="fm-btn fm-primary" onClick={prepis}>
+                        Přepsat mojí hodnotou
+                      </button>
+                      <button className="fm-btn" onClick={vezmiJejich}>
+                        Nechat jejich
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="crm-blok-pata">
-                  <button className="fm-btn" onClick={() => setUpravuje(false)} disabled={uklada}>
-                    Zrušit
-                  </button>
+                  <span className="crm-tise">
+                    Změny se ukládají samy, tlačítko jen zavře úpravy.
+                  </span>
                   <span className="crm-mezera" />
-                  <button
-                    className="fm-btn fm-primary"
-                    onClick={uloz}
-                    disabled={uklada || !form.jmeno.trim()}
-                  >
-                    {uklada ? "Ukládám…" : "Uložit"}
+                  {/* Stav ukládání je v hlavičce karty — na jednom místě, ať
+                      člověk nehledá dvě hlášky, které říkají totéž. */}
+                  <button className="fm-btn fm-primary" onClick={hotovo}>
+                    Hotovo
                   </button>
                 </div>
               </>

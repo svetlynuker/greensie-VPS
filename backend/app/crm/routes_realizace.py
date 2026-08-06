@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import User
 from app.crm import automatizace as automatizace_modul
+from app.crm import pole_zaznamu as pole_zaznamu_modul
 from app.crm import ciselne_rady
 from app.crm import fakturace as fakturace_modul
 from app.crm import kategorie as kategorie_modul
@@ -495,6 +496,8 @@ def zmen_stav_objednavky(
         )
         # CRM-31: typicky „objednávka podepsaná → projekt ze šablony".
         automatizace_modul.po_zmene_stavu(db, "obj", o, novy.klic, user)
+        # Razítko seznamu — aby se cizí přesun karty v kanbanu projevil sám.
+        pole_zaznamu_modul.oznac_zmenu(o, user.id)
     db.commit()
     db.refresh(o)
     return _objednavka_detail(db, o, user)
@@ -1109,6 +1112,8 @@ def zmen_stav_projektu(
             novy.nazev, p.vlastnik_user_id, p.spoluvlastnici,
         )
         automatizace_modul.po_zmene_stavu(db, "pro", p, novy.klic, user)
+        # Razítko seznamu — aby se cizí přesun karty v kanbanu projevil sám.
+        pole_zaznamu_modul.oznac_zmenu(p, user.id)
     db.commit()
     db.refresh(p)
     return _projekt_detail(db, p, user)
@@ -1236,6 +1241,11 @@ def uprav_krok(
             raise HTTPException(status_code=422, detail=f"Neznámý stav kroku: {vstup.stav}")
         k.stav = vstup.stav
         k.hotovo_at = datetime.now() if vstup.stav in ("hotovo", "preskoceno") else None
+
+    # Razítko: kroky mění víc lidí, a od zavedení automatického ukládání i po
+    # jednom poli. Bez značky „kdy a kdo“ by se cizí změna kroku u ostatních
+    # neprojevila, dokud by si stránku neobnovili ručně.
+    pole_zaznamu_modul.oznac_zmenu(k, user.id)
 
     db.flush()
     db.refresh(p)
