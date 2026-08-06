@@ -288,3 +288,15 @@ def test_slouceni_posune_cas_na_ted(session):
 def test_okno_je_pet_minut(session):
     """Hodnota je vědomé rozhodnutí, ne náhoda — hlídá se, aby se nehnula."""
     assert audit.OKNO_SLOUCENI_S == 300
+
+
+def test_technicka_pole_ze_zmena_mixinu_se_neloguji():
+    """`zmeneno_at`, `zmenil_id` a `verze` do historie změn NEPATŘÍ.
+
+    Mění se při každém uložení, takže by u každé úpravy stály v historii tři
+    řádky navíc („verze: 0 → 2“) a to podstatné by se v nich utopilo. Zjištěno
+    při ověřování nasazení 6. 8. 2026 — v auditu testovacího zápisu to byly
+    jediné viditelné změny, protože samotný text si slučovací okno sloučilo.
+    """
+    for pole in ("zmeneno_at", "zmenil_id", "verze"):
+        assert pole in audit.IGNOROVANA_POLE, pole

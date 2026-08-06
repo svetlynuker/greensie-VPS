@@ -80,6 +80,14 @@ IGNOROVANA_POLE = {
     "stav",  # má `crm_stav_historie`
     "stav_obchodni",
     "extra",  # vlastní pole se logují po klíčích, viz `_zmeny_extra`
+    # Technická trojice z `ZmenaMixin` (automatické ukládání vstupů). Mění se
+    # při KAŽDÉM uložení, takže by v historii u každé úpravy stály tři řádky
+    # navíc („verze: 0 → 2“) a to podstatné by v tom zmizelo. Zjištěno při
+    # ověření nasazení 6. 8. 2026 — v auditu to byla jediná viditelná změna,
+    # protože samotný text si slučovací okno správně sloučilo.
+    "zmeneno_at",
+    "zmenil_id",
+    "verze",
 }
 
 # Lidské názvy nejčastějších polí. Co tu není, se ukáže jako klíč — pořád
