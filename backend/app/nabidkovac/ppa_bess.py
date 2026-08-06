@@ -1258,6 +1258,12 @@ class PoleFve:
     kwp: float
     sklon_st: float = 35.0
     azimut_st: float = 0.0  # 0 = jih, −90 = východ, +90 = západ, 180 = sever
+    # Nákladová cena za kWp jen pro tohle pole. `None` = vezme se z manažerského
+    # nastavení (`ppa_nakladova_cena_kc_kwp`). Přepis je tu proto, že jedno pole
+    # umí být výrazně dražší než druhé – jiné kotvení, trapéz proti ploché střeše
+    # s balastem, delší kabelové trasy – a paušál za celou elektrárnu by pak
+    # zkreslil CAPEX, a s ním i cenu PPA.
+    cena_kc_kwp: float | None = None
 
 
 @dataclass
@@ -1313,6 +1319,23 @@ class VstupPpaBess:
 def _kc(hodnota: float) -> str:
     """Částka s mezerou jako oddělovačem tisíců – pro texty upozornění."""
     return f"{hodnota:,.0f}".replace(",", " ")
+
+
+def nakladova_cena_fve(kwp: float, pole: tuple[PoleFve, ...], p) -> float:
+    """Nákladová cena elektrárny (Kč) – s ohledem na ceny jednotlivých polí.
+
+    Bez rozpadu na pole je to jednoduše `kwp × cena z nastavení`. Když jsou pole
+    zadaná, sečtou se **po polích**, aby se uplatnil případný přepis ceny za kWp
+    u konkrétního pole. Jedno místo pro obě cesty a pro všechny volající —
+    kdyby si to každý počítal sám, přepis by se někde tiše ztratil a CAPEX by
+    vyšel jinak v ekonomice než ve screeningu katalogu.
+    """
+    if not pole:
+        return kwp * p.nakladova_cena_kc_kwp
+    return sum(
+        f.kwp * (f.cena_kc_kwp if f.cena_kc_kwp and f.cena_kc_kwp > 0 else p.nakladova_cena_kc_kwp)
+        for f in pole
+    )
 
 
 def _nazev_orientace(azimut_st: float) -> str:
@@ -2291,7 +2314,7 @@ def spocti_ppa_bess(vstup: VstupPpaBess) -> dict:
         uspora_vykon = vr.uspora_vykon_bez_snizeni_rp_kc
         for n in delky:
             projekt_fve = sestav_projekt(
-                kwp * p.nakladova_cena_kc_kwp, p.marze_fve, p.provize_fve, n, p
+                nakladova_cena_fve(kwp, pole, p), p.marze_fve, p.provize_fve, n, p
             )
             minc = minimalni_cena_ppa(
                 vyroba_mwh,
@@ -2424,12 +2447,34 @@ def spocti_ppa_bess(vstup: VstupPpaBess) -> dict:
             # Rozpad na pole, když ho obchodník zadal. `vyroba_mwh` per pole se
             # dopočítá zvlášť, aby bylo vidět, kolik která orientace přinese.
             "velikost_zadana_rucne": zadana_pole,
+            # Nákladová cena elektrárny – s uplatněnými přepisy ceny za kWp
+            # u jednotlivých polí. Bez rozpadu je to `kwp × cena z nastavení`.
+            "nakladova_cena_kc": round(nakladova_cena_fve(kwp, pole, p), 2),
+            "nakladova_cena_kc_kwp_nastaveni": round(p.nakladova_cena_kc_kwp, 2),
             "pole": [
                 {
                     "kwp": f.kwp,
                     "sklon_st": f.sklon_st,
                     "azimut_st": f.azimut_st,
                     "orientace": _nazev_orientace(f.azimut_st),
+                    # Cena za kWp, se kterou se u tohohle pole opravdu počítalo,
+                    # a příznak, jestli je z nastavení nebo přepsaná ručně.
+                    "cena_kc_kwp": round(
+                        f.cena_kc_kwp
+                        if f.cena_kc_kwp and f.cena_kc_kwp > 0
+                        else p.nakladova_cena_kc_kwp,
+                        2,
+                    ),
+                    "cena_prepsana": bool(f.cena_kc_kwp and f.cena_kc_kwp > 0),
+                    "nakladova_cena_kc": round(
+                        f.kwp
+                        * (
+                            f.cena_kc_kwp
+                            if f.cena_kc_kwp and f.cena_kc_kwp > 0
+                            else p.nakladova_cena_kc_kwp
+                        ),
+                        2,
+                    ),
                     "vyroba_mwh": round(
                         sum(
                             simuluj_vyrobu(

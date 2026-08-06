@@ -45,6 +45,29 @@ a sečte, takže model zná i **tvar** výroby. To není kosmetika — východ-z
 plošší profil než jih, takže při stejném instalovaném výkonu vyrobí za rok méně,
 ale víc se ho spotřebuje na místě a jinak zbyde na baterii.
 
+### Cena za kWp u jednotlivého pole
+
+Každé pole umí mít **vlastní nákladovou cenu za kWp** (`PoleFve.cena_kc_kwp`).
+Prázdné = použije se `ppa_nakladova_cena_kc_kwp` z Katalogu a výpočtů. Přepis je
+tu proto, že jedno pole bývá výrazně dražší než druhé — jiné kotvení, trapéz
+proti ploché střeše s balastem, delší kabelové trasy — a paušál za celou
+elektrárnu by zkreslil CAPEX, a s ním i cenu PPA.
+
+Nákladovou cenu skládá `nakladova_cena_fve()`, jedno místo pro všechny volající.
+Kdyby si to každý počítal sám, přepis by se někde tiše ztratil a CAPEX by vyšel
+jinak v ekonomice než ve screeningu katalogu.
+
+Na reálném profilu (2 × 203 kWp, výchozí cena 13 500 Kč/kWp):
+
+| Scénář | Nákladová cena | Cena PPA (20 let) | Sleva |
+|---|---|---|---|
+| vše z nastavení | 5 481 000 Kč | 2 487 Kč/MWh | 33,9 % |
+| východ dražší (18 000) | 6 394 500 Kč | 2 855 Kč/MWh | 24,1 % |
+| jih levnější (11 000) | 4 973 500 Kč | 2 282 Kč/MWh | 39,3 % |
+
+Panel u pole s přepsanou cenou ukáže štítek, aby bylo poznat, kde se od
+nastavení odchýlilo.
+
 ## Dvoucílový dispatch
 
 Vzor je recyklovaný ze `spot_arbitraz.py` (režim „Kombinace" peak shavingu, kde

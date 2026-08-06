@@ -363,6 +363,9 @@ class PpaBessPoleFve(BaseModel):
     kwp: float
     sklon_st: float = 35.0
     azimut_st: float = 0.0  # 0 = jih, −90 = východ, +90 = západ
+    # Nákladová cena za kWp jen pro tohle pole; prázdné = z manažerského
+    # nastavení. Jedno pole umí být výrazně dražší (kotvení, delší trasy).
+    cena_kc_kwp: Optional[float] = None
 
 
 class PpaBessVstup(BaseModel):
