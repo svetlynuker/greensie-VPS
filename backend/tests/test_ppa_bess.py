@@ -1560,3 +1560,110 @@ class TestPravoNaVystup:
         with pytest.raises(HTTPException) as e:
             _over_typ_reseni("nesmysl", self._uzivatel(["nabidkovac"]))
         assert e.value.status_code == 422
+
+
+class TestVolbaDelkyVNabidce:
+    """Obchodník si u nabídky vybere, o jaký kontrakt jde.
+
+    Dan 5. 8. 2026: „nabídka mi automaticky dává výpočty pro 20 letý kontrakt,
+    potřebuju možnost vybrat si o jaký kontrakt jde."
+
+    Bez volby zůstává nejdelší nabízená délka (má největší slevu), ale volba se
+    ukládá s rozvržením nabídky a přebíjí ji.
+    """
+
+    def test_bez_volby_je_nejdelsi(self, v):
+        from app.nabidkovac import sablona_katalog as sk
+
+        h = sk.resolvni_hodnoty("ppa_bess", v)
+        nejdelsi = max(v["po_delkach"], key=lambda d: d["delka_roky"])
+        assert h["delka_roky"]["hodnota"] == nejdelsi["delka_roky"]
+        assert h["cena_ppa_kc_mwh"]["hodnota"] == pytest.approx(
+            nejdelsi["cena_ppa_kc_mwh"]
+        )
+
+    def test_volba_prebije_vychozi(self, v):
+        from app.nabidkovac import sablona_katalog as sk
+
+        for d in v["po_delkach"]:
+            h = sk.resolvni_hodnoty("ppa_bess", v, d["delka_roky"])
+            assert h["delka_roky"]["hodnota"] == d["delka_roky"]
+            assert h["cena_ppa_kc_mwh"]["hodnota"] == pytest.approx(d["cena_ppa_kc_mwh"])
+            assert h["sleva"]["hodnota"] == pytest.approx(d["sleva"])
+            assert h["uspora_celkem_kc"]["hodnota"] == pytest.approx(d["uspora_celkem_kc"])
+
+    def test_tabulka_sleduje_volbu(self, v):
+        """Tabulka i dlaždice musí být z téže délky, jinak si odporují."""
+        from app.nabidkovac import sablona_katalog as sk
+
+        for d in v["po_delkach"]:
+            t = sk.resolvni_tabulku("ppa_bess", v, d["delka_roky"])
+            assert len(t["radky"]) == d["delka_roky"], (
+                f'tabulka má {len(t["radky"])} let, čekáno {d["delka_roky"]}'
+            )
+
+    def test_rozpad_prinosu_sleduje_volbu(self, v):
+        """Úspora na elektřině závisí na ceně PPA, ta se s délkou mění."""
+        from app.nabidkovac import sablona_katalog as sk
+
+        kratky = min(d["delka_roky"] for d in v["po_delkach"])
+        dlouhy = max(d["delka_roky"] for d in v["po_delkach"])
+        h_k = sk.resolvni_hodnoty("ppa_bess", v, kratky)
+        h_d = sk.resolvni_hodnoty("ppa_bess", v, dlouhy)
+        # Delší kontrakt = nižší cena = větší úspora na elektřině.
+        assert h_d["uspora_z_energie_kc"]["hodnota"] > h_k["uspora_z_energie_kc"]["hodnota"]
+
+    def test_neznama_delka_spadne_na_nejdelsi(self, v):
+        """Sada nabízených délek se po přepočtu může změnit – nabídka se nesmí
+        rozbít, jen se vrátí k výchozí volbě."""
+        from app.nabidkovac import sablona_katalog as sk
+
+        h = sk.resolvni_hodnoty("ppa_bess", v, 999)
+        nejdelsi = max(v["po_delkach"], key=lambda d: d["delka_roky"])
+        assert h["delka_roky"]["hodnota"] == nejdelsi["delka_roky"]
+
+    def test_resolver_nemeni_ulozeny_vysledek(self, v):
+        """Volba se vkládá do KOPIE popisu – uložený výpočet zůstane čistý."""
+        from app.nabidkovac import sablona_katalog as sk
+
+        sk.resolvni_hodnoty("ppa_bess", v, 10)
+        sk.resolvni_tabulku("ppa_bess", v, 10)
+        sk.graf_pro_typ("ppa_bess", v, 10)
+        assert sk.KLIC_VOLBA_DELKY not in v
+
+    def test_schema_prijme_volbu(self):
+        from app.nabidkovac.schemas import VystupKonfigurace
+
+        k = VystupKonfigurace(verze=2, delka_kontraktu_roky=15)
+        assert k.delka_kontraktu_roky == 15
+        assert VystupKonfigurace(verze=2).delka_kontraktu_roky is None
+
+    def test_schema_odmitne_nesmyslnou_delku(self):
+        import pydantic
+
+        from app.nabidkovac.schemas import VystupKonfigurace
+
+        for delka in (0, -5, 41):
+            with pytest.raises(pydantic.ValidationError):
+                VystupKonfigurace(verze=2, delka_kontraktu_roky=delka)
+
+    def test_nabizene_delky_pro_prepinac(self, v):
+        from app.nabidkovac.routes import _nabizene_delky
+
+        assert _nabizene_delky("ppa_bess", v) == sorted(
+            d["delka_roky"] for d in v["po_delkach"]
+        )
+
+    def test_ostatni_typy_prepinac_nemaji(self):
+        """PPA má délku danou variantou, peak shaving žádnou – přepínač by tam
+        neměl co přepínat."""
+        from app.nabidkovac.routes import _nabizene_delky
+
+        for typ in ("ppa", "peak_shaving", "kombinace"):
+            assert _nabizene_delky(typ, {"po_delkach": [{"delka_roky": 10}]}) == []
+
+    def test_bez_reseni_zadne_delky(self):
+        from app.nabidkovac.routes import _nabizene_delky
+
+        assert _nabizene_delky("ppa_bess", None) == []
+        assert _nabizene_delky("ppa_bess", {}) == []

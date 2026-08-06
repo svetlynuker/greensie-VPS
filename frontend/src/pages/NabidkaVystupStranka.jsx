@@ -51,6 +51,7 @@ export default function NabidkaVystupStranka() {
   const [aktivniStranka, setAktivniStranka] = useState(null);
   const [sablony, setSablony] = useState({ sablony: [], nabidky: [] });
   const [panely, setPanely] = useState({ vlevo: true, vpravo: true });
+  const [nacitaDelku, setNacitaDelku] = useState(false);
 
   const plochaRef = useRef(null);
 
@@ -135,6 +136,32 @@ export default function NabidkaVystupStranka() {
     setAktivniStranka(strankaId);
     const el = plochaRef.current?.querySelector(`[data-stranka-id="${strankaId}"]`);
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  /** Přepne délku kontraktu, kterou nabídka ukazuje.
+   *
+   * Ukládá se hned, protože všechny hodnoty (cena PPA, úspora, celá roční
+   * tabulka) přepočítává server – kdyby se volba držela jen v editoru, dlaždice
+   * by ukazovaly starou délku, dokud by obchodník neklikl na Uložit.
+   */
+  async function zmenDelku(delka) {
+    setNacitaDelku(true);
+    setChyba(null);
+    setZprava(null);
+    try {
+      const d = await nabidkaVystupUloz(id, typ, {
+        ...editor.konfigurace,
+        delka_kontraktu_roky: delka,
+      });
+      setData(d);
+      editor.nahradKonfiguraci(d.konfigurace, { vymazHistorii: false });
+      setNeulozeno(false);
+      setZprava(`Nabídka teď ukazuje kontrakt na ${delka} let.`);
+    } catch (e) {
+      setChyba(e.message);
+    } finally {
+      setNacitaDelku(false);
+    }
   }
 
   // ---- ukládání ----
@@ -274,12 +301,45 @@ export default function NabidkaVystupStranka() {
         aktivniStranka={aktivniStranka}
         onSkocNaStranku={skocNaStranku}
         deti={
-          <Sablony
-            sablony={sablony}
-            onPouzij={pouzijSablonu}
-            onUloz={ulozJakoSablonu}
-            onSmaz={smazSablonu}
-          />
+          <>
+            {/* Délka kontraktu – jen u typů, které počítají víc délek naráz.
+                Změna se hned uloží a hodnoty se přenačtou ze serveru, protože
+                cena PPA i celá tabulka se s délkou mění. */}
+            {(data?.nabizene_delky_roky || []).length > 1 && (
+              <div className="vy-skupina" role="group" aria-label="Délka kontraktu">
+                <label
+                  htmlFor="vy-delka"
+                  style={{ fontSize: 12, color: "var(--muted)", marginRight: 4 }}
+                >
+                  Kontrakt
+                </label>
+                <select
+                  id="vy-delka"
+                  className="gs-input"
+                  style={{ width: 92, padding: "4px 6px" }}
+                  value={String(
+                    editor.konfigurace?.delka_kontraktu_roky ??
+                      Math.max(...data.nabizene_delky_roky)
+                  )}
+                  onChange={(e) => zmenDelku(Number(e.target.value))}
+                  disabled={uklada || nacitaDelku}
+                  title="Kterou délku kontraktu má nabídka ukazovat. Cena PPA i úspora se s délkou mění."
+                >
+                  {data.nabizene_delky_roky.map((d) => (
+                    <option key={d} value={d}>
+                      {d} let
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <Sablony
+              sablony={sablony}
+              onPouzij={pouzijSablonu}
+              onUloz={ulozJakoSablonu}
+              onSmaz={smazSablonu}
+            />
+          </>
         }
       />
 
