@@ -41,14 +41,17 @@ takže tu nejsou žádné cenové prahy ani jejich kalibrace.
 
 ## Co se od PPA v2 vědomě liší (rozhodnuto s Danem 5. 8. 2026)
 
-* **Baterie je pronájem od SPV**, ne investice zákazníka – celá nabídka je
-  prvních deset let bez investice.
-* **Nájem je fixní, neindexovaný, a platí se jen 10 let**, i když kontrakt na
-  elektrárnu běží 15 nebo 20 let. Anuita úvěru na baterii se proto počítá vždy
-  na 10 let, ne na délku kontraktu jako v `ppa_v2.sestav_projekt`.
-* **V roce 11 si zákazník baterii odkoupí** za zbytkovou cenu z odkupní tabulky.
-  Od té chvíle neplatí nájem, ale nese servis a EMS sám a přínos pokračuje se
-  započtenou degradací.
+* **Baterie je pronájem od SPV**, ne investice zákazníka – celá nabídka je po
+  dobu nájmu bez investice.
+* **Nájem je fixní, neindexovaný, a platí se jen po dobu nájmu**, i když
+  kontrakt na elektrárnu běží delší. Anuita úvěru na baterii se proto počítá na
+  dobu nájmu, ne na délku kontraktu jako v `ppa_v2.sestav_projekt`. Doba nájmu
+  je editovatelná (`VstupPpaBess.doba_najmu_baterie_roky`), default 10 let.
+* **V prvním roce po skončení nájmu si zákazník baterii odkoupí** za zbytkovou
+  cenu. Od té chvíle neplatí nájem, ale nese servis a EMS sám a přínos pokračuje
+  se započtenou degradací. Alternativa **„odkup za korunu"** rozpustí zbytkovou
+  hodnotu do nájmu (`odkup_symbolicky`) – vedle základní varianty se počítá celá
+  znovu, protože mění DSCR i minimální cenu PPA.
 * **Baterie nikdy nedodává do sítě** – jen posouvá vlastní spotřebu. Do sítě
   teče pouze přebytek elektrárny, za cenu přetoku (defaultně 0 Kč).
 
@@ -65,10 +68,17 @@ from datetime import datetime
 from . import peak_shaving
 from .ppa_v2 import Baterie, ProduktBaterie, baterie_z_produktu
 
-# Nájem baterie se platí pevných 10 let bez ohledu na délku kontraktu na
-# elektrárnu (rozhodnutí Dana 5. 8. 2026). Na tuhle dobu se počítá i anuita
-# úvěru na baterii – proto je to konstanta modulu, ne parametr délky kontraktu.
+# Výchozí doba nájmu baterie: nájem se platí nezávisle na délce kontraktu na
+# elektrárnu (rozhodnutí Dana 5. 8. 2026) a na tutéž dobu se počítá i anuita
+# úvěru na baterii. Od 6. 8. 2026 je to jen **default** – obchodník ho může
+# u konkrétní nabídky přepsat (`VstupPpaBess.doba_najmu_baterie_roky`), protože
+# u některých zákazníků má smysl rozložit baterii na víc let a snížit nájem.
 DOBA_NAJMU_BATERIE_ROKY = 10
+
+# Symbolická odkupní cena baterie (Kč) ve variantě, kde se zbytková hodnota
+# nedoplácí na konci, ale rozpustí se do měsíčního nájmu. Není to nula, protože
+# převod majetku za nula korun je daňově i právně nešikovný – proto „za korunu".
+ODKUP_SYMBOLICKY_KC = 1.0
 
 # Kolik kandidátních stropů se v měsíci zkouší při ekonomické volbě. Stejná
 # hodnota jako u spotové kombinace – víc kandidátů výsledek zpřesní jen
@@ -830,34 +840,68 @@ def parametry_z_nastaveni(parametry: dict | None) -> ParametryPpaBess:
 
 
 # ------------------------------------------------------------------------- nájem baterie
-def sestav_projekt_bess(nakladova_cena_kc: float, p) -> "object":
-    """Financovaný projekt baterie – úvěr **vždy na 10 let**.
+def sestav_projekt_bess(
+    nakladova_cena_kc: float, p, doba_najmu_roky: int = DOBA_NAJMU_BATERIE_ROKY
+) -> "object":
+    """Financovaný projekt baterie – úvěr na **dobu nájmu**, ne na délku kontraktu.
 
-    Jediný rozdíl proti `ppa_v2.sestav_projekt` je pevná splatnost: PPA dnes
-    rozkládá úvěr na baterii na délku kontraktu na elektrárnu, takže u 20letého
-    PPA vycházel nájem nižší. Nájem je ale fixní a platí se jen deset let
-    (rozhodnutí Dana 5. 8. 2026), takže i úvěr musí být na deset let.
+    Jediný rozdíl proti `ppa_v2.sestav_projekt` je splatnost: PPA rozkládá úvěr
+    na baterii na délku kontraktu na elektrárnu, takže u 20letého PPA vycházel
+    nájem nižší, než na jak dlouho se reálně platí. Nájem je fixní a platí se
+    jen po dobu nájmu (rozhodnutí Dana 5. 8. 2026), takže i úvěr musí být na
+    stejnou dobu – jinak by po skončení nájmu zůstal nesplacený.
 
-    Věcný důsledek: roční splátka baterie je u 15 a 20letých kontraktů vyšší než
-    dřív. Protože se DSCR testuje po letech, může to zvednout minimální cenu
-    PPA – banka se dívá na nejtěsnější rok, a ten je teď v první dekádě.
+    Věcný důsledek: čím kratší nájem, tím vyšší roční splátka baterie. Protože
+    se DSCR testuje po letech, může to zvednout minimální cenu PPA – banka se
+    dívá na nejtěsnější rok, a ten je v době, kdy se baterie splácí.
     """
     from .ppa_v2 import sestav_projekt
 
     return sestav_projekt(
-        nakladova_cena_kc, p.marze_bess, p.provize_bess, DOBA_NAJMU_BATERIE_ROKY, p
+        nakladova_cena_kc,
+        p.marze_bess,
+        p.provize_bess,
+        max(1, int(doba_najmu_roky)),
+        p,
     )
 
 
 def najem_baterie_kc_mesic(projekt_bess, p) -> float:
-    """Fixní měsíční nájem baterie = marže + splátka úvěru (10 let) + EMS.
+    """Fixní měsíční nájem baterie = marže + splátka úvěru + EMS.
 
     Neindexuje se – po celou dobu nájmu je to stejné číslo (na rozdíl od ceny
-    PPA za energii, která se každé tři roky skokově zvedá).
+    PPA za energii, která se každé tři roky skokově zvedá). Splatnost úvěru je
+    v `projekt_bess` (viz `sestav_projekt_bess`), takže delší nájem se tady
+    projeví sám nižší splátkou.
     """
     if projekt_bess.capex_kc <= 0:
         return 0.0
     return p.bess_marze_kc_mesic + projekt_bess.splatka_mesicni_kc + p.bess_ems_kc_mesic
+
+
+def odkupni_cena_baterie_kc(projekt_bess, pb: "ParametryPpaBess") -> float:
+    """Zbytková hodnota baterie, za kterou si ji zákazník po nájmu odkoupí."""
+    if projekt_bess.capex_kc <= 0:
+        return 0.0
+    return projekt_bess.capex_kc * max(0.0, pb.bess_zbytkova_hodnota_podil)
+
+
+def navyseni_najmu_za_odkup_kc_mesic(
+    odkupni_cena_kc: float, doba_najmu_roky: int
+) -> float:
+    """O kolik se zvedne měsíční nájem, když se odkup rozpustí do nájmu.
+
+    Varianta „odkup za korunu": zákazník na konci nedoplácí zbytkovou hodnotu,
+    ale platí ji průběžně – rovnoměrně rozpočítanou do všech měsíců nájmu.
+    Rovnoměrně, ne anuitně: je to cena rozložená v čase, ne další úvěr, a
+    obchodník musí být schopen zákazníkovi to číslo vysvětlit jednou dělenou.
+
+    Pro SPV to není totéž: místo jednorázového kapitálového příjmu v roce po
+    nájmu dostane provozní příjem už během nájmu, což zlepšuje DSCR. Proto se
+    tahle varianta počítá celá znovu, ne jen jako přeskládání výsledku.
+    """
+    mesicu = max(1, int(doba_najmu_roky)) * 12
+    return max(0.0, odkupni_cena_kc) / mesicu
 
 
 # ------------------------------------------------------------------------- cashflow
@@ -946,12 +990,15 @@ def spocti_cashflow(
     p,
     pb: ParametryPpaBess,
     delka_roky: int,
+    doba_najmu_roky: int = DOBA_NAJMU_BATERIE_ROKY,
+    najem_kc_mesic: float | None = None,
+    odkup_symbolicky: bool = False,
 ) -> CashflowPpaBess:
-    """Cash flow po letech, kde se v roce 11 mění hned tři věci.
+    """Cash flow po letech, kde se v roce po skončení nájmu mění hned tři věci.
 
     `ppa_v2.spocti_cashflow` tady nestačí: umí jen konstantní splátku a
-    konstantní nájem po celou dobu kontraktu. V PPA+BESS se v roce po skončení
-    nájmu (tedy 11.) stane najednou:
+    konstantní nájem po celou dobu kontraktu. V PPA+BESS se v prvním roce po
+    skončení nájmu baterie stane najednou:
 
     1. **skončí nájem baterie** – zákazník ho přestane platit, SPV ho přestane
        inkasovat,
@@ -964,8 +1011,18 @@ def spocti_cashflow(
     nepatří. Do IRR vlastního kapitálu vstupuje, protože investorovi ty peníze
     reálně přijdou.
 
-    U kontraktu na 10 let se nic z toho nestane – odkup i konec nájmu padnou
-    až za horizont modelu, takže se nemodelují.
+    Když kontrakt skončí nejpozději s nájmem, nic z toho se nestane – odkup
+    i konec nájmu padnou až za horizont modelu, takže se nemodelují.
+
+    `najem_kc_mesic` přepíše nájem dopočítaný z ceny baterie (sjednaný nájem
+    z nabídky). Bez něj se cashflow počítalo z vzorce i tehdy, když obchodník
+    zadal jiný nájem, a DSCR pak neodpovídalo tomu, co je ve smlouvě.
+
+    `odkup_symbolicky` přepne na variantu **odkup za korunu**: zbytková hodnota
+    se nedoplácí na konci, ale rovnoměrně rozpuštěná do nájmu (viz
+    `navyseni_najmu_za_odkup_kc_mesic`). Pro SPV je to výměna kapitálového
+    příjmu za provozní, takže DSCR i minimální cena PPA vycházejí jinak – proto
+    se to počítá jako samostatný průchod, ne dopočtem nad výsledkem.
     """
     from .ppa_fve import _irr, _npv
     from .ppa_v2 import ceny_po_letech, zustatek_uveru
@@ -987,17 +1044,24 @@ def spocti_cashflow(
         cena_zakaznika_kc_mwh, n, p.indexace_krok, p.indexace_perioda_roky
     )
 
-    najem_mesicni = najem_baterie_kc_mesic(projekt_bess, p)
-    najem_rocni = najem_mesicni * 12.0
+    doba_najmu = max(1, int(doba_najmu_roky))
     ma_baterii = projekt_bess.capex_kc > 0
-    odkupni_cena = (
-        projekt_bess.capex_kc * max(0.0, pb.bess_zbytkova_hodnota_podil)
-        if ma_baterii
-        else 0.0
+    najem_mesicni = (
+        float(najem_kc_mesic)
+        if najem_kc_mesic is not None
+        else najem_baterie_kc_mesic(projekt_bess, p)
     )
+    odkupni_cena = odkupni_cena_baterie_kc(projekt_bess, pb) if ma_baterii else 0.0
     # Rok, ve kterém nájem skončí a baterie přejde na zákazníka. Když kontrakt
     # skončí dřív nebo současně, k přechodu nikdy nedojde.
-    rok_odkupu = DOBA_NAJMU_BATERIE_ROKY + 1 if ma_baterii and n > DOBA_NAJMU_BATERIE_ROKY else None
+    rok_odkupu = doba_najmu + 1 if ma_baterii and n > doba_najmu else None
+    # Varianta „odkup za korunu": zbytková hodnota se přesune z jednorázového
+    # doplatku do nájmu. Když k odkupu vůbec nedojde (kontrakt nepřežije nájem),
+    # není co rozpouštět a varianta se rovná základní.
+    if odkup_symbolicky and rok_odkupu is not None:
+        najem_mesicni += navyseni_najmu_za_odkup_kc_mesic(odkupni_cena, doba_najmu)
+        odkupni_cena = ODKUP_SYMBOLICKY_KC
+    najem_rocni = najem_mesicni * 12.0
 
     roky: list[RokPpaBess] = []
     cf = [-(projekt_fve.vlastni_kapital_kc + projekt_bess.vlastni_kapital_kc)]
@@ -1011,15 +1075,15 @@ def spocti_cashflow(
         ss = vyroba * podil_ss
         ex = vyroba * podil_ex * max(0.0, min(1.0, p.podil_zpenezitelneho_prebytku))
 
-        najem_letos = najem_rocni if (ma_baterii and t <= DOBA_NAJMU_BATERIE_ROKY) else 0.0
+        najem_letos = najem_rocni if (ma_baterii and t <= doba_najmu) else 0.0
         # Splátka: elektrárna po celou dobu, baterie jen dokud běží její úvěr.
         splatka = projekt_fve.splatka_rocni_kc
-        if ma_baterii and t <= DOBA_NAJMU_BATERIE_ROKY:
+        if ma_baterii and t <= doba_najmu:
             splatka += projekt_bess.splatka_rocni_kc
         # Provozní náklady SPV: servis elektrárny vždy, servis baterie jen dokud
         # ji SPV vlastní.
         naklady = p.servis_kc_rok
-        if ma_baterii and t <= DOBA_NAJMU_BATERIE_ROKY:
+        if ma_baterii and t <= doba_najmu:
             naklady += p.bess_servis_kc_rok
 
         prijem_ppa = ss * ceny_ppa[t - 1]
@@ -1172,13 +1236,21 @@ def minimalni_cena_ppa(
     pb: ParametryPpaBess,
     delka_roky: int,
     strop_kc_mwh: float | None = None,
+    doba_najmu_roky: int = DOBA_NAJMU_BATERIE_ROKY,
+    najem_kc_mesic: float | None = None,
+    odkup_symbolicky: bool = False,
 ) -> MinimalniCena:
     """Bisekcí najde nejnižší cenu PPA, kde projde DSCR i IRR.
 
     PPA v2 to řeší analyticky (`cena_ppa_z_dscr`), protože tam je splátka i nájem
     po celou dobu konstantní a nejtěsnější rok se dá spočítat přímo. Tady se
-    splátka v roce 11 láme a v roce odkupu přijde jednorázový příjem, takže
-    analytické řešení neexistuje – bisekce je poctivější než ho složitě obcházet.
+    splátka po skončení nájmu láme a v roce odkupu přijde jednorázový příjem,
+    takže analytické řešení neexistuje – bisekce je poctivější než ho složitě
+    obcházet.
+
+    Poslední tři parametry se jen předávají do `spocti_cashflow`; cena musí být
+    hledaná nad **týmž** cashflow, jaký se pak zobrazí, jinak by u varianty
+    „odkup za korunu" vyšla cena z jiného modelu než DSCR.
 
     Obě kritéria jsou v ceně monotónní (vyšší cena = víc zdrojů = vyšší DSCR
     i IRR), takže bisekce konverguje. Vrací i to, které kritérium bylo těsnější.
@@ -1203,6 +1275,9 @@ def minimalni_cena_ppa(
             p,
             pb,
             delka_roky,
+            doba_najmu_roky=doba_najmu_roky,
+            najem_kc_mesic=najem_kc_mesic,
+            odkup_symbolicky=odkup_symbolicky,
         )
         ok_dscr = cf.dscr_min is None or cf.dscr_min >= p.dscr_min
         # Kritérium investora se testuje **NPV při cílové sazbě**, ne přes IRR.
@@ -1339,6 +1414,10 @@ class VstupPpaBess:
     # Sjednaný nájem (Kč/měsíc). Když je zadaný, použije se místo vzorce a
     # výpočet ukáže, jak se rozchází s tím, co vychází z ceny baterie.
     najem_kc_mesic_rucne: float | None = None
+    # Na kolik let se baterie pronajímá a financuje. Nezávisí na délce kontraktu
+    # na elektrárnu: delší nájem = nižší splátka úvěru = nižší měsíční nájem, ale
+    # pozdější odkup. Default 10 let.
+    doba_najmu_baterie_roky: int = DOBA_NAJMU_BATERIE_ROKY
     nabizene_delky_roky: tuple[int, ...] = (10, 15, 20)
     rezerva_rk_procenta: float = 5.0
     interval_h: float | None = None
@@ -1837,7 +1916,9 @@ def prohledej_katalog(
             vr, _ = spocti_rezim(
                 vstup, vyroba_kwh, mesice, baterie, REZIM_SPICKY, interval_h, hodnota_kwh, pb
             )
-            projekt_bess = sestav_projekt_bess(baterie.nakladova_cena_kc, p)
+            projekt_bess = sestav_projekt_bess(
+                baterie.nakladova_cena_kc, p, vstup.doba_najmu_baterie_roky
+            )
             najem_m = (
                 vstup.najem_kc_mesic_rucne
                 if vstup.najem_kc_mesic_rucne is not None
@@ -1955,12 +2036,56 @@ def _varianta_katalogu_json(v: VariantaKatalogu) -> dict:
     }
 
 
+def _varianta_1kc_json(
+    minc: MinimalniCena,
+    cf: CashflowPpaBess,
+    cena_zakaznika_kc_mwh: float,
+    najem_kc_mesic: float,
+    navyseni_kc_mesic: float,
+    odkupni_cena_puvodni_kc: float,
+) -> dict:
+    """Varianta „odkup za korunu" – jen čísla, ve kterých se od základní liší.
+
+    Není to celý `_delka_json`: obchodník u alternativy potřebuje vidět nájem,
+    cenu PPA a jestli to projde bankou, ne druhý kompletní rozpad financování.
+    Kdyby se sem duplikoval celý blok, `popis_json` by nabídku zdvojnásobil
+    a v panelu by se nedalo poznat, které číslo patří které variantě.
+    """
+    nedosazitelne = minc.limitujici == "nedosazitelne"
+    sleva = (
+        (cena_zakaznika_kc_mwh - minc.cena_kc_mwh) / cena_zakaznika_kc_mwh
+        if cena_zakaznika_kc_mwh > 0
+        else 0.0
+    )
+    return {
+        "najem_baterie_kc_mesic": round(najem_kc_mesic, 2),
+        # O kolik je nájem vyšší než v základní variantě = rozpuštěný odkup.
+        "navyseni_najmu_kc_mesic": round(navyseni_kc_mesic, 2),
+        "odkupni_cena_baterie_kc": ODKUP_SYMBOLICKY_KC,
+        # Kolik by zákazník doplatil v základní variantě – to se rozpouští.
+        "odkupni_cena_puvodni_kc": round(odkupni_cena_puvodni_kc, 2),
+        "cena_ppa_kc_mwh": None if nedosazitelne else round(minc.cena_kc_mwh, 2),
+        "sleva": None if nedosazitelne else round(sleva, 4),
+        "limitujici": minc.limitujici,
+        "dscr_min": round(cf.dscr_min, 3) if cf.dscr_min is not None else None,
+        "irr": round(cf.irr, 4) if cf.irr is not None else None,
+        "npv_kc": round(cf.npv_kc, 2),
+        "uspora_rok1_kc": round(
+            cf.roky[0].cisty_prinos_zakaznika_kc if cf.roky else 0.0, 2
+        ),
+        "uspora_celkem_kc": round(cf.uspora_celkem_kc, 2),
+        "prijmy_najem_celkem_kc": round(cf.prijmy_najem_celkem_kc, 2),
+    }
+
+
 def _delka_json(
     minc: MinimalniCena,
     cf: CashflowPpaBess,
     delka_roky: int,
     cena_zakaznika_kc_mwh: float,
     najem_kc_mesic: float,
+    doba_najmu_roky: int = DOBA_NAJMU_BATERIE_ROKY,
+    odkup_1kc: dict | None = None,
 ) -> dict:
     """Jedna délka kontraktu k serializaci do `popis_json`.
 
@@ -1968,6 +2093,9 @@ def _delka_json(
     i sleva jako `None`. Ta cena totiž není nabídka – je to horní mez hledání –
     a slevou by vyšlo něco jako −200 %, což by v panelu vypadalo jako spočítaný
     výsledek.
+
+    `odkup_1kc` je paralelní varianta „odkup za korunu" (viz `_varianta_1kc_json`)
+    nebo `None`, když u téhle délky k odkupu vůbec nedojde.
     """
     nedosazitelne = minc.limitujici == "nedosazitelne"
     sleva = (
@@ -2004,9 +2132,10 @@ def _delka_json(
         "capex_bess_kc": round(cf.capex_bess_kc, 2),
         "najem_baterie_kc_mesic": round(najem_kc_mesic, 2),
         "odkupni_cena_baterie_kc": round(cf.odkupni_cena_baterie_kc, 2),
-        "rok_odkupu": (
-            DOBA_NAJMU_BATERIE_ROKY + 1 if delka_roky > DOBA_NAJMU_BATERIE_ROKY else None
-        ),
+        "doba_najmu_baterie_roky": int(doba_najmu_roky),
+        "rok_odkupu": (doba_najmu_roky + 1 if delka_roky > doba_najmu_roky else None),
+        # Alternativa: baterie za korunu, zbytková hodnota rozpuštěná do nájmu.
+        "odkup_1kc": odkup_1kc,
         "uspora_rok1_kc": round(cf.roky[0].cisty_prinos_zakaznika_kc if cf.roky else 0.0, 2),
         "uspora_celkem_kc": round(cf.uspora_celkem_kc, 2),
         "prinos_energie_celkem_kc": round(cf.prinos_energie_celkem_kc, 2),
@@ -2308,15 +2437,24 @@ def spocti_ppa_bess(vstup: VstupPpaBess) -> dict:
         roky_sim[rezim] = rok
 
 
-    # --- 4) financování: elektrárna na délku kontraktu, baterie vždy na 10 let
+    # --- 4) financování: elektrárna na délku kontraktu, baterie na dobu nájmu
     ma_baterii = baterie is not None and baterie.kapacita_kwh > 0
     nakladova_bess = baterie.nakladova_cena_kc if ma_baterii else 0.0
-    projekt_bess = sestav_projekt_bess(nakladova_bess, p)
+    doba_najmu = max(1, int(vstup.doba_najmu_baterie_roky))
+    projekt_bess = sestav_projekt_bess(nakladova_bess, p, doba_najmu)
     najem_z_ceny = najem_baterie_kc_mesic(projekt_bess, p)
     najem_mesicni = (
         vstup.najem_kc_mesic_rucne
         if vstup.najem_kc_mesic_rucne is not None
         else najem_z_ceny
+    )
+    # Zbytková hodnota a o kolik by zvedla nájem, kdyby se místo doplatku
+    # rozpustila do měsíčních plateb (varianta „odkup za korunu").
+    odkupni_cena = odkupni_cena_baterie_kc(projekt_bess, pb) if ma_baterii else 0.0
+    navyseni_1kc = (
+        navyseni_najmu_za_odkup_kc_mesic(odkupni_cena, doba_najmu)
+        if ma_baterii
+        else 0.0
     )
     if vstup.najem_kc_mesic_rucne is not None and najem_z_ceny > 0:
         rozdil = vstup.najem_kc_mesic_rucne - najem_z_ceny
@@ -2350,25 +2488,28 @@ def spocti_ppa_bess(vstup: VstupPpaBess) -> dict:
             projekt_fve = sestav_projekt(
                 nakladova_cena_fve(kwp, pole, p), p.marze_fve, p.provize_fve, n, p
             )
-            minc = minimalni_cena_ppa(
+            # Argumenty, které jsou pro obě varianty odkupu stejné – ať se při
+            # úpravě jedné cesty tiše nerozejde druhá.
+            spolecne = (
                 vyroba_mwh,
                 samospotreba_mwh,
                 export_mwh,
                 uspora_vykon,
                 vr.ztraty_ze_site_kwh,
+            )
+            minc = minimalni_cena_ppa(
+                *spolecne,
                 cena_zakaznika,
                 projekt_fve,
                 projekt_bess,
                 p,
                 pb,
                 n,
+                doba_najmu_roky=doba_najmu,
+                najem_kc_mesic=najem_mesicni,
             )
             cf = spocti_cashflow(
-                vyroba_mwh,
-                samospotreba_mwh,
-                export_mwh,
-                uspora_vykon,
-                vr.ztraty_ze_site_kwh,
+                *spolecne,
                 minc.cena_kc_mwh,
                 cena_zakaznika,
                 projekt_fve,
@@ -2376,8 +2517,59 @@ def spocti_ppa_bess(vstup: VstupPpaBess) -> dict:
                 p,
                 pb,
                 n,
+                doba_najmu_roky=doba_najmu,
+                najem_kc_mesic=najem_mesicni,
             )
-            out.append(_delka_json(minc, cf, n, cena_zakaznika, najem_mesicni))
+            # Varianta „odkup za korunu" se počítá celá znovu: rozpuštěný odkup
+            # zvedne provozní příjem SPV, zlepší DSCR, a cena PPA proto může
+            # vyjít nižší. Dopočítat ji nad hotovým cashflow nejde.
+            varianta_1kc = None
+            if ma_baterii and n > doba_najmu and navyseni_1kc > 0:
+                najem_1kc = najem_mesicni + navyseni_1kc
+                minc_1kc = minimalni_cena_ppa(
+                    *spolecne,
+                    cena_zakaznika,
+                    projekt_fve,
+                    projekt_bess,
+                    p,
+                    pb,
+                    n,
+                    doba_najmu_roky=doba_najmu,
+                    najem_kc_mesic=najem_mesicni,
+                    odkup_symbolicky=True,
+                )
+                cf_1kc = spocti_cashflow(
+                    *spolecne,
+                    minc_1kc.cena_kc_mwh,
+                    cena_zakaznika,
+                    projekt_fve,
+                    projekt_bess,
+                    p,
+                    pb,
+                    n,
+                    doba_najmu_roky=doba_najmu,
+                    najem_kc_mesic=najem_mesicni,
+                    odkup_symbolicky=True,
+                )
+                varianta_1kc = _varianta_1kc_json(
+                    minc_1kc,
+                    cf_1kc,
+                    cena_zakaznika,
+                    najem_1kc,
+                    navyseni_1kc,
+                    odkupni_cena,
+                )
+            out.append(
+                _delka_json(
+                    minc,
+                    cf,
+                    n,
+                    cena_zakaznika,
+                    najem_mesicni,
+                    doba_najmu_roky=doba_najmu,
+                    odkup_1kc=varianta_1kc,
+                )
+            )
         return out
 
     ekonomiky = {r: ekonomika_rezimu(rezimy[r]) for r in REZIMY}
@@ -2409,6 +2601,16 @@ def spocti_ppa_bess(vstup: VstupPpaBess) -> dict:
         )
 
     # --- kontroly, které si obchodník musí přečíst, i když čísla „vyšla"
+    if ma_baterii and delky and doba_najmu > delky[0]:
+        # Nájem delší než kontrakt = po skončení kontraktu zůstane nesplacený
+        # úvěr na baterii a k odkupu nedojde. Model to spočítá (nájem se prostě
+        # přestane platit s kontraktem), ale sám o sobě je to obchodní problém.
+        upozorneni.append(
+            f"Nájem baterie je na {doba_najmu} let, ale nabízíš i kontrakt na "
+            f"{delky[0]} let. U kratších kontraktů se baterie nesplatí – po jejich "
+            "skončení zůstane zůstatek úvěru a k odkupu nedojde. Buď zkrať nájem, "
+            "nebo z nabídky vynech krátké délky."
+        )
     if ma_baterii and po_delkach:
         # Vyplatí se baterie vůbec? Nájem může přínos přerůst – typicky když
         # návrh z katalogu přestřelí velikost. Model to nezamlčí.
@@ -2558,7 +2760,14 @@ def spocti_ppa_bess(vstup: VstupPpaBess) -> dict:
                 "najem_kc_mesic": round(najem_mesicni, 2),
                 "najem_z_ceny_kc_mesic": round(najem_z_ceny, 2),
                 "najem_zadan_rucne": vstup.najem_kc_mesic_rucne is not None,
-                "doba_najmu_roky": DOBA_NAJMU_BATERIE_ROKY,
+                "doba_najmu_roky": doba_najmu,
+                # Varianta „odkup za korunu": nájem navýšený o rozpuštěnou
+                # zbytkovou hodnotu. Ekonomika téhle varianty je po délkách
+                # v `po_delkach[].odkup_1kc` – tady je jen samo číslo nájmu,
+                # protože nezávisí na délce kontraktu.
+                "odkupni_cena_kc": round(odkupni_cena, 2),
+                "najem_odkup_1kc_kc_mesic": round(najem_mesicni + navyseni_1kc, 2),
+                "navyseni_najmu_za_odkup_kc_mesic": round(navyseni_1kc, 2),
                 "cena_je_doporucena": baterie.cena_je_doporucena,
             }
             if ma_baterii

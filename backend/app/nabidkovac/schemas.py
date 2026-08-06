@@ -421,6 +421,10 @@ class PpaBessVstup(BaseModel):
     # jak je). Když jsou obě, výpočet ukáže, jak se rozcházejí.
     baterie_nakladova_cena_kc: Optional[float] = None
     baterie_najem_kc_mesic: Optional[float] = None
+    # Na kolik let se baterie pronajímá a financuje (default 10). Nezávisí na
+    # délce kontraktu na elektrárnu – delší nájem znamená nižší měsíční platbu,
+    # ale pozdější odkup.
+    baterie_doba_najmu_roky: Optional[int] = None
     # Zúžení katalogu, když se baterie nezadává ručně (id z `technologie`).
     baterie_ids: Optional[list[int]] = None
 

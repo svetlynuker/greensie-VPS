@@ -3024,6 +3024,14 @@ def sestav_vstup_ppa_bess(db: Session, nabidka_id: int, vstup: PpaBessVstup):
             if vstup.baterie_najem_kc_mesic is not None
             else None
         ),
+        # Doba nájmu baterie: prázdno = default modulu (10 let). Strop 40 let je
+        # jen pojistka proti překlepu – delší nájem než životnost baterie by dal
+        # nesmyslně nízkou splátku a tím i nájem.
+        doba_najmu_baterie_roky=(
+            max(1, min(40, int(vstup.baterie_doba_najmu_roky)))
+            if vstup.baterie_doba_najmu_roky
+            else ppa_bess.DOBA_NAJMU_BATERIE_ROKY
+        ),
         nabizene_delky_roky=tuple(
             vstup.nabizene_delky_roky or ppa_v2.VYCHOZI_NABIZENE_DELKY_ROKY
         ),

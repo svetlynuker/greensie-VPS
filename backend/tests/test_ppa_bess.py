@@ -1667,3 +1667,264 @@ class TestVolbaDelkyVNabidce:
 
         assert _nabizene_delky("ppa_bess", None) == []
         assert _nabizene_delky("ppa_bess", {}) == []
+
+
+# --------------------------------------------- délka kontraktu baterie (editovatelná)
+class TestDobaNajmuBaterie:
+    """Nájem i financování baterie jde počítat na jiný počet let než default 10."""
+
+    def _cf(self, delka: int, doba_najmu: int):
+        p = ppa_v2.ParametryEkonomiky()
+        pb = ppa_bess.ParametryPpaBess()
+        projekt_fve = ppa_v2.sestav_projekt(
+            600 * p.nakladova_cena_kc_kwp, p.marze_fve, p.provize_fve, delka, p
+        )
+        projekt_bess = ppa_bess.sestav_projekt_bess(2_400_000.0, p, doba_najmu)
+        return ppa_bess.spocti_cashflow(
+            vyroba_rok1_mwh=600.0,
+            samospotreba_rok1_mwh=500.0,
+            export_rok1_mwh=50.0,
+            uspora_vykon_rok1_kc=200_000.0,
+            ztraty_ze_site_rok1_kwh=5_000.0,
+            cena_ppa_rok1_kc_mwh=2_500.0,
+            cena_zakaznika_kc_mwh=3_760.0,
+            projekt_fve=projekt_fve,
+            projekt_bess=projekt_bess,
+            p=p,
+            pb=pb,
+            delka_roky=delka,
+            doba_najmu_roky=doba_najmu,
+        )
+
+    def test_default_zustava_deset_let(self):
+        p = ppa_v2.ParametryEkonomiky()
+        assert ppa_bess.sestav_projekt_bess(3_000_000.0, p).delka_roky == 10
+        assert ppa_bess.VstupPpaBess.doba_najmu_baterie_roky == 10
+
+    def test_delsi_najem_snizi_mesicni_platbu(self):
+        """Delší rozložení úvěru = nižší anuita = nižší nájem. To je celý smysl."""
+        p = ppa_v2.ParametryEkonomiky()
+        na_10 = ppa_bess.sestav_projekt_bess(3_000_000.0, p, 10)
+        na_15 = ppa_bess.sestav_projekt_bess(3_000_000.0, p, 15)
+        assert na_15.delka_roky == 15
+        assert ppa_bess.najem_baterie_kc_mesic(
+            na_15, p
+        ) < ppa_bess.najem_baterie_kc_mesic(na_10, p)
+
+    def test_nesmyslna_doba_se_srovna_na_jeden_rok(self):
+        p = ppa_v2.ParametryEkonomiky()
+        assert ppa_bess.sestav_projekt_bess(1_000_000.0, p, 0).delka_roky == 1
+        assert ppa_bess.sestav_projekt_bess(1_000_000.0, p, -3).delka_roky == 1
+
+    def test_najem_konci_podle_zadane_doby(self):
+        cf = self._cf(delka=20, doba_najmu=15)
+        assert cf.roky[14].najem_baterie_kc > 0  # rok 15
+        assert cf.roky[15].najem_baterie_kc == 0.0  # rok 16
+
+    def test_odkup_se_posune_za_delsi_najem(self):
+        cf = self._cf(delka=20, doba_najmu=15)
+        odkupy = [r.rok for r in cf.roky if r.prijem_odkup_kc > 0]
+        assert odkupy == [16]
+
+    def test_splatka_baterie_konci_s_najmem(self):
+        cf = self._cf(delka=20, doba_najmu=15)
+        assert cf.roky[15].splatka_kc < cf.roky[14].splatka_kc
+
+    def test_kratsi_najem_znamena_drivejsi_odkup(self):
+        cf = self._cf(delka=20, doba_najmu=5)
+        odkupy = [r.rok for r in cf.roky if r.prijem_odkup_kc > 0]
+        assert odkupy == [6]
+        assert cf.roky[5].najem_baterie_kc == 0.0
+
+    def test_vystup_nese_zadanou_dobu(self):
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup(doba_najmu_baterie_roky=15))
+        assert v["baterie"]["doba_najmu_roky"] == 15
+        podle_delky = {d["delka_roky"]: d for d in v["po_delkach"]}
+        # Kontrakt na 20 let nájem přežije, takže odkup je v roce 16.
+        assert podle_delky[20]["rok_odkupu"] == 16
+        assert podle_delky[20]["doba_najmu_baterie_roky"] == 15
+        # Kontrakty na 10 a 15 let skončí nejpozději s nájmem – žádný odkup.
+        assert podle_delky[10]["rok_odkupu"] is None
+        assert podle_delky[15]["rok_odkupu"] is None
+
+    def test_najem_delsi_nez_nejkratsi_kontrakt_upozorni(self):
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup(doba_najmu_baterie_roky=15))
+        assert any("Nájem baterie je na 15 let" in u for u in v["upozorneni"])
+
+    def test_pri_najmu_do_kontraktu_zadne_upozorneni(self):
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup(doba_najmu_baterie_roky=10))
+        assert not any("Nájem baterie je na" in u for u in v["upozorneni"])
+
+
+# ------------------------------------------------------ odkup baterie za 1 Kč
+class TestOdkupZaKorunu:
+    """Zbytková hodnota se místo doplatku rovnoměrně rozpustí do nájmu."""
+
+    def _cf(self, symbolicky: bool, delka: int = 20, doba_najmu: int = 10):
+        p = ppa_v2.ParametryEkonomiky()
+        pb = ppa_bess.ParametryPpaBess()
+        projekt_fve = ppa_v2.sestav_projekt(
+            600 * p.nakladova_cena_kc_kwp, p.marze_fve, p.provize_fve, delka, p
+        )
+        projekt_bess = ppa_bess.sestav_projekt_bess(2_400_000.0, p, doba_najmu)
+        return ppa_bess.spocti_cashflow(
+            vyroba_rok1_mwh=600.0,
+            samospotreba_rok1_mwh=500.0,
+            export_rok1_mwh=50.0,
+            uspora_vykon_rok1_kc=200_000.0,
+            ztraty_ze_site_rok1_kwh=5_000.0,
+            cena_ppa_rok1_kc_mwh=2_500.0,
+            cena_zakaznika_kc_mwh=3_760.0,
+            projekt_fve=projekt_fve,
+            projekt_bess=projekt_bess,
+            p=p,
+            pb=pb,
+            delka_roky=delka,
+            doba_najmu_roky=doba_najmu,
+            odkup_symbolicky=symbolicky,
+        )
+
+    def test_navyseni_je_prosta_delena_na_mesice(self):
+        assert ppa_bess.navyseni_najmu_za_odkup_kc_mesic(120_000.0, 10) == pytest.approx(
+            1_000.0
+        )
+        assert ppa_bess.navyseni_najmu_za_odkup_kc_mesic(120_000.0, 15) == pytest.approx(
+            120_000.0 / 180.0
+        )
+
+    def test_bez_odkupni_ceny_neni_co_rozpustit(self):
+        assert ppa_bess.navyseni_najmu_za_odkup_kc_mesic(0.0, 10) == 0.0
+
+    def test_zakaznik_na_konci_zaplati_korunu(self):
+        cf = self._cf(symbolicky=True)
+        assert cf.odkupni_cena_baterie_kc == ppa_bess.ODKUP_SYMBOLICKY_KC == 1.0
+        assert cf.prijmy_odkup_celkem_kc == pytest.approx(1.0)
+        assert cf.roky[10].vydaj_odkup_kc == pytest.approx(1.0)
+
+    def test_najem_je_vyssi_presne_o_rozpusteny_odkup(self):
+        zaklad = self._cf(symbolicky=False)
+        korunou = self._cf(symbolicky=True)
+        navyseni = ppa_bess.navyseni_najmu_za_odkup_kc_mesic(
+            zaklad.odkupni_cena_baterie_kc, 10
+        )
+        assert korunou.najem_baterie_kc_mesic == pytest.approx(
+            zaklad.najem_baterie_kc_mesic + navyseni
+        )
+
+    def test_klient_celkem_zaplati_totez(self):
+        """Rozpuštění je přesun v čase, ne sleva – součet se smí lišit o tu korunu."""
+        zaklad = self._cf(symbolicky=False)
+        korunou = self._cf(symbolicky=True)
+        zaplaceno_zaklad = zaklad.prijmy_najem_celkem_kc + zaklad.prijmy_odkup_celkem_kc
+        zaplaceno_korunou = (
+            korunou.prijmy_najem_celkem_kc + korunou.prijmy_odkup_celkem_kc
+        )
+        assert zaplaceno_korunou == pytest.approx(zaplaceno_zaklad + 1.0, abs=1.0)
+
+    def test_dscr_se_zlepsi(self):
+        """Odkup je kapitálový příjem (mimo DSCR), nájem provozní – banka to vidí."""
+        zaklad = self._cf(symbolicky=False)
+        korunou = self._cf(symbolicky=True)
+        assert korunou.dscr_min > zaklad.dscr_min
+
+    def test_bez_odkupu_je_varianta_shodna(self):
+        """Když kontrakt nepřežije nájem, není co rozpouštět."""
+        zaklad = self._cf(symbolicky=False, delka=10, doba_najmu=10)
+        korunou = self._cf(symbolicky=True, delka=10, doba_najmu=10)
+        assert korunou.najem_baterie_kc_mesic == pytest.approx(
+            zaklad.najem_baterie_kc_mesic
+        )
+        assert korunou.prijmy_odkup_celkem_kc == 0.0
+
+    def test_vystup_ma_variantu_jen_kde_je_odkup(self):
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup())
+        podle_delky = {d["delka_roky"]: d for d in v["po_delkach"]}
+        assert podle_delky[10]["odkup_1kc"] is None
+        for delka in (15, 20):
+            varianta = podle_delky[delka]["odkup_1kc"]
+            assert varianta is not None, delka
+            assert varianta["odkupni_cena_baterie_kc"] == 1.0
+            assert varianta["navyseni_najmu_kc_mesic"] > 0
+            assert varianta["najem_baterie_kc_mesic"] > podle_delky[delka][
+                "najem_baterie_kc_mesic"
+            ]
+            assert varianta["odkupni_cena_puvodni_kc"] == pytest.approx(
+                podle_delky[delka]["odkupni_cena_baterie_kc"]
+            )
+
+    def test_varianta_ma_vlastni_ekonomiku(self):
+        """Cena PPA musí být hledaná nad stejným cashflow, jaké se zobrazí."""
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup())
+        for d in v["po_delkach"]:
+            if not d["odkup_1kc"]:
+                continue
+            for klic in ("cena_ppa_kc_mwh", "sleva", "limitujici", "dscr_min",
+                         "irr", "npv_kc", "uspora_rok1_kc", "uspora_celkem_kc"):
+                assert klic in d["odkup_1kc"], f"odkup_1kc.{klic}"
+            # Vyšší provozní příjem nemůže cenu PPA zdražit.
+            if d["cena_ppa_kc_mwh"] and d["odkup_1kc"]["cena_ppa_kc_mwh"]:
+                assert d["odkup_1kc"]["cena_ppa_kc_mwh"] <= d["cena_ppa_kc_mwh"] + 0.01
+
+    def test_baterie_nese_najem_varianty(self):
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup())
+        b = v["baterie"]
+        assert b["odkupni_cena_kc"] > 0
+        assert b["navyseni_najmu_za_odkup_kc_mesic"] == pytest.approx(
+            ppa_bess.navyseni_najmu_za_odkup_kc_mesic(b["odkupni_cena_kc"], 10), abs=0.01
+        )
+        assert b["najem_odkup_1kc_kc_mesic"] == pytest.approx(
+            b["najem_kc_mesic"] + b["navyseni_najmu_za_odkup_kc_mesic"], abs=0.01
+        )
+
+
+class TestSjednanyNajemVstupujeDoEkonomiky:
+    """Ruční nájem musí ovlivnit DSCR, ne jen zobrazené číslo.
+
+    Dřív se cashflow počítalo z vzorce i tehdy, když obchodník zadal jiný nájem,
+    takže upozornění „hlídej DSCR" ukazovalo na čísla, která sjednaný nájem
+    vůbec neznala.
+    """
+
+    def _cf(self, najem: float | None):
+        p = ppa_v2.ParametryEkonomiky()
+        pb = ppa_bess.ParametryPpaBess()
+        projekt_fve = ppa_v2.sestav_projekt(
+            600 * p.nakladova_cena_kc_kwp, p.marze_fve, p.provize_fve, 20, p
+        )
+        projekt_bess = ppa_bess.sestav_projekt_bess(2_400_000.0, p)
+        return ppa_bess.spocti_cashflow(
+            vyroba_rok1_mwh=600.0,
+            samospotreba_rok1_mwh=500.0,
+            export_rok1_mwh=50.0,
+            uspora_vykon_rok1_kc=200_000.0,
+            ztraty_ze_site_rok1_kwh=5_000.0,
+            cena_ppa_rok1_kc_mwh=2_500.0,
+            cena_zakaznika_kc_mwh=3_760.0,
+            projekt_fve=projekt_fve,
+            projekt_bess=projekt_bess,
+            p=p,
+            pb=pb,
+            delka_roky=20,
+            najem_kc_mesic=najem,
+        )
+
+    def test_override_se_pouzije(self):
+        cf = self._cf(50_000.0)
+        assert cf.najem_baterie_kc_mesic == 50_000.0
+        assert cf.roky[0].najem_baterie_kc == pytest.approx(600_000.0)
+
+    def test_vyssi_najem_zvedne_dscr(self):
+        assert self._cf(50_000.0).dscr_min > self._cf(None).dscr_min
+
+    def test_bez_override_zustava_vzorec(self):
+        p = ppa_v2.ParametryEkonomiky()
+        ocekavany = ppa_bess.najem_baterie_kc_mesic(
+            ppa_bess.sestav_projekt_bess(2_400_000.0, p), p
+        )
+        assert self._cf(None).najem_baterie_kc_mesic == pytest.approx(ocekavany)
+
+    def test_rucni_najem_projde_az_do_vysledku(self):
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup(najem_kc_mesic_rucne=40_000.0))
+        for d in v["po_delkach"]:
+            assert d["najem_baterie_kc_mesic"] == 40_000.0
+            assert d["roky"][0]["najem_baterie_kc"] == pytest.approx(480_000.0)
