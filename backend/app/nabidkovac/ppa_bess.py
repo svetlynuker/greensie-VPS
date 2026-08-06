@@ -1264,6 +1264,36 @@ class PoleFve:
     # s balastem, delší kabelové trasy – a paušál za celou elektrárnu by pak
     # zkreslil CAPEX, a s ním i cenu PPA.
     cena_kc_kwp: float | None = None
+    # Východ-západní konstrukce: jeden blok panelů, polovina na východ a polovina
+    # na západ. Zadá se jednou (celkový výkon a sklon) a rozloží se na dvě pole
+    # 50/50, ať to obchodník nemusí psát dvakrát. `azimut_st` se pak bere jako
+    # **osa** – 0 znamená klasické V/Z (−90 a +90), 30 pootočenou střechu
+    # (−60 a +120).
+    rozdelit_vychod_zapad: bool = False
+
+
+def rozloz_pole(pole: tuple[PoleFve, ...]) -> tuple[PoleFve, ...]:
+    """Rozloží pole označená jako východ-západ na dvě poloviny.
+
+    Výpočet dál pracuje s obyčejnými poli, takže o téhle zkratce nemusí nic
+    vědět – rozloží se jednou na vstupu. Zachovává cenu za kWp i sklon, jen
+    půlí výkon a otáčí azimut o ±90° od zadané osy.
+    """
+    out: list[PoleFve] = []
+    for f in pole:
+        if not f.rozdelit_vychod_zapad:
+            out.append(f)
+            continue
+        for smer in (-90.0, 90.0):
+            out.append(
+                PoleFve(
+                    kwp=f.kwp / 2.0,
+                    sklon_st=f.sklon_st,
+                    azimut_st=f.azimut_st + smer,
+                    cena_kc_kwp=f.cena_kc_kwp,
+                )
+            )
+    return tuple(out)
 
 
 @dataclass
@@ -2136,7 +2166,11 @@ def spocti_ppa_bess(vstup: VstupPpaBess) -> dict:
     #  a) obchodník zná rozpad na pole → velikost je daná, jen se sečte výroba,
     #  b) rozpad nezná → velikost se navrhne z cíle samospotřeby nad jednou
     #     orientací (`sklon_st` / `azimut_st`).
-    pole = tuple(x for x in (vstup.pole or ()) if x.kwp and x.kwp > 0)
+    # Zadání se zachová kvůli předvyplnění formuláře (jedno pole „východ-západ"
+    # se má vrátit jako jedno se zaškrtnutím, ne jako dvě). Výpočet ale pracuje
+    # s rozloženými poli, aby o téhle zkratce nemusel nic vědět.
+    pole_zadani = tuple(x for x in (vstup.pole or ()) if x.kwp and x.kwp > 0)
+    pole = rozloz_pole(pole_zadani)
     zadana_pole = bool(pole)
 
     if zadana_pole:
@@ -2451,6 +2485,20 @@ def spocti_ppa_bess(vstup: VstupPpaBess) -> dict:
             # u jednotlivých polí. Bez rozpadu je to `kwp × cena z nastavení`.
             "nakladova_cena_kc": round(nakladova_cena_fve(kwp, pole, p), 2),
             "nakladova_cena_kc_kwp_nastaveni": round(p.nakladova_cena_kc_kwp, 2),
+            # Původní zadání – panel z něj předvyplňuje formulář, takže pole
+            # označené jako východ-západ se vrátí jako jedno se zaškrtnutím.
+            "pole_zadani": [
+                {
+                    "kwp": f.kwp,
+                    "sklon_st": f.sklon_st,
+                    "azimut_st": f.azimut_st,
+                    "cena_kc_kwp": (
+                        round(f.cena_kc_kwp, 2) if f.cena_kc_kwp and f.cena_kc_kwp > 0 else None
+                    ),
+                    "rozdelit_vychod_zapad": f.rozdelit_vychod_zapad,
+                }
+                for f in pole_zadani
+            ],
             "pole": [
                 {
                     "kwp": f.kwp,

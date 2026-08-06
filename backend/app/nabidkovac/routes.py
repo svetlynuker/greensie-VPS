@@ -3010,6 +3010,7 @@ def sestav_vstup_ppa_bess(db: Session, nabidka_id: int, vstup: PpaBessVstup):
                     if f.cena_kc_kwp is not None and float(f.cena_kc_kwp) > 0
                     else None
                 ),
+                rozdelit_vychod_zapad=bool(f.rozdelit_vychod_zapad),
             )
             for f in (vstup.pole or ())
             if f.kwp and float(f.kwp) > 0

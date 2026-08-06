@@ -366,6 +366,9 @@ class PpaBessPoleFve(BaseModel):
     # Nákladová cena za kWp jen pro tohle pole; prázdné = z manažerského
     # nastavení. Jedno pole umí být výrazně dražší (kotvení, delší trasy).
     cena_kc_kwp: Optional[float] = None
+    # Východ-západní konstrukce: zadá se jednou a rozloží se na dvě pole 50/50.
+    # `azimut_st` se pak bere jako osa (0 = klasické V/Z, tedy −90 a +90).
+    rozdelit_vychod_zapad: bool = False
 
 
 class PpaBessVstup(BaseModel):

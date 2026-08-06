@@ -67,6 +67,21 @@ const MESICE_NAZVY = [
   "červenec", "srpen", "září", "říjen", "listopad", "prosinec",
 ];
 
+/** Světová strana z azimutu (0 = jih) – pro hlavičku karty pole.
+ *
+ * Stejné hranice jako `ppa_bess._nazev_orientace` na backendu, aby se popisek
+ * ve formuláři a ve výsledku nerozcházel. */
+function orientaceZAzimutu(azimut) {
+  if (azimut === null || azimut === undefined || Number.isNaN(azimut)) return "jih";
+  const a = ((Number(azimut) + 180) % 360) - 180;
+  const abs = Math.abs(a);
+  if (abs <= 22.5) return "jih";
+  if (abs <= 67.5) return a < 0 ? "jihovýchod" : "jihozápad";
+  if (abs <= 112.5) return a < 0 ? "východ" : "západ";
+  if (abs <= 157.5) return a < 0 ? "severovýchod" : "severozápad";
+  return "sever";
+}
+
 const KLIC_ULOZISTE = (nabidkaId) => `gs-ppabess-vstup-${nabidkaId}`;
 
 /** Předvyplnění: základ z posledního uloženého řešení, navrch localStorage. */
@@ -91,14 +106,22 @@ function nactiUlozeneVstupy(nabidka) {
     baterieRucne: !!v.baterie_rucne,
     // Rozpad na pole se ukládá do výsledku (`elektrarna.pole`), ne do vstupu –
     // proto se předvyplňuje odtud.
-    pole: ((posl && posl.elektrarna && posl.elektrarna.pole) || []).map((f) => ({
+    // Předvyplňuje se ze ZADÁNÍ, ne z rozložených polí – pole označené jako
+    // východ-západ se má vrátit jako jedno se zaškrtnutím, ne jako dvě.
+    // `pole_zadani` chybí u výpočtů z doby před tímhle zaškrtnutím, proto
+    // fallback na `pole`.
+    pole: (
+      (posl && posl.elektrarna && (posl.elektrarna.pole_zadani || posl.elektrarna.pole)) ||
+      []
+    ).map((f) => ({
       kwp: String(f.kwp ?? ""),
       sklon: String(f.sklon_st ?? "35"),
       azimut: String(f.azimut_st ?? "0"),
       // Cena se předvyplní jen tehdy, když byla u pole opravdu přepsaná —
       // jinak by se z nastavení stala „ručně zadaná" hodnota, která by pak
       // nesledovala změny v admin panelu.
-      cena: f.cena_prepsana ? String(f.cena_kc_kwp ?? "") : "",
+      cena: f.cena_prepsana || f.cena_kc_kwp ? String(f.cena_kc_kwp ?? "") : "",
+      vychodZapad: !!f.rozdelit_vychod_zapad,
     })),
   };
   try {
@@ -220,6 +243,9 @@ export default function PpaBessPanel({ nabidka }) {
   const polePlatna = pole.filter((f) => (n(f.kwp) || 0) > 0);
   const maPole = polePlatna.length > 0;
   const kwpZPoli = polePlatna.reduce((s, f) => s + (n(f.kwp) || 0), 0);
+  // Cena za kWp z admin panelu – ukazuje se jako placeholder v prázdném políčku,
+  // ať je vidět, s čím se bude počítat. Zná ji jen spočítaný výsledek.
+  const cenaZNastaveni = vysledek?.elektrarna?.nakladova_cena_kc_kwp_nastaveni ?? null;
   const cilOk = maPole || ((n(cilSs) || 0) > 0 && (n(cilSs) || 0) <= 100);
   const batOk = !baterieRucne || ((n(batKapacita) || 0) > 0 && (n(batVykon) || 0) > 0);
   const vsePripraveno = profilOk && cenaOk && rkOk && cilOk && batOk;
@@ -228,7 +254,7 @@ export default function PpaBessPanel({ nabidka }) {
     setPole((p) => p.map((f, i) => (i === idx ? { ...f, [klic]: hodnota } : f)));
   }
   function pridejPole() {
-    setPole((p) => [...p, { kwp: "", sklon: "35", azimut: "0", cena: "" }]);
+    setPole((p) => [...p, { kwp: "", sklon: "35", azimut: "0", cena: "", vychodZapad: false }]);
   }
   function odeberPole(idx) {
     setPole((p) => p.filter((_, i) => i !== idx));
@@ -285,6 +311,8 @@ export default function PpaBessPanel({ nabidka }) {
             azimut_st: n(f.azimut) ?? 0,
             // Prázdné = použije se cena za kWp z admin panelu.
             cena_kc_kwp: n(f.cena),
+            // Backend pole rozloží na dvě poloviny (−90° a +90° od osy).
+            rozdelit_vychod_zapad: !!f.vychodZapad,
           }))
         : null,
     };
@@ -665,75 +693,156 @@ export default function PpaBessPanel({ nabidka }) {
               "Znáš rozpad střechy? Zadej pole a velikost se nebude navrhovat."
             )}
           </div>
+          {/* Každé pole je vlastní karta s mřížkou 2×2. Čtyři políčka v jednom
+              řádku se do panelu (352 px) nevejdou — `gs-unit` si bere 38 px na
+              jednotku, takže na text zbylo pár desítek pixelů a nešlo přečíst,
+              co je zadané. */}
           {pole.map((f, i) => (
             <div
               key={i}
-              style={{ display: "flex", gap: 6, alignItems: "flex-end", marginTop: 6 }}
+              style={{
+                border: "1px solid var(--line)",
+                borderRadius: "var(--radius-sm)",
+                padding: "8px 10px 2px",
+                marginTop: 8,
+                background: "var(--surface-2)",
+              }}
             >
-              <div className="gs-pole" style={{ flex: 1 }}>
-                {i === 0 && <label className="gs-label">Výkon</label>}
-                <div className="gs-unit">
-                  <input
-                    className="gs-input" inputMode="decimal" placeholder="kWp"
-                    value={f.kwp} onChange={(e) => upravPole(i, "kwp", e.target.value)}
-                    aria-label={`Výkon pole ${i + 1} v kWp`}
-                  />
-                  <span className="gs-unit-txt">kWp</span>
-                </div>
-              </div>
-              <div className="gs-pole" style={{ flex: 1 }}>
-                {i === 0 && <label className="gs-label">Azimut</label>}
-                <div className="gs-unit">
-                  <input
-                    className="gs-input" inputMode="decimal" placeholder="0"
-                    value={f.azimut} onChange={(e) => upravPole(i, "azimut", e.target.value)}
-                    aria-label={`Azimut pole ${i + 1} ve stupních`}
-                  />
-                  <span className="gs-unit-txt">°</span>
-                </div>
-              </div>
-              <div className="gs-pole" style={{ flex: 1 }}>
-                {i === 0 && <label className="gs-label">Sklon</label>}
-                <div className="gs-unit">
-                  <input
-                    className="gs-input" inputMode="decimal" placeholder="35"
-                    value={f.sklon} onChange={(e) => upravPole(i, "sklon", e.target.value)}
-                    aria-label={`Sklon pole ${i + 1} ve stupních`}
-                  />
-                  <span className="gs-unit-txt">°</span>
-                </div>
-              </div>
-              {/* Cena za kWp jen pro tohle pole. Prázdné = z admin panelu;
-                  vyplněné se použije místo něj (dražší kotvení, delší trasy). */}
-              <div className="gs-pole" style={{ flex: 1.3 }}>
-                {i === 0 && <label className="gs-label">Cena za kWp</label>}
-                <div className="gs-unit">
-                  <input
-                    className="gs-input"
-                    inputMode="decimal"
-                    placeholder={
-                      vysledek?.elektrarna?.nakladova_cena_kc_kwp_nastaveni
-                        ? cislo(vysledek.elektrarna.nakladova_cena_kc_kwp_nastaveni, 0)
-                        : "z nastavení"
-                    }
-                    value={f.cena}
-                    onChange={(e) => upravPole(i, "cena", e.target.value)}
-                    aria-label={`Nákladová cena za kWp pole ${i + 1}, prázdné = z nastavení`}
-                    title="Nákladová cena za kWp jen pro tohle pole. Prázdné = použije se hodnota z Katalogu a výpočtů."
-                  />
-                  <span className="gs-unit-txt">Kč</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                className="fm-btn"
-                style={{ padding: "6px 10px" }}
-                onClick={() => odeberPole(i)}
-                title="Odebrat pole"
-                aria-label={`Odebrat pole ${i + 1}`}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                }}
               >
-                ✕
-              </button>
+                <span>
+                  {i + 1}. pole
+                  <span style={{ fontWeight: 400, color: "var(--muted)" }}>
+                    {" · "}
+                    {f.vychodZapad
+                      ? `${orientaceZAzimutu((n(f.azimut) ?? 0) - 90)} + ${orientaceZAzimutu(
+                          (n(f.azimut) ?? 0) + 90
+                        )}`
+                      : orientaceZAzimutu(n(f.azimut))}
+                    {n(f.kwp)
+                      ? f.vychodZapad
+                        ? ` · 2 × ${cislo(n(f.kwp) / 2, 0)} kWp`
+                        : ` · ${cislo(n(f.kwp), 0)} kWp`
+                      : ""}
+                  </span>
+                </span>
+                <span style={{ flex: 1 }} />
+                <button
+                  type="button"
+                  className="gs-icon-btn"
+                  onClick={() => odeberPole(i)}
+                  title="Odebrat pole"
+                  aria-label={`Odebrat ${i + 1}. pole`}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="gs-dva">
+                <div className="gs-pole">
+                  <label className="gs-label" htmlFor={`pb-pole-kwp-${i}`}>
+                    Výkon
+                  </label>
+                  <div className="gs-unit">
+                    <input
+                      id={`pb-pole-kwp-${i}`}
+                      className="gs-input"
+                      inputMode="decimal"
+                      placeholder="např. 200"
+                      value={f.kwp}
+                      onChange={(e) => upravPole(i, "kwp", e.target.value)}
+                    />
+                    <span className="gs-unit-txt">kWp</span>
+                  </div>
+                </div>
+                <div className="gs-pole">
+                  <label className="gs-label" htmlFor={`pb-pole-azimut-${i}`}>
+                    {f.vychodZapad ? "Osa" : "Azimut"}
+                  </label>
+                  <div className="gs-unit">
+                    <input
+                      id={`pb-pole-azimut-${i}`}
+                      className="gs-input"
+                      inputMode="decimal"
+                      placeholder="0 = jih"
+                      value={f.azimut}
+                      onChange={(e) => upravPole(i, "azimut", e.target.value)}
+                      title={
+                        f.vychodZapad
+                          ? "Osa konstrukce. 0 = klasické východ-západ (−90° a +90°), 30 = pootočená střecha."
+                          : "0 = jih, −90 = východ, +90 = západ"
+                      }
+                    />
+                    <span className="gs-unit-txt">°</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Východ-západní konstrukce na ploché střeše: jeden blok panelů,
+                  polovina na každou stranu. Zadá se jednou, backend to rozloží
+                  na dvě pole — ať se to nemusí psát dvakrát. */}
+              <label className="gs-zaskrt" style={{ margin: "0 0 8px" }}>
+                <input
+                  type="checkbox"
+                  checked={!!f.vychodZapad}
+                  onChange={(e) => upravPole(i, "vychodZapad", e.target.checked)}
+                />
+                <span>
+                  Rozdělit 50/50 na východ a západ
+                  {n(f.kwp) ? (
+                    <span style={{ color: "var(--muted)" }}>
+                      {" "}
+                      → 2 × {cislo(n(f.kwp) / 2, 0)} kWp
+                    </span>
+                  ) : null}
+                </span>
+              </label>
+
+              <div className="gs-dva">
+                <div className="gs-pole">
+                  <label className="gs-label" htmlFor={`pb-pole-sklon-${i}`}>
+                    Sklon
+                  </label>
+                  <div className="gs-unit">
+                    <input
+                      id={`pb-pole-sklon-${i}`}
+                      className="gs-input"
+                      inputMode="decimal"
+                      placeholder="35"
+                      value={f.sklon}
+                      onChange={(e) => upravPole(i, "sklon", e.target.value)}
+                    />
+                    <span className="gs-unit-txt">°</span>
+                  </div>
+                </div>
+                {/* Cena za kWp jen pro tohle pole. Prázdné = z admin panelu;
+                    vyplněné se použije místo něj (dražší kotvení, delší trasy). */}
+                <div className="gs-pole">
+                  <label className="gs-label" htmlFor={`pb-pole-cena-${i}`}>
+                    Cena za kWp
+                  </label>
+                  <div className="gs-unit">
+                    <input
+                      id={`pb-pole-cena-${i}`}
+                      className="gs-input"
+                      inputMode="decimal"
+                      placeholder={cenaZNastaveni ? cislo(cenaZNastaveni, 0) : "z nastavení"}
+                      value={f.cena}
+                      onChange={(e) => upravPole(i, "cena", e.target.value)}
+                      title="Nákladová cena za kWp jen pro tohle pole. Prázdné = použije se hodnota z Katalogu a výpočtů."
+                    />
+                    <span className="gs-unit-txt">Kč</span>
+                  </div>
+                </div>
+              </div>
             </div>
           ))}
           <button
@@ -745,10 +854,11 @@ export default function PpaBessPanel({ nabidka }) {
             + Přidat pole
           </button>
           <div className="gs-pozn" style={{ marginTop: 6 }}>
-            Azimut: 0 = jih, −90 = východ, +90 = západ. Například jih 200 kWp, východ
-            100 kWp, západ 100 kWp. <b>Cenu za kWp nech prázdnou</b>, pokud platí ta
-            z Katalogu a výpočtů — vyplň ji jen u pole, které je dražší nebo levnější
-            (jiné kotvení, trapéz proti ploché střeše, delší kabelové trasy).
+            Azimut: 0 = jih, −90 = východ, +90 = západ. U východ-západní konstrukce
+            zaškrtni rozdělení a zadej <b>celkový</b> výkon — rozpůlí se samo.{" "}
+            <b>Cenu za kWp nech prázdnou</b>, pokud platí ta z Katalogu a výpočtů —
+            vyplň ji jen u pole, které je dražší nebo levnější (jiné kotvení, trapéz
+            proti ploché střeše, delší kabelové trasy).
           </div>
           <div className="gs-dva">
             <div className="gs-pole">

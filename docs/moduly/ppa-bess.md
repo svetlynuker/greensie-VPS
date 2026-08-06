@@ -45,6 +45,22 @@ a sečte, takže model zná i **tvar** výroby. To není kosmetika — východ-z
 plošší profil než jih, takže při stejném instalovaném výkonu vyrobí za rok méně,
 ale víc se ho spotřebuje na místě a jinak zbyde na baterii.
 
+### Východ-západní konstrukce jedním zadáním
+
+U pole se dá zaškrtnout **rozdělení 50/50 na východ a západ**
+(`PoleFve.rozdelit_vychod_zapad`). Zadá se celkový výkon a sklon jednou a jádro
+z toho udělá dvě pole po polovině výkonu, s azimutem −90° a +90° od zadané osy.
+Osa je `azimut_st`: 0 znamená klasické V/Z, 30 pootočenou střechu (−60 a +120).
+
+Rozklad dělá `rozloz_pole()` **na vstupu**, takže zbytek výpočtu o téhle zkratce
+nemusí nic vědět — a výsledek je bit za bit stejný jako při ručním zadání dvou
+polí (hlídá test `test_je_stejne_jako_dve_pole_rucne`).
+
+Ve výstupu jsou obě podoby: `elektrarna.pole` = rozložená (z nich se počítají
+grafy a součty) a `elektrarna.pole_zadani` = původní zadání, ze kterého panel
+předvyplňuje formulář. Bez toho by se pole vrátilo jako dvě a zaškrtnutí by se
+ztratilo.
+
 ### Cena za kWp u jednotlivého pole
 
 Každé pole umí mít **vlastní nákladovou cenu za kWp** (`PoleFve.cena_kc_kwp`).
