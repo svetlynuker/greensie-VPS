@@ -1389,3 +1389,174 @@ class TestRozdeleniVychodZapad:
         )
         orientace = sorted(f["orientace"] for f in v["elektrarna"]["pole"])
         assert orientace == ["východ", "západ"]
+
+
+class TestNabidkaProZakaznika:
+    """Výstupní vrstva – katalog polí a předloha nabídky (PDF).
+
+    Dan 5. 8. 2026: „dej mi ještě možnost generovat nabídky stejně jako
+    v ostatních modulech."
+
+    Nejde jen o to, že se typ přidá do `PODPOROVANE_TYPY` – resolver musí
+    z reálného výsledku opravdu vytáhnout hodnoty. Kdyby extraktor mířil na
+    špatný klíč, backend nespadne a nabídka se vytiskne s „—" všude.
+    """
+
+    def test_typ_je_podporovany(self):
+        from app.nabidkovac import sablona_katalog as sk
+
+        assert "ppa_bess" in sk.PODPOROVANE_TYPY
+
+    def test_vsechna_pole_maji_hodnotu(self, v):
+        """Žádné pole v katalogu nesmí u platného výpočtu vracet „—"."""
+        from app.nabidkovac import sablona_katalog as sk
+
+        hodnoty = sk.resolvni_hodnoty("ppa_bess", v)
+        prazdne = [k for k, x in hodnoty.items() if x["hodnota_text"] == "—"]
+        assert not prazdne, f"pole bez hodnoty: {prazdne}"
+
+    def test_vychozi_predloha_pouziva_jen_znama_pole(self):
+        from app.nabidkovac import sablona_katalog as sk
+
+        povolene = sk.platne_klice("ppa_bess")
+        predloha = sk.vychozi_sablona("ppa_bess")
+        for stranka in predloha["stranky"]:
+            for prvek in stranka["prvky"]:
+                for klic in prvek.get("pole") or []:
+                    assert klic in povolene or klic in {
+                        s["klic"] for s in sk._TABULKA_PPA_BESS
+                    }, f"neznámé pole v předloze: {klic}"
+
+    def test_tabulka_ma_radky(self, v):
+        from app.nabidkovac import sablona_katalog as sk
+
+        t = sk.resolvni_tabulku("ppa_bess", v)
+        assert t["sloupce"], "chybí sloupce"
+        assert t["radky"], "tabulka nabídky je prázdná"
+        # Každý řádek musí mít tolik hodnot, kolik je sloupců.
+        for r in t["radky"]:
+            assert len(r) == len(t["sloupce"])
+        # A žádná hodnota nesmí být „—" (to by znamenalo špatný klíč).
+        assert not [x for r in t["radky"] for x in r if x == "—"]
+
+    def test_tabulka_je_z_teze_delky_jako_dlazdice(self, v):
+        """Kdyby tabulka brala jinou délku kontraktu než dlaždice, čísla
+        v nabídce by si odporovala."""
+        from app.nabidkovac import sablona_katalog as sk
+
+        hodnoty = sk.resolvni_hodnoty("ppa_bess", v)
+        cena_dlazdice = hodnoty["cena_ppa_kc_mwh"]["hodnota"]
+        t = sk.resolvni_tabulku("ppa_bess", v)
+        idx = [i for i, s in enumerate(t["sloupce"]) if s["klic"] == "cena_ppa_kc_mwh"][0]
+        # První řádek tabulky = rok 1 téže délky.
+        nejdelsi = max(v["po_delkach"], key=lambda d: d["delka_roky"])
+        assert cena_dlazdice == pytest.approx(nejdelsi["cena_ppa_kc_mwh"])
+        assert t["radky"][0][idx] != "—"
+
+    def test_graf_pro_typ_vraci_data(self, v):
+        from app.nabidkovac import sablona_katalog as sk
+
+        g = sk.graf_pro_typ("ppa_bess", v)
+        assert isinstance(g, dict)
+        assert len(g.get("mesice") or []) == 12
+        assert len(g.get("vyroba_kwh") or []) == 12
+
+    def test_investorska_cisla_nejsou_v_katalogu(self):
+        """Zákaznická nabídka nesmí umět zobrazit CAPEX, úroky, IRR ani marže —
+        stejná zásada jako u PPA (whitelist bez extraktoru)."""
+        from app.nabidkovac import sablona_katalog as sk
+
+        klice = sk.platne_klice("ppa_bess")
+        zakazane = {
+            "capex", "uver", "urok", "uroky", "irr", "dscr", "npv", "marze",
+            "provize", "zisk_greensie", "vlastni_kapital", "nakladova_cena",
+        }
+        for k in klice:
+            assert not any(z in k for z in zakazane), f"interní číslo v katalogu: {k}"
+
+    def test_pole_ctou_doporuceny_rezim(self, v):
+        """Nabídka má ukazovat doporučený režim, ne první v seznamu."""
+        from app.nabidkovac import sablona_katalog as sk
+
+        dop = next(r for r in v["rezimy"] if r["doporuceny"])
+        hodnoty = sk.resolvni_hodnoty("ppa_bess", v)
+        assert hodnoty["sraz_kw"]["hodnota"] == pytest.approx(dop["vykon"]["sraz_kw"])
+
+    def test_novy_prikon_je_ze_scenare_se_snizenim(self, v):
+        """Zákazníka zajímá, na kolik lze příkon snížit — ne že zůstane."""
+        from app.nabidkovac import sablona_katalog as sk
+
+        dop = next(r for r in v["rezimy"] if r["doporuceny"])
+        hodnoty = sk.resolvni_hodnoty("ppa_bess", v)
+        assert hodnoty["rp_novy_kw"]["hodnota"] == pytest.approx(
+            dop["ekonomika_vykonu_se_snizenim"]["rp_novy_kw"]
+        )
+
+
+class TestPravoNaVystup:
+    """Editor nabídky pro PPA + BESS musí být za stejným právem jako výpočet.
+
+    Výstupní endpointy jsou chráněné jen `vyzaduj_nabidkovac`, takže bez
+    explicitní kontroly by nabídka do PDF obešla branku modulu — obchodník bez
+    práva `nabidkovac_ppa_bess` by si nabídku otevřel, i když výpočet spustit
+    nemůže. Nabídka je jen jiný pohled na tentýž výpočet.
+    """
+
+    def _uzivatel(self, prava):
+        """Minimální dvojník uživatele – `muze_otevrit` čte `je_admin`,
+        `skupina` a `extra_prava`."""
+
+        class Skupina:
+            def __init__(self, prava):
+                self.prava = list(prava)
+
+        class U:
+            def __init__(self, prava):
+                self.je_admin = False
+                self.skupina = Skupina(prava)
+                self.extra_prava = []
+
+        return U(prava)
+
+    def test_bez_prava_neprojde(self):
+        from fastapi import HTTPException
+
+        from app.nabidkovac.routes import _over_typ_reseni
+
+        with pytest.raises(HTTPException) as e:
+            _over_typ_reseni("ppa_bess", self._uzivatel(["nabidkovac"]))
+        assert e.value.status_code == 403
+
+    def test_s_pravem_projde(self):
+        from app.nabidkovac.routes import _over_typ_reseni
+
+        _over_typ_reseni("ppa_bess", self._uzivatel(["nabidkovac", "nabidkovac_ppa_bess"]))
+
+    def test_supersprávce_projde(self):
+        from app.nabidkovac.routes import _over_typ_reseni
+
+        u = self._uzivatel([])
+        u.je_admin = True
+        _over_typ_reseni("ppa_bess", u)
+
+    def test_ostatni_typy_pravo_nepotrebuji(self):
+        from app.nabidkovac.routes import _over_typ_reseni
+
+        u = self._uzivatel(["nabidkovac"])
+        for typ in ("ppa", "peak_shaving", "kombinace"):
+            _over_typ_reseni(typ, u)
+
+    def test_bez_uzivatele_se_kontrola_preskoci(self):
+        """Volání bez uživatele (interní, testy) nemá padat na oprávnění."""
+        from app.nabidkovac.routes import _over_typ_reseni
+
+        _over_typ_reseni("ppa_bess")
+
+    def test_neznamy_typ_je_422(self):
+        from fastapi import HTTPException
+
+        from app.nabidkovac.routes import _over_typ_reseni
+
+        with pytest.raises(HTTPException) as e:
+            _over_typ_reseni("nesmysl", self._uzivatel(["nabidkovac"]))
+        assert e.value.status_code == 422

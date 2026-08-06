@@ -98,6 +98,21 @@ def _pv(popis: dict, *cesta: str) -> Any:
     return _g(ppa_tvar.vysledek(popis), *cesta)
 
 
+def _mwh_na_kwh(hodnota: Any) -> Any:
+    """MWh → kWh, protože formát `energie_mwh` čeká vstup v kWh.
+
+    PPA + BESS drží energie v MWh (tak je má i panel), PPA v kWh. Než měnit
+    formát, je čistší převést hodnotu – formát `energie_mwh` používají všechny
+    tři existující typy a přepisovat ho by znamenalo sáhnout do nich.
+    """
+    if hodnota is None:
+        return None
+    try:
+        return float(hodnota) * 1000.0
+    except (TypeError, ValueError):
+        return None
+
+
 def _prvni_rok(popis: dict, klic: str) -> Any:
     """Hodnota z prvního roku ekonomiky PPA (`roky[0][klic]`)."""
     roky = _pv(popis, "roky")
@@ -440,12 +455,151 @@ _TABULKA_KOMBINACE = [
 ]
 
 
+# ---- PPA + BESS: katalog zákaznických polí ----------------------------------
+# Tvar výsledku je jiný než u PPA i peak shavingu: `rezimy` (tři varianty, co má
+# baterie dělat) × `po_delkach` (tři délky kontraktu). Zákaznická nabídka ukazuje
+# **doporučený režim** a **nejdelší nabízený kontrakt** – ten má největší slevu,
+# a nabídka má prodávat. Když obchodník chce jinou délku, přepočítá si nabídku
+# s jinou sadou `nabizene_delky_roky`.
+#
+# Investorská čísla (CAPEX, úroky, IRR, DSCR, zisk Greensie, marže) tu extraktor
+# NEMAJÍ, takže je resolver zákazníkovi nikdy nevrátí a editor je ani nenabídne –
+# stejná zásada jako u PPA.
+_S_PB_ELEKTRARNA = "Elektrárna"
+_S_PB_BATERIE = "Baterie"
+_S_PB_SPICKY = "Špičky a rezervovaný příkon"
+_S_PB_CENA = "Cena a kontrakt"
+_S_PB_USPORA = "Vaše úspora"
+
+
+def _pb_rezim(popis: dict) -> dict:
+    """Doporučený režim baterie (fallback na první, kdyby příznak chyběl)."""
+    rezimy = _g(popis, "rezimy")
+    if not isinstance(rezimy, list) or not rezimy:
+        return {}
+    for r in rezimy:
+        if isinstance(r, dict) and r.get("doporuceny"):
+            return r
+    prvni = rezimy[0]
+    return prvni if isinstance(prvni, dict) else {}
+
+
+def _pb_delka(popis: dict) -> dict:
+    """Nejdelší nabízený kontrakt – největší sleva pro zákazníka."""
+    delky = _g(popis, "po_delkach")
+    if not isinstance(delky, list) or not delky:
+        return {}
+    platne = [d for d in delky if isinstance(d, dict)]
+    if not platne:
+        return {}
+    return max(platne, key=lambda d: d.get("delka_roky") or 0)
+
+
+def _pb(popis: dict, *cesta: str) -> Any:
+    """Hodnota z doporučeného režimu (`rezimy[doporuceny]`)."""
+    return _g(_pb_rezim(popis), *cesta)
+
+
+def _pb_d(popis: dict, *cesta: str) -> Any:
+    """Hodnota z nejdelšího kontraktu (`po_delkach[nejdelší]`)."""
+    return _g(_pb_delka(popis), *cesta)
+
+
+def _pb_prinos(popis: dict, klic: str) -> Any:
+    """Přínos přepočtený na zobrazovanou délku kontraktu.
+
+    Rozpad přínosu se v jádru počítá pro každou délku zvlášť
+    (`prinos_po_delkach`), protože cena PPA se s délkou mění. Bez tohohle
+    přepočtu by dlaždice v nabídce tvrdily jiné číslo než tabulka pod nimi.
+    """
+    delka = (_pb_delka(popis) or {}).get("delka_roky")
+    po_delkach = _pb(popis, "prinos_po_delkach")
+    if isinstance(po_delkach, dict) and delka is not None:
+        zapis = po_delkach.get(str(delka))
+        if isinstance(zapis, dict) and klic in zapis:
+            return zapis.get(klic)
+    return _pb(popis, "prinos", klic)
+
+
+_POLE_PPA_BESS: list[Pole] = [
+    # --- elektrárna
+    Pole("kwp", "Velikost elektrárny", "vykon_kwp",
+         lambda p: _g(p, "elektrarna", "kwp"), _S_PB_ELEKTRARNA),
+    Pole("vyroba_mwh", "Roční výroba elektrárny", "energie_mwh",
+         lambda p: _mwh_na_kwh(_g(p, "elektrarna", "vyroba_mwh")), _S_PB_ELEKTRARNA),
+    Pole("samospotreba_mwh", "Spotřebováno z elektrárny", "energie_mwh",
+         lambda p: _mwh_na_kwh(_pb(p, "energie", "samospotreba_mwh")), _S_PB_ELEKTRARNA),
+    Pole("pokryti_spotreby", "Pokrytí spotřeby z elektrárny", "procento",
+         lambda p: _pb(p, "energie", "pokryti_spotreby"), _S_PB_ELEKTRARNA),
+    Pole("mira_samospotreby", "Podíl výroby spotřebovaný na místě", "procento",
+         lambda p: _pb(p, "energie", "mira_samospotreby"), _S_PB_ELEKTRARNA),
+    # --- baterie
+    Pole("baterie_kapacita_kwh", "Kapacita baterie", "kapacita_kwh",
+         lambda p: _g(p, "baterie", "kapacita_kwh"), _S_PB_BATERIE),
+    Pole("baterie_vykon_kw", "Výkon baterie", "vykon_kw",
+         lambda p: _g(p, "baterie", "vykon_kw"), _S_PB_BATERIE),
+    Pole("baterie_najem_kc_mesic", "Nájem baterie (měsíčně)", "penize",
+         lambda p: _g(p, "baterie", "najem_kc_mesic"), _S_PB_BATERIE),
+    Pole("baterie_doba_najmu_roky", "Doba nájmu baterie", "roky_cele",
+         lambda p: _g(p, "baterie", "doba_najmu_roky"), _S_PB_BATERIE),
+    Pole("baterie_odkup_kc", "Odkupní cena baterie po nájmu", "penize",
+         lambda p: _pb_d(p, "odkupni_cena_baterie_kc"), _S_PB_BATERIE),
+    # --- špičky
+    Pole("rp_soucasny_kw", "Dnešní rezervovaný příkon", "vykon_kw",
+         lambda p: _pb(p, "ekonomika_vykonu", "rp_soucasny_kw"), _S_PB_SPICKY),
+    Pole("rp_novy_kw", "Rezervovaný příkon po instalaci", "vykon_kw",
+         lambda p: _pb(p, "ekonomika_vykonu_se_snizenim", "rp_novy_kw"), _S_PB_SPICKY),
+    Pole("maximum_bez_baterie_kw", "Dnešní špička odběru", "vykon_kw",
+         lambda p: _pb(p, "vykon", "maximum_bez_baterie_kw"), _S_PB_SPICKY),
+    Pole("maximum_po_baterii_kw", "Špička odběru s baterií", "vykon_kw",
+         lambda p: _pb(p, "vykon", "maximum_po_baterii_kw"), _S_PB_SPICKY),
+    Pole("sraz_kw", "O kolik baterie špičku srazí", "vykon_kw",
+         lambda p: _pb(p, "vykon", "sraz_kw"), _S_PB_SPICKY),
+    # --- cena a kontrakt
+    Pole("delka_roky", "Doba kontraktu", "roky_cele",
+         lambda p: _pb_d(p, "delka_roky"), _S_PB_CENA),
+    Pole("cena_ppa_kc_mwh", "Cena elektřiny z elektrárny", "penize_mwh",
+         lambda p: _pb_d(p, "cena_ppa_kc_mwh"), _S_PB_CENA),
+    Pole("cena_zakaznika_kc_mwh", "Vaše dnešní cena elektřiny", "penize_mwh",
+         lambda p: _g(p, "vstup", "cena_zakaznika_kc_mwh"), _S_PB_CENA),
+    Pole("sleva", "Sleva proti dnešní ceně", "procento",
+         lambda p: _pb_d(p, "sleva"), _S_PB_CENA),
+    # --- úspora
+    Pole("uspora_z_energie_kc", "Úspora na ceně elektřiny (1. rok)", "penize",
+         lambda p: _pb_prinos(p, "z_energie_kc"), _S_PB_USPORA),
+    Pole("uspora_z_vykonu_kc", "Úspora na platbách za výkon (1. rok)", "penize",
+         lambda p: _pb(p, "prinos", "z_vykonu_se_snizenim_rp_kc"), _S_PB_USPORA),
+    Pole("najem_baterie_rocne_kc", "Nájem baterie (ročně)", "penize",
+         lambda p: _pb(p, "prinos", "najem_baterie_kc"), _S_PB_USPORA),
+    Pole("uspora_rok1_kc", "Čistá úspora v 1. roce", "penize",
+         lambda p: _pb_d(p, "uspora_rok1_kc"), _S_PB_USPORA),
+    Pole("uspora_celkem_kc", "Celková úspora za dobu kontraktu", "penize",
+         lambda p: _pb_d(p, "uspora_celkem_kc"), _S_PB_USPORA),
+]
+
+# Sloupce roční tabulky PPA + BESS (jen zákaznické – žádné DSCR ani splátky).
+_TABULKA_PPA_BESS = [
+    {"klic": "rok", "nazev": "Rok", "format": "roky_cele"},
+    {"klic": "cena_ppa_kc_mwh", "nazev": "Cena z elektrárny", "format": "penize_mwh"},
+    {"klic": "uspora_energie_kc", "nazev": "Úspora na elektřině", "format": "penize"},
+    {"klic": "uspora_vykon_kc", "nazev": "Úspora na výkonu", "format": "penize"},
+    {"klic": "najem_baterie_kc", "nazev": "Nájem baterie", "format": "penize"},
+    {"klic": "cisty_prinos_kc", "nazev": "Čistá úspora", "format": "penize"},
+]
+
+
 # ---- Rejstřík podle typu řešení ---------------------------------------------
-_POLE = {"ppa": _POLE_PPA, "peak_shaving": _POLE_PS, "kombinace": _POLE_KOMBINACE}
+_POLE = {
+    "ppa": _POLE_PPA,
+    "peak_shaving": _POLE_PS,
+    "kombinace": _POLE_KOMBINACE,
+    "ppa_bess": _POLE_PPA_BESS,
+}
 _TABULKA = {
     "ppa": _TABULKA_PPA,
     "peak_shaving": _TABULKA_PS,
     "kombinace": _TABULKA_KOMBINACE,
+    "ppa_bess": _TABULKA_PPA_BESS,
 }
 
 PODPOROVANE_TYPY = tuple(_POLE.keys())
@@ -501,6 +655,10 @@ def resolvni_tabulku(typ: str, popis_json: dict | None) -> dict:
     sloupce = _TABULKA.get(typ, [])
     if typ == "ppa":
         radky_zdroj = _pv(popis, "roky") or []
+    elif typ == "ppa_bess":
+        # Roky zákazníka z nejdelšího kontraktu – ze stejné délky, ze které se
+        # čtou dlaždice, jinak by si tabulka a dlaždice odporovaly.
+        radky_zdroj = _pb_d(popis, "roky") or []
     elif typ == "kombinace":
         # Společná tabulka se skládá ze ZDROJŮ uložených v kombinaci, ne
         # z uloženého `roky`. Jsou to tatáž zmrazená data, jen přečtená
@@ -583,6 +741,11 @@ def graf_pro_typ(typ: str, popis_json: dict | None) -> dict | None:
         }
     if typ == "ppa":
         return _pv(popis, "graf")
+    if typ == "ppa_bess":
+        # Elektrárna proti spotřebě z doporučeného režimu. Tvar je shodný s PPA
+        # (`GrafVyrobaSpotreba`), takže frontend použije tutéž komponentu.
+        graf = _pb(popis, "graf")
+        return graf if isinstance(graf, dict) else None
     # peak shaving: graf doporučené varianty, fallback na graf na nejvyšší úrovni
     graf = _dop(popis, "graf") or _g(popis, "graf")
     if not isinstance(graf, dict):
@@ -622,6 +785,21 @@ _UVOD_KOMB = (
     "postavíme a plně zainvestujeme my a vy z ní odebíráte elektřinu levněji, "
     "než platíte dnes. Baterie navíc sníží vaše platby distributorovi za "
     "rezervovanou kapacitu. Obě opatření se doplňují a fungují vedle sebe."
+)
+_UVOD_PB = (
+    "Děkujeme za váš zájem o dodávku elektřiny z fotovoltaické elektrárny "
+    "s bateriovým úložištěm. Elektrárnu i baterii postavíme a plně zainvestujeme "
+    "my – vy neplatíte žádnou počáteční investici. Z elektrárny pak odebíráte "
+    "elektřinu levněji, než platíte dnes, a baterie k tomu srazí vaše špičky "
+    "odběru, takže ušetříte i na platbách distributorovi za rezervovaný příkon. "
+    "Baterii máte v nájmu za pevnou měsíční částku a po jeho skončení si ji "
+    "můžete odkoupit."
+)
+_ZAVER_PB = (
+    "Tato nabídka je nezávazná a slouží jako orientační přehled. Úspora na "
+    "platbách za výkon vychází z tarifní struktury platné od roku 2027 a "
+    "z vašeho naměřeného odběru za poslední rok. Rádi vám kdykoli vysvětlíme "
+    "jednotlivé údaje a připravíme konečnou smlouvu na míru."
 )
 _ZAVER_KOMB = (
     "Tato nabídka je nezávazná a slouží jako orientační přehled obou opatření. "
@@ -867,6 +1045,34 @@ def _slozky(typ: str) -> list[tuple]:
             ("tabulka", "tabulka", "Vývoj úspory po letech",
              ["rok", "prinos_kc", "cf_kum_kc"], False),
             ("text", "zaver", "Závěrem", _ZAVER_PS),
+        ]
+    if typ == "ppa_bess":
+        return [
+            ("nadpis", "hlavicka",
+             "Nabídka dodávky elektřiny z elektrárny s bateriovým úložištěm",
+             "PPA + BESS – bez počáteční investice"),
+            ("text", "uvod", "Co vám nabízíme", _UVOD_PB),
+            ("dlazdice", "klicove", "Navržené řešení", "",
+             ["kwp", "vyroba_mwh", "baterie_kapacita_kwh", "baterie_vykon_kw",
+              "delka_roky", "baterie_najem_kc_mesic"], 3),
+            ("dlazdice", "cena", "Cena elektřiny",
+             "Z elektrárny odebíráte elektřinu levněji, než platíte dnes.",
+             ["cena_zakaznika_kc_mwh", "cena_ppa_kc_mwh", "sleva"], 3),
+            ("dlazdice", "spicky", "Snížení špiček odběru",
+             "Baterie sráží krátké špičky, takže vám stačí nižší rezervovaný "
+             "příkon a platíte distributorovi méně.",
+             ["maximum_bez_baterie_kw", "maximum_po_baterii_kw", "sraz_kw",
+              "rp_soucasny_kw", "rp_novy_kw"], 3),
+            ("dlazdice", "uspora", "Vaše úspora",
+             "Úspora má dvě části: levnější elektřinu z elektrárny a nižší platby "
+             "za výkon. Od součtu se odečítá nájem baterie.",
+             ["uspora_z_energie_kc", "uspora_z_vykonu_kc", "najem_baterie_rocne_kc",
+              "uspora_rok1_kc", "uspora_celkem_kc"], 3),
+            ("graf", "graf", "Výroba elektrárny vs. vaše spotřeba"),
+            ("tabulka", "tabulka", "Vývoj úspory po letech",
+             ["rok", "cena_ppa_kc_mwh", "uspora_energie_kc", "uspora_vykon_kc",
+              "najem_baterie_kc", "cisty_prinos_kc"], False),
+            ("text", "zaver", "Závěrem", _ZAVER_PB),
         ]
     if typ == "kombinace":
         return [

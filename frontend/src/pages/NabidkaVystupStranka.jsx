@@ -28,7 +28,12 @@ import { sestavTiskoveHtml } from "../vystup/tisk";
 import "../styles/nabidkovac.css";
 import "../styles/vystup.css";
 
-const TYP_NAZEV = { ppa: "PPA", peak_shaving: "Peak shaving", kombinace: "Kombinace opatření" };
+const TYP_NAZEV = {
+  ppa: "PPA",
+  peak_shaving: "Peak shaving",
+  kombinace: "Kombinace opatření",
+  ppa_bess: "PPA + BESS",
+};
 
 export default function NabidkaVystupStranka() {
   const { id, typ } = useParams();

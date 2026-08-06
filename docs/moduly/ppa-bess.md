@@ -269,11 +269,44 @@ Grafy se skládají z **týchž měsíčních výsledků dispatchu** jako tabulk
 nemohou rozejít. Kontrakt panel ↔ jádro hlídá `TestKontraktSPanelem` — kdyby se
 klíč přejmenoval, backend nespadne a v UI by se jen objevilo „—".
 
+## Nabídka pro zákazníka (PDF)
+
+`ppa_bess` je v `sablona_katalog.PODPOROVANE_TYPY`, takže se nabídka sestavuje
+a tiskne stejně jako u PPA a peak shavingu — tlačítko „Nabídka pro zákazníka"
+na kartě nabídky, editor rozvržení, tisk do PDF.
+
+**Katalog obsahuje 24 zákaznických polí** v pěti skupinách: Elektrárna, Baterie,
+Špičky a rezervovaný příkon, Cena a kontrakt, Vaše úspora. Výchozí předloha jich
+používá 22 na třech A4 stránkách (řešení → cena → špičky → úspora → graf →
+tabulka po letech → závěr).
+
+Dvě věci, které katalog rozhoduje za obchodníka:
+
+- **doporučený režim** — nabídka ukazuje ten, který vyšel nejlépe, ne první
+  v seznamu (`_pb_rezim`),
+- **nejdelší nabízený kontrakt** — má největší slevu a nabídka má prodávat
+  (`_pb_delka`). Dlaždice i roční tabulka čtou z **téže** délky, jinak by si
+  odporovaly. Rozpad přínosu se navíc přepočítává přes `prinos_po_delkach`,
+  protože cena PPA se s délkou mění.
+
+Nový rezervovaný příkon se bere ze scénáře **se snížením** — zákazníka zajímá,
+na kolik lze příkon snížit, ne že zůstane.
+
+**Investorská čísla se do nabídky nedostanou.** CAPEX, úroky, IRR, DSCR, marže,
+provize ani zisk Greensie nemají v katalogu extraktor, takže je resolver nikdy
+nevrátí a editor je ani nenabídne — stejná zásada jako u PPA. Hlídá to test
+`test_investorska_cisla_nejsou_v_katalogu`.
+
+**Právo.** Výstupní endpointy jsou chráněné jen `nabidkovac`, takže
+`_over_typ_reseni` u `ppa_bess` navíc kontroluje `nabidkovac_ppa_bess`. Bez toho
+by editor nabídky obešel branku modulu — nabídka do PDF je jen jiný pohled na
+tentýž výpočet.
+
 ## Co modul zatím nemá
 
-- **Nabídku pro zákazníka (PDF) ani výpočtový Excel.** `ppa_bess` schválně není
-  v `sablona_katalog.PODPOROVANE_TYPY` — nejdřív se ověřují čísla na reálných
-  datech, pak se řeší výstup.
+- **Výpočtový Excel se vzorci.** `excel_ppa.py` je napsaný pro PPA a obě jeho
+  volání mají `"ppa"` natvrdo. Pro PPA + BESS by šel obdobný modul, ale zatím
+  ho nic nepředpokládá.
 - **Omezení počtu cyklů.** Dispatch může baterii protočit 300× a víc za rok;
   model na to upozorní, ale neomezuje to (peak shaving to reguluje nákladem
   opotřebení).

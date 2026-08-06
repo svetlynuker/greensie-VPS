@@ -65,6 +65,7 @@ from app.nabidkovac.models import (
 )
 from app.nabidkovac.permissions import (
     muze_katalog,
+    muze_ppa_bess,
     vyzaduj_katalog,
     vyzaduj_nabidkovac,
     vyzaduj_ppa_bess,
@@ -3318,11 +3319,24 @@ def _sanituj_konfiguraci(konfigurace: VystupKonfigurace) -> VystupKonfigurace:
     )
 
 
-def _over_typ_reseni(typ_reseni: str) -> None:
+def _over_typ_reseni(typ_reseni: str, user: User | None = None) -> None:
+    """Je typ podporovaný, a smí na něj tenhle uživatel?
+
+    Druhá polovina je podstatná: výstupní endpointy jsou chráněné jen právem
+    `nabidkovac`, takže bez téhle kontroly by editor nabídky pro PPA + BESS
+    obešel branku, kterou modul má mít (právo `nabidkovac_ppa_bess`). Nabídka
+    do PDF je jen jiný pohled na tentýž výpočet — musí být za stejným právem
+    jako výpočet sám.
+    """
     if typ_reseni not in sablona_katalog.PODPOROVANE_TYPY:
         raise HTTPException(
             status_code=422,
             detail=f"Šablona výstupu není podporovaná pro typ: {typ_reseni}",
+        )
+    if typ_reseni == "ppa_bess" and user is not None and not muze_ppa_bess(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Na nabídky PPA + BESS nemáš oprávnění – modul se zatím ověřuje.",
         )
 
 
@@ -3336,7 +3350,7 @@ def detail_vystupu(
 ):
     """Podklad pro editor i tiskový náhled nabídky (konfigurace + hodnoty).
     `vychozi=1` vrátí kódovou předlohu i při uložené šabloně."""
-    _over_typ_reseni(typ_reseni)
+    _over_typ_reseni(typ_reseni, user)
     n = db.get(Nabidka, nabidka_id)
     if n is None:
         raise HTTPException(status_code=404, detail="Nabídka neexistuje")
@@ -3355,7 +3369,7 @@ def uloz_vystup(
     pole/sloupec musí být v katalogu daného typu, jinak 422 – interní klíč
     (CAPEX, NPV, marže…) se do konfigurace nedostane. Formátovaný text projde
     whitelistem značek, ať se do PDF nedostane nic než formátování."""
-    _over_typ_reseni(typ_reseni)
+    _over_typ_reseni(typ_reseni, user)
     n = db.get(Nabidka, nabidka_id)
     if n is None:
         raise HTTPException(status_code=404, detail="Nabídka neexistuje")
@@ -3498,7 +3512,7 @@ def vyrob_pdf_nabidky(
     na Google a při nabídce bez složky i na kopii celého vzoru. PDF má hned,
     odkaz na Disk se doplní během několika sekund.
     """
-    _over_typ_reseni(typ_reseni)
+    _over_typ_reseni(typ_reseni, user)
     n = db.get(Nabidka, nabidka_id)
     if n is None:
         raise HTTPException(status_code=404, detail="Nabídka neexistuje")
@@ -3648,7 +3662,7 @@ def seznam_vystup_sablon(
     `pouzitelna=False`. Editor je nenabídne k použití, jen k smazání –
     kdyby se odfiltrovaly úplně, uvízly by v databázi bez cesty ven.
     """
-    _over_typ_reseni(typ_reseni)
+    _over_typ_reseni(typ_reseni, user)
     sablony = (
         db.query(VystupSablona)
         .filter(VystupSablona.typ_reseni == typ_reseni)
@@ -3692,7 +3706,7 @@ def uloz_vystup_sablonu(
     """Uloží rozvržení pod názvem. Stejný název v rámci typu řešení se přepíše
     (obchodník tím šablonu aktualizuje). Whitelist polí platí stejně jako
     u šablony nabídky."""
-    _over_typ_reseni(typ_reseni)
+    _over_typ_reseni(typ_reseni, user)
     nazev = (vstup.nazev or "").strip()
     if not nazev:
         raise HTTPException(status_code=422, detail="Šablona musí mít název.")
@@ -3730,7 +3744,7 @@ def smaz_vystup_sablonu(
 ):
     """Smaže pojmenovanou šablonu. Nabídky, které z ní vznikly, to neovlivní –
     mají vlastní kopii rozvržení."""
-    _over_typ_reseni(typ_reseni)
+    _over_typ_reseni(typ_reseni, user)
     zaznam = (
         db.query(VystupSablona)
         .filter(VystupSablona.id == sablona_id, VystupSablona.typ_reseni == typ_reseni)
