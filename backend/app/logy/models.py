@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
 
 from app.database import Base
 
@@ -44,6 +44,39 @@ class Log(Base):
     detail = Column(Text, nullable=True)
     # IP adresa klienta (pokud ji lze zjistit)
     ip = Column(String, nullable=True)
+
+
+class Prihlaseni(Base):
+    """Jeden pokus o přihlášení — úspěšný i neúspěšný.
+
+    ---- Proč vlastní tabulka, když přihlášení padá i do `logy` -------------
+    Logy jde v modulu Logy jedním tlačítkem smazat celé („Vyčistit vše").
+    Historie přihlášení je ale bezpečnostní záznam: má přežít úklid provozních
+    logů, protože otázka „kdo se sem kdy dostal" se často řeší až zpětně.
+    Proto samostatná tabulka, kterou mazání logů nepotká.
+
+    Uživatel se ukládá jako id + e-mail (kopie) — stejně jako v `logy` a ze
+    stejného důvodu: řádek zůstane čitelný i po smazání účtu, takže tu záměrně
+    NENÍ cizí klíč na `uzivatele`.
+    """
+
+    __tablename__ = "prihlaseni"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cas = Column(DateTime(timezone=True), nullable=False, default=_ted, index=True)
+    # kdo; u neúspěchu na neexistující účet zůstává prázdné (viz níže)
+    uzivatel_id = Column(Integer, nullable=True, index=True)
+    uzivatel_email = Column(String, nullable=True, index=True)
+    # jméno v době přihlášení – ať je řádek čitelný i po přejmenování účtu
+    uzivatel_jmeno = Column(String, nullable=True)
+    uspech = Column(Boolean, nullable=False, default=False, index=True)
+    # u neúspěchu čitelný důvod („špatné heslo“, „neznámý účet“)
+    duvod = Column(String, nullable=True)
+    ip = Column(String, nullable=True)
+    # rozpoznaný prohlížeč a systém („Chrome na Windows“) – z hlavičky User-Agent
+    zarizeni = Column(String, nullable=True)
+    # surová hlavička User-Agent pro případ, že rozpoznání selže
+    user_agent = Column(Text, nullable=True)
 
 
 # Horní meze délky ukládaných textů. Chrání DB před obřími řádky (např. když by

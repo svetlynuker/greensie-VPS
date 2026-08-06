@@ -536,6 +536,17 @@ def _pb_d(popis: dict, *cesta: str) -> Any:
     return _g(_pb_delka(popis), *cesta)
 
 
+def _pb_d_1kc(popis: dict, *cesta: str) -> Any:
+    """Hodnota z varianty „odkup za 1 Kč" u zobrazované délky kontraktu.
+
+    Vrací `None`, když varianta u té délky neexistuje – tedy když kontrakt
+    nepřežije nájem baterie a k odkupu vůbec nedojde. Pole se pak v nabídce
+    nevykreslí, místo aby ukázalo nulu jako spočítanou hodnotu.
+    """
+    varianta = (_pb_delka(popis) or {}).get("odkup_1kc")
+    return _g(varianta, *cesta) if isinstance(varianta, dict) else None
+
+
 def _pb_prinos(popis: dict, klic: str) -> Any:
     """Přínos přepočtený na zobrazovanou délku kontraktu.
 
@@ -575,6 +586,14 @@ _POLE_PPA_BESS: list[Pole] = [
          lambda p: _g(p, "baterie", "doba_najmu_roky"), _S_PB_BATERIE),
     Pole("baterie_odkup_kc", "Odkupní cena baterie po nájmu", "penize",
          lambda p: _pb_d(p, "odkupni_cena_baterie_kc"), _S_PB_BATERIE),
+    # Varianta „odkup za korunu": zbytková hodnota není doplatek na konci, ale
+    # je rozpuštěná do nájmu. Na papíře se nabízí buď jedna varianta, nebo
+    # druhá – proto jsou to samostatná pole, ne přepis těch výše.
+    Pole("baterie_najem_1kc_kc_mesic", "Nájem baterie s odkupem za 1 Kč (měsíčně)",
+         "penize", lambda p: _g(p, "baterie", "najem_odkup_1kc_kc_mesic"),
+         _S_PB_BATERIE),
+    Pole("baterie_odkup_1kc_kc", "Odkupní cena baterie po nájmu (varianta za 1 Kč)",
+         "penize", lambda p: _pb_d_1kc(p, "odkupni_cena_baterie_kc"), _S_PB_BATERIE),
     # --- špičky
     Pole("rp_soucasny_kw", "Dnešní rezervovaný příkon", "vykon_kw",
          lambda p: _pb(p, "ekonomika_vykonu", "rp_soucasny_kw"), _S_PB_SPICKY),

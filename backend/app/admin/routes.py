@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth.models import Skupina, User
@@ -10,11 +13,15 @@ from app.auth.permissions import (
     vyzaduj_admina,
 )
 from app.database import get_db
+from app.logy.models import Prihlaseni
+from app.logy.prihlaseni import pocet_neuspechu, posledni_prihlaseni
 from app.mailer import email_nastaven, email_pristupu, posli_email
 from app.admin.schemas import (
     CiselnikyOut,
     HesloVysledek,
     PravoOut,
+    PrihlaseniOut,
+    PrihlaseniPrehled,
     ResetHeslaVstup,
     SkupinaOut,
     SkupinaVstup,
@@ -77,7 +84,7 @@ def _smi_delat_superspravce(kdo: User) -> None:
         )
 
 
-def _uzivatel_out(u: User) -> UzivatelOut:
+def _uzivatel_out(u: User, posledni: datetime | None = None) -> UzivatelOut:
     return UzivatelOut(
         id=u.id,
         jmeno=u.jmeno,
@@ -86,6 +93,7 @@ def _uzivatel_out(u: User) -> UzivatelOut:
         musi_zmenit_heslo=u.musi_zmenit_heslo,
         skupina_id=u.skupina_id,
         extra_prava=list(u.extra_prava or []),
+        posledni_prihlaseni=posledni,
     )
 
 
@@ -117,7 +125,9 @@ def ciselniky():
 @router.get("/uzivatele", response_model=list[UzivatelOut])
 def seznam_uzivatelu(db: Session = Depends(get_db)):
     users = db.query(User).order_by(User.jmeno, User.id).all()
-    return [_uzivatel_out(u) for u in users]
+    # poslední přihlášení jedním dotazem pro všechny (ne dotaz na řádek)
+    posledni = posledni_prihlaseni(db, [u.id for u in users])
+    return [_uzivatel_out(u, posledni.get(u.id)) for u in users]
 
 
 @router.post("/uzivatele", response_model=HesloVysledek)
@@ -242,6 +252,47 @@ def smaz_uzivatele(
     db.delete(u)
     db.commit()
     return {"smazano": uzivatel_id}
+
+
+# ---- historie přihlášení ----
+@router.get("/prihlaseni", response_model=PrihlaseniPrehled)
+def historie_prihlaseni(
+    db: Session = Depends(get_db),
+    uzivatel_id: int | None = Query(None, description="jen jeden uživatel"),
+    jen_neuspesne: bool = Query(False, description="jen nepovedené pokusy"),
+    dni: int | None = Query(30, ge=1, le=3650, description="kolik dní zpět; bez omezení = vše"),
+    hledej: str | None = Query(None, description="hledá ve jménu, e-mailu, IP a zařízení"),
+    limit: int = Query(300, ge=1, le=2000),
+) -> PrihlaseniPrehled:
+    """Historie přihlášení od nejnovějších.
+
+    Záznamy se nemažou — na rozdíl od logů je tohle bezpečnostní stopa a
+    otázka „kdo se sem kdy dostal" se často řeší až zpětně.
+    """
+    dotaz = db.query(Prihlaseni)
+    if uzivatel_id is not None:
+        dotaz = dotaz.filter(Prihlaseni.uzivatel_id == uzivatel_id)
+    if jen_neuspesne:
+        dotaz = dotaz.filter(Prihlaseni.uspech.is_(False))
+    if dni is not None:
+        dotaz = dotaz.filter(Prihlaseni.cas >= datetime.now(timezone.utc) - timedelta(days=dni))
+    if hledej:
+        vzor = f"%{hledej.strip()}%"
+        dotaz = dotaz.filter(
+            or_(
+                Prihlaseni.uzivatel_email.ilike(vzor),
+                Prihlaseni.uzivatel_jmeno.ilike(vzor),
+                Prihlaseni.ip.ilike(vzor),
+                Prihlaseni.zarizeni.ilike(vzor),
+            )
+        )
+    radky = dotaz.order_by(Prihlaseni.cas.desc(), Prihlaseni.id.desc()).limit(limit).all()
+    return PrihlaseniPrehled(
+        zaznamy=[PrihlaseniOut.model_validate(r) for r in radky],
+        # souhrn se počítá přes celou tabulku, ne přes vyfiltrované řádky —
+        # je to varování „něco se děje", které nemá filtr schovat
+        neuspechy_24h=pocet_neuspechu(db, 24),
+    )
 
 
 # ---- skupiny ----

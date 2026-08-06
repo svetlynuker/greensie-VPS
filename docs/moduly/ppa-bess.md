@@ -132,31 +132,68 @@ režimům a doporučení z toho vypadne, místo aby se předvolilo.
 
 Rozhodnuto s Danem 5. 8. 2026:
 
-- **Baterie je pronájem od SPV**, ne investice zákazníka — nabídka je prvních
-  deset let bez investice.
-- **Nájem je fixní, neindexovaný, a platí se jen 10 let**, i když kontrakt na
-  elektrárnu běží 15 nebo 20 let. Anuita úvěru na baterii se proto počítá vždy
-  na 10 let, ne na délku kontraktu jako v `ppa_v2.sestav_projekt`.
-- **V roce 11 si zákazník baterii odkoupí** za zbytkovou cenu
+- **Baterie je pronájem od SPV**, ne investice zákazníka — nabídka je po celou
+  dobu nájmu bez investice.
+- **Nájem je fixní, neindexovaný, a platí se jen po dobu nájmu**, i když
+  kontrakt na elektrárnu běží delší. Anuita úvěru na baterii se počítá na
+  **dobu nájmu**, ne na délku kontraktu jako v `ppa_v2.sestav_projekt` — jinak
+  by po skončení nájmu zůstal nesplacený.
+- **Doba nájmu je editovatelná** (od 6. 8. 2026): default 10 let, obchodník ji
+  u konkrétní nabídky přepíše polem „Délka kontraktu baterie". Delší nájem =
+  nižší anuita = nižší měsíční platba, ale pozdější odkup. Backend hodnotu
+  omezuje na 1–40 let (pojistka proti překlepu).
+- **V prvním roce po nájmu si zákazník baterii odkoupí** za zbytkovou cenu
   (`ppa_bess_zbytkova_hodnota_podil`, default 15 % CAPEX). Od té chvíle neplatí
   nájem, ale nese servis a EMS sám a přínos pokračuje se započtenou degradací.
+- **Varianta „odkup za 1 Kč"** (od 6. 8. 2026) — viz níže.
 - **Baterie nikdy nedodává do sítě** — jen posouvá vlastní spotřebu. Do sítě
   teče pouze přebytek elektrárny, za cenu přetoku (defaultně 0 Kč).
 - **Snížení RP** se ukazuje jako druhý scénář vedle scénáře bez snížení.
 
-Věcný důsledek fixního nájmu: roční splátka baterie je u 15 a 20letých kontraktů
-vyšší než dřív. Protože se DSCR testuje po letech, může to zvednout minimální
-cenu PPA — banka se dívá na nejtěsnější rok, a ten je teď v první dekádě.
+Věcný důsledek fixního nájmu: čím kratší nájem, tím vyšší roční splátka baterie.
+Protože se DSCR testuje po letech, může to zvednout minimální cenu PPA — banka se
+dívá na nejtěsnější rok, a ten je v době, kdy se baterie splácí.
 
-Cena PPA se hledá **bisekcí**, ne analyticky jako v PPA v2: splátka se v roce 11
-láme a v roce odkupu přijde jednorázový příjem, takže analytické řešení
-neexistuje. Kritérium investora se testuje jako **NPV při cílové sazbě**, ne přes
+Když je nájem delší než nejkratší nabízená délka kontraktu, výpočet to napíše do
+upozornění: u těch kontraktů se baterie nesplatí a k odkupu nedojde.
+
+Cena PPA se hledá **bisekcí**, ne analyticky jako v PPA v2: splátka se po
+skončení nájmu láme a v roce odkupu přijde jednorázový příjem, takže analytické
+řešení neexistuje. Kritérium investora se testuje jako **NPV při cílové sazbě**, ne přes
 IRR — `ppa_fve._irr` bisekuje na [−0,9; 1,0] a vrací `None` i pro výnos nad
 100 %, takže test na `irr is not None` hlásil nefinancovatelný projekt i při
 DSCR 4,4.
 
 Odkup je **kapitálový** příjem, takže do DSCR nevstupuje: banka poměřuje provozní
 zdroje proti dluhové službě. Do IRR vlastního kapitálu vstupuje.
+
+### Varianta „odkup baterie za 1 Kč"
+
+Rozhodnuto s Danem 6. 8. 2026. Zákazník na konci **nic nedoplácí** — zbytková
+hodnota se rovnoměrně (prostým dělením, ne anuitně) rozpočítá do všech měsíců
+nájmu a baterie pak přejde za symbolickou korunu. Nula to není, protože převod
+majetku za nula korun je daňově i právně nešikovný.
+
+```
+navýšení nájmu (Kč/měs) = zbytková hodnota / (doba nájmu × 12)
+```
+
+**Není to jen přeskládání výsledku, a proto se počítá celá znovu** — včetně
+vlastní bisekce ceny PPA. Pro SPV je to výměna jednorázového *kapitálového*
+příjmu za průběžný *provozní*: nájem vstupuje do DSCR, odkup ne. DSCR se tím
+zlepší a minimální cena PPA proto může vyjít **níž** než ve variantě s doplatkem.
+Dopočítat to nad hotovým cashflow nejde.
+
+Zákazník zaplatí v součtu totéž (rozdíl je ta koruna) — hlídá to test
+`test_klient_celkem_zaplati_totez`.
+
+V panelu je varianta na dvou místech: dlaždice **„Varianta: odkup za 1 Kč"**
+s navýšeným nájmem a srovnávací tabulka obou variant na záložce Přehled (nájem,
+odkup, cena PPA, DSCR, IRR, přínos zákazníka celkem). Do nabídky pro zákazníka
+jde přes pole `baterie_najem_1kc_kc_mesic` a `baterie_odkup_1kc_kc`.
+
+Varianta se **nepočítá**, když kontrakt skončí nejpozději s nájmem — tam žádný
+odkup není, takže není co rozpouštět (`po_delkach[].odkup_1kc` je `null`).
 
 ## Výběr baterie: tři cesty
 
@@ -205,13 +242,14 @@ modulu poznat stejná čísla na stejných místech.
 
 **Dlaždice:** čistý přínos zákazníka (za rok i celkem), z kilowatthodin,
 z kilowattů se sražením špičky, **nová rezervovaná kapacita** (dnes → nová,
-o kolik lze snížit), nájem baterie s odkupní cenou, pokrytí spotřeby.
+o kolik lze snížit), nájem baterie s odkupní cenou, **varianta odkupu za 1 Kč**,
+pokrytí spotřeby.
 
 **Záložky:**
 
 | Záložka | Co v ní je |
 |---|---|
-| Přehled | tabulka délek kontraktu (cena, sleva, kdo drží cenu, DSCR, IRR, úspora), rozpad přínosu, projekt a financování, detail baterie |
+| Přehled | tabulka délek kontraktu (cena, sleva, kdo drží cenu, DSCR, IRR, úspora), **srovnání odkupu s doplatkem vs. za 1 Kč**, rozpad přínosu, projekt a financování, detail baterie |
 | **Pro nás (investor)** | co vložíme, **kolik nás stojí úvěr** (úroky), co nám klient zaplatí za PPA a nájem, kdy se vrátí vlastní kapitál, a cash flow po letech se splátkou rozepsanou na úrok a úmor |
 | Srážení špiček | **rozpad úspory na rezervované kapacitě** jako u peak shavingu, graf měsíčních maxim (`GrafOdberu`), měsíční tabulka stropů |
 | Elektrárna | graf výroba vs. spotřeba (`GrafVyrobaSpotreba`), energetická bilance, detail elektrárny včetně rozpadu na pole |
@@ -236,8 +274,8 @@ nákladem financování jsou úroky. Splátka je proto v roční tabulce rozepsa
 **úrok a úmor** (analyticky přes `ppa_v2.zustatek_uveru`, bez iterace kalendáře)
 a hlídá to test `test_urok_plus_umor_je_splatka`.
 
-**Co nám klient zaplatí:** za energii z PPA, za nájem baterie (10 let), za odkup
-baterie v roce 11, případně výkup přebytku.
+**Co nám klient zaplatí:** za energii z PPA, za nájem baterie (po dobu nájmu),
+za odkup baterie v prvním roce po nájmu, případně výkup přebytku.
 
 **Kdy se to vrátí:** `navratnost_vlastniho_kapitalu_roky` = rok, kdy kumulovaný
 cash flow překlopí nad vložený kapitál, s lineární interpolací v tom roce

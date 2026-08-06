@@ -78,6 +78,9 @@ supersprávce (`je_admin`).
 > ⚠️ **„Vyčistit vše" maže vše a nevratně.** Appka se před smazáním zeptá potvrzovacím dialogem
 > („Opravdu smazat VŠECHNY záznamy logu? Tuto akci nelze vrátit."), ale zpět už se nic nevrátí.
 
+> ℹ️ **Historii přihlášení to nesmaže.** Ta má vlastní tabulku a najdeš ji v *Admin nastavení →
+> Přihlášení* — právě proto, aby přežila úklid provozních logů.
+
 > 📸 SCREENSHOT: ovládací panel s popisky jednotlivých prvků
 
 ### Kolik záznamů se ukáže

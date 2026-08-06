@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel
@@ -32,6 +33,8 @@ class UzivatelOut(BaseModel):
     musi_zmenit_heslo: bool = False
     skupina_id: Optional[int] = None
     extra_prava: list[str] = []
+    # čas posledního úspěšného přihlášení; None = ještě se nikdy nepřihlásil
+    posledni_prihlaseni: Optional[datetime] = None
 
 
 class UzivatelVstup(BaseModel):
@@ -62,3 +65,26 @@ class HesloVysledek(BaseModel):
     heslo: str  # jednorázové heslo k zobrazení adminovi
     email_odeslan: bool = False
     email_poznamka: Optional[str] = None
+
+
+class PrihlaseniOut(BaseModel):
+    """Jeden řádek historie přihlášení."""
+
+    id: int
+    cas: datetime
+    uzivatel_id: Optional[int] = None
+    uzivatel_email: Optional[str] = None
+    uzivatel_jmeno: Optional[str] = None
+    uspech: bool = False
+    duvod: Optional[str] = None
+    ip: Optional[str] = None
+    zarizeni: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class PrihlaseniPrehled(BaseModel):
+    """Historie přihlášení i s krátkým souhrnem nad hlavičkou tabulky."""
+
+    zaznamy: list[PrihlaseniOut] = []
+    neuspechy_24h: int = 0

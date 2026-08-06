@@ -103,6 +103,7 @@ function nactiUlozeneVstupy(nabidka) {
     cenaExportu: v.cena_exportu_kc_mwh ?? "",
     rezVykonDodavky: v.rezervovany_vykon_dodavky_kw ?? "",
     najemRucne: v.najem_kc_mesic_rucne ?? "",
+    dobaNajmu: v.doba_najmu_baterie_roky ?? "",
     baterieRucne: !!v.baterie_rucne,
     // Rozpad na pole se ukládá do výsledku (`elektrarna.pole`), ne do vstupu –
     // proto se předvyplňuje odtud.
@@ -163,6 +164,7 @@ export default function PpaBessPanel({ nabidka }) {
   const [batPodil, setBatPodil] = useState(String(u.batPodil ?? ""));
   const [batCena, setBatCena] = useState(String(u.batCena ?? ""));
   const [najemRucne, setNajemRucne] = useState(String(u.najemRucne ?? ""));
+  const [dobaNajmu, setDobaNajmu] = useState(String(u.dobaNajmu ?? ""));
 
   // ---- UI stav
   const rrPosl = (nabidka.reseni || []).filter((x) => x.typ_reseni === "ppa_bess");
@@ -210,6 +212,7 @@ export default function PpaBessPanel({ nabidka }) {
           distributor, hladina, rezKapacita, rezPrikon, cenaSilova, regulovane,
           maxKwp, cilSs, sklon, azimut, cenaExportu, rezVykonDodavky, pole,
           zdrojBaterie, batKapacita, batVykon, batUcinnost, batPodil, batCena, najemRucne,
+          dobaNajmu,
         })
       );
     } catch {
@@ -304,6 +307,8 @@ export default function PpaBessPanel({ nabidka }) {
       cena_exportu_kc_mwh: n(cenaExportu),
       rezervovany_vykon_dodavky_kw: n(rezVykonDodavky),
       baterie_najem_kc_mesic: n(najemRucne),
+      // Prázdno = backend použije svůj default (10 let).
+      baterie_doba_najmu_roky: n(dobaNajmu),
       pole: maPole
         ? polePlatna.map((f) => ({
             kwp: n(f.kwp),
@@ -998,7 +1003,9 @@ export default function PpaBessPanel({ nabidka }) {
                     />
                     <span className="gs-unit-txt">Kč</span>
                   </div>
-                  <div className="gs-pozn">Z ní se dopočítá nájem (marže + anuita 10 let + EMS).</div>
+                  <div className="gs-pozn">
+                    Z ní se dopočítá nájem (marže + anuita na dobu nájmu + EMS).
+                  </div>
                 </div>
                 <div className="gs-pole">
                   <label className="gs-label" htmlFor="pb-najem">
@@ -1015,6 +1022,25 @@ export default function PpaBessPanel({ nabidka }) {
                     Když vyplníš obojí, výpočet ukáže, jak se rozcházejí a co to dělá s DSCR.
                   </div>
                 </div>
+              </div>
+              <div className="gs-dva">
+                <div className="gs-pole">
+                  <label className="gs-label" htmlFor="pb-dobanajmu">
+                    Délka kontraktu baterie <span style={{ fontWeight: 400 }}>(nepovinné)</span>
+                  </label>
+                  <div className="gs-unit">
+                    <input
+                      id="pb-dobanajmu" className="gs-input" inputMode="numeric" placeholder="10"
+                      value={dobaNajmu} onChange={(e) => setDobaNajmu(e.target.value)}
+                    />
+                    <span className="gs-unit-txt">let</span>
+                  </div>
+                  <div className="gs-pozn">
+                    Na kolik let se baterie pronajímá a financuje — nezávisle na kontraktu
+                    na elektrárnu. Delší nájem = nižší měsíční platba, ale pozdější odkup.
+                  </div>
+                </div>
+                <div className="gs-pole" />
               </div>
             </>
           )}
@@ -1154,6 +1180,9 @@ export default function PpaBessPanel({ nabidka }) {
         ? prinos.cisty_se_snizenim_rp_kc
         : prinos.cisty_bez_snizeni_rp_kc;
     const fin = vybranaDelka?.financovani || {};
+    // Varianta „odkup za korunu" u zobrazované délky. Chybí, když kontrakt
+    // nepřežije nájem baterie — tam žádný odkup není, takže není co rozpouštět.
+    const odkup1kc = vybranaDelka?.odkup_1kc || null;
     const cistyKZobrazeni = cistyScenar;
     const energieKZobrazeni = rozpadDelky ? rozpadDelky.z_energie_kc : prinos.z_energie_kc;
     const prubehData = prubehy[aktivniRezim.rezim];
@@ -1290,6 +1319,22 @@ export default function PpaBessPanel({ nabidka }) {
                 : "bez baterie"}
             </div>
           </div>
+          {/* Alternativa k dlaždici výše: zákazník na konci nic nedoplácí,
+              zbytkovou hodnotu zaplatí průběžně v nájmu. Ukazuje se jen když
+              k odkupu vůbec dojde (kontrakt musí přežít nájem baterie). */}
+          {odkup1kc && (
+            <div className="gs-kpi" data-druh="penize">
+              <div className="gs-kpi-label">Varianta: odkup za 1 Kč</div>
+              <div className="gs-kpi-value">{kc(odkup1kc.najem_baterie_kc_mesic)}/měs</div>
+              <div className="gs-kpi-sub">
+                nájem o {kc(odkup1kc.navyseni_najmu_kc_mesic)}/měs víc · místo doplatku{" "}
+                {kc(odkup1kc.odkupni_cena_puvodni_kc)} v roce {vybranaDelka.rok_odkupu}
+                {odkup1kc.cena_ppa_kc_mwh
+                  ? ` · cena PPA ${cislo(odkup1kc.cena_ppa_kc_mwh, 0)} Kč/MWh`
+                  : ""}
+              </div>
+            </div>
+          )}
           <div className="gs-kpi" data-druh="cas">
             <div className="gs-kpi-label">Pokrytí spotřeby</div>
             <div className="gs-kpi-value">{pct(energie.pokryti_spotreby, 0)}</div>
@@ -1402,8 +1447,78 @@ export default function PpaBessPanel({ nabidka }) {
               Délku nedoporučujeme — vyber podle toho, co zákazník podepíše. Delší kontrakt =
               nižší splátka = nižší cena a větší sleva. „Drží cenu" říká, která podmínka je
               ta těsná: u krátkého kontraktu banka (DSCR 1,30), u dlouhého investor (cílové
-              IRR). U kontraktu na 10 let k odkupu baterie nedojde — nájem skončí s kontraktem.
+              IRR). Když kontrakt skončí nejpozději s nájmem baterie ({bat?.doba_najmu_roky ?? 10}{" "}
+              let), k odkupu nedojde — nájem skončí s kontraktem.
             </div>
+
+            {/* ---- dvě varianty odkupu vedle sebe ----
+                Obchodník si vybírá, kterou zákazníkovi nabídne. Nejde jen
+                o přeskládání platby: rozpuštěný odkup je pro SPV provozní
+                příjem už během nájmu, takže má vlastní DSCR a vlastní cenu
+                PPA — proto se obě strany počítají zvlášť a zobrazují spolu. */}
+            {odkup1kc && vybranaDelka && (
+              <div className="fm-card" style={{ padding: 14, marginTop: 14 }}>
+                <h4 style={{ margin: "0 0 8px" }}>
+                  Odkup baterie: doplatek, nebo za korunu? (kontrakt na{" "}
+                  {vybranaDelka.delka_roky} let)
+                </h4>
+                <div className="gs-scroll">
+                  <table className="gs-table">
+                    <thead>
+                      <tr>
+                        <th>Varianta</th>
+                        <th className="n">Nájem baterie</th>
+                        <th className="n">Odkup v roce {vybranaDelka.rok_odkupu}</th>
+                        <th className="n">Cena PPA</th>
+                        <th className="n">DSCR</th>
+                        <th className="n">IRR</th>
+                        <th className="n">Přínos zákazníka celkem</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Doplatek na konci</td>
+                        <td className="n">{kc(vybranaDelka.najem_baterie_kc_mesic)}/měs</td>
+                        <td className="n">{kc(vybranaDelka.odkupni_cena_baterie_kc)}</td>
+                        <td className="n">{kcMwh(vybranaDelka.cena_ppa_kc_mwh)}</td>
+                        <td className="n">{cislo(vybranaDelka.dscr_min, 2)}</td>
+                        <td className="n">
+                          {vybranaDelka.irr === null ? "—" : pct(vybranaDelka.irr, 2)}
+                        </td>
+                        <td className="n">{kc(vybranaDelka.uspora_celkem_kc)}</td>
+                      </tr>
+                      <tr>
+                        <td>
+                          Odkup za 1 Kč
+                          <div className="gs-pozn" style={{ marginTop: 2 }}>
+                            zbytková hodnota rozpuštěná do nájmu
+                          </div>
+                        </td>
+                        <td className="n">
+                          {kc(odkup1kc.najem_baterie_kc_mesic)}/měs
+                          <div className="gs-pozn" style={{ marginTop: 2 }}>
+                            +{kc(odkup1kc.navyseni_najmu_kc_mesic)}
+                          </div>
+                        </td>
+                        <td className="n">{kc(odkup1kc.odkupni_cena_baterie_kc)}</td>
+                        <td className="n">{kcMwh(odkup1kc.cena_ppa_kc_mwh)}</td>
+                        <td className="n">{cislo(odkup1kc.dscr_min, 2)}</td>
+                        <td className="n">
+                          {odkup1kc.irr === null ? "—" : pct(odkup1kc.irr, 2)}
+                        </td>
+                        <td className="n">{kc(odkup1kc.uspora_celkem_kc)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="gs-pozn" style={{ marginTop: 8 }}>
+                  Zbytková hodnota {kc(odkup1kc.odkupni_cena_puvodni_kc)} se rozpočítá
+                  rovnoměrně do {(bat?.doba_najmu_roky ?? 10) * 12} měsíců nájmu, takže
+                  zákazník na konci nedoplácí nic navíc. Pro nás je to výměna jednorázového
+                  příjmu za průběžný — DSCR se tím zlepší, a cena PPA proto může vyjít níž.
+                </div>
+              </div>
+            )}
 
             <div className="gs-dva" style={{ marginTop: 14 }}>
               <div className="fm-card" style={{ padding: 14 }}>
