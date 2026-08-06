@@ -1056,9 +1056,15 @@ def spocti_cashflow(
     # skončí dřív nebo současně, k přechodu nikdy nedojde.
     rok_odkupu = doba_najmu + 1 if ma_baterii and n > doba_najmu else None
     # Varianta „odkup za korunu": zbytková hodnota se přesune z jednorázového
-    # doplatku do nájmu. Když k odkupu vůbec nedojde (kontrakt nepřežije nájem),
-    # není co rozpouštět a varianta se rovná základní.
-    if odkup_symbolicky and rok_odkupu is not None:
+    # doplatku do nájmu.
+    #
+    # Rozpouští se **vždy, když je baterie v nájmu** – ne až když kontrakt nájem
+    # přežije. Rozpuštěná část se totiž platí v nájmu, tedy uvnitř horizontu
+    # modelu, i když samotný převod baterie padne až za konec kontraktu (u
+    # kontraktu stejně dlouhého jako nájem). Dřív to bylo navázané na
+    # `rok_odkupu`, takže u kontraktu na 10 let s 10letým nájmem varianta tiše
+    # zmizela – a to je přitom nejčastěji nabízená kombinace.
+    if odkup_symbolicky and ma_baterii:
         najem_mesicni += navyseni_najmu_za_odkup_kc_mesic(odkupni_cena, doba_najmu)
         odkupni_cena = ODKUP_SYMBOLICKY_KC
     najem_rocni = najem_mesicni * 12.0
@@ -2043,6 +2049,8 @@ def _varianta_1kc_json(
     najem_kc_mesic: float,
     navyseni_kc_mesic: float,
     odkupni_cena_puvodni_kc: float,
+    doba_najmu_roky: int,
+    delka_roky: int,
 ) -> dict:
     """Varianta „odkup za korunu" – jen čísla, ve kterých se od základní liší.
 
@@ -2064,6 +2072,12 @@ def _varianta_1kc_json(
         "odkupni_cena_baterie_kc": ODKUP_SYMBOLICKY_KC,
         # Kolik by zákazník doplatil v základní variantě – to se rozpouští.
         "odkupni_cena_puvodni_kc": round(odkupni_cena_puvodni_kc, 2),
+        # Kdy baterie přejde na zákazníka: po skončení nájmu, vždy. Když kontrakt
+        # končí spolu s nájmem, padne převod až za horizont modelu – zaplacené
+        # ale je celé, protože se platilo v nájmu. `odkup_v_horizontu` říká, jestli
+        # ten rok ještě spadá do kontraktu, ať to panel nemusí dovozovat z délek.
+        "rok_odkupu": int(doba_najmu_roky) + 1,
+        "odkup_v_horizontu": int(delka_roky) > int(doba_najmu_roky),
         "cena_ppa_kc_mwh": None if nedosazitelne else round(minc.cena_kc_mwh, 2),
         "sleva": None if nedosazitelne else round(sleva, 4),
         "limitujici": minc.limitujici,
@@ -2523,8 +2537,12 @@ def spocti_ppa_bess(vstup: VstupPpaBess) -> dict:
             # Varianta „odkup za korunu" se počítá celá znovu: rozpuštěný odkup
             # zvedne provozní příjem SPV, zlepší DSCR, a cena PPA proto může
             # vyjít nižší. Dopočítat ji nad hotovým cashflow nejde.
+            #
+            # Počítá se u KAŽDÉ délky, kde je baterie v nájmu – obchodník obě
+            # varianty srovnává i u kontraktu stejně dlouhého jako nájem, což je
+            # nejčastější případ.
             varianta_1kc = None
-            if ma_baterii and n > doba_najmu and navyseni_1kc > 0:
+            if ma_baterii and navyseni_1kc > 0:
                 najem_1kc = najem_mesicni + navyseni_1kc
                 minc_1kc = minimalni_cena_ppa(
                     *spolecne,
@@ -2558,6 +2576,8 @@ def spocti_ppa_bess(vstup: VstupPpaBess) -> dict:
                     najem_1kc,
                     navyseni_1kc,
                     odkupni_cena,
+                    doba_najmu_roky=doba_najmu,
+                    delka_roky=n,
                 )
             out.append(
                 _delka_json(

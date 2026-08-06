@@ -1827,20 +1827,32 @@ class TestOdkupZaKorunu:
         korunou = self._cf(symbolicky=True)
         assert korunou.dscr_min > zaklad.dscr_min
 
-    def test_bez_odkupu_je_varianta_shodna(self):
-        """Když kontrakt nepřežije nájem, není co rozpouštět."""
+    def test_rozpousti_se_i_kdyz_kontrakt_neprezije_najem(self):
+        """Kontrakt stejně dlouhý jako nájem je nejčastější případ – varianta
+        tam musí existovat, i když převod baterie padne za horizont modelu.
+
+        Rozpuštěná část se platí v nájmu, tedy uvnitř horizontu. Dřív to bylo
+        navázané na `rok_odkupu` a u 10letého kontraktu varianta tiše zmizela –
+        obchodník ji na přehledu vůbec neviděl.
+        """
         zaklad = self._cf(symbolicky=False, delka=10, doba_najmu=10)
         korunou = self._cf(symbolicky=True, delka=10, doba_najmu=10)
-        assert korunou.najem_baterie_kc_mesic == pytest.approx(
-            zaklad.najem_baterie_kc_mesic
+        navyseni = ppa_bess.navyseni_najmu_za_odkup_kc_mesic(
+            zaklad.odkupni_cena_baterie_kc, 10
         )
-        assert korunou.prijmy_odkup_celkem_kc == 0.0
+        assert navyseni > 0
+        assert korunou.najem_baterie_kc_mesic == pytest.approx(
+            zaklad.najem_baterie_kc_mesic + navyseni
+        )
+        # Zaplaceno je celé, i když se samotný převod baterie nemodeluje.
+        assert korunou.prijmy_najem_celkem_kc == pytest.approx(
+            zaklad.prijmy_najem_celkem_kc + zaklad.odkupni_cena_baterie_kc
+        )
 
-    def test_vystup_ma_variantu_jen_kde_je_odkup(self):
+    def test_vystup_ma_variantu_u_kazde_delky(self):
         v = ppa_bess.spocti_ppa_bess(_rocni_vstup())
         podle_delky = {d["delka_roky"]: d for d in v["po_delkach"]}
-        assert podle_delky[10]["odkup_1kc"] is None
-        for delka in (15, 20):
+        for delka in (10, 15, 20):
             varianta = podle_delky[delka]["odkup_1kc"]
             assert varianta is not None, delka
             assert varianta["odkupni_cena_baterie_kc"] == 1.0
@@ -1851,6 +1863,17 @@ class TestOdkupZaKorunu:
             assert varianta["odkupni_cena_puvodni_kc"] == pytest.approx(
                 podle_delky[delka]["odkupni_cena_baterie_kc"]
             )
+            # Baterie přechází po skončení nájmu, tedy v 11. roce – i u
+            # kontraktu na 10 let, kde je to už za horizontem výpočtu.
+            assert varianta["rok_odkupu"] == 11
+            assert varianta["odkup_v_horizontu"] is (delka > 10)
+
+    def test_zbytkova_cena_je_v_prehledu_u_kazde_delky(self):
+        """Základní varianta musí nést zbytkovou cenu i tam, kde se odkup
+        nemodeluje – jinak dlaždice „odkup za zbytkovou cenu" nemá co ukázat."""
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup())
+        for d in v["po_delkach"]:
+            assert d["odkupni_cena_baterie_kc"] > 0, d["delka_roky"]
 
     def test_varianta_ma_vlastni_ekonomiku(self):
         """Cena PPA musí být hledaná nad stejným cashflow, jaké se zobrazí."""

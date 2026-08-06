@@ -187,13 +187,24 @@ Dopočítat to nad hotovým cashflow nejde.
 Zákazník zaplatí v součtu totéž (rozdíl je ta koruna) — hlídá to test
 `test_klient_celkem_zaplati_totez`.
 
-V panelu je varianta na dvou místech: dlaždice **„Varianta: odkup za 1 Kč"**
-s navýšeným nájmem a srovnávací tabulka obou variant na záložce Přehled (nájem,
-odkup, cena PPA, DSCR, IRR, přínos zákazníka celkem). Do nabídky pro zákazníka
-jde přes pole `baterie_najem_1kc_kc_mesic` a `baterie_odkup_1kc_kc`.
+Na přehledu stojí **obě varianty jako dvě dlaždice vedle sebe** — „Odkup baterie
+za zbytkovou cenu" a „Odkup baterie za 1 Kč". Velké číslo je v obou to, co
+zákazník zaplatí na konci (529 200 Kč vs. 1 Kč), v podtitulu měsíční nájem —
+přesně ty dvě věci, ve kterých se varianty liší. K tomu srovnávací tabulka na
+záložce Přehled (nájem, odkup, cena PPA, DSCR, IRR, přínos zákazníka celkem).
+Do nabídky pro zákazníka jde přes pole `baterie_najem_1kc_kc_mesic`
+a `baterie_odkup_1kc_kc`.
 
-Varianta se **nepočítá**, když kontrakt skončí nejpozději s nájmem — tam žádný
-odkup není, takže není co rozpouštět (`po_delkach[].odkup_1kc` je `null`).
+Varianta se počítá u **každé** nabízené délky, i když kontrakt skončí spolu
+s nájmem. Rozpuštěná zbytková hodnota se totiž platí v nájmu, tedy uvnitř
+horizontu modelu — jen samotný převod baterie padne až za konec kontraktu.
+Původně to bylo navázané na `rok_odkupu`, takže u kontraktu na 10 let s 10letým
+nájmem dlaždice tiše zmizela, a to je přitom nejčastěji nabízená kombinace.
+
+**Pozor na asymetrii u kontraktu stejně dlouhého jako nájem:** ve variantě za
+1 Kč je zaplaceno všechno (platilo se v nájmu), ale ve variantě s doplatkem ten
+doplatek do čísel nevstupuje — model ho umístí až za horizont a baterie by nám
+po kontraktu zůstala. Panel to u té délky píše pod srovnávací tabulkou.
 
 ## Výběr baterie: tři cesty
 
@@ -242,8 +253,8 @@ modulu poznat stejná čísla na stejných místech.
 
 **Dlaždice:** čistý přínos zákazníka (za rok i celkem), z kilowatthodin,
 z kilowattů se sražením špičky, **nová rezervovaná kapacita** (dnes → nová,
-o kolik lze snížit), nájem baterie s odkupní cenou, **varianta odkupu za 1 Kč**,
-pokrytí spotřeby.
+o kolik lze snížit), **dvě dlaždice odkupu baterie vedle sebe** (za zbytkovou
+cenu / za 1 Kč), pokrytí spotřeby.
 
 **Záložky:**
 

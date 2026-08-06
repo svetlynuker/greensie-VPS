@@ -1302,37 +1302,44 @@ export default function PpaBessPanel({ nabidka }) {
                 : "diskontované na dnešní hodnotu"}
             </div>
           </div>
-          <div className="gs-kpi" data-druh="riziko">
-            <div className="gs-kpi-label">Investice zákazníka</div>
-            <div className="gs-kpi-value">
-              {vybranaDelka?.rok_odkupu
-                ? kc(vybranaDelka.odkupni_cena_baterie_kc)
-                : "0 Kč"}
-            </div>
-            <div className="gs-kpi-sub">
-              {bat
-                ? vybranaDelka?.rok_odkupu
-                  ? `odkup baterie v roce ${vybranaDelka.rok_odkupu} · do té doby nájem ${kc(
-                      bat.najem_kc_mesic
-                    )}/měs`
-                  : `žádná · jen nájem ${kc(bat.najem_kc_mesic)}/měs po ${bat.doba_najmu_roky} let`
-                : "bez baterie"}
-            </div>
-          </div>
-          {/* Alternativa k dlaždici výše: zákazník na konci nic nedoplácí,
-              zbytkovou hodnotu zaplatí průběžně v nájmu. Ukazuje se jen když
-              k odkupu vůbec dojde (kontrakt musí přežít nájem baterie). */}
-          {odkup1kc && (
-            <div className="gs-kpi" data-druh="penize">
-              <div className="gs-kpi-label">Varianta: odkup za 1 Kč</div>
-              <div className="gs-kpi-value">{kc(odkup1kc.najem_baterie_kc_mesic)}/měs</div>
-              <div className="gs-kpi-sub">
-                nájem o {kc(odkup1kc.navyseni_najmu_kc_mesic)}/měs víc · místo doplatku{" "}
-                {kc(odkup1kc.odkupni_cena_puvodni_kc)} v roce {vybranaDelka.rok_odkupu}
-                {odkup1kc.cena_ppa_kc_mwh
-                  ? ` · cena PPA ${cislo(odkup1kc.cena_ppa_kc_mwh, 0)} Kč/MWh`
-                  : ""}
+          {/* ---- dvě varianty odkupu baterie vedle sebe ----
+              Obě dlaždice stojí na přehledu vždy (dokud je v nabídce baterie),
+              aby si obchodník mohl vybrat, kterou zákazníkovi nabídne. Velké
+              číslo je v obou to, co zákazník zaplatí NA KONCI, v podtitulu je
+              měsíční nájem — přesně ty dvě věci, ve kterých se varianty liší. */}
+          {bat ? (
+            <>
+              <div className="gs-kpi" data-druh="riziko">
+                <div className="gs-kpi-label">Odkup baterie za zbytkovou cenu</div>
+                <div className="gs-kpi-value">
+                  {kc(vybranaDelka?.odkupni_cena_baterie_kc)}
+                </div>
+                <div className="gs-kpi-sub">
+                  nájem {kc(bat.najem_kc_mesic)}/měs po {bat.doba_najmu_roky} let ·{" "}
+                  {vybranaDelka?.rok_odkupu
+                    ? `odkup v roce ${vybranaDelka.rok_odkupu}`
+                    : `odkup po skončení nájmu, tedy až za koncem kontraktu`}
+                </div>
               </div>
+              <div className="gs-kpi accent" data-druh="penize">
+                <div className="gs-kpi-label">Odkup baterie za 1 Kč</div>
+                <div className="gs-kpi-value">
+                  {odkup1kc ? kc(odkup1kc.odkupni_cena_baterie_kc) : "—"}
+                </div>
+                <div className="gs-kpi-sub">
+                  {odkup1kc
+                    ? `nájem ${kc(odkup1kc.najem_baterie_kc_mesic)}/měs (o ${kc(
+                        odkup1kc.navyseni_najmu_kc_mesic
+                      )} víc) · zbytková cena rozpuštěná do nájmu`
+                    : "nelze spočítat — baterie nemá zbytkovou hodnotu"}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="gs-kpi" data-druh="riziko">
+              <div className="gs-kpi-label">Investice zákazníka</div>
+              <div className="gs-kpi-value">0 Kč</div>
+              <div className="gs-kpi-sub">bez baterie</div>
             </div>
           )}
           <div className="gs-kpi" data-druh="cas">
@@ -1468,7 +1475,12 @@ export default function PpaBessPanel({ nabidka }) {
                       <tr>
                         <th>Varianta</th>
                         <th className="n">Nájem baterie</th>
-                        <th className="n">Odkup v roce {vybranaDelka.rok_odkupu}</th>
+                        <th className="n">
+                          Odkup{" "}
+                          {vybranaDelka.rok_odkupu
+                            ? `v roce ${vybranaDelka.rok_odkupu}`
+                            : `po ${bat?.doba_najmu_roky ?? 10} letech nájmu`}
+                        </th>
                         <th className="n">Cena PPA</th>
                         <th className="n">DSCR</th>
                         <th className="n">IRR</th>
@@ -1516,6 +1528,18 @@ export default function PpaBessPanel({ nabidka }) {
                   rovnoměrně do {(bat?.doba_najmu_roky ?? 10) * 12} měsíců nájmu, takže
                   zákazník na konci nedoplácí nic navíc. Pro nás je to výměna jednorázového
                   příjmu za průběžný — DSCR se tím zlepší, a cena PPA proto může vyjít níž.
+                  {!vybranaDelka.rok_odkupu && (
+                    <>
+                      {" "}
+                      <b>
+                        U kontraktu na {vybranaDelka.delka_roky} let končí nájem spolu
+                        s kontraktem, takže převod baterie padne až za horizont výpočtu.
+                      </b>{" "}
+                      Ve variantě za 1 Kč je i tak zaplaceno všechno, protože se zbytková
+                      hodnota platí v nájmu. Ve variantě s doplatkem naopak ten doplatek
+                      do čísel nevstupuje — baterie by nám po kontraktu zůstala.
+                    </>
+                  )}
                 </div>
               </div>
             )}
