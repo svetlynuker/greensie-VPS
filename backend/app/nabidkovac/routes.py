@@ -3002,7 +3002,14 @@ def sestav_vstup_ppa_bess(db: Session, nabidka_id: int, vstup: PpaBessVstup):
         azimut_st=vstup.azimut_st,
         pole=tuple(
             ppa_bess.PoleFve(
-                kwp=float(f.kwp), sklon_st=float(f.sklon_st), azimut_st=float(f.azimut_st)
+                kwp=float(f.kwp),
+                sklon_st=float(f.sklon_st),
+                azimut_st=float(f.azimut_st),
+                cena_kc_kwp=(
+                    float(f.cena_kc_kwp)
+                    if f.cena_kc_kwp is not None and float(f.cena_kc_kwp) > 0
+                    else None
+                ),
             )
             for f in (vstup.pole or ())
             if f.kwp and float(f.kwp) > 0

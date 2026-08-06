@@ -1188,3 +1188,102 @@ class TestInvestorskaStrana:
             assert inv["prijmy_celkem_kc"] > (
                 inv["dluhova_sluzba_celkem_kc"] + inv["naklady_provozni_celkem_kc"]
             ), d["delka_roky"]
+
+
+class TestCenaZaKwpPerPole:
+    """Ruční přepis nákladové ceny za kWp u jednotlivého pole.
+
+    Dan 5. 8. 2026: „potřebuju možnost když je některé pole dražší, nebo levnější
+    tuto cenu přepsat". Výchozí zůstává cena z manažerského nastavení.
+    """
+
+    def test_bez_prepisu_je_cena_z_nastaveni(self):
+        p = ppa_v2.ParametryEkonomiky()
+        pole = (ppa_bess.PoleFve(kwp=100.0), ppa_bess.PoleFve(kwp=200.0))
+        assert ppa_bess.nakladova_cena_fve(300.0, pole, p) == pytest.approx(
+            300.0 * p.nakladova_cena_kc_kwp
+        )
+
+    def test_bez_poli_je_to_kwp_krat_cena(self):
+        p = ppa_v2.ParametryEkonomiky()
+        assert ppa_bess.nakladova_cena_fve(250.0, (), p) == pytest.approx(
+            250.0 * p.nakladova_cena_kc_kwp
+        )
+
+    def test_prepis_se_uplatni_jen_u_daneho_pole(self):
+        p = ppa_v2.ParametryEkonomiky()
+        pole = (
+            ppa_bess.PoleFve(kwp=100.0, cena_kc_kwp=20_000.0),  # dražší
+            ppa_bess.PoleFve(kwp=200.0),  # z nastavení
+        )
+        cekano = 100.0 * 20_000.0 + 200.0 * p.nakladova_cena_kc_kwp
+        assert ppa_bess.nakladova_cena_fve(300.0, pole, p) == pytest.approx(cekano)
+
+    def test_nula_a_none_znamenaji_z_nastaveni(self):
+        """Nula není „zdarma" – je to nevyplněné pole ve formuláři."""
+        p = ppa_v2.ParametryEkonomiky()
+        for hodnota in (None, 0.0):
+            pole = (ppa_bess.PoleFve(kwp=100.0, cena_kc_kwp=hodnota),)
+            assert ppa_bess.nakladova_cena_fve(100.0, pole, p) == pytest.approx(
+                100.0 * p.nakladova_cena_kc_kwp
+            )
+
+    def test_drazsi_pole_zvedne_capex_a_cenu_ppa(self):
+        """Když je pole dražší, musí to prorazit až do ceny PPA."""
+        zaklad = _rocni_vstup(pole=(ppa_bess.PoleFve(kwp=300.0),))
+        drazsi = _rocni_vstup(
+            pole=(ppa_bess.PoleFve(kwp=300.0, cena_kc_kwp=25_000.0),)
+        )
+        a = ppa_bess.spocti_ppa_bess(zaklad)
+        b = ppa_bess.spocti_ppa_bess(drazsi)
+        assert b["elektrarna"]["nakladova_cena_kc"] > a["elektrarna"]["nakladova_cena_kc"]
+        assert b["po_delkach"][0]["financovani"]["capex_fve_kc"] > (
+            a["po_delkach"][0]["financovani"]["capex_fve_kc"]
+        )
+        # Dražší elektrárna potřebuje vyšší cenu PPA, aby prošla bankou.
+        assert b["po_delkach"][0]["cena_ppa_kc_mwh"] > a["po_delkach"][0]["cena_ppa_kc_mwh"]
+
+    def test_levnejsi_pole_snizi_cenu_ppa(self):
+        zaklad = _rocni_vstup(pole=(ppa_bess.PoleFve(kwp=300.0),))
+        levnejsi = _rocni_vstup(
+            pole=(ppa_bess.PoleFve(kwp=300.0, cena_kc_kwp=9_000.0),)
+        )
+        a = ppa_bess.spocti_ppa_bess(zaklad)
+        b = ppa_bess.spocti_ppa_bess(levnejsi)
+        assert b["po_delkach"][0]["cena_ppa_kc_mwh"] < a["po_delkach"][0]["cena_ppa_kc_mwh"]
+
+    def test_vystup_ukazuje_cenu_a_naklad_per_pole(self):
+        v = ppa_bess.spocti_ppa_bess(
+            _rocni_vstup(
+                pole=(
+                    ppa_bess.PoleFve(kwp=200.0, azimut_st=0.0, cena_kc_kwp=15_000.0),
+                    ppa_bess.PoleFve(kwp=100.0, azimut_st=-90.0),
+                )
+            )
+        )
+        pole = v["elektrarna"]["pole"]
+        assert pole[0]["cena_prepsana"] is True
+        assert pole[0]["cena_kc_kwp"] == pytest.approx(15_000.0)
+        assert pole[0]["nakladova_cena_kc"] == pytest.approx(200.0 * 15_000.0)
+        assert pole[1]["cena_prepsana"] is False
+        # Součet po polích musí dát celkovou nákladovou cenu elektrárny.
+        assert v["elektrarna"]["nakladova_cena_kc"] == pytest.approx(
+            sum(f["nakladova_cena_kc"] for f in pole), abs=0.01
+        )
+
+    def test_vystup_nese_cenu_z_nastaveni_pro_placeholder(self):
+        """Panel ji ukazuje jako placeholder v prázdném políčku."""
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup())
+        p = ppa_v2.ParametryEkonomiky()
+        assert v["elektrarna"]["nakladova_cena_kc_kwp_nastaveni"] == pytest.approx(
+            p.nakladova_cena_kc_kwp
+        )
+
+    def test_bez_poli_je_nakladova_cena_konzistentni(self):
+        """REGRESE: zavedení ceny per pole nesmělo změnit výsledek tam, kde se
+        pole nezadávají."""
+        v = ppa_bess.spocti_ppa_bess(_rocni_vstup())
+        p = ppa_v2.ParametryEkonomiky()
+        assert v["elektrarna"]["nakladova_cena_kc"] == pytest.approx(
+            v["elektrarna"]["kwp"] * p.nakladova_cena_kc_kwp, rel=1e-6
+        )

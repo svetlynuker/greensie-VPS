@@ -95,6 +95,10 @@ function nactiUlozeneVstupy(nabidka) {
       kwp: String(f.kwp ?? ""),
       sklon: String(f.sklon_st ?? "35"),
       azimut: String(f.azimut_st ?? "0"),
+      // Cena se předvyplní jen tehdy, když byla u pole opravdu přepsaná —
+      // jinak by se z nastavení stala „ručně zadaná" hodnota, která by pak
+      // nesledovala změny v admin panelu.
+      cena: f.cena_prepsana ? String(f.cena_kc_kwp ?? "") : "",
     })),
   };
   try {
@@ -224,7 +228,7 @@ export default function PpaBessPanel({ nabidka }) {
     setPole((p) => p.map((f, i) => (i === idx ? { ...f, [klic]: hodnota } : f)));
   }
   function pridejPole() {
-    setPole((p) => [...p, { kwp: "", sklon: "35", azimut: "0" }]);
+    setPole((p) => [...p, { kwp: "", sklon: "35", azimut: "0", cena: "" }]);
   }
   function odeberPole(idx) {
     setPole((p) => p.filter((_, i) => i !== idx));
@@ -279,6 +283,8 @@ export default function PpaBessPanel({ nabidka }) {
             kwp: n(f.kwp),
             sklon_st: n(f.sklon) ?? 35,
             azimut_st: n(f.azimut) ?? 0,
+            // Prázdné = použije se cena za kWp z admin panelu.
+            cena_kc_kwp: n(f.cena),
           }))
         : null,
     };
@@ -697,6 +703,27 @@ export default function PpaBessPanel({ nabidka }) {
                   <span className="gs-unit-txt">°</span>
                 </div>
               </div>
+              {/* Cena za kWp jen pro tohle pole. Prázdné = z admin panelu;
+                  vyplněné se použije místo něj (dražší kotvení, delší trasy). */}
+              <div className="gs-pole" style={{ flex: 1.3 }}>
+                {i === 0 && <label className="gs-label">Cena za kWp</label>}
+                <div className="gs-unit">
+                  <input
+                    className="gs-input"
+                    inputMode="decimal"
+                    placeholder={
+                      vysledek?.elektrarna?.nakladova_cena_kc_kwp_nastaveni
+                        ? cislo(vysledek.elektrarna.nakladova_cena_kc_kwp_nastaveni, 0)
+                        : "z nastavení"
+                    }
+                    value={f.cena}
+                    onChange={(e) => upravPole(i, "cena", e.target.value)}
+                    aria-label={`Nákladová cena za kWp pole ${i + 1}, prázdné = z nastavení`}
+                    title="Nákladová cena za kWp jen pro tohle pole. Prázdné = použije se hodnota z Katalogu a výpočtů."
+                  />
+                  <span className="gs-unit-txt">Kč</span>
+                </div>
+              </div>
               <button
                 type="button"
                 className="fm-btn"
@@ -719,7 +746,9 @@ export default function PpaBessPanel({ nabidka }) {
           </button>
           <div className="gs-pozn" style={{ marginTop: 6 }}>
             Azimut: 0 = jih, −90 = východ, +90 = západ. Například jih 200 kWp, východ
-            100 kWp, západ 100 kWp.
+            100 kWp, západ 100 kWp. <b>Cenu za kWp nech prázdnou</b>, pokud platí ta
+            z Katalogu a výpočtů — vyplň ji jen u pole, které je dražší nebo levnější
+            (jiné kotvení, trapéz proti ploché střeše, delší kabelové trasy).
           </div>
           <div className="gs-dva">
             <div className="gs-pole">
@@ -1919,10 +1948,32 @@ export default function PpaBessPanel({ nabidka }) {
                     {el.pole.map((f, i) => (
                       <Radek
                         key={i}
-                        l={`${f.orientace}, sklon ${cislo(f.sklon_st, 0)}°`}
-                        v={`${cislo(f.kwp, 0)} kWp → ${mwh(f.vyroba_mwh, 0)}`}
+                        l={
+                          <>
+                            {f.orientace}, sklon {cislo(f.sklon_st, 0)}°
+                            {f.cena_prepsana && (
+                              <span className="nb-badge pozor" style={{ marginLeft: 6 }}>
+                                cena {cislo(f.cena_kc_kwp, 0)} Kč/kWp
+                              </span>
+                            )}
+                          </>
+                        }
+                        v={`${cislo(f.kwp, 0)} kWp → ${mwh(f.vyroba_mwh, 0)} · ${kc(
+                          f.nakladova_cena_kc
+                        )}`}
                       />
                     ))}
+                    <Radek
+                      l={<b>Nákladová cena elektrárny</b>}
+                      v={<b>{kc(el.nakladova_cena_kc)}</b>}
+                    />
+                    {el.pole.some((f) => f.cena_prepsana) && (
+                      <div className="gs-pozn" style={{ marginTop: 6 }}>
+                        U polí bez štítku se počítá s cenou{" "}
+                        {cislo(el.nakladova_cena_kc_kwp_nastaveni, 0)} Kč/kWp z Katalogu
+                        a výpočtů.
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <>
