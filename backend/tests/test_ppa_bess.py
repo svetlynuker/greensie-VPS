@@ -1951,3 +1951,72 @@ class TestSjednanyNajemVstupujeDoEkonomiky:
         for d in v["po_delkach"]:
             assert d["najem_baterie_kc_mesic"] == 40_000.0
             assert d["roky"][0]["najem_baterie_kc"] == pytest.approx(480_000.0)
+
+
+# ------------------------------------------ osa V/Z rozdělení a označení polovin
+class TestOsaRozdeleniVZ:
+    """Osa rozdělení není orientace panelů — a když se to splete, půlka míří na sever.
+
+    Dan na to narazil 6. 8. 2026: pole 300 kWp s osou 90° se rozložilo na
+    150 kWp na jih a 150 kWp na SEVER, protože osa se otáčí o ±90°. Model to
+    spočítal poslušně a severní polovina tiše nevyráběla.
+    """
+
+    def test_poloviny_jsou_oznacene(self):
+        zad = (
+            ppa_bess.PoleFve(kwp=30.0, azimut_st=0.0),
+            ppa_bess.PoleFve(kwp=300.0, azimut_st=0.0, rozdelit_vychod_zapad=True),
+        )
+        roz = ppa_bess.rozloz_pole(zad)
+        assert [f.z_rozdeleni_vz for f in roz] == [False, True, True]
+
+    def test_nerozdelene_pole_neni_oznacene(self):
+        roz = ppa_bess.rozloz_pole((ppa_bess.PoleFve(kwp=100.0, azimut_st=180.0),))
+        assert roz[0].z_rozdeleni_vz is False
+
+    def test_osa_90_stupnu_upozorni_na_sever(self):
+        """Přesně Danovo zadání z nabídky 69."""
+        zad = (
+            ppa_bess.PoleFve(kwp=30.0, azimut_st=0.0),
+            ppa_bess.PoleFve(kwp=260.0, azimut_st=0.0),
+            ppa_bess.PoleFve(kwp=300.0, azimut_st=90.0, rozdelit_vychod_zapad=True),
+        )
+        zpravy = ppa_bess.zkontroluj_osu_rozdeleni(zad)
+        assert len(zpravy) == 1
+        assert "Pole 3" in zpravy[0]
+        assert "sever" in zpravy[0]
+        # Musí být vidět, kolik kWp je v ohrožení — půlka z 300.
+        assert "150 kWp" in zpravy[0]
+        # A poloviny opravdu vyjdou na jih a na sever.
+        roz = ppa_bess.rozloz_pole(zad)
+        assert sorted(f.azimut_st for f in roz if f.z_rozdeleni_vz) == [0.0, 180.0]
+
+    def test_spravna_osa_neupozorni(self):
+        zad = (ppa_bess.PoleFve(kwp=300.0, azimut_st=0.0, rozdelit_vychod_zapad=True),)
+        assert ppa_bess.zkontroluj_osu_rozdeleni(zad) == []
+        assert sorted(f.azimut_st for f in ppa_bess.rozloz_pole(zad)) == [-90.0, 90.0]
+
+    def test_mirne_pootocena_strecha_neupozorni(self):
+        """Osa 30° dá −60 a +120 – pořád východ/západ, ne sever."""
+        zad = (ppa_bess.PoleFve(kwp=200.0, azimut_st=30.0, rozdelit_vychod_zapad=True),)
+        assert ppa_bess.zkontroluj_osu_rozdeleni(zad) == []
+
+    def test_pole_bez_rozdeleni_se_nekontroluje(self):
+        """Samotné pole na sever je legitimní zadání, ne past — nevaruje se."""
+        zad = (ppa_bess.PoleFve(kwp=100.0, azimut_st=180.0),)
+        assert ppa_bess.zkontroluj_osu_rozdeleni(zad) == []
+
+    def test_vystup_nese_priznak_i_upozorneni(self):
+        v = ppa_bess.spocti_ppa_bess(
+            _rocni_vstup(
+                pole=(
+                    ppa_bess.PoleFve(kwp=400.0, azimut_st=0.0),
+                    ppa_bess.PoleFve(kwp=300.0, azimut_st=90.0, rozdelit_vychod_zapad=True),
+                )
+            )
+        )
+        pole = v["elektrarna"]["pole"]
+        assert len(pole) == 3, "dvě zadaná pole, jedno rozdělené → tři ve výsledku"
+        assert [f["z_rozdeleni_vz"] for f in pole] == [False, True, True]
+        assert len(v["elektrarna"]["pole_zadani"]) == 2
+        assert any("osu rozdělení" in u for u in v["upozorneni"])

@@ -84,8 +84,14 @@ function orientaceZAzimutu(azimut) {
 
 const KLIC_ULOZISTE = (nabidkaId) => `gs-ppabess-vstup-${nabidkaId}`;
 
-/** Předvyplnění: základ z posledního uloženého řešení, navrch localStorage. */
-function nactiUlozeneVstupy(nabidka) {
+/** Zadání POSLEDNÍHO uloženého výpočtu — to, co je na serveru, bez draftu.
+ *
+ * Oddělené od `nactiUlozeneVstupy` schválně: draft v localStorage je jen tenhle
+ * prohlížeč, ale server je společný. Potřebujeme obojí zvlášť, abychom poznali,
+ * že se rozešly — jinak kolegova změna zadání zůstane navždy neviditelná
+ * (narazili na to Dan s Vladislavem 6. 8. 2026 nad jednou nabídkou).
+ */
+function zakladVstupu(nabidka) {
   const rr = (nabidka.reseni || []).filter((x) => x.typ_reseni === "ppa_bess");
   const posl = rr.length ? rr[rr.length - 1].popis_json : null;
   const v = (posl && posl.vstup) || {};
@@ -125,12 +131,38 @@ function nactiUlozeneVstupy(nabidka) {
       vychodZapad: !!f.rozdelit_vychod_zapad,
     })),
   };
+  return zaklad;
+}
+
+/** Předvyplnění: základ ze serveru, navrch rozpracovaný draft z localStorage. */
+function nactiUlozeneVstupy(nabidka) {
+  const zaklad = zakladVstupu(nabidka);
   try {
     const ulozene = JSON.parse(localStorage.getItem(KLIC_ULOZISTE(nabidka.id)) || "null");
     return ulozene ? { ...zaklad, ...ulozene } : zaklad;
   } catch {
     return zaklad;
   }
+}
+
+/** Srovnatelný podpis zadání — pro poznání, že se formulář rozešel se serverem.
+ *
+ * Všechno se převádí na řetězec, protože server posílá čísla a formulář drží
+ * text: bez toho by 900 a "900" vypadaly jako rozdíl a hlásili bychom rozchod
+ * pořád.
+ */
+function podpisZadani(v) {
+  const s = (x) => String(x ?? "");
+  return JSON.stringify([
+    s(v.distributor), s(v.hladina), s(v.rezKapacita), s(v.rezPrikon),
+    s(v.cenaSilova), s(v.regulovane), s(v.maxKwp), s(v.cilSs),
+    s(v.sklon), s(v.azimut), s(v.cenaExportu), s(v.rezVykonDodavky),
+    s(v.batKapacita), s(v.batVykon), s(v.batUcinnost), s(v.batPodil),
+    s(v.batCena), s(v.najemRucne), s(v.dobaNajmu),
+    (v.pole || []).map((f) => [
+      s(f.kwp), s(f.sklon), s(f.azimut), s(f.cena), !!f.vychodZapad,
+    ]),
+  ]);
 }
 
 export default function PpaBessPanel({ nabidka }) {
@@ -202,6 +234,48 @@ export default function PpaBessPanel({ nabidka }) {
       .then((r) => setMistaKlienta(r?.mista || []))
       .catch(() => setMistaKlienta([]));
   }, [nabidka.id, dokPodpis]);
+
+  // ---- rozchod formuláře se serverem ----
+  // Draft vstupů žije jen v tomhle prohlížeči, poslední výpočet je společný.
+  // Když kolega přepočítá z jiného zadání, tvůj formulář o tom sám nezjistí nic
+  // a klidně přepočítá „proti“ němu. Tady se to porovná a dá se to načíst.
+  const zaklad = zakladVstupu(nabidka);
+  const zadaniNyni = {
+    distributor, hladina, rezKapacita, rezPrikon, cenaSilova, regulovane,
+    maxKwp, cilSs, sklon, azimut, cenaExportu, rezVykonDodavky, pole,
+    batKapacita, batVykon, batUcinnost, batPodil, batCena, najemRucne, dobaNajmu,
+  };
+  const maUlozenyVypocet = (nabidka.reseni || []).some((x) => x.typ_reseni === "ppa_bess");
+  const rozchodSeServerem =
+    maUlozenyVypocet && podpisZadani(zaklad) !== podpisZadani(zadaniNyni);
+
+  function nactiZeServeru() {
+    setDistributor(zaklad.distributor);
+    setHladina(zaklad.hladina);
+    setRezKapacita(String(zaklad.rezKapacita ?? ""));
+    setRezPrikon(String(zaklad.rezPrikon ?? ""));
+    setCenaSilova(String(zaklad.cenaSilova ?? ""));
+    setRegulovane(String(zaklad.regulovane ?? ""));
+    setMaxKwp(String(zaklad.maxKwp ?? ""));
+    setCilSs(String(zaklad.cilSs ?? "80"));
+    setSklon(String(zaklad.sklon ?? "35"));
+    setAzimut(String(zaklad.azimut ?? "0"));
+    setCenaExportu(String(zaklad.cenaExportu ?? ""));
+    setRezVykonDodavky(String(zaklad.rezVykonDodavky ?? ""));
+    setPole(zaklad.pole || []);
+    setBatKapacita(String(zaklad.batKapacita ?? ""));
+    setBatVykon(String(zaklad.batVykon ?? ""));
+    setBatUcinnost(String(zaklad.batUcinnost ?? ""));
+    setBatPodil(String(zaklad.batPodil ?? ""));
+    setBatCena(String(zaklad.batCena ?? ""));
+    setNajemRucne(String(zaklad.najemRucne ?? ""));
+    setDobaNajmu(String(zaklad.dobaNajmu ?? ""));
+    try {
+      localStorage.removeItem(KLIC_ULOZISTE(nabidka.id));
+    } catch {
+      /* nic – draft se jen nepodařilo zahodit */
+    }
+  }
 
   // Uložení vstupů, ať se po přepnutí obrazovky nepřepisují ručně znovu.
   useEffect(() => {
@@ -452,6 +526,33 @@ export default function PpaBessPanel({ nabidka }) {
       </div>
 
       <div className="gs-panel-body">
+        {/* Formulář se rozešel s posledním uloženým výpočtem — typicky proto, že
+            na nabídce pracoval ještě někdo jiný. Bez tohohle pruhu se to nedá
+            poznat: vstupy si každý drží ve svém prohlížeči, takže cizí změna
+            zadání je jinak neviditelná i po obnovení stránky. */}
+        {rozchodSeServerem && (
+          <div className="gs-pozn pozor" style={{ marginBottom: 14, padding: "10px 12px" }}>
+            <b>Poslední uložený výpočet má jiné zadání, než máš ve formuláři.</b>{" "}
+            Nejčastěji to znamená, že na nabídce dělal ještě někdo jiný a přepočítal ji
+            z jiných hodnot — vstupy formuláře se drží v tvém prohlížeči, takže se cizí
+            změna sama neobjeví.
+            {(zaklad.pole || []).length !== pole.length && (
+              <>
+                {" "}
+                Poslední výpočet měl <b>{(zaklad.pole || []).length} pol{
+                  (zaklad.pole || []).length === 1 ? "e" : "í"
+                } elektrárny</b>, ty máš ve formuláři <b>{pole.length}</b>.
+              </>
+            )}{" "}
+            Když teď dáš spočítat, přepíšeš to svým zadáním.
+            <div style={{ marginTop: 8 }}>
+              <button className="fm-btn" onClick={nactiZeServeru}>
+                Načíst zadání z posledního výpočtu
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* 1) Profil */}
         <section className="gs-step">
           <span className="gs-step-num">1</span>
@@ -2193,6 +2294,13 @@ export default function PpaBessPanel({ nabidka }) {
                   <div style={{ marginTop: 8 }}>
                     <div className="gs-pozn" style={{ marginBottom: 4 }}>
                       Rozpad na pole:
+                      {el.pole.some((f) => f.z_rozdeleni_vz) && (
+                        <>
+                          {" "}
+                          polí je tu víc než v zadání, protože pole označené jako
+                          východ-západ se počítá jako dvě poloviny.
+                        </>
+                      )}
                     </div>
                     {el.pole.map((f, i) => (
                       <Radek
@@ -2200,6 +2308,11 @@ export default function PpaBessPanel({ nabidka }) {
                         l={
                           <>
                             {f.orientace}, sklon {cislo(f.sklon_st, 0)}°
+                            {f.z_rozdeleni_vz && (
+                              <span className="nb-badge" style={{ marginLeft: 6 }}>
+                                polovina z V/Z
+                              </span>
+                            )}
                             {f.cena_prepsana && (
                               <span className="nb-badge pozor" style={{ marginLeft: 6 }}>
                                 cena {cislo(f.cena_kc_kwp, 0)} Kč/kWp

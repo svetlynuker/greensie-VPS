@@ -1351,6 +1351,10 @@ class PoleFve:
     # **osa** – 0 znamená klasické V/Z (−90 a +90), 30 pootočenou střechu
     # (−60 a +120).
     rozdelit_vychod_zapad: bool = False
+    # Vyplní `rozloz_pole` u polovin, které vznikly rozdělením. Panel je tím
+    # označí, aby nikdo nehledal, odkud se vzalo pole, které nezadal – tři
+    # zadaná pole s jedním V/Z dávají ve výsledku čtyři.
+    z_rozdeleni_vz: bool = False
 
 
 def rozloz_pole(pole: tuple[PoleFve, ...]) -> tuple[PoleFve, ...]:
@@ -1372,9 +1376,51 @@ def rozloz_pole(pole: tuple[PoleFve, ...]) -> tuple[PoleFve, ...]:
                     sklon_st=f.sklon_st,
                     azimut_st=f.azimut_st + smer,
                     cena_kc_kwp=f.cena_kc_kwp,
+                    z_rozdeleni_vz=True,
                 )
             )
     return tuple(out)
+
+
+def _miri_takmer_na_sever(azimut_st: float) -> bool:
+    """Míří pole do 30° od severu? (|azimut| > 150°)
+
+    Hranice je schválně přísná, ne 112,5° jako u pojmenování světových stran:
+    osa 30° dává poloviny na −60° a +120°, tedy jihovýchod a severozápad, a to
+    je **legitimní** zadání pootočené střechy (je tak i v dokumentaci modulu).
+    Chytat se má jen případ, kdy si obchodník spletl osu s orientací panelů —
+    napsal 90 nebo −90 a dostal polovinu skoro přesně na sever.
+    """
+    return abs(((azimut_st + 180.0) % 360.0) - 180.0) > 150.0
+
+
+def zkontroluj_osu_rozdeleni(pole_zadani: tuple[PoleFve, ...]) -> list[str]:
+    """Upozornění, když osa V/Z rozdělení míří jinam, než obchodník myslel.
+
+    `azimut_st` je u rozdělovaného pole **osa**, ne orientace panelů – poloviny
+    vzniknou na −90° a +90° od ní. Kdo tam napíše 90 s tím, že „panely míří na
+    západ", dostane poloviny na 0° a 180°, tedy jednu na jih a druhou **na
+    sever**. Model to spočítá poslušně a severní polovina jen tiše nevyrábí.
+
+    Narazil na to Dan 6. 8. 2026 na nabídce, kde takhle vzniklo 150 kWp na
+    sever. Radši to říct nahlas než nechat obchodníka poslat zákazníkovi
+    podstřelenou výrobu.
+    """
+    zpravy: list[str] = []
+    for i, f in enumerate(pole_zadani, start=1):
+        if not f.rozdelit_vychod_zapad:
+            continue
+        severni = [f.azimut_st + s for s in (-90.0, 90.0) if _miri_takmer_na_sever(f.azimut_st + s)]
+        if severni:
+            zpravy.append(
+                f"**Pole {i} má osu rozdělení {f.azimut_st:.0f}°, takže jedna polovina "
+                f"míří na {_nazev_orientace(severni[0])}** – u východo-západní "
+                f"konstrukce má být osa 0° (poloviny na východ a na západ). "
+                f"S osou {f.azimut_st:.0f}° vyjdou poloviny na "
+                f"{_nazev_orientace(f.azimut_st - 90):s} a {_nazev_orientace(f.azimut_st + 90):s}, "
+                f"takže {f.kwp / 2.0:.0f} kWp výpočtu skoro nevyrábí. Zkontroluj osu."
+            )
+    return zpravy
 
 
 @dataclass
@@ -2315,6 +2361,7 @@ def spocti_ppa_bess(vstup: VstupPpaBess) -> dict:
     pole_zadani = tuple(x for x in (vstup.pole or ()) if x.kwp and x.kwp > 0)
     pole = rozloz_pole(pole_zadani)
     zadana_pole = bool(pole)
+    upozorneni.extend(zkontroluj_osu_rozdeleni(pole_zadani))
 
     if zadana_pole:
         vyroba_kwh = [0.0] * len(vstup.casy)
@@ -2736,6 +2783,9 @@ def spocti_ppa_bess(vstup: VstupPpaBess) -> dict:
                         2,
                     ),
                     "cena_prepsana": bool(f.cena_kc_kwp and f.cena_kc_kwp > 0),
+                    # Vzniklo tohle pole rozdělením V/Z? Bez příznaku vypadá
+                    # výsledek se čtyřmi poli proti třem zadaným jako chyba.
+                    "z_rozdeleni_vz": f.z_rozdeleni_vz,
                     "nakladova_cena_kc": round(
                         f.kwp
                         * (

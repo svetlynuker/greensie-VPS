@@ -59,7 +59,17 @@ polí (hlídá test `test_je_stejne_jako_dve_pole_rucne`).
 Ve výstupu jsou obě podoby: `elektrarna.pole` = rozložená (z nich se počítají
 grafy a součty) a `elektrarna.pole_zadani` = původní zadání, ze kterého panel
 předvyplňuje formulář. Bez toho by se pole vrátilo jako dvě a zaškrtnutí by se
-ztratilo.
+ztratilo. Poloviny z rozdělení nesou příznak `z_rozdeleni_vz` a panel je označí
+štítkem „polovina z V/Z" — jinak výsledek se čtyřmi poli proti třem zadaným
+vypadá jako chyba (na tom se 6. 8. 2026 zdrželi dva lidé).
+
+**Osa není orientace panelů.** `azimut_st` je u rozdělovaného pole osa, poloviny
+vzniknou na −90° a +90° od ní. Kdo tam napíše 90 s tím, že „panely míří na
+západ", dostane poloviny na 0° a 180°, tedy jednu na jih a druhou **na sever** —
+a ta severní tiše nevyrábí. `zkontroluj_osu_rozdeleni()` na to upozorní, když
+některá polovina vyjde do 30° od severu. Hranice je schválně přísná (150°, ne
+112,5°): osa 30° dává jihovýchod a severozápad, což je legitimní pootočená
+střecha, a planý poplach by lidi naučil upozornění přeskakovat.
 
 ### Cena za kWp u jednotlivého pole
 
@@ -127,6 +137,28 @@ vždy kombinace.** Volba měsíčního stropu se totiž rozhoduje podle *odhadu*
 hodnoty kWh (cena PPA se dopočítá až po dispatchi), a když se odhad rozejde
 s realitou, může kombinace vyjít horší. Ekonomika se proto počítá všem třem
 režimům a doporučení z toho vypadne, místo aby se předvolilo.
+
+## Když na nabídce pracují dva lidé
+
+Vstupy formuláře **nežijí na serveru** — každý je má jako draft v localStorage
+svého prohlížeče (`gs-ppabess-vstup-<id nabídky>`) a na serveru je uložené jen
+zadání, se kterým se naposledy počítalo (`popis_json.vstup` a `elektrarna.pole_zadani`).
+
+Důsledek, na který Dan s Vladislavem narazili 6. 8. 2026 nad jednou nabídkou:
+draft **přebíjí** předvyplnění ze serveru, takže když kolega přepočítá z jiného
+zadání, druhý o tom nezjistí nic ani po obnovení stránky — a přepočítá „proti"
+němu. Nic se přitom nepřepíše, každé spočítání zakládá nový záznam
+v `navrhovana_reseni`, ale lidé si myslí, že o změny přišli.
+
+Panel proto porovnává podpis zadání ve formuláři proti zadání posledního
+uloženého výpočtu (`podpisZadani`, všechno na řetězce — server posílá čísla,
+formulář drží text) a při rozdílu ukáže pruh s tlačítkem **„Načíst zadání
+z posledního výpočtu"**. Draft se nikdy nezahodí sám: rozpracovaná práce se
+neztratí, jen přestane být neviditelný rozchod.
+
+Co to **neřeší**: dva lidé pořád mohou počítat současně a poslední výpočet
+vyhrává. Skutečné uzamčení nebo sloučení zadání by znamenalo držet vstupy na
+serveru, což je větší změna.
 
 ## Ekonomika baterie
 
