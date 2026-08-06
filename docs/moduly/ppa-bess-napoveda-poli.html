@@ -1,0 +1,979 @@
+<title>PPA + BESS — nápověda k polím</title>
+
+<style>
+  /* ---------------------------------------------------------------
+     Barvy i typografie jsou převzaté z design systému appky
+     (frontend/src/styles/global.css), aby nápověda vypadala jako
+     její součást, ne jako cizí dokument. Neutrály mají jemný zelený
+     nádech, akcent je zelená z rozhraní (ne světlejší z logotypu).
+     --------------------------------------------------------------- */
+  :root {
+    color-scheme: light;
+    --bg: #dbe3de;
+    --surface: #ffffff;
+    --surface-2: #eff4f1;
+    --sunken: #ccd8d1;
+    --ink: #16211c;
+    --ink-2: #4b5852;
+    --muted: #78847d;
+    --line: #c2cfc8;
+    --line-strong: #aebeb5;
+    --line-soft: #e2e9e5;
+    --brand: #2f9e44;
+    --brand-strong: #237a34;
+    --brand-wash: #e7f3ea;
+    --warn: #cf8a00;
+    --warn-wash: #faf0d6;
+    --crit: #d03b3b;
+    --crit-wash: #f7e0e0;
+    --info: #1971c2;
+    --shadow-1: 0 1px 2px rgba(20, 33, 28, .08), 0 2px 6px -2px rgba(20, 33, 28, .08);
+    --shadow-2: 0 14px 34px -12px rgba(20, 33, 28, .38), 0 3px 10px rgba(20, 33, 28, .10);
+    --radius: 12px;
+    --radius-sm: 9px;
+
+    --prose: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+             "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+            "Liberation Mono", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #070c0a;
+      --surface: #18221d;
+      --surface-2: #202b25;
+      --sunken: #0d1411;
+      --ink: #e7ece9;
+      --ink-2: #aab4ae;
+      --muted: #7f8b85;
+      --line: #2f3c35;
+      --line-strong: #445349;
+      --line-soft: #232e28;
+      --brand: #40c057;
+      --brand-strong: #69db7c;
+      --brand-wash: #172a1d;
+      --warn: #fab219;
+      --warn-wash: #2b2410;
+      --crit: #e15d5d;
+      --crit-wash: #2c1717;
+      --info: #3987e5;
+      --shadow-1: 0 1px 2px rgba(0, 0, 0, .5);
+      --shadow-2: 0 16px 40px -12px rgba(0, 0, 0, .7), 0 3px 10px rgba(0, 0, 0, .4);
+    }
+  }
+
+  /* Přepínač tématu u čtenáře musí přebít media query v OBOU směrech. */
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #dbe3de; --surface: #ffffff; --surface-2: #eff4f1; --sunken: #ccd8d1;
+    --ink: #16211c; --ink-2: #4b5852; --muted: #78847d;
+    --line: #c2cfc8; --line-strong: #aebeb5; --line-soft: #e2e9e5;
+    --brand: #2f9e44; --brand-strong: #237a34; --brand-wash: #e7f3ea;
+    --warn: #cf8a00; --warn-wash: #faf0d6; --crit: #d03b3b; --crit-wash: #f7e0e0;
+    --info: #1971c2;
+    --shadow-1: 0 1px 2px rgba(20, 33, 28, .08), 0 2px 6px -2px rgba(20, 33, 28, .08);
+    --shadow-2: 0 14px 34px -12px rgba(20, 33, 28, .38), 0 3px 10px rgba(20, 33, 28, .10);
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #070c0a; --surface: #18221d; --surface-2: #202b25; --sunken: #0d1411;
+    --ink: #e7ece9; --ink-2: #aab4ae; --muted: #7f8b85;
+    --line: #2f3c35; --line-strong: #445349; --line-soft: #232e28;
+    --brand: #40c057; --brand-strong: #69db7c; --brand-wash: #172a1d;
+    --warn: #fab219; --warn-wash: #2b2410; --crit: #e15d5d; --crit-wash: #2c1717;
+    --info: #3987e5;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, .5);
+    --shadow-2: 0 16px 40px -12px rgba(0, 0, 0, .7), 0 3px 10px rgba(0, 0, 0, .4);
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.6 var(--prose);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .obal { max-width: 1080px; margin: 0 auto; padding: 0 20px 96px; }
+
+  /* ---- hlavička ---- */
+  .hlava { padding: 56px 0 28px; }
+  .nadtitul {
+    font: 600 11px/1 var(--mono);
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--brand-strong);
+    margin-bottom: 14px;
+  }
+  h1 {
+    font-size: clamp(26px, 4.4vw, 38px);
+    line-height: 1.12;
+    letter-spacing: -.02em;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+  .perex { max-width: 62ch; color: var(--ink-2); font-size: 16px; margin: 0; }
+  .perex + .perex { margin-top: 10px; }
+
+  /* ---- lepivý pruh: filtr + skoky na sekce ---- */
+  .pruh {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+    margin: 0 -20px;
+    padding: 10px 20px;
+  }
+  .pruh-in { max-width: 1080px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .hledat {
+    flex: 1 1 240px;
+    min-width: 200px;
+    font: 15px/1.4 var(--prose);
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+    padding: 9px 12px;
+  }
+  .hledat::placeholder { color: var(--muted); }
+  .hledat:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; border-color: var(--brand); }
+  .pocet { font: 12px/1 var(--mono); color: var(--muted); white-space: nowrap; }
+  .skoky { display: flex; gap: 6px; overflow-x: auto; flex: 1 1 100%; padding-bottom: 2px; }
+  .skoky a {
+    font: 500 12px/1 var(--prose);
+    color: var(--ink-2);
+    text-decoration: none;
+    white-space: nowrap;
+    padding: 6px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+  }
+  .skoky a:hover { border-color: var(--brand); color: var(--brand-strong); }
+  .skoky a:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+  /* ---- sekce ---- */
+  section { margin-top: 34px; scroll-margin-top: 104px; }
+  .sekce-h { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+  .krok {
+    font: 700 12px/22px var(--mono);
+    width: 22px; height: 22px;
+    flex: 0 0 22px;
+    text-align: center;
+    border-radius: 6px;
+    background: var(--brand-wash);
+    color: var(--brand-strong);
+    border: 1px solid color-mix(in srgb, var(--brand) 35%, transparent);
+  }
+  h2 { font-size: 20px; letter-spacing: -.01em; margin: 0; text-wrap: balance; }
+  .sekce-pozn { color: var(--muted); font-size: 13.5px; margin: 0 0 14px; max-width: 68ch; }
+  .sekce-pozn.odsazeno { margin-left: 34px; }
+
+  .karta {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-1);
+    overflow: visible; /* karta detailu nesmí být odstřižená */
+  }
+
+  /* ---- řádek pole ---- */
+  .pole {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 14px;
+    align-items: baseline;
+    padding: 13px 16px 13px 18px;
+    border-top: 1px solid var(--line-soft);
+    cursor: help;
+  }
+  .pole:first-child { border-top: 0; }
+  /* Levý pásek kóduje DRUH pole — jestli ho musíš vyplnit, jestli je
+     nepovinné, jestli přijde z admin nastavení, nebo jestli je to
+     spočítaný výstup. Není to dekorace, je to informace. */
+  .pole::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 8px; bottom: 8px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--line-strong);
+  }
+  .pole[data-druh="povinne"]::before { background: var(--brand); }
+  .pole[data-druh="nepovinne"]::before { background: var(--line-strong); }
+  .pole[data-druh="nastaveni"]::before { background: var(--warn); }
+  .pole[data-druh="vypocet"]::before { background: var(--info); }
+  .pole:hover, .pole:focus-visible, .pole.drzi { background: var(--surface-2); }
+  .pole:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+
+  .jmeno { font-weight: 600; font-size: 15px; }
+  .strucne { grid-column: 1; color: var(--ink-2); font-size: 13.5px; }
+  .znacky { grid-row: 1 / span 2; grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+  .zn {
+    font: 500 11.5px/1 var(--mono);
+    padding: 4px 7px;
+    border-radius: 6px;
+    background: var(--sunken);
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .zn.jed { background: var(--brand-wash); color: var(--brand-strong); }
+  .zn.zkr { background: var(--warn-wash); color: var(--warn); font-weight: 700; }
+
+  /* ---- karta detailu (hover / focus / připnuto klikem) ---- */
+  .detail {
+    position: absolute;
+    top: calc(100% - 4px);
+    left: 8px; right: 8px;
+    z-index: 30;
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-2);
+    padding: 16px 18px;
+    display: none;
+    cursor: auto;
+  }
+  .pole:hover > .detail,
+  .pole:focus-visible > .detail,
+  .pole.drzi > .detail { display: block; }
+  .pole.nahoru > .detail { top: auto; bottom: calc(100% - 4px); }
+
+  .detail dl { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 9px 16px; }
+  .detail dt {
+    font: 600 10.5px/1.5 var(--mono);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding-top: 2px;
+  }
+  .detail dd { margin: 0; font-size: 14px; color: var(--ink); }
+  .detail dd.tlum { color: var(--ink-2); }
+  .detail .zkratka-radek { margin: 0 0 6px; }
+  .detail .zkratka-radek:last-child { margin-bottom: 0; }
+  .detail .zkratka-radek b { font-family: var(--mono); color: var(--warn); }
+  .detail code {
+    font: 12.5px/1.5 var(--mono);
+    background: var(--sunken);
+    padding: 1px 5px;
+    border-radius: 5px;
+  }
+  .detail .varovani {
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--crit-wash);
+    border: 1px solid color-mix(in srgb, var(--crit) 30%, transparent);
+    font-size: 13.5px;
+    color: var(--ink);
+  }
+  .detail .varovani b { color: var(--crit); }
+
+  /* ---- legenda a nic-nenalezeno ---- */
+  .legenda { display: flex; flex-wrap: wrap; gap: 16px; margin: 22px 0 0; padding: 0; list-style: none; }
+  .legenda li { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink-2); }
+  .legenda i { width: 3px; height: 15px; border-radius: 2px; display: block; }
+  .prazdno { padding: 22px 18px; color: var(--muted); font-size: 14px; }
+  .skryto { display: none !important; }
+
+  .pata { margin-top: 44px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+  .pata code { font-family: var(--mono); font-size: 12.5px; }
+
+  @media (max-width: 620px) {
+    .pole { grid-template-columns: minmax(0, 1fr); }
+    .znacky { grid-row: auto; grid-column: 1; justify-content: flex-start; margin-top: 6px; }
+    .detail { left: 0; right: 0; }
+    .detail dl { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+    .detail dt { padding-top: 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="pruh">
+  <div class="pruh-in">
+    <input id="hledat" class="hledat" type="search" placeholder="Hledej pole nebo zkratku — třeba „DSCR“, „nájem“, „příkon“…" aria-label="Filtrovat pole" />
+    <span class="pocet" id="pocet"></span>
+    <nav class="skoky" id="skoky" aria-label="Přejít na sekci"></nav>
+  </div>
+</div>
+
+<div class="obal">
+  <header class="hlava">
+    <div class="nadtitul">Nabídkovač · modul PPA + BESS</div>
+    <h1>Co které pole znamená</h1>
+    <p class="perex">
+      Nápověda ke všem polím kalkulačky PPA&nbsp;+&nbsp;BESS — od odběrového diagramu
+      po dlaždice s&nbsp;výsledkem. <strong>Najeď myší na kterýkoli řádek</strong> a rozbalí se
+      detailní popis: co pole znamená, co znamenají zkratky v&nbsp;něm, jaká je výchozí
+      hodnota, co se změní když ho přepíšeš, a na čem visí.
+    </p>
+    <p class="perex">
+      Funguje i z&nbsp;klávesnice (<code>Tab</code> a&nbsp;<code>Shift+Tab</code>) a&nbsp;kliknutím
+      se popis připne, ať se dá pohodlně přečíst. Filtr nahoře prohledává i&nbsp;texty popisů.
+    </p>
+    <ul class="legenda">
+      <li><i style="background:var(--brand)"></i> musíš vyplnit</li>
+      <li><i style="background:var(--line-strong)"></i> nepovinné</li>
+      <li><i style="background:var(--warn)"></i> z&nbsp;Katalogu a&nbsp;výpočtů</li>
+      <li><i style="background:var(--info)"></i> spočítaný výstup</li>
+    </ul>
+  </header>
+
+  <main id="sekce"></main>
+
+  <footer class="pata">
+    Zdroj pravdy je kód: výpočetní jádro <code>backend/app/nabidkovac/ppa_bess.py</code>,
+    panel <code>frontend/src/components/PpaBessPanel.jsx</code>, delší text
+    <code>docs/moduly/ppa-bess.md</code>. Výchozí hodnoty jsou ty ze zdrojáku — pokud je
+    někdo přepsal v&nbsp;Katalogu a&nbsp;výpočtech, platí hodnota z&nbsp;nastavení.
+    Ceny všude bez DPH.
+  </footer>
+</div>
+
+<script>
+  /* Data jsou schválně jedno pole objektů: přidat pole = přidat objekt,
+     nemusí se sahat do HTML ani do CSS. */
+  const SEKCE = [
+    {
+      id: 'diagram', krok: '1', nazev: 'Odběrový diagram',
+      pozn: 'Bez patnáctiminutového diagramu se nedá počítat nic — ani párování výroby se spotřebou, ani hledání stropu pro srážení špiček.',
+      pole: [
+        {
+          jmeno: 'Odběrový diagram (15min profil)', druh: 'povinne', jednotka: 'kW po intervalech',
+          strucne: 'Roční průběh odběru po čtvrthodinách. Nahraje se jako dokument, nebo se vezme z odběrného místa zákazníka v CRM.',
+          coJeTo: 'Změřený odběr z distribuční sítě, hodnota pro každý patnáctiminutový interval. Z něj se počítá všechno ostatní: kdy elektrárna vyrábí zároveň se spotřebou, jak vysoké jsou špičky a kolik z nich baterie srazí.',
+          vychozi: 'Interval se rozpozná z dat (obvykle 0,25 h). Profily z distributorských souborů mají vyplněný jen výkon v kW, kilowatthodiny se dopočítají jako kW × délka intervalu.',
+          dopad: 'Určuje výrobu i přínos. Krátký profil (třeba jeden měsíc) v sobě koncentruje celý rok a výroba pak vyjde mnohonásobně přestřelená — to je ověřená past, proto se zadává celý rok.',
+          zavislosti: 'Na diagramu visí návrh velikosti elektrárny, návrh baterie i ekonomika. Nic z toho nejde spočítat bez něj.'
+        }
+      ]
+    },
+    {
+      id: 'misto', krok: '2', nazev: 'Odběrné místo',
+      pozn: 'Určuje, podle jakého sazebníku se počítají platby za kilowatty. Modul umí jen hladiny VN a VVN.',
+      pole: [
+        {
+          jmeno: 'Distributor', druh: 'povinne', jednotka: 'ČEZ / EG.D / PRE',
+          strucne: 'Kdo místo provozuje. Vybírá sazebník korun za kilowatt.',
+          coJeTo: 'Distribuční společnost daného odběrného místa. Každá má vlastní ceny za rezervovanou kapacitu a rezervovaný příkon, takže na volbě přímo visí, kolik baterie na kilowattech ušetří.',
+          dopad: 'Změna distributora přepíše celou část přínosu „z kilowattů“. Přínos z levnější energie zůstane stejný.',
+          zavislosti: 'Spolu s napěťovou hladinou hledá záznam v sazebníku. Když pro tu kombinaci sazby nejsou, výpočet proběhne, ale srážení špiček se neocení a je to v upozorněních — netipuje se.'
+        },
+        {
+          jmeno: 'Napěťová hladina', druh: 'povinne', jednotka: 'VN / VVN',
+          strucne: 'Na jakém napětí je místo připojené. Rozhoduje o sazbách za kilowatt.',
+          coJeTo: 'Úroveň, na které je odběrné místo připojené k distribuční soustavě. Určuje, který řádek sazebníku se použije.',
+          zkratky: [
+            { z: 'VN', v: 'vysoké napětí', t: 'obvykle 22 nebo 35 kV — typicky větší výrobní areál s vlastní trafostanicí.' },
+            { z: 'VVN', v: 'velmi vysoké napětí', t: 'obvykle 110 kV — velcí odběratelé připojení přímo na přenosovou úroveň.' }
+          ],
+          dopad: 'Vyšší hladina znamená jiné (obvykle nižší) ceny za kilowatt, takže se změní přínos ze srážení špiček.',
+          zavislosti: 'Nízké napětí (NN) modul nepodporuje — pro maloodběr tenhle produkt není.'
+        },
+        {
+          jmeno: 'Rezervovaná kapacita', druh: 'povinne', jednotka: 'kW', zkratkaZn: 'RK',
+          strucne: 'Z distribuční smlouvy. Dnešní náklad na kilowatty, proti kterému se úspora měří.',
+          coJeTo: 'Kapacita sjednaná v distribuční smlouvě — kolik kilowattů si zákazník platí jako svůj rezervovaný odběr. Je to výchozí bod pro srážení špiček: model počítá, o kolik ji baterie umožní snížit.',
+          zkratky: [
+            { z: 'RK', v: 'rezervovaná kapacita', t: 'smluvní hodnota z distribuční smlouvy, mění se relativně snadno (obvykle ročně nebo měsíčně).' }
+          ],
+          dopad: 'Určuje baseline dnešního nákladu. Když ji zadáš vyšší, než je, vyjde úspora nadhodnoceně.',
+          zavislosti: 'Když nevyplníš rezervovaný příkon, použije se tohle číslo i místo něj.'
+        },
+        {
+          jmeno: 'Rezervovaný příkon', druh: 'nepovinne', jednotka: 'kW', zkratkaZn: 'RP',
+          strucne: 'Ze smlouvy o připojení. V modelu 2027 je to to podstatné číslo.',
+          coJeTo: 'Příkon sjednaný ve smlouvě o připojení — technický strop místa. Nová dvousložková struktura plateb za výkon stojí na něm, ne na rezervované kapacitě, takže na něm visí většina přínosu baterie na kilowattech.',
+          zkratky: [
+            { z: 'RP', v: 'rezervovaný příkon', t: 'jiné číslo než rezervovaná kapacita a hlavně jinak měnitelné: snížení je JEDNOSMĚRNÁ změna smlouvy o připojení, zpětné navýšení je zpoplatněné.' }
+          ],
+          vychozi: 'Prázdné = použije se rezervovaná kapacita.',
+          dopad: 'Prázdné pole podhodnocuje přínos baterie, protože rezervovaná kapacita je obvykle nižší než příkon a model pak nevidí celý prostor pro snížení.',
+          zavislosti: 'Panel z něj počítá dva scénáře — „bez snížení“ (smlouva zůstane, platí se jen za naměřenou špičku) a „se snížením“ (příkon se sníží na hodnotu, kterou baterie umožní). Přepínač je v hlavičce výsledku.',
+          varovani: 'Snížení příkonu je nevratné bez placení. Než ho zákazníkovi doporučíš, ověř, že nemá v plánu rozšíření výroby.'
+        }
+      ]
+    },
+    {
+      id: 'dnes', krok: '3', nazev: 'Co zákazník platí dnes',
+      pozn: 'Součet těchhle dvou polí je cena, kterou PPA nahrazuje. Z rozdílu proti ceně PPA vzniká sleva, kterou zákazník na papíře uvidí.',
+      pole: [
+        {
+          jmeno: 'Silová složka', druh: 'povinne', jednotka: 'Kč/MWh',
+          strucne: 'Cena za samotnou elektřinu, kterou zákazník platí dodavateli dnes.',
+          coJeTo: 'Obchodní část ceny elektřiny — to, co jde dodavateli za megawatthodinu. Přesně tuhle část PPA nahrazuje, proto je to hlavní srovnávací číslo celé nabídky.',
+          zkratky: [
+            { z: 'MWh', v: 'megawatthodina', t: 'tisíc kilowatthodin. Ceny elektřiny se u velkých odběratelů uvádějí v korunách za MWh.' }
+          ],
+          dopad: 'Vyšší dnešní cena = větší sleva a vyšší přínos z kilowatthodin. Je to nejcitlivější vstup celé nabídky, protože se násobí celou spotřebou z elektrárny.',
+          zavislosti: 'Roste stejnou indexací jako cena PPA. Kdyby se indexovala jen jedna strana, úspora by umělé rostla nebo mizela.'
+        },
+        {
+          jmeno: 'Vyhnutelné regulované', druh: 'nepovinne', jednotka: 'Kč/MWh',
+          strucne: 'Ta část regulovaných platebl za MWh, které se odběrem z vlastní elektrárny vyhnete.',
+          coJeTo: 'Regulované platby mají složku za kilowatty a složku za kilowatthodiny. Odběrem z elektrárny na místě se vyhneš té druhé — a jen ta patří sem. Přičítá se k silové složce a dohromady tvoří cenu, se kterou se cena PPA srovnává.',
+          vychozi: '260 Kč/MWh (přebírá se z Katalogu a výpočtů).',
+          dopad: 'Zvyšuje dnešní cenu, takže zvyšuje slevu i přínos. Nastavit ji moc vysoko je nejtypičtější způsob, jak nabídku nafouknout — musí to být opravdu jen vyhnutelná část.',
+          zavislosti: 'Sčítá se se silovou složkou. Součet je „cena zákazníka“, kterou vidíš ve srovnání s cenou PPA.'
+        }
+      ]
+    },
+    {
+      id: 'elektrarna', krok: '4', nazev: 'Elektrárna',
+      pozn: 'Buď necháš velikost navrhnout (strop a cíl samospotřeby), nebo zadáš rozpad na pole — pak se velikost NENAVRHUJE a je daná součtem výkonů polí.',
+      pole: [
+        {
+          jmeno: 'Strop velikosti', druh: 'nepovinne', jednotka: 'kWp',
+          strucne: 'Co se fyzicky vejde. Horní hranice pro navrhovanou velikost.',
+          coJeTo: 'Maximální instalovaný výkon, který je na místě reálný — daný plochou střechy, statikou nebo limitem připojení. Návrh velikosti přes něj nikdy nepřejde.',
+          zkratky: [
+            { z: 'kWp', v: 'kilowatt peak', t: 'špičkový výkon panelů za standardních testovacích podmínek. Není to výkon, který elektrárna běžně dává — je to jmenovitá velikost, podle které se elektrárny porovnávají a oceňují.' }
+          ],
+          dopad: 'Když je strop nižší, než na co by vyšel cíl samospotřeby, velikost se o něj zarazí a výsledek to napíše v upozornění.',
+          zavislosti: 'Ignoruje se, když vyplníš rozpad na pole — tam je velikost daná součtem výkonů.'
+        },
+        {
+          jmeno: 'Cíl samospotřeby', druh: 'nepovinne', jednotka: '% výroby',
+          strucne: 'Jaký podíl výroby se má spotřebovat na místě. Podle toho se hledá velikost.',
+          coJeTo: 'Kritérium pro návrh velikosti elektrárny: hledá se největší elektrárna, u které se ještě aspoň tolik procent výroby spotřebuje na místě. Čím vyšší cíl, tím menší elektrárna, protože přebytky se musí vejít do spotřeby.',
+          vychozi: '80 % výroby.',
+          dopad: 'Nižší cíl dovolí větší elektrárnu, ale víc energie odteče do sítě za cenu přetoku (defaultně nulovou), takže přínos na megawatthodinách neroste tak, jak by velikost slibovala.',
+          zavislosti: 'Ignoruje se, když vyplníš rozpad na pole.'
+        },
+        {
+          jmeno: 'Sklon', druh: 'nepovinne', jednotka: '°',
+          strucne: 'Sklon panelů od vodorovné roviny. Použije se, když velikost navrhuje appka.',
+          coJeTo: 'Úhel panelů proti vodorovné rovině. Ovlivňuje jak celkovou roční výrobu, tak její rozložení během roku — strmější panely dávají relativně víc v zimě.',
+          vychozi: '35°.',
+          dopad: 'Mění tvar i objem výroby, a tím i to, kolik se stihne spotřebovat na místě.',
+          zavislosti: 'Platí pro celou elektrárnu jen tehdy, když nezadáš rozpad na pole. S poli má každé pole svůj sklon.'
+        },
+        {
+          jmeno: 'Azimut', druh: 'nepovinne', jednotka: '° (0 = jih)',
+          strucne: 'Světová strana, kam panely míří. Nula je jih, ±90 východ a západ.',
+          coJeTo: 'Orientace panelů. Nula znamená jih, −90 východ, +90 západ, 180 sever. Neurčuje jen kolik se vyrobí, ale hlavně KDY — a to je pro párování se spotřebou důležitější než celkový objem.',
+          vychozi: '0° (jih).',
+          dopad: 'Jih dá nejvyšší roční výrobu s ostrou polední špičkou. Východ-západ vyrobí za rok méně, ale profil je plošší, takže se víc energie spotřebuje na místě a jinak zbyde na baterii.',
+          zavislosti: 'Platí pro celou elektrárnu jen bez rozpadu na pole.'
+        },
+        {
+          jmeno: 'Pole: výkon', druh: 'nepovinne', jednotka: 'kWp',
+          strucne: 'Instalovaný výkon jedné části střechy s vlastní orientací.',
+          coJeTo: 'Rozpad elektrárny na části s různou orientací — „na jih 200 kWp, na východ 100, na západ 100“. Výroba se simuluje pro každé pole zvlášť a sečte, takže model zná i tvar výroby, ne jen její objem.',
+          dopad: 'Jakmile vyplníš aspoň jedno pole, velikost se NENAVRHUJE — je daná součtem výkonů polí. Strop velikosti ani cíl samospotřeby už ji neovlivní.',
+          zavislosti: 'Vypíná návrh velikosti. Panel to píše pod formulářem, ať to není překvapení.'
+        },
+        {
+          jmeno: 'Pole: azimut a sklon', druh: 'nepovinne', jednotka: '°',
+          strucne: 'Orientace a sklon konkrétního pole. Stejné jednotky jako u celé elektrárny.',
+          coJeTo: 'Vlastní orientace jedné části střechy. Právě kvůli tomuhle má rozpad na pole smysl: dvě střechy s různým azimutem vyrobí jinak rozložený výkon, a to mění, kolik se spotřebuje na místě.',
+          vychozi: 'Sklon 35°, azimut 0° (jih).',
+          dopad: 'Mění tvar výroby, a tím přínos z kilowatthodin i to, jak velká baterie má smysl.',
+          zavislosti: 'Když je u pole zaškrtnuté rozdělení východ-západ, tenhle azimut je OSA rozdělení, ne skutečná orientace panelů.'
+        },
+        {
+          jmeno: 'Pole: rozdělit 50/50 na východ a západ', druh: 'nepovinne', jednotka: 'zaškrtávátko',
+          strucne: 'Zadáš výkon a osu jednou, appka z toho udělá dvě pole po polovině.',
+          coJeTo: 'Zkratka pro východo-západní konstrukci. Z jednoho zadání vzniknou dvě pole po polovině výkonu, s azimutem −90° a +90° od zadané osy. Výsledek je bit za bit stejný, jako když ta dvě pole zadáš ručně.',
+          dopad: 'Nemění ekonomiku proti ručnímu zadání dvou polí — je to jen méně klikání.',
+          zavislosti: 'Osa je azimut toho pole: 0 znamená klasické východ-západ, 30 pootočenou střechu (tedy −60 a +120). Ve výsledku najdeš obě podoby — rozloženou pro grafy a součty, a původní zadání, ze kterého se formulář předvyplňuje.'
+        },
+        {
+          jmeno: 'Pole: nákladová cena za kWp', druh: 'nepovinne', jednotka: 'Kč/kWp',
+          strucne: 'Přepis ceny pro jedno konkrétní pole. Prázdné = cena z nastavení.',
+          coJeTo: 'Kolik nás stojí instalace toho jednoho pole na kilowatt peak. Je tu proto, že jedno pole bývá výrazně dražší než druhé — jiné kotvení, trapéz proti ploché střeše s balastem, delší kabelové trasy — a paušál za celou elektrárnu by zkreslil investiční náklad.',
+          vychozi: 'Prázdné = 13 500 Kč/kWp z Katalogu a výpočtů.',
+          dopad: 'Jde přímo do investičního nákladu, a tím do minimální ceny PPA. Na reálném profilu zdražení jednoho pole z 13 500 na 18 000 Kč/kWp zvedlo cenu PPA z 2 487 na 2 855 Kč/MWh a slevu srazilo z 33,9 % na 24,1 %.',
+          zavislosti: 'Pole s přepsanou cenou má v panelu štítek, aby bylo poznat, kde se od nastavení odchýlilo.'
+        },
+        {
+          jmeno: 'Cena za přetok', druh: 'nepovinne', jednotka: 'Kč/MWh',
+          strucne: 'Za kolik se prodá přebytek, který odteče do sítě.',
+          coJeTo: 'Cena, kterou za vyvedený přebytek někdo zaplatí — výkupem nebo sdílením. Závisí na lokalitě a smlouvě, proto to není celofiremní parametr, ale pole u konkrétní nabídky.',
+          vychozi: '0 Kč/MWh — za přetoky se neinkasuje nic. Vědomě konzervativní.',
+          dopad: 'Zvyšuje příjmy investora, takže může snížit minimální cenu PPA. Nula je bezpečná: když se přetok nakonec zpeněží, nabídka jen vyjde lépe, než slibovala.',
+          zavislosti: 'Indexuje se stejně jako cena PPA, pokud to nastavení nevypne.'
+        },
+        {
+          jmeno: 'Rezervovaný výkon dodávky', druh: 'nepovinne', jednotka: 'kW',
+          strucne: 'Kolik smí elektrárna maximálně dodat do sítě. Nula = nic.',
+          coJeTo: 'Smluvní limit pro dodávku do distribuční sítě. Co se do něj nevejde, se musí seříznout — energie prostě nevznikne.',
+          vychozi: 'Prázdné = neomezeno.',
+          dopad: 'Nízký limit sráží přebytek a snižuje příjmy z přetoku. Nula znamená, že do sítě nesmí nic — pak je nutné, aby se celá výroba spotřebovala nebo uložila, jinak se ořeže.',
+          zavislosti: 'Souvisí s cenou za přetok: při ceně 0 Kč nemá limit na peníze vliv, ale ořez se pořád ukazuje v grafu i energetické bilanci.'
+        }
+      ]
+    },
+    {
+      id: 'baterie', krok: '5', nazev: 'Baterie',
+      pozn: 'Baterie je pronájem od nás, ne investice zákazníka. Buď ji zadáš ručně, nebo ji necháš navrhnout z katalogu. Ruční zadání má přednost.',
+      pole: [
+        {
+          jmeno: 'Kapacita', druh: 'povinne', jednotka: 'kWh',
+          strucne: 'Jmenovitá kapacita baterie. S výkonem se zadává vždy oba, nebo ani jedno.',
+          coJeTo: 'Kolik energie baterie pojme podle štítku. Použitelná je jen část — kolik, říká pole „Využitelná kapacita“.',
+          dopad: 'Větší kapacita srazí víc špiček a posune víc solární energie, ale zdraží nájem. Přestřelená baterie se nevyplatí a výpočet to napíše: „přinese X Kč/rok, ale nájem je Y Kč/rok“.',
+          zavislosti: 'Ruční zadání kapacity i výkonu vypíná návrh z katalogu. Jedno bez druhého výpočet odmítne — na simulaci to nestačí.'
+        },
+        {
+          jmeno: 'Výkon', druh: 'povinne', jednotka: 'kW',
+          strucne: 'Jak rychle umí baterie nabíjet a vybíjet.',
+          coJeTo: 'Maximální nabíjecí a vybíjecí výkon. U srážení špiček je často důležitější než kapacita: špička trvá krátce, ale musí se srazit celá naráz.',
+          zkratky: [
+            { z: 'C-rate', v: 'poměr výkonu ke kapacitě', t: 'kolikrát za hodinu se baterie umí přetočit. Když se velikost navrhuje automaticky, počítá se výkon jako kapacita × 0,5 — tedy vybití za dvě hodiny.' }
+          ],
+          dopad: 'Malý výkon při velké kapacitě špičku nesrazí, i když má energii. Velký výkon při malé kapacitě ji srazí, ale jen na chvíli.',
+          zavislosti: 'Spolu s kapacitou určuje, jestli má smysl režim srážení špiček, samospotřeby, nebo kombinace.'
+        },
+        {
+          jmeno: 'Účinnost', druh: 'nepovinne', jednotka: '% round-trip', zkratkaZn: 'round-trip',
+          strucne: 'Kolik z uložené energie se vrátí zpátky. Ztráty vznikají cestou tam i zpět.',
+          coJeTo: 'Účinnost celého cyklu z pohledu sítě: dej do baterie 100 kWh a vrátí ti jich 88 nebo 90, podle techniky. Zbytek jsou ztráty v převodu a v samotném článku.',
+          zkratky: [
+            { z: 'round-trip', v: 'obousměrná (cyklová) účinnost', t: 'na rozdíl od účinnosti jednoho směru zahrnuje nabití i vybití. Proto je nižší, než co bývá na štítku střídače.' }
+          ],
+          vychozi: 'Prázdné = 90 %. Toleruje zadání procenty (88) i zlomkem (0,88); hodnota mimo pásmo 50–100 % se nahradí defaultem.',
+          dopad: 'Nižší účinnost snižuje přínos ze samospotřeby a zvyšuje náklad ztrát u energie dobité ze sítě kvůli špičkám. Ztráty na solární energii se zákazníkovi nefakturují — k němu nedorazily.',
+          zavislosti: 'Vstupuje do dispatche i do trajektorie, kterou si baterie musí držet na budoucí špičky.',
+          varovani: 'Placeholder v poli ukazuje 88, ale prázdné pole spadne na 90 %. Když chceš 88, musíš to napsat.'
+        },
+        {
+          jmeno: 'Využitelná kapacita', druh: 'nepovinne', jednotka: '% (SOC okno)', zkratkaZn: 'SOC / DoD',
+          strucne: 'Jakou část kapacity smí dispatch opravdu použít.',
+          coJeTo: 'Baterie se nevybíjí do nuly ani nenabíjí na sto procent — kvůli životnosti se jezdí v okně. Tohle procento říká, jak velké to okno je, a jen z něj se počítá skutečně použitelná energie.',
+          zkratky: [
+            { z: 'SOC', v: 'state of charge, stav nabití', t: 'kolik je v baterii energie právě teď, v procentech kapacity.' },
+            { z: 'DoD', v: 'depth of discharge, hloubka vybití', t: 'jak hluboko se smí jít. 90 % znamená, že se využije 90 % jmenovité kapacity a 10 % zůstane jako rezerva.' }
+          ],
+          vychozi: 'Prázdné = 90 %.',
+          dopad: 'Přímo škáluje použitelnou energii. Baterie 300 kWh s oknem 90 % se v modelu chová jako 270 kWh.',
+          zavislosti: 'Vstupuje do všech tří režimů i do návrhu velikosti baterie z katalogu.'
+        },
+        {
+          jmeno: 'Nákladová cena', druh: 'nepovinne', jednotka: 'Kč',
+          strucne: 'Za kolik baterii kupujeme my. Z ní se dopočítá nájem i zbytková cena.',
+          coJeTo: 'Naše nákupní cena baterie. Od ní se odvíjí investiční náklad, splátka úvěru, nájem pro zákazníka i zbytková cena při odkupu.',
+          dopad: 'Bez ní se nájem ani ekonomika spočítat nedají — výpočet buď použije doporučenou prodejní cenu z katalogu, nebo řekne, že čísla nejsou platná. Pozor: u baterií v katalogu je v „prodejní ceně“ vedená naše dealerská cena.',
+          zavislosti: 'Nájem = naše marže + splátka úvěru na dobu nájmu + EMS. Zbytková cena = 15 % investičního nákladu baterie.'
+        },
+        {
+          jmeno: 'Sjednaný nájem', druh: 'nepovinne', jednotka: 'Kč/měs',
+          strucne: 'Nájem, na kterém jste se dohodli. Použije se místo dopočteného.',
+          coJeTo: 'Ruční přepis měsíčního nájmu baterie. Když je vyplněný, počítá se s ním celá ekonomika, ne jen zobrazené číslo — a výpočet zároveň ukáže, jak se rozchází s tím, co by vyšlo z ceny baterie.',
+          dopad: 'Nájem je pro nás provozní příjem, takže vstupuje do krytí dluhové služby. Nižší sjednaný nájem zhorší krytí a může zvednout minimální cenu PPA; vyšší naopak.',
+          zavislosti: 'Rozdíl proti dopočtenému nájmu se hlásí v upozorněních. Do varianty s odkupem za korunu se přičítá rozpuštěná zbytková cena.',
+          varovani: 'Do 6. 8. 2026 se tenhle nájem do ekonomiky vůbec nepromítal. Nabídky s ručním nájmem spočítané dřív mají po přepočtu jiné krytí, výnosnost i cenu PPA — nově správně.'
+        },
+        {
+          jmeno: 'Délka kontraktu baterie', druh: 'nepovinne', jednotka: 'let',
+          strucne: 'Na kolik let se baterie pronajímá a financuje. Nezávisí na kontraktu na elektrárnu.',
+          coJeTo: 'Doba nájmu baterie. Na stejnou dobu se počítá i anuita úvěru na ni — jinak by po skončení nájmu zůstal nesplacený. Kontrakt na elektrárnu může běžet jinak dlouho.',
+          vychozi: '10 let. Backend hodnotu omezuje na 1 až 40 let jako pojistku proti překlepu.',
+          dopad: 'Delší nájem rozloží úvěr na víc let, takže sníží měsíční platbu, ale odkup se odloží. Na reálném profilu: 10 let → nájem 39 302 Kč/měs a odkup v 11. roce; 15 let → nájem 31 964 Kč/měs a odkup v 16. roce.',
+          zavislosti: 'Určuje, kdy skončí nájem, kdy klesne splátka, kdy baterie přejde na zákazníka a do kolika měsíců se dělí zbytková cena ve variantě za korunu.',
+          varovani: 'Když je nájem delší než nejkratší nabízená délka kontraktu, u těch kratších se baterie nesplatí — po jejich skončení zůstane zůstatek úvěru a k odkupu nedojde. Výpočet to napíše v upozorněních.'
+        }
+      ]
+    },
+    {
+      id: 'dlazdice', nazev: 'Dlaždice s výsledkem',
+      pozn: 'To, co obchodník vidí jako první. Čísla platí pro vybranou délku kontraktu a vybraný scénář rezervovaného příkonu — obojí se přepíná.',
+      pole: [
+        {
+          jmeno: 'Čistý přínos zákazníka', druh: 'vypocet', jednotka: 'Kč/rok',
+          strucne: 'Co zákazníkovi zbyde za rok po zaplacení nájmu baterie.',
+          coJeTo: 'Součet přínosu z levnější energie a ze srážení špiček, minus nájem baterie, minus ztráty síťového dobíjení. V dlaždici je roční hodnota, v podtitulu součet za celý kontrakt.',
+          dopad: 'Když je záporný, nabídka nemá co prodávat a panel to označí štítkem „nevyplatí se“.',
+          zavislosti: 'Mění se s vybranou délkou kontraktu (delší kontrakt = nižší cena PPA = vyšší přínos) i se scénářem příkonu.'
+        },
+        {
+          jmeno: 'Z kilowatthodin (elektrárna)', druh: 'vypocet', jednotka: 'Kč/rok',
+          strucne: 'Kolik zákazník ušetří tím, že energii z elektrárny bere levněji.',
+          coJeTo: 'Spotřeba z elektrárny vynásobená rozdílem mezi dnešní cenou a cenou PPA. Tedy: kolik megawatthodin se odebere na místě, krát kolik se na každé z nich ušetří.',
+          dopad: 'Roste s velikostí elektrárny, ale jen dokud se energie stíhá spotřebovat na místě. Co odteče do sítě, sem nepatří.',
+          zavislosti: 'Visí na dnešní ceně (silová + vyhnutelné regulované) a na ceně PPA, která se dopočítává až z financování.'
+        },
+        {
+          jmeno: 'Z kilowattů (srážení špiček)', druh: 'vypocet', jednotka: 'Kč/rok',
+          strucne: 'Kolik zákazník ušetří na platbách za výkon, protože baterie srazí špičku.',
+          coJeTo: 'Úspora na regulovaných platbách za kilowatty. V podtitulu je vidět, z jaké špičky na jakou se dostane a o kolik kilowattů je to níž.',
+          dopad: 'Bez sazeb v sazebníku se tahle část neocení vůbec a zůstane nula — je to v upozorněních, netipuje se.',
+          zavislosti: 'Závisí na distributorovi, napěťové hladině a na tom, který scénář příkonu je vybraný.'
+        },
+        {
+          jmeno: 'Rezervovaný příkon / Nový rezervovaný příkon', druh: 'vypocet', jednotka: 'kW',
+          strucne: 'Na jakou hodnotu příkonu se dá jít, když baterie sráží špičky.',
+          coJeTo: 'Ve scénáři „se snížením“ ukazuje hodnotu, kterou baterie umožní, a v podtitulu dnešní hodnotu a rozdíl. Ve scénáři „bez snížení“ ukazuje současný příkon a jen říká, kam by se dalo jít.',
+          dopad: 'Snížení příkonu je jednosměrná změna smlouvy o připojení — panel to u té dlaždice píše.',
+          zavislosti: 'Čte se z aktivního scénáře, takže se mění s přepínačem v hlavičce výsledku.'
+        },
+        {
+          jmeno: 'NPV úspor', druh: 'vypocet', jednotka: 'Kč', zkratkaZn: 'NPV',
+          strucne: 'Úspory za celý kontrakt přepočtené na dnešní hodnotu.',
+          coJeTo: 'Součet budoucích úspor, ale diskontovaný — koruna za patnáct let má dnes menší hodnotu než koruna dnes. Bez diskontu by dlouhý kontrakt vypadal vždy lépe, jen protože je dlouhý.',
+          zkratky: [
+            { z: 'NPV', v: 'net present value, čistá současná hodnota', t: 'budoucí peníze přepočtené na dnešek pomocí diskontní sazby. Kladné NPV znamená, že se to při dané sazbě vyplatí.' }
+          ],
+          vychozi: 'Diskontní sazba je stejná jako úroková, tedy 7,5 %.',
+          dopad: 'Používá se ke srovnání délek kontraktu mezi sebou.',
+          zavislosti: 'V podtitulu je výnosnost pro investora a nejtěsnější krytí dluhové služby.'
+        },
+        {
+          jmeno: 'Odkup baterie za zbytkovou cenu', druh: 'vypocet', jednotka: 'Kč',
+          strucne: 'Kolik zákazník doplatí na konci, když si baterii odkoupí za zbytkovou hodnotu.',
+          coJeTo: 'Jedna z dvou variant odkupu. Zákazník platí celou dobu nájem a po jeho skončení si baterii odkoupí za zbytkovou hodnotu. Od té chvíle neplatí nájem, ale servis a řízení nese sám.',
+          vychozi: 'Zbytková hodnota je 15 % investičního nákladu baterie (odpovídá zařízení s asi 60–70 % původní kapacity).',
+          dopad: 'Pro zákazníka nižší měsíční platba, ale jednorázový výdaj na konci. Pro nás jednorázový kapitálový příjem, který se nepočítá do krytí dluhové služby — banka poměřuje provozní zdroje, ne prodej majetku.',
+          zavislosti: 'Rok odkupu je první rok po skončení nájmu. Když kontrakt končí spolu s nájmem, převod padne až za horizont výpočtu.',
+          varovani: 'Právě v tom případě ten doplatek do čísel nevstupuje a baterie by nám po kontraktu zůstala. Panel to u té délky píše pod srovnávací tabulkou, ať nesrovnáváš nesrovnatelné.'
+        },
+        {
+          jmeno: 'Odkup baterie za 1 Kč', druh: 'vypocet', jednotka: 'Kč',
+          strucne: 'Zákazník na konci nedoplácí nic — zbytková cena je rozpuštěná do nájmu.',
+          coJeTo: 'Druhá varianta odkupu. Zbytková hodnota se rovnoměrně rozpočítá do všech měsíců nájmu a baterie pak přejde za symbolickou korunu. Prostým dělením, ne anuitou — je to cena rozložená v čase, ne další úvěr, a musí se dát vysvětlit jedním dělením.',
+          vychozi: 'Navýšení nájmu = zbytková hodnota ÷ (doba nájmu × 12). Koruna, ne nula: převod majetku za nula korun je daňově i právně nešikovný.',
+          dopad: 'Pro nás je to výměna jednorázového kapitálového příjmu za průběžný provozní — a nájem do krytí dluhové služby vstupuje, odkup ne. Krytí se zlepší a cena PPA proto může vyjít níž. Na reálném profilu u patnáctiletého kontraktu spadla z 2 722 na 2 627 Kč/MWh a zákazník je na tom o 690 tisíc lépe, zatímco naše výnosnost klesla z 13,5 na 12,5 %.',
+          zavislosti: 'Počítá se jako celý druhý průchod včetně vlastní bisekce ceny PPA — dopočítat nad hotovým výsledkem to nejde. Existuje u každé nabízené délky, protože rozpuštěná část se platí v nájmu, tedy uvnitř horizontu.'
+        },
+        {
+          jmeno: 'Pokrytí spotřeby', druh: 'vypocet', jednotka: '%',
+          strucne: 'Jakou část své spotřeby zákazník pokryje z elektrárny.',
+          coJeTo: 'Podíl celkové spotřeby, který přijde z vlastní elektrárny místo ze sítě. V podtitulu je k tomu míra samospotřeby (jaká část výroby se spotřebuje na místě) a počet cyklů baterie za rok.',
+          dopad: 'Je to hlavní argument „kolik už nekoupím“. Neplést s mírou samospotřeby — ta odpovídá na obrácenou otázku.',
+          zavislosti: 'Počet cyklů nad 300 za rok znamená, že je baterie hnaná tvrdě, a záruka bývá vázaná na cykly. Panel na to upozorní.'
+        }
+      ]
+    },
+    {
+      id: 'ekonomika', nazev: 'Ekonomika kontraktu',
+      pozn: 'Tabulka délek kontraktu a záložka „Pro nás“. Cena PPA se nedoporučuje sama — hledá se nejnižší, se kterou projekt projde bankou i investorem.',
+      pole: [
+        {
+          jmeno: 'Cena PPA', druh: 'vypocet', jednotka: 'Kč/MWh', zkratkaZn: 'PPA',
+          strucne: 'Nejnižší cena, se kterou projekt projde bankou i investorem.',
+          coJeTo: 'Cena, za kterou bude zákazník brát energii z elektrárny. Není zadaná — hledá se bisekcí jako nejnižší hodnota, u které ještě prochází krytí dluhové služby i cílová výnosnost.',
+          zkratky: [
+            { z: 'PPA', v: 'power purchase agreement, smlouva o odběru elektřiny', t: 'zákazník neinvestuje do elektrárny, ale zaváže se na roky odebírat z ní energii za sjednanou cenu. Elektrárnu postaví a vlastní účelová firma.' },
+            { z: 'SPV', v: 'special purpose vehicle, účelová společnost', t: 'firma založená jen pro tenhle jeden projekt. Vlastní elektrárnu i baterii, bere úvěr a inkasuje platby od zákazníka.' }
+          ],
+          dopad: 'Každé zdražení investice nebo zhoršení financování cenu zvedne. Každý příjem navíc (nájem, přetok, rozpuštěný odkup) ji může snížit.',
+          zavislosti: 'Indexuje se skokově — každé tři roky o 3 %. Řeší se bisekcí a ne rovnicí, protože splátka se po skončení nájmu láme a v roce odkupu přijde jednorázový příjem.'
+        },
+        {
+          jmeno: 'Sleva', druh: 'vypocet', jednotka: '%',
+          strucne: 'O kolik je cena PPA nižší než to, co zákazník platí dnes.',
+          coJeTo: 'Rozdíl mezi dnešní cenou zákazníka a cenou PPA, vyjádřený procentem. Hlavní číslo pro zákazníka.',
+          dopad: 'Když projekt neprojde ani při vysoké ceně, sleva se nevypíše vůbec — místo toho je tam pomlčka. Ta cena totiž není nabídka, je to jen horní mez hledání, a slevou by vyšlo něco jako −200 %.',
+          zavislosti: 'Roste s délkou kontraktu, protože delší kontrakt znamená nižší splátku a tím nižší cenu.'
+        },
+        {
+          jmeno: 'Drží cenu', druh: 'vypocet', jednotka: 'banka / investor / nedosažitelné',
+          strucne: 'Která podmínka je ta těsná — kvůli které nemůže být cena nižší.',
+          coJeTo: 'U krátkého kontraktu bývá těsná banka (krytí dluhové služby), u dlouhého investor (cílová výnosnost). „Nedosažitelné“ znamená, že projekt neprojde ani při vysoké ceně — elektrárna s baterií je na ten profil moc drahá, nebo je nájem nastavený pod ekonomikou.',
+          dopad: 'Říká ti, kde tlačit. Když cenu drží banka, pomůže vyšší nájem nebo delší kontrakt. Když investor, pomůže levnější technika.',
+          zavislosti: 'Detekce zkouší, co se stane při ceně o 2 % nižší.',
+          varovani: 'Ten dvouprocentní krok je moc hrubý a sloupec umí ukázat špatnou příčinu. U varianty s odkupem za korunu cenu reálně drží výnosnost investora (přesně na cíli 12,5 %), zatímco krytí má rezervu 1,306 proti limitu 1,30 — a přesto se vypíše „banka“. Zatím neopraveno.'
+        },
+        {
+          jmeno: 'DSCR', druh: 'vypocet', jednotka: 'poměr', zkratkaZn: 'DSCR',
+          strucne: 'Kolikrát provozní zdroje pokryjí splátku úvěru. Podmínka banky.',
+          coJeTo: 'Provozní zdroje daného roku dělené dluhovou službou toho roku. Hodnota 1,30 znamená, že na každou korunu splátky je k dispozici koruna třicet. V tabulce je vždy ten NEJTĚSNĚJŠÍ rok, protože banka se dívá na nejhorší rok, ne na průměr.',
+          zkratky: [
+            { z: 'DSCR', v: 'debt service coverage ratio, krytí dluhové služby', t: 'standardní bankovní ukazatel projektového financování. Pod domluvenou hranicí banka projekt nefinancuje.' }
+          ],
+          vychozi: 'Minimum 1,30.',
+          dopad: 'Nájem baterie do zdrojů vstupuje, jednorázový odkup ne — prodej majetku není provozní zdroj. Proto rozpuštění odkupu do nájmu krytí zlepší.',
+          zavislosti: 'Nejtěsnější rok bývá v době, kdy se splácí baterie. Kratší nájem = vyšší splátka = těsnější krytí = vyšší cena PPA.'
+        },
+        {
+          jmeno: 'IRR', druh: 'vypocet', jednotka: '%', zkratkaZn: 'IRR',
+          strucne: 'Výnosnost vlastního kapitálu pro nás. Podmínka investora.',
+          coJeTo: 'Vnitřní výnosové procento peněz, které do projektu vložíme my. Je to druhé kritérium ceny PPA: cena nesmí spadnout tak nízko, aby výnosnost klesla pod cíl.',
+          zkratky: [
+            { z: 'IRR', v: 'internal rate of return, vnitřní výnosové procento', t: 'diskontní sazba, při které je čistá současná hodnota projektu nulová. Zjednodušeně: roční výnosnost vložených peněz.' }
+          ],
+          vychozi: 'Cíl 12,5 %.',
+          dopad: 'Odkup baterie do výnosnosti vstupuje (ty peníze nám reálně přijdou), i když do krytí dluhové služby ne.',
+          zavislosti: 'Kritérium se ve skutečnosti testuje jako čistá současná hodnota při cílové sazbě, ne přes samotné IRR — výpočet výnosnosti umí u velmi vysokých hodnot vrátit prázdno a projekt se pak mylně hlásil jako nefinancovatelný.'
+        },
+        {
+          jmeno: 'Nájem baterie', druh: 'vypocet', jednotka: 'Kč/měs',
+          strucne: 'Měsíční platba za baterii. Fixní, neindexovaná, jen po dobu nájmu.',
+          coJeTo: 'Naše marže plus splátka úvěru na baterii plus řízení. Na rozdíl od ceny energie se neindexuje — po celou dobu nájmu je to jedno a totéž číslo.',
+          zkratky: [
+            { z: 'EMS', v: 'energy management system, systém řízení energie', t: 'řídicí jednotka, která rozhoduje kdy nabíjet a vybíjet. Účtuje se měsíčně (výchozí 1 300 Kč) a je součástí nájmu. Po odkupu si ji platí zákazník sám.' }
+          ],
+          dopad: 'Pro zákazníka je to odečet od přínosu. Pro nás provozní příjem, který vstupuje do krytí dluhové služby.',
+          zavislosti: 'Odvíjí se od nákladové ceny baterie a doby nájmu. Ručně zadaný nájem tento výpočet přepíše.'
+        },
+        {
+          jmeno: 'Rok odkupu', druh: 'vypocet', jednotka: 'rok kontraktu',
+          strucne: 'Kdy skončí nájem, klesne splátka a baterie přejde na zákazníka.',
+          coJeTo: 'První rok po skončení nájmu. V něm se stanou tři věci naráz: skončí nájem, klesne splátka na samotnou elektrárnu, a zákazník baterii odkoupí. Od té chvíle nese servis a řízení sám.',
+          dopad: 'Prázdno znamená, že kontrakt skončí nejpozději s nájmem, takže se přechod nemodeluje.',
+          zavislosti: 'Je to doba nájmu plus jeden rok. Přepsáním délky kontraktu baterie se posune.'
+        },
+        {
+          jmeno: 'Návratnost vlastního kapitálu', druh: 'vypocet', jednotka: 'roky',
+          strucne: 'Kdy se nám vrátí, co jsme do projektu vložili.',
+          coJeTo: 'Rok, ve kterém kumulovaný tok peněz překlopí nad vložený kapitál, s lineární interpolací v tom roce — „6,6 roku“ je použitelnější než „mezi 6. a 7.“.',
+          dopad: 'Prázdno znamená, že se v horizontu kontraktu nevrátí.',
+          zavislosti: 'Najdeš ji na záložce „Pro nás“ spolu s rozpadem splátky na úrok a úmor. Úmor není náklad — jen vrací půjčenou jistinu; nákladem financování jsou úroky.'
+        }
+      ]
+    },
+    {
+      id: 'nastaveni', nazev: 'Parametry z Katalogu a výpočtů',
+      pozn: 'Celofiremní čísla, která platí pro všechny nabídky. Mění se v admin nastavení, ne u konkrétní nabídky, a jsou verzovaná — uložení zakládá novou verzi.',
+      pole: [
+        {
+          jmeno: 'Nákladová cena elektrárny', druh: 'nastaveni', jednotka: 'Kč/kWp',
+          strucne: 'Kolik nás stojí instalace na kilowatt peak.',
+          coJeTo: 'Základní cena za instalovaný kilowatt. Násobí se velikostí elektrárny a dává investiční náklad.',
+          vychozi: '13 500 Kč/kWp.',
+          dopad: 'Přímo hýbe cenou PPA. Jde přepsat u jednotlivého pole elektrárny, když je dražší nebo levnější než ostatní.',
+          zavislosti: 'Investiční náklad se dál násobí marží a z něj se počítá vlastní kapitál i úvěr.'
+        },
+        {
+          jmeno: 'Marže', druh: 'nastaveni', jednotka: 'koeficient',
+          strucne: 'Kolikrát se nákladová cena vynásobí, aby vznikla cena projektu.',
+          coJeTo: 'Násobitel nad nákladovou cenou — v něm je náš zisk. Elektrárna a baterie mají každá svůj.',
+          vychozi: 'Elektrárna 1,35, baterie 1,47.',
+          dopad: 'Zvyšuje investiční náklad, a tím splátku i cenu PPA. Zvyšuje ale i náš okamžitý zisk, který je ve výsledku vidět zvlášť.',
+          zavislosti: 'Marže baterie jde přes splátku úvěru přímo do měsíčního nájmu.'
+        },
+        {
+          jmeno: 'Provize', druh: 'nastaveni', jednotka: '%',
+          strucne: 'Provize z ceny projektu.',
+          coJeTo: 'Odměna za sjednání obchodu, počítaná z ceny projektu.',
+          vychozi: 'Elektrárna 5 %, baterie 4 %.',
+          dopad: 'Je součástí investičního nákladu, takže se do ceny PPA propíše.',
+          zavislosti: 'Ve výsledku je vypsaná zvlášť, aby bylo vidět, kolik z projektu odchází na provize.'
+        },
+        {
+          jmeno: 'Podíl vlastního kapitálu', druh: 'nastaveni', jednotka: '%',
+          strucne: 'Kolik z investice zaplatíme my a kolik banka.',
+          coJeTo: 'Část investičního nákladu, kterou nekryje úvěr. To jsou peníze, které nám z kapsy odejdou hned na začátku.',
+          vychozi: '20 %.',
+          dopad: 'Nižší podíl znamená větší úvěr, vyšší splátku a těsnější krytí dluhové služby. Vyšší podíl znamená víc našich peněz, které se musí vrátit ve výnosnosti.',
+          zavislosti: 'Je to jmenovatel návratnosti i výnosnosti vlastního kapitálu.'
+        },
+        {
+          jmeno: 'Úroková sazba', druh: 'nastaveni', jednotka: '% p. a.',
+          strucne: 'Sazba úvěru. Používá se i jako diskontní sazba.',
+          coJeTo: 'Roční úroková sazba projektového úvěru. Určuje anuitu, a tedy splátku elektrárny i baterie.',
+          zkratky: [
+            { z: 'p. a.', v: 'per annum, ročně', t: 'sazba za rok, ne za celou dobu úvěru.' }
+          ],
+          vychozi: '7,5 %. Stejná hodnota se používá jako diskontní sazba pro čistou současnou hodnotu.',
+          dopad: 'Vyšší sazba zvedne splátku, zhorší krytí a zvedne cenu PPA. Zároveň zvýší diskont, takže srazí i čistou současnou hodnotu úspor.',
+          zavislosti: 'Splátka se rozpadá na úrok a úmor analyticky, bez iterace kalendáře, a hlídá to test.'
+        },
+        {
+          jmeno: 'Minimální DSCR', druh: 'nastaveni', jednotka: 'poměr',
+          strucne: 'Bankovní podmínka. Pod ni cena PPA nesmí spadnout.',
+          coJeTo: 'Hranice krytí dluhové služby, kterou požaduje banka. Je to jedno z dvou kritérií, mezi kterými se hledá cena PPA.',
+          vychozi: '1,30.',
+          dopad: 'Zvýšení hranice zdraží PPA pro všechny nabídky. Testuje se nejtěsnější rok, ne průměr.',
+          zavislosti: 'Druhé kritérium je cílová výnosnost. Cena musí projít oběma.'
+        },
+        {
+          jmeno: 'Cílové IRR', druh: 'nastaveni', jednotka: '%',
+          strucne: 'Investorská podmínka. Minimální výnosnost našich vložených peněz.',
+          coJeTo: 'Výnosnost, pod kterou nemá smysl do projektu jít. Druhé kritérium pro hledání ceny PPA.',
+          vychozi: '12,5 %.',
+          dopad: 'U dlouhých kontraktů je to obvykle ta těsná podmínka — proto tabulka u nich píše „investor“.',
+          zavislosti: 'Testuje se jako čistá současná hodnota při téhle sazbě.'
+        },
+        {
+          jmeno: 'Servis', druh: 'nastaveni', jednotka: 'Kč/rok',
+          strucne: 'Provozní náklady, které nese účelová firma.',
+          coJeTo: 'Roční náklad na servis. Elektrárna se servisuje po celou dobu kontraktu, baterie jen dokud ji vlastníme.',
+          vychozi: 'Elektrárna 25 000 Kč/rok, baterie 12 000 Kč/rok.',
+          dopad: 'Snižuje provozní zdroje, takže zhoršuje krytí a zvedá cenu PPA.',
+          zavislosti: 'Po odkupu baterie servis i řízení přechází na zákazníka a objeví se mu v ročním toku peněz jako náklad.'
+        },
+        {
+          jmeno: 'Degradace', druh: 'nastaveni', jednotka: '%/rok',
+          strucne: 'O kolik ročně klesá výroba elektrárny a přínos baterie.',
+          coJeTo: 'Stárnutí techniky. Panely vyrábějí každý rok o něco méně, baterie postupně ztrácí kapacitu a s ní i schopnost srážet špičky.',
+          vychozi: 'Elektrárna 0,5 %/rok, přínos baterie 1,5 %/rok.',
+          dopad: 'Snižuje příjmy v pozdějších letech, takže zvedá cenu PPA v prvním roce.',
+          zavislosti: 'Degradace baterie má stejnou hodnotu i klíč jako u peak shavingu, aby tentýž produkt nestárnul ve dvou modulech jinak. Přínos baterie klesá i po odkupu — baterie je pak zákazníkova a dál sráží špičky.'
+        },
+        {
+          jmeno: 'Indexace ceny', druh: 'nastaveni', jednotka: '% za období',
+          strucne: 'Jak se cena PPA v čase zdražuje. Skokově, ne plynule.',
+          coJeTo: 'Cena PPA se každé tři roky skokově zvedne o tři procenta. Stejnou indexací roste i dnešní cena zákazníka, aby se úspora nezkreslila jen tím, že se indexuje jedna strana rovnice.',
+          vychozi: 'Krok 3 %, perioda 3 roky.',
+          dopad: 'Vyšší indexace znamená vyšší příjmy později, takže může snížit cenu v prvním roce.',
+          zavislosti: 'Nájem baterie se NEindexuje — je fixní po celou dobu nájmu.'
+        },
+        {
+          jmeno: 'Marže a EMS baterie', druh: 'nastaveni', jednotka: 'Kč/měs',
+          strucne: 'Dvě fixní části měsíčního nájmu baterie.',
+          coJeTo: 'Naše marže za pronájem a poplatek za systém řízení energie. Spolu se splátkou úvěru tvoří celý nájem.',
+          vychozi: 'Marže 4 500 Kč/měs, řízení 1 300 Kč/měs.',
+          dopad: 'Zvyšují nájem, takže pro nás zvyšují provozní příjem a zlepšují krytí — ale zákazníkovi snižují čistý přínos.',
+          zavislosti: 'Řízení po odkupu baterie přechází na zákazníka jako jeho vlastní náklad.'
+        },
+        {
+          jmeno: 'Zbytková hodnota baterie', druh: 'nastaveni', jednotka: '% investičního nákladu',
+          strucne: 'Za jaký podíl ceny si zákazník baterii po nájmu odkoupí.',
+          coJeTo: 'Podíl investičního nákladu baterie, který zákazník doplatí při odkupu. Odpovídá zařízení s asi 60 až 70 procenty původní kapacity.',
+          vychozi: '15 %.',
+          dopad: 'Ve variantě s doplatkem je to jednorázový příjem v roce po nájmu. Ve variantě za korunu je to částka, která se rovnoměrně rozpustí do nájmu.',
+          zavislosti: 'Nepočítá se ze zbytku úvěru jako u čistého PPA — ten je po skončení nájmu nulový a baterie by vyšla skoro zdarma, i když reálnou hodnotu pořád má.'
+        },
+        {
+          jmeno: 'Podíl zpeněžitelného přebytku', druh: 'nastaveni', jednotka: 'koeficient',
+          strucne: 'Jaká část přebytku vyvedeného do sítě se opravdu prodá.',
+          coJeTo: 'Ne všechno, co odteče do sítě, se podaří zpeněžit. Tímhle koeficientem se export zkrátí, než se vynásobí cenou za přetok.',
+          vychozi: '1,0 — zpeněží se celý export.',
+          dopad: 'Při ceně za přetok 0 Kč nemá na peníze žádný vliv.',
+          zavislosti: 'Je to otevřený bod metodiky — v Excelu odpovídá asi 0,77 přebytku.'
+        }
+      ]
+    },
+    {
+      id: 'zkratky', nazev: 'Zkratky na jednom místě',
+      pozn: 'Totéž, co je rozepsané u polí, ale seřazené k rychlému dohledání.',
+      pole: [
+        { jmeno: 'PPA', druh: 'nepovinne', jednotka: 'power purchase agreement', strucne: 'Smlouva o odběru elektřiny — zákazník neinvestuje, ale zaváže se roky odebírat energii za sjednanou cenu.', coJeTo: 'Elektrárnu postaví a vlastní účelová společnost, zákazník platí jen za odebranou energii. V tomhle modulu je k tomu navíc baterie v pronájmu, takže je nabídka po dobu nájmu úplně bez investice.', dopad: 'Celý produkt stojí na tom, že zákazník nemá výdaj na začátku.', zavislosti: 'Cena PPA se nezadává, hledá se z financování.' },
+        { jmeno: 'BESS', druh: 'nepovinne', jednotka: 'battery energy storage system', strucne: 'Bateriové úložiště.', coJeTo: 'Baterie s vlastním střídačem a řízením. V tomhle modulu má dvě role naráz — srážení špiček a zvýšení samospotřeby.', dopad: 'Nikdy nedodává do sítě, jen posouvá vlastní spotřebu. Do sítě teče pouze přebytek elektrárny.', zavislosti: 'Je v pronájmu od nás, ne investice zákazníka.' },
+        { jmeno: 'SPV', druh: 'nepovinne', jednotka: 'special purpose vehicle', strucne: 'Účelová společnost založená jen pro jeden projekt.', coJeTo: 'Vlastní elektrárnu i baterii, bere úvěr a inkasuje platby od zákazníka. V panelu je jí věnovaná záložka „Pro nás“.', dopad: 'Odděluje projekt od zbytku firmy, což je podmínka projektového financování.', zavislosti: 'Její pohled ukazuje záložka „Pro nás“ — co vložíme, co nás stojí úvěr, kdy se to vrátí.' },
+        { jmeno: 'RK', druh: 'nepovinne', jednotka: 'rezervovaná kapacita', strucne: 'Smluvní kapacita z distribuční smlouvy, v kilowattech.', coJeTo: 'Kolik kilowattů si zákazník platí jako svůj rezervovaný odběr. Mění se relativně snadno.', dopad: 'Je to baseline dnešního nákladu na kilowatty.', zavislosti: 'Nepleť s rezervovaným příkonem — to je jiné číslo z jiné smlouvy.' },
+        { jmeno: 'RP', druh: 'nepovinne', jednotka: 'rezervovaný příkon', strucne: 'Technický strop místa ze smlouvy o připojení, v kilowattech.', coJeTo: 'Nová dvousložková struktura plateb za výkon stojí na něm, ne na rezervované kapacitě.', dopad: 'Snížení je jednosměrná změna, zpětné navýšení je zpoplatněné.', zavislosti: 'Panel počítá dva scénáře — se snížením a bez snížení.' },
+        { jmeno: 'DSCR', druh: 'nepovinne', jednotka: 'debt service coverage ratio', strucne: 'Krytí dluhové služby — kolikrát provozní zdroje pokryjí splátku.', coJeTo: 'Provozní zdroje roku dělené dluhovou službou roku. Bankovní podmínka, výchozí minimum 1,30.', dopad: 'Testuje se nejtěsnější rok, ne průměr.', zavislosti: 'Nájem baterie do zdrojů vstupuje, jednorázový odkup ne.' },
+        { jmeno: 'IRR', druh: 'nepovinne', jednotka: 'internal rate of return', strucne: 'Vnitřní výnosové procento — roční výnosnost vložených peněz.', coJeTo: 'Diskontní sazba, při které je čistá současná hodnota projektu nulová. Investorská podmínka, cíl 12,5 %.', dopad: 'Druhé kritérium pro hledání ceny PPA.', zavislosti: 'Testuje se přes čistou současnou hodnotu, ne přes samotné IRR.' },
+        { jmeno: 'NPV', druh: 'nepovinne', jednotka: 'net present value', strucne: 'Čistá současná hodnota — budoucí peníze přepočtené na dnešek.', coJeTo: 'Součet budoucích toků diskontovaných na dnešní hodnotu. Bez diskontu by delší kontrakt vypadal vždycky lépe.', dopad: 'Slouží ke srovnání délek kontraktu.', zavislosti: 'Diskontní sazba je 7,5 %, stejná jako úroková.' },
+        { jmeno: 'CAPEX', druh: 'nepovinne', jednotka: 'capital expenditure', strucne: 'Investiční náklad — co stojí postavit elektrárnu a koupit baterii.', coJeTo: 'Nákladová cena vynásobená marží, plus provize. Dělí se na vlastní kapitál a úvěr.', dopad: 'Zbytková hodnota baterie se počítá jako 15 % z investičního nákladu baterie.', zavislosti: 'V panelu je rozepsaný na část elektrárny a část baterie.' },
+        { jmeno: 'EMS', druh: 'nepovinne', jednotka: 'energy management system', strucne: 'Systém řízení energie — rozhoduje kdy nabíjet a kdy vybíjet.', coJeTo: 'Řídicí jednotka baterie. Účtuje se měsíčně a je součástí nájmu.', vychozi: '1 300 Kč/měs.', dopad: 'Po odkupu baterie si ho platí zákazník sám a v ročním toku peněz mu naskočí jako náklad.', zavislosti: 'Je jednou ze tří složek nájmu — vedle marže a splátky úvěru.' },
+        { jmeno: 'SOC', druh: 'nepovinne', jednotka: 'state of charge', strucne: 'Stav nabití — kolik je v baterii energie právě teď.', coJeTo: 'Uvádí se v procentech kapacity. Dispatch si ho drží nad minimální trajektorií, aby zbylo na budoucí špičky.', dopad: 'Pole „Využitelná kapacita“ určuje, jak velké okno stavu nabití smí dispatch používat.', zavislosti: 'Vidíš ho jako pás na záložce Průběh.' },
+        { jmeno: 'DoD', druh: 'nepovinne', jednotka: 'depth of discharge', strucne: 'Hloubka vybití — jak hluboko se smí baterie vybít.', coJeTo: '90 % znamená, že se využije 90 % jmenovité kapacity a zbytek zůstane jako rezerva pro životnost.', vychozi: '90 %.', dopad: 'Přímo škáluje použitelnou energii: baterie 300 kWh se chová jako 270 kWh.', zavislosti: 'V panelu je to pole „Využitelná kapacita“.' },
+        { jmeno: 'NTS', druh: 'nepovinne', jednotka: 'nová tarifní struktura', strucne: 'Struktura regulovaných plateb platná od roku 2027.', coJeTo: 'Dvousložková struktura, kde se platí zvlášť za rezervovaný příkon a zvlášť za naměřenou špičku. Právě proto je rezervovaný příkon v modelu to podstatné číslo.', dopad: 'Bez sazeb pro danou kombinaci distributora a hladiny se přínos na kilowattech neocení — je to v upozorněních.', zavislosti: 'Sazby jsou v sazebníku distributorů, spravují se v admin nastavení.' },
+        { jmeno: 'kWp', druh: 'nepovinne', jednotka: 'kilowatt peak', strucne: 'Špičkový výkon panelů za standardních podmínek.', coJeTo: 'Jmenovitá velikost elektrárny — podle ní se elektrárny porovnávají a oceňují. Není to výkon, který elektrárna běžně dává.', dopad: 'Nákladová cena se zadává za kilowatt peak, výchozí 13 500 Kč.', zavislosti: 'Roční výroba se z něj počítá měrným výnosem (kolik kilowatthodin vyrobí jeden kilowatt peak za rok).' },
+        { jmeno: 'dispatch', druh: 'nepovinne', jednotka: 'řízení baterie', strucne: 'Rozhodování, co má baterie v každém intervalu dělat.', coJeTo: 'Simulace interval po intervalu. Srážení špiček má absolutní přednost, teprve zbylá kapacita nad minimální trajektorií se použije na posun solární energie.', dopad: 'Rozhoduje o tom, kolik baterie skutečně přinese — a tím i o tom, který ze tří režimů se doporučí.', zavislosti: 'Původ energie v baterii se záměrně nesleduje: ze sítě se dobíjí jen do trajektorie, takže se síťová energie nikdy nehromadí do zásoby.' }
+      ]
+    }
+  ];
+
+  /* ---- vykreslení ---- */
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  function detailHtml(p) {
+    const r = [];
+    r.push('<dt>Co to je</dt><dd>' + esc(p.coJeTo) + '</dd>');
+    if (p.zkratky && p.zkratky.length) {
+      const z = p.zkratky.map((x) =>
+        '<p class="zkratka-radek"><b>' + esc(x.z) + '</b> = ' + esc(x.v) + ' — ' + esc(x.t) + '</p>'
+      ).join('');
+      r.push('<dt>Zkratka</dt><dd>' + z + '</dd>');
+    }
+    if (p.vychozi) r.push('<dt>Výchozí</dt><dd class="tlum">' + esc(p.vychozi) + '</dd>');
+    if (p.dopad) r.push('<dt>Dopad</dt><dd>' + esc(p.dopad) + '</dd>');
+    if (p.zavislosti) r.push('<dt>Závislosti</dt><dd>' + esc(p.zavislosti) + '</dd>');
+    let html = '<div class="detail"><dl>' + r.join('') + '</dl>';
+    if (p.varovani) html += '<div class="varovani"><b>Pozor:</b> ' + esc(p.varovani) + '</div>';
+    return html + '</div>';
+  }
+
+  const DRUH_POPIS = {
+    povinne: 'musíš vyplnit',
+    nepovinne: 'nepovinné',
+    nastaveni: 'z Katalogu a výpočtů',
+    vypocet: 'spočítaný výstup'
+  };
+
+  const cil = document.getElementById('sekce');
+  const skoky = document.getElementById('skoky');
+
+  cil.innerHTML = SEKCE.map((s) => {
+    const radky = s.pole.map((p) => {
+      const znacky = [];
+      if (p.zkratkaZn) znacky.push('<span class="zn zkr">' + esc(p.zkratkaZn) + '</span>');
+      if (p.jednotka) znacky.push('<span class="zn jed">' + esc(p.jednotka) + '</span>');
+      znacky.push('<span class="zn">' + DRUH_POPIS[p.druh] + '</span>');
+      const hledatelne = [p.jmeno, p.jednotka, p.zkratkaZn, p.strucne, p.coJeTo, p.vychozi,
+                          p.dopad, p.zavislosti, p.varovani,
+                          (p.zkratky || []).map((x) => x.z + ' ' + x.v + ' ' + x.t).join(' ')]
+                          .filter(Boolean).join(' ').toLowerCase();
+      return '<div class="pole" data-druh="' + p.druh + '" tabindex="0" data-hledat="' + esc(hledatelne) + '">'
+        + '<div class="jmeno">' + esc(p.jmeno) + '</div>'
+        + '<div class="znacky">' + znacky.join('') + '</div>'
+        + '<div class="strucne">' + esc(p.strucne) + '</div>'
+        + detailHtml(p)
+        + '</div>';
+    }).join('');
+    return '<section id="' + s.id + '">'
+      + '<div class="sekce-h">'
+      + (s.krok ? '<span class="krok" title="Krok ' + s.krok + ' ve formuláři">' + s.krok + '</span>' : '')
+      + '<h2>' + esc(s.nazev) + '</h2></div>'
+      + '<p class="sekce-pozn' + (s.krok ? ' odsazeno' : '') + '">' + esc(s.pozn) + '</p>'
+      + '<div class="karta">' + radky + '<div class="prazdno skryto">Tomuhle filtru tady nic neodpovídá.</div></div>'
+      + '</section>';
+  }).join('');
+
+  skoky.innerHTML = SEKCE.map((s) =>
+    '<a href="#' + s.id + '">' + (s.krok ? s.krok + '. ' : '') + esc(s.nazev) + '</a>'
+  ).join('');
+
+  /* ---- karta se nesmí schovat pod okraj okna ---- */
+  const VYSKA_REZERVA = 24;
+  function srovnejSmer(pole) {
+    pole.classList.remove('nahoru');
+    const karta = pole.querySelector('.detail');
+    if (!karta) return;
+    const r = pole.getBoundingClientRect();
+    const v = karta.offsetHeight;
+    const dolePod = window.innerHeight - r.bottom;
+    if (dolePod < v + VYSKA_REZERVA && r.top > v + VYSKA_REZERVA) pole.classList.add('nahoru');
+  }
+  document.querySelectorAll('.pole').forEach((pole) => {
+    pole.addEventListener('mouseenter', () => srovnejSmer(pole));
+    pole.addEventListener('focus', () => srovnejSmer(pole));
+    // Kliknutím se popis připne, ať se dá v klidu přečíst i zkopírovat.
+    pole.addEventListener('click', (e) => {
+      if (e.target.closest('.detail')) return;
+      const uz = pole.classList.contains('drzi');
+      document.querySelectorAll('.pole.drzi').forEach((x) => x.classList.remove('drzi'));
+      if (!uz) { pole.classList.add('drzi'); srovnejSmer(pole); }
+    });
+    pole.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pole.click(); }
+    });
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') document.querySelectorAll('.pole.drzi').forEach((x) => x.classList.remove('drzi'));
+  });
+
+  /* ---- filtr ---- */
+  const vstup = document.getElementById('hledat');
+  const pocet = document.getElementById('pocet');
+  const VSECHNA = document.querySelectorAll('.pole').length;
+
+  function filtruj() {
+    const q = vstup.value.trim().toLowerCase();
+    let videno = 0;
+    document.querySelectorAll('section').forEach((s) => {
+      let vSekci = 0;
+      s.querySelectorAll('.pole').forEach((pole) => {
+        const sedi = !q || pole.dataset.hledat.includes(q);
+        pole.classList.toggle('skryto', !sedi);
+        if (sedi) { vSekci++; videno++; }
+      });
+      s.querySelector('.prazdno').classList.toggle('skryto', vSekci > 0);
+      s.classList.toggle('skryto', q && vSekci === 0);
+    });
+    pocet.textContent = q ? videno + ' z ' + VSECHNA + ' polí' : VSECHNA + ' polí';
+  }
+  vstup.addEventListener('input', filtruj);
+  filtruj();
+</script>

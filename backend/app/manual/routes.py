@@ -38,6 +38,7 @@ STRANKY = [
     ("nabidkovac", "moduly/nabidkovac.md", "Moduly"),
     ("nabidkovac-peak-shaving", "moduly/nabidkovac-peak-shaving.md", "Moduly"),
     ("nabidkovac-ppa-fve", "moduly/nabidkovac-ppa-fve.md", "Moduly"),
+    ("nabidkovac-ppa-bess", "moduly/nabidkovac-ppa-bess.md", "Moduly"),
     ("konektor-raynet-gdrive", "moduly/konektor-raynet-gdrive.md", "Moduly"),
     ("logy", "moduly/logy.md", "Moduly"),
     ("admin-nastaveni", "moduly/admin-nastaveni.md", "Moduly"),
