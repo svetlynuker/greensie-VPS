@@ -431,7 +431,7 @@ class PpaBessVstup(BaseModel):
 # ---- Nabídková šablona / výstup (viz sablona_katalog.py) ----
 # Typy řešení, pro které existuje nabídková šablona (viz sablona_katalog).
 # "kombinace" spojuje PPA a peak shaving do jednoho dokumentu.
-TypReseniVystup = Literal["ppa", "peak_shaving", "kombinace"]
+TypReseniVystup = Literal["ppa", "peak_shaving", "kombinace", "ppa_bess"]
 # Druhy prvků, které jdou položit na papír.
 #   kontejner     – rámeček, uvnitř kterého prvky stojí pod sebou
 #   text          – formátovaný odstavec (HTML, čistí se přes vystup_html)

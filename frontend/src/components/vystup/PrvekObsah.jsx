@@ -14,6 +14,8 @@ import { nactiObrazekVystupu } from "../../api";
 const ZVYRAZNIT = new Set([
   "uspora_kum_kc", "uspora_rok1_kc", "rocni_uspora_2026_kc", "rocni_uspora_2027_kc",
   "pokryti_spotreby_fve", "zisk_spot_kc",
+  // PPA + BESS: úspora má dvě části, obě jsou to hlavní, co zákazník hledá.
+  "uspora_celkem_kc", "uspora_z_energie_kc", "uspora_z_vykonu_kc", "sleva",
 ]);
 
 /** Dlaždice s jednou hodnotou z výpočtu. */
@@ -48,7 +50,9 @@ export function UdajNahled({ klic, h }) {
 }
 
 function JedenGraf({ typ, graf }) {
-  if (typ === "ppa") return <GrafVyrobaSpotreba graf={graf} />;
+  // PPA + BESS ukazuje v nabídce elektrárnu proti spotřebě – tvar dat je shodný
+  // s PPA (`sablona_katalog.graf_pro_typ`), takže se použije tatáž komponenta.
+  if (typ === "ppa" || typ === "ppa_bess") return <GrafVyrobaSpotreba graf={graf} />;
   return (
     /* Který model (2026/2027) se kreslí, rozhoduje server v
        `sablona_katalog.graf_pro_typ` – stejně jako panel v nabídkovači,

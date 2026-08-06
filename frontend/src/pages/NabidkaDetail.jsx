@@ -194,7 +194,9 @@ export default function NabidkaDetail() {
             ✉ Poslat e-mail
           </button>
           {/* Nabídka pro zákazníka (PDF) – jen tam, kde už je výpočet. */}
-          {(nabidka.typ === "ppa" || nabidka.typ === "peak_shaving") && (
+          {(nabidka.typ === "ppa" ||
+            nabidka.typ === "peak_shaving" ||
+            nabidka.typ === "ppa_bess") && (
             <button
               className="fm-btn fm-primary"
               onClick={() => navigate(`/nabidkovac/nabidka/${nabidka.id}/vystup/${nabidka.typ}`)}
