@@ -1,7 +1,7 @@
 # Zákazníci a Obchodní případy (CRM)
 
 > **Sekce v nabídce:** `zakaznici`, `kontakty`, `obchodni_pripady`, `nabidky`, `objednavky`, `projekty` · **Adresy (routy):** `/zakaznici/lead`, `/zakaznici/klient`, `/zakaznici/detail/:id`, `/kontakty`, `/kontakty/detail/:id`, `/pripady`, `/pripady/detail/:id`, `/nabidky` · **Kdo smí otevřít:** právo `zakaznici` resp. `obchodni_pripady`; sekce Nabídky jede pod právem `nabidkovac` (bez práva se sekce v nabídce vůbec nezobrazí; admin vždy)
-> **Kód:** frontend `frontend/src/pages/Zakaznici.jsx`, `ZakaznikDetail.jsx`, `KontaktniOsoby.jsx`, `KontaktDetail.jsx`, `ObchodniPripady.jsx`, `ObchodniPripadDetail.jsx`, `Nabidky.jsx`, backend `backend/app/crm/`
+> **Kód:** frontend `frontend/src/pages/Zakaznici.jsx`, `ZakaznikDetail.jsx`, `KontaktniOsoby.jsx`, `KontaktDetail.jsx`, `ObchodniPripady.jsx`, `ObchodniPripadDetail.jsx`, `Nabidky.jsx`, backend `backend/app/crm/`; automatické ukládání vstupů `backend/app/crm/pole_zaznamu.py`, `routes_pole.py`, `razitko.py` + `frontend/src/hooks/useZaznamAutosave.js`
 
 Evidence obchodu: **zákazník → obchodní případ → nabídka** (a dál objednávka a projekt, které
 se připravují). Cílem je, aby obchodní zástupce nemusel chodit do samotného nabídkovače —
@@ -34,6 +34,73 @@ Co z toho plyne pro každodenní práci:
   nízké číslo na začátku není propad obchodu.
 - **Raynet se časem vypne sám**, až v něm dojedou poslední staré případy. Není potřeba nic
   migrovat ani dohánět.
+
+### Úpravy se ukládají samy (od 6. 8. 2026)
+V CRM **se neukládá tlačítkem**. Co napíšeš do pole na kartě, se uloží samo — u textu asi půl
+sekundy po tom, co dopíšeš, u výběru, data a zaškrtávátka hned. Nahoře u nadpisu je vidět stav
+(*Ukládám… / Uloženo v 14:32 / Neuloženo*). Tlačítko **Hotovo** už neukládá: jen dožene
+posledních pár znaků, které se nestihly odeslat, a zavře okno.
+
+**Podstatná změna není zmizelé tlačítko, ale to, že se ukládá jen pole, které jsi změnil.**
+Dřív se posílala celá karta naráz, včetně polí, do kterých jsi ani neklikl. Když nad jednou
+firmou seděli dva lidé, ten, kdo uložil později, přepsal kolegovi i telefon a poznámku,
+kterých se vůbec nedotkl — a nikdo se to nedozvěděl. U **Doplňujících údajů** (vlastní pole)
+to bylo ještě horší: pole, které tvůj formulář neznal, se uložením rovnou **smazalo**.
+
+> ⚠️ **Prázdné pole je platná hodnota** (= vymazat). A protože se ukládá průběžně, jsou
+> v databázi i rozepsané a nedokončené hodnoty — to je normální stav, ne chyba. Kdo se na
+> kartu podívá ve chvíli, kdy do ní někdo píše, uvidí ji rozepsanou.
+
+> ⚠️ **Povinná vlastní pole se při psaní nevynucují.** Kdyby ano, appka by u rozdělaného
+> záznamu odmítla uložit cokoli, dokud nevyplníš všechno povinné — tedy by se neuložilo nic
+> a průběžné ukládání by nefungovalo vůbec. Povinnost se hlídá tam, kde na ní záleží:
+> **při přesunu do dalšího stavu**.
+
+#### Co se ukládá samo a co zůstává na tlačítku
+| Obrazovka | Co se ukládá samo |
+|---|---|
+| Karta zákazníka → **Upravit zákazníka** | název, IČO, DIČ, adresa, GPS, web, telefon, e-mail, zdroj, poznámka + Doplňující údaje |
+| Karta kontaktní osoby (`/kontakty/detail/:id`) | jméno, funkce, telefon, e-mail, poznámka |
+| Karta obchodního případu → **Upravit** | název, popis, hodnota, pravděpodobnost, předpokládané uzavření + Doplňující údaje |
+| Objednávka (okno detailu) | **jen blok základních údajů**: název, cena, datum podpisu, datum dodání, popis + Doplňující údaje |
+| Detail projektu | **termín zahájení** a **kroky realizace** (název, délka, termín, stav, osoba) |
+| Detail nabídky → **Údaje zákazníka** | název zákazníka, adresa, GPS + Doplňující údaje |
+
+**Co zůstává na vědomém potvrzení, a proč:** každá z těchhle věcí něco spustí, přepočítá nebo
+založí další záznam. Uprostřed psaní by to zabralo na nedopsané hodnotě.
+
+- **Stav** (přetažení v kanbanu, rozbalovátko) — spouští automatizace a vynucuje povinná pole.
+- **Vlastník a spoluvlastníci** — mění, kdo záznam vůbec uvidí.
+- **Kategorie případu** a **důvod prohry / zrušení** — kategorie určuje, do kterého výpočtu
+  nabídka míří; důvod je podmínka uzavření.
+- **Rozpis položek** a **fakturace** — mění cenu a rozepisují splátky.
+- **E-maily**, **generování PDF/XLSX**, **výpočty nabídkovače** („Spočítat“) — odchází ven
+  nebo vzniká nová verze.
+- **Nastavení a práva**, **mazání**, **hromadné akce**.
+
+> Kde tlačítko zůstalo, tam se před jeho zmáčknutím ještě dožene rozepsané pole a **znovu se
+> načtou čerstvé údaje** — jinak by staré uložení vrátilo do databáze text, který mezitím
+> někdo přepsal.
+
+#### Kdo tu je se mnou
+V hlavičce karty jsou kolečka s iniciálami lidí, kteří mají **ten samý záznam** otevřený.
+Popisek u kolečka řekne i to, na kterém poli kolega právě stojí (*„Jméno — edituje:
+Hodnota (Kč)“*). Je to schválně vidět dřív, než začneš psát — dohodnout se je vždycky lepší
+než řešit kolizi potom.
+
+Sebe mezi kolečky nenajdeš (víš, že tam jsi) a kolečko zmizí samo do půl minuty po tom, co
+člověk stránku zavře nebo si přepne na jinou záložku. **Změny od ostatních se dotahují samy**,
+do několika sekund a bez obnovování stránky. Pole, které máš právě rozepsané, ti aktualizace
+nikdy nepřepíše.
+
+#### Když do stejného pole zapsal někdo jiný
+Appka **nic nepřepíše** a zeptá se: ukáže, kdo a na co pole změnil, co píšeš ty, a nabídne
+**Přepsat mojí hodnotou** / **Nechat jejich**. Dokud nerozhodneš, hodnota není uložená —
+u nabídky proto nejde zavřít blok údajů s nerozhodnutou kolizí, zavřením by se text zahodil.
+
+Hlídá se to **porovnáním hodnoty** toho jednoho pole, ne „kdo uložil naposledy“. Takže když
+kolega ve stejné chvíli mění telefon a ty poznámku, žádná hláška nepřijde — vaše změny si
+nevadí.
 
 ### Zákazníci: leady a klienti
 Jedna evidence, dva pohledy přepínané záložkami:
@@ -106,8 +173,10 @@ má v číselníku jen osoby u svých firem.
 Otevře se klikem na řádek. Je na ní:
 
 - **Údaje osoby** — jméno, funkce, telefon a e-mail s proklikem na volání a psaní, poznámka.
-  Tlačítkem **Upravit** se mění přímo tady (stejná změna jako v panelu na kartě zákazníka, včetně
-  pravidla, že hlavní kontakt může být jen jeden).
+  Tlačítkem **Upravit** se mění přímo tady a **ukládá se to samo, pole po poli** (viz
+  „Úpravy se ukládají samy“ výš). „Hotovo“ jen zavře režim úprav.
+  Příznak **hlavního kontaktu** zůstává na vědomé akci: přehazuje se i ostatním osobám téže
+  firmy, takže se nesmí spustit uprostřed psaní.
 - **Firma** — název s proklikem, město, telefon a e-mail firmy.
 - **Obchodní případy firmy** — kontext „o čem s ním je řeč", s proklikem na případ.
 - **E-mailová komunikace** — zprávy navázané právě na tuhle osobu. Napojuje se automaticky podle
@@ -313,6 +382,16 @@ Kdyby se nabídka pak přepočítala, objednávka se tím nezmění.
 Zrušení objednávky si vyžádá **důvod** — stejně jako prohra případu. Objednávku, ze které už
 vznikl projekt, **nelze smazat** (projekt by osiřel).
 
+> **Ukládá se sám jen blok základních údajů** (název, cena, datum podpisu a dodání, popis
+> a Doplňující údaje) — pole po poli, viz „Úpravy se ukládají samy“ výš. **Rozpis položek,
+> fakturace, změna stavu a založení projektu** zůstávají na tlačítku: každá z nich něco
+> přepočítá nebo založí další záznam, a to se nesmí spustit uprostřed psaní.
+>
+> Při **zakládání** nové objednávky se průběžně neukládá nic — záznam ještě neexistuje, takže
+> není co ukládat. Hodnoty odejdou naráz tlačítkem *Založit objednávku*. Totéž platí u nového
+> zákazníka a nového případu: půl vyplněná firma by se jinak objevila v seznamu už při psaní
+> prvního slova.
+
 ### Rozpis položek: z čeho se skládá cena
 Nabídka i objednávka mají **rozpis položek** — panely, měnič, baterie, montáž, doprava,
 administrativa. Bez něj nejde doložit, z čeho cena vznikla, ani zakázku vyfakturovat.
@@ -387,6 +466,16 @@ Odkliknutí hotového kroku je zaškrtávátko vlevo, protože to je nejčastěj
 > **Ruční termín má vždy přednost.** Když u kroku nastavíš datum sám („tehdy přijede jeřáb"),
 > přepočet ho už nikdy nepřepíše. Vrátit ho do automatického dopočtu jde odkazem *vrátit
 > do automatu*.
+
+**Kroky i termín zahájení se ukládají samy** (u kroků je stav ukládání vidět v hlavičce
+seznamu). Změna zahájení hned přepočítá termíny všech kroků bez ručního termínu, takže se
+karta sama načte znovu — dřív to zajišťovala odpověď na uložení celého projektu.
+
+> ⚠️ **U kroků neplatí ochrana proti přepsání.** Kroky mají vlastní starší endpoint, který
+> neumí porovnat, jestli se hodnota od načtení nezměnila — takže u nich pořád platí
+> **„poslední zápis vyhrává“**. Když dva lidé ve stejnou chvíli přepisují název jednoho kroku,
+> zůstane ten, kdo dopsal později, a appka neřekne nic. U polí na kartách (zákazník, případ,
+> objednávka, projekt, nabídka) se to hlídá a kolize se ohlásí.
 
 ### Šablony projektových kroků
 Tlačítko **📋 Šablony kroků** v sekci Projekty. Šablona je posloupnost kroků s trváním
@@ -485,6 +574,13 @@ je něco po termínu, oranžově u dnešních termínů.
 > Jsou to vždycky **jen tvoje** úkoly. I vedení, které jinak vidí všechny záznamy, tu má
 > svoje — jinak by tahle karta byla seznam práce celé firmy a nikdo by v ní nic nenašel.
 
+> ⚠️ **Aktivity se průběžně neukládají** — v jejich okně zůstává tlačítko *Uložit*, stejně
+> jako v **Kalendáři**. Je to záměr: aktivita může být částí **série** (změna se přenáší na
+> ostatní porady) a její uložení rozesílá **notifikace**. Obojí uprostřed psaní znamená deset
+> e-mailů a deset přepsaných porad. Zároveň u nich platí **„poslední zápis vyhrává“** — jejich
+> endpoint kolizi nekontroluje, takže když text jedné aktivity mění dva lidé současně,
+> zůstane ten, kdo uložil později.
+
 #### Uzavření aktivity: co z ní vyšlo
 Aktivita s termínem má tři stavy a **appka se při uzavírání zeptá na výsledek**:
 
@@ -537,6 +633,20 @@ Co v historii **není** a proč:
 
 > Vlastní pole se zapisují po jednotlivých údajích, takže je vidět „Číslo smlouvy ČEZ:
 > A1 → A2", ne nesrozumitelná změna celého bloku.
+
+**Jedno psaní = jeden řádek.** Od chvíle, kdy se ukládá průběžně, přijde při psaní slova
+„Technicplast“ na server několik uložení téhož pole za sebou. V historii by z toho bylo
+*Tech → Technic → Technicpl → Technicplast* a po jednom odpoledni by v ní nešlo nic najít
+(výpis má strop sto řádků). Proto se **opakovaná změna téhož pole týmž člověkem do pěti minut
+přilepí k prvnímu řádku**: zůstane „z čeho → na co“, ne cesta po znacích.
+
+Pět minut je záměrný kompromis. Jedna oprava jednoho pole se do okna celá vejde; delší okno by
+už slévalo dvě **samostatná rozhodnutí** ve stejném dni — ráno cena 2,5 mil., po obědě
+1,9 mil. — a přesně tahle informace je to, kvůli čemu historie existuje.
+
+> Když hodnotu napíšeš a **vrátíš zpátky** na původní (A → B → A), řádek z historie **zmizí**.
+> „Změnil z Praha na Praha“ není informace, jen šum. Po uplynutí okna se ale vrácení zpět
+> zaloguje jako běžná změna — po pěti minutách už to bylo rozhodnutí, ne přepsání se.
 
 ### Mapa
 Sekce **Mapa** ukáže zákazníky se souřadnicemi. Zelený špendlík je klient, oranžový lead;
@@ -627,7 +737,10 @@ Pole má název, typ a nepovinnou nápovědu, která se zobrazí pod polem ve fo
 
 Dva přepínače u každého pole:
 
-- **Povinné** — bez vyplnění nejde záznam uložit.
+- **Povinné** — bez vyplnění nejde záznam **posunout do dalšího stavu**. Pozor, není to
+  „nejde uložit“: Doplňující údaje se ukládají průběžně po jednotlivých polích, a kdyby
+  povinnost platila při každém stisku klávesy, u rozdělaného záznamu by se nedalo uložit
+  vůbec nic. Kontrola je proto u přechodu stavu, kde na ní opravdu záleží.
 - **Zobrazit i v seznamu** — pole přibude jako **sloupec v tabulce** (u případů i na dlaždici
   kanbanu), takže se podle něj dá přehledově koukat.
 
@@ -670,7 +783,7 @@ Jak to poznáš, když se to stane:
   *Případ vyhrán → objednávka*". Takže je vždycky vidět, že to nebyl člověk.
 - Při **hromadné změně stavu** se nad seznamem vypíše, co všechno appka založila.
 
-Tři věci, které je dobré vědět dopředu:
+Čtyři věci, které je dobré vědět dopředu:
 
 1. **Pravidlo zabere u jednoho záznamu jen jednou.** Když případ vrátíš z *Vyhráno* zpátky
    a znovu ho vyhraješ, druhá objednávka nevznikne. Není to chyba — je to ochrana, aby
@@ -678,6 +791,10 @@ Tři věci, které je dobré vědět dopředu:
 2. **Když už objednávka (nebo projekt) existuje, automatika nic nezaloží.** Druhá objednávka
    na jednu zakázku je vždycky lidské rozhodnutí, tak ji založ ručně.
 3. **Ručně to jde pořád stejně.** Automatika tlačítka nenahrazuje, jen ubírá klikání.
+4. **Pravidlo navěšené na změnu pole zabere teprve, když pole opustíš** (klikneš jinam nebo
+   zavřeš okno) — ne po každé klávese. Jinak by pravidlo *„změní se hodnota → založ
+   objednávku“* zabralo nad nedopsaným **„1“** místo nad **„1 500 000“**, a objednávka za
+   korunu už by byla na světě. Průběžné ukládání mezitím hodnotu jen zapisuje, nic nespouští.
 
 **Nastavení** (Nastavení → Automatizace) patří správci nastavení. Pravidlo se skládá ze tří
 vět: *když se přesune* (případ / nabídka / objednávka / projekt) — *do stavu* — *tak appka*
@@ -729,6 +846,14 @@ založí; jinak by si mohl záznam přehodit na kolegu a sám o něj přijít, n
 
 Záznamy **bez vlastníka** (například po budoucí migraci starých nabídek) vidí jen ten, kdo má
 `crm_vse` — „nikomu nepatřící" data se nemají zjevit všem.
+
+**Totéž platí pro „kdo má záznam otevřený“ a pro ukládání po polích.** Právo na modul tu
+nestačí: kdyby se seznam přítomných ověřoval jen jím, dal by se **zkoušením ID** zjistit, že
+cizí případ existuje a kdo na něm pracuje — a to je přesně ta informace, kterou 404 místo 403
+schovává. Kontroluje se proto přístup ke **konkrétnímu záznamu** a na cizí se odpovídá **404**,
+jako by neexistoval. Pravidla se neopisují: použije se ta samá funkce, jakou používá čtení
+aktivit a historie, včetně toho, že objednávka, projekt a nabídka vlastníka nemají a práva
+dědí ze svého obchodního případu.
 
 ### Stavy pipeline (sloupce kanbanu)
 Stavy **nejsou v kódu**, jsou v tabulce `crm_stavy`. V sekci Obchodní případy je pod právem
@@ -934,6 +1059,161 @@ sloupec `extra`.
 Práva: **čtení definic** smí každý, kdo vidí CRM (z definic se kreslí formulář i sloupce),
 **měnit** je smí jen `crm_nastaveni`.
 
+### Ukládání po polích a přítomnost: jak to funguje uvnitř
+Dvě věci, které drží spolu: `PATCH` jednoho pole a tik „jsem tady, mám otevřené tohle“. Je to
+**tentýž princip, jaký už běží v [Přehledu projektů](prehled-projektu.md)** a hooky
+i komponenty jsou společné (`hooks/useAutosave.js`, `hooks/usePritomnost.js`,
+`components/Pritomni.jsx`, `components/StavUlozeni.jsx`) — druhá implementace by se dřív nebo
+později rozešla a jedna z nich by tiše ztrácela data.
+
+**API** — jeden generický endpoint pro všechny entity CRM (`crm/routes_pole.py`):
+
+- `PATCH /crm/zaznam/{entita}/{id}/pole` — uloží **jedno** pole. Tělo: `pole`, `hodnota`,
+  `puvodni`, `usazeno`. `entita` je `zakaznik` / `kontakt` / `om` / `op` / `obj` / `pro` /
+  `nab`. Když se `puvodni` neshoduje s tím, co je v databázi, vrací **409** s
+  `{zprava, pole, aktualni, kdo, kdy}` a **nic nepřepíše**; `puvodni: null` znamená „přepiš bez
+  kontroly“ (člověk kolizi potvrdil). Vrací **celý** aktualizovaný záznam schválně: server
+  dopočítává věci za klientovými zády (cena objednávky, termíny navazujících kroků, výpočtová
+  vlastní pole), a kdyby si je prohlížeč nepřepsal, hlásil by při dalším stisku falešnou kolizi.
+- `GET /crm/zaznam/{entita}/{id}/razitko` — podpis stavu záznamu. Běžně přichází rovnou
+  v odpovědi na tik přítomnosti, takže se nevolá dvakrát.
+- `POST /pritomnost/tik` — „jsem tady“ + razítko v jedné odpovědi. Prohlížeč tiká každých 8 s
+  a jen když je záložka vidět.
+
+> **Jeden endpoint místo šesti PATCHů** proto, že logika je pro všechny entity stejná
+> (whitelist → kontrola kolize → zápis → dopočty). Rozepsat ji šestkrát znamená pět míst, kde
+> se na kontrolu kolize zapomene.
+>
+> **Vlastní prefix `/crm/zaznam`** je taky záměr: cesty v CRM se už dvakrát tiše potkaly
+> a přebily funkční obrazovku. Hlídá to `tests/test_kolize_cest.py`.
+
+**Registr entit** (`crm/pole_zaznamu.py`) — jeden řádek na druh záznamu: model, právo,
+**whitelist polí**, klíč vlastních polí, entita pro automatizaci a funkce na ověření přístupu
+k záznamu. Čtyři rozhodnutí, která z toho plynou:
+
+1. **Whitelist, ne „cokoli na modelu“.** Generický endpoint bez seznamu povolených polí by
+   dovolil přepsat vlastníka záznamu, `raynet_id` nebo interní příznaky. Povolená jsou jen
+   pole, která člověk skutečně píše do formuláře — `stav`, vlastnictví, `kategorie`, důvod
+   prohry ani `hlavni` u kontaktu tam nejsou, protože mají vedlejší efekt na jiné záznamy.
+   Že whitelist neobsahuje překlep, hlídá `zkontroluj_whitelist()` z testu; jinak by se to
+   projevilo až za běhu jako „pole nelze měnit“ u něčeho, co evidentně existuje.
+2. **Typ hodnoty se bere z modelu** (typ sloupce SQLAlchemy), ne z druhého seznamu — ten by se
+   s prvním rozešel.
+3. **Vlastní pole jdou stejnou cestou** pod klíčem `extra:<klic>`. Zapisuje se ale
+   **sloučením** se stavem v databázi (`zpracuj_jedno()`), ne přestavěním celého slovníku:
+   `vlastni_pole.zpracuj()` staví nový objekt, takže chybějící klíč se uložením **smaže**.
+   Autosave nad ním by z tiché ztráty dat udělal pravidlo. Nový slovník se do atributu musí
+   přiřadit znovu — SQLAlchemy si změny uvnitř JSONB nevšimne.
+4. **Rozepsaný stav není chyba.** Prázdná hodnota je legitimní (vymazání) a **povinná vlastní
+   pole se tu nevynucují** — jinak by autosave u rozpracovaného záznamu vracel 422 a nefungoval
+   vůbec. Povinnost hlídá `povinna_pole.py` při přechodu stavu.
+
+**Kolize se hlídá hodnotou, ne verzí.** `verze` roste i při změně **jiného** pole, takže podle
+ní by appka hlásila kolizi u věcí, které si vzájemně nevadí (kolega mění telefon, ty poznámku).
+Porovnává se proto textová podoba té jedné hodnoty, se kterou člověk začal psát (`puvodni`).
+**Čísla se porovnávají číselně:** databáze vrátí `1500000.00`, prohlížeč pošle `1500000` —
+textově se to nerovná a člověk by dostal hlášku o kolizi tam, kde se nic nezměnilo. U vlastních
+polí se čte přímo z `extra`, ne z výstupu s dopočty (`s_vypocty`): ten dopočítává výpočtová
+pole, která v databázi nejsou, a kontrola by na nich hlásila rozdíl pořád.
+
+**Automatizace až při usazení pole.** `usazeno: true` posílá prohlížeč teprve při opuštění pole
+(`onBlur`) nebo při zavírání formuláře; průběžné uložení hodnotu jen zapíše. Kdyby se pravidla
+navěšená na změnu pole spouštěla po každé klávese, pravidlo *„změní se hodnota → založ
+objednávku“* by zabralo nad nedopsaným `1` místo nad `1500000`. Volá se **před commitem** —
+po něm SQLAlchemy zahodí historii atributů a nebylo by z čeho poznat, co se změnilo.
+
+**Razítko** (`crm/razitko.py`) — `razitko_zaznamu` je podpis stavu jednoho záznamu,
+`razitko_seznamu` podpis celého seznamu (pro kanbany a tabulky). Kromě času poslední změny
+a verze jsou v podpisu i **počty pod-záznamů** (kontakty, odběrná místa, aktivity, nabídky,
+kroky): přidání ani smazání pod-záznamu čas změny nadřazeného záznamu neposune, takže samotný
+čas by na ně byl slepý. U seznamu je navíc nejvyšší `id` — zachytí vznik záznamu i v případě,
+že by se hned nato jiný smazal a počet zůstal stejný. **Proč podpis a ne seznam rozdílů:**
+počítat „co přesně se změnilo od času X“ by znamenalo držet a testovat historii, a při první
+nepřesnosti by lidem tiše chyběla aktualizace. Podpis je tupý, ale nemůže lhát.
+
+**Kdo razítkem musí hýbat.** Aby to fungovalo, volá `pole_zaznamu.oznac_zmenu()` i každý
+endpoint, který mění stav (`zmen_stav_pripadu`, `zmen_stav_nabidky`, `zmen_stav_objednavky`,
+`zmen_stav_projektu`, `hromadne.zmen_stav`), úprava aktivity a úprava kroku projektu. Bez toho
+by se cizí přetažení karty v kanbanu u ostatních neprojevilo, dokud by si stránku neobnovili
+ručně — kanban se dosud načítal jen na akci uživatele.
+
+**Registr přítomnosti** (`pritomnost/registr.py`) — jeden řádek na entitu: `pravo` (kdo nesmí
+modul otevřít, nesmí vidět ani kdo v něm je), `razitko` a nepovinně `pristup` (ověření
+konkrétního záznamu, viz Práva výš). Kromě detailů (`crm_zakaznik`, `crm_kontakt`, `crm_om`,
+`crm_op`, `crm_obj`, `crm_pro`, `crm_nab`) jsou v registru i **seznamy** (`crm_seznam_*`), kde
+se `entita_id` nepoužívá a razítko je za celý seznam. U seznamů se přítomnost **nezobrazuje** —
+kolečko „pět lidí je v seznamu“ je šum; jde jen o to, aby se obrazovka sama aktualizovala po
+cizí změně. Neznámý typ endpoint odmítne (400), aby se seznam přítomných nedal obejít bez práva.
+
+**Sledování změn na modelech** (`ZmenaMixin` v `app/database.py`) — `zmeneno_at`, `zmenil_id`
+a `verze` na `crm_zakaznici`, `crm_zakaznik_kontakty`, `crm_odberna_mista`,
+`crm_obchodni_pripady`, `crm_aktivity`, `crm_objednavky`, `crm_projekty`, `crm_projekt_kroky`
+a `nabidky`. **Proč nestačí `aktualizovano_at`,** které některé tabulky měly: hýbe se při
+jakékoli změně a **neříká KDO** — hlášku „hodnotu mezitím změnil Petr“ se z něj postavit nedá,
+a bez jména se člověk nemá jak rozhodnout, čí verze platí. Tři tabulky (kontakty, aktivity,
+kroky) neměly ani to. Mixin sedí vedle `Base`, ne v `crm/models.py`, protože ho používá
+i nabídka — a nabídkovač s CRM se navzájem neimportují na úrovni modulu. Sloupce doplňuje lehká
+migrace při startu (`main.py`, `ADD COLUMN IF NOT EXISTS`).
+
+> ⚠️ U `Nabidka` musela vazba `vytvoril` dostat explicitní `foreign_keys`: od `ZmenaMixin`
+> vedou na uživatele **dva** cizí klíče (autor nabídky a autor poslední změny) a SQLAlchemy
+> sám nepozná, který z nich ta vazba používá.
+
+**Chování prohlížeče** (`hooks/useZaznamAutosave.js`) — tři pravidla, bez kterých by průběžné
+ukládání škodilo víc, než pomůže:
+
+1. **Pole, ve kterém člověk píše** (nebo které má nedoručenou změnu), aktualizace ze serveru
+   **nikdy nepřepíše** — jinak by mu text mizel pod rukama uprostřed věty.
+2. Jako `puvodni` se posílá **to, co server naposledy potvrdil**, ne to, co je zobrazené.
+3. **Debounce je po jednotlivých polích** (`useAutosave`), ne jeden timer na formulář: člověk
+   vyplní termín, hned skočí na poznámku a píše dál — s jedním timerem by psaní do poznámky
+   pořád odkládalo i uložení termínu a při zavření okna by se ztratilo obojí. Pro tentýž klíč
+   navíc nikdy neletí dvě uložení naráz; poslední hodnota čeká ve frontě, jinak by je server
+   mohl zapsat v opačném pořadí.
+
+**Nad jedním záznamem tiká jen jedno místo.** V tabulce přítomnosti je jeden řádek na dvojici
+(uživatel, entita), takže dva tiky ze stejné stránky by si navzájem přepisovaly, na kterém poli
+člověk stojí, a kolegům by editované pole poblikávalo. U obchodního případu proto tiká **karta**
+(`entitaTyp` má ona) a formulář jí právě editované pole jen hlásí; u zákazníka si to střídají —
+karta tiká, dokud není otevřené okno úprav, pak tiká ono.
+
+**Zakládání nového záznamu autosave nemá** a mít nesmí: záznam v databázi neexistuje, není co
+PATCHovat, a půl vyplněná firma by v seznamu vznikla už při psaní prvního slova. Formuláře proto
+mají dva režimy a v tom druhém drží hodnoty ve svém stavu (`zapnuto: false`).
+
+**Klíčové soubory:** `crm/pole_zaznamu.py` (registr, whitelist, převody, kolize, zápis),
+`crm/routes_pole.py` (endpointy), `crm/razitko.py` (podpisy), `crm/vlastni_pole.py`
+(`zpracuj_jedno`), `pritomnost/registr.py`, `app/database.py` (`ZmenaMixin`), `crm/audit.py`
+(slučovací okno `OKNO_SLOUCENI_S`). Frontend: `hooks/useZaznamAutosave.js`, `hooks/useAutosave.js`,
+`hooks/usePritomnost.js`, `components/Pritomni.jsx`, `components/StavUlozeni.jsx`,
+`components/VlastniPoleVstupy.jsx` (prop `onZmenaPole` = hlášení po jednom poli vedle staršího
+`onZmena` s celým `extra`). Testy: `tests/test_crm_pole.py`, `tests/test_pritomnost_pristup.py`,
+`tests/test_audit_slouceni.py`.
+
+### Historie změn: slučovací okno
+`crm/audit.py`, konstanta **`OKNO_SLOUCENI_S = 300`** (5 minut). Od zavedení ukládání po polích
+neplatí „jedno uložení = jedno rozhodnutí“: napsání jednoho slova pošle několik uložení téhož
+pole za sebou. Bez slučování by ve výpisu (limit 100 řádků) byly řádky *Tech → Technic →
+Technicpl* a po jednom odpoledni psaní by v historii nebylo nic užitečného.
+
+Slučuje se řádek se **stejnou čtveřicí** (`entita`, `zaznam_id`, `pole`, `zmenil_user_id`),
+druhu `zmena` a mladší než okno. Autor je v té čtveřici podstatný: cizí změnu si nikdo
+přivlastnit nesmí, jinak by v logu stálo, že cenu snížil ten, kdo pak jen opravil telefon.
+Vznik ani smazání záznamu se neslučují.
+
+- **`stara` se nikdy nepřepisuje** — drží hodnotu, ZE KTERÉ se to začalo měnit, a to je celý
+  smysl logu.
+- Když se nová hodnota rovná té původní (A → B → A), **řádek se smaže**: „změnil z Praha na
+  Praha“ není informace.
+- Slučování je **vylepšení, ne povinnost**: když z jakéhokoli důvodu selže, zapíše se běžný
+  nový řádek. Audit nikdy nesmí o změnu přijít kvůli tomu, že se ji nepodařilo přilepit
+  k předchozí.
+
+> ⚠️ Slučování jde **surovým SQL** přes `session.connection()`, ne přes ORM. Běží se totiž
+> uvnitř `before_flush`: ORM dotaz by spustil autoflush, tedy flush uvnitř flushe („Session is
+> already flushing“) a rekurzivní zavolání téhož listeneru. Cenou je, že ORM o zápisu neví — což
+> nevadí, protože audit se nikde nečte a nezapisuje současně.
+
 ### Datový model
 | Tabulka | Co drží |
 |---|---|
@@ -957,6 +1237,12 @@ Práva: **čtení definic** smí každý, kdo vidí CRM (z definic se kreslí fo
 | `crm_ulozene_filtry` | uživatelské filtry: podmínky a řazení jako JSONB, příznaky sdílený/výchozí |
 | `crm_pravidla` | automatizace: spouštěč (`spoust_entita` + `spoust_stav`), `akce` a její parametry v JSONB `nastaveni`, vypínač `aktivni` |
 | `crm_pravidlo_behy` | co pravidlo u kterého záznamu udělalo; unikátní `(pravidlo_id, entita, zaznam_id)` je to, co brání druhému spuštění |
+
+Od 6. 8. 2026 má většina těch tabulek navíc trojici **`zmeneno_at`, `zmenil_id`, `verze`**
+(`ZmenaMixin`) — kdo a kdy záznam naposledy změnil. Je to podklad pro razítko změn a pro hlášku
+„mezitím to změnil Petr“; `verze` je jen informativní, kolize se hlídá hodnotou (viz „Ukládání
+po polích“ výš). Tabulka `pritomnost` (`backend/app/pritomnost/models.py`) drží, kdo má co
+otevřené: jeden řádek na dvojici (uživatel, entita), obnovovaný tikem z prohlížeče.
 
 Na `nabidky` (nabídkovač) přibyly dva sloupce: **`cislo`** (`NAB-26-NNNN`) a
 **`obchodni_pripad_id`**. Obojí je nullable schválně — nabídkovač jde pořád otevřít samostatně
@@ -990,8 +1276,34 @@ i na výpočet nabídky (`typ_nabidky`) řeší ta tabulka.
 | V historii pravidla je „Chyba" | Podrobnost je v logu aplikace (`journalctl -u greensie-backend`). Změna stavu se uložila, akce ne — dokonči ji ručně. |
 | Automatika nezaložila druhou objednávku po vrácení případu z výhry | Správné chování — pravidlo zabere u záznamu jen jednou. Druhou objednávku (etapu) založ ručně. |
 | Projekt vznikl bez kroků | Žádná šablona neodpovídá kategorii případu, nebo případ kategorii nemá. Přiřaď šablonu v pravidle přímo, nebo doplň kategorie u šablon. |
+| U karty svítí **„Neuloženo“** | Poslední pokus o uložení selhal (spadlá síť, vypršené přihlášení, neplatná hodnota). Text chyby je vedle. Okno **nezavírej**, dokud nezmizí — zavřením se čekající změna sice ještě odešle, ale když selže i to, je ztracená. |
+| **„Mezitím to změnil někdo jiný“** | Do stejného pole zapsal jiný člověk. Nic se nepřepsalo; vyber *Přepsat mojí hodnotou* nebo *Nechat jejich*. |
+| Kolečko člověka nezmizelo, i když už odešel | Mizí do 25 s. Uspaný počítač s otevřenou záložkou taky zmizí — skrytá záložka přestane hlásit přítomnost. |
+| Změna se neuložila a hlásí „pole se přes automatické ukládání měnit nedá“ | Pole není ve whitelistu (`crm/pole_zaznamu.py`) — typicky stav, vlastník, kategorie. Patří na tlačítko, protože má vedlejší efekty. Když má nové pole autosave dostat, přidej ho do whitelistu i do seznamu polí na frontendu. |
+| Kanban se po cizím přetažení karty neaktualizoval | Endpoint měnící stav nezavolal `oznac_zmenu`, takže se razítko seznamu nezměnilo. Doplň ho stejně jako v `zmen_stav_pripadu`. |
+| V historii změn je jeden řádek místo dvou úprav | Obě spadly do slučovacího okna (5 min, stejné pole, stejný člověk). Záměr — jinak by výpis zaplnily mezistavy psaní. |
 
 ### Poznámky a úskalí
+- **Kroky projektu a aktivity: „poslední zápis vyhrává“.** Kroky se ukládají po jednotlivých
+  polích, ale jejich endpoint (`PATCH /crm/kroky/{id}`) **kontrolu kolize neumí** — neposílá se
+  mu, jakou hodnotu měl člověk na obrazovce, takže nemá s čím porovnávat. U aktivit platí totéž
+  (a ty navíc autosave vůbec nemají). Když dva lidé mění tentýž krok nebo tutéž aktivitu
+  současně, zůstane ten, kdo uložil později, a appka neřekne nic. **Známé omezení**, ne chyba
+  k opravě naslepo: ochrana se dá dodělat tím, že se tyhle endpointy převedou na
+  `PATCH /crm/zaznam/...` — u kroků k tomu chybí registr entity a whitelist polí.
+- **Kalendář a aktivity autosave nedostaly** a je to záměr. Aktivita může být částí **série**
+  (změna se přenáší na ostatní výskyty) a její uložení **rozesílá notifikace** — průběžné
+  ukládání by u jedné rozepsané schůzky znamenalo desítky e-mailů a desítky přepsaných porad.
+  V obou zůstává tlačítko *Uložit*.
+- **Odběrné místo je připravené, ale ještě nezapojené.** Entita `om` je ve whitelistu i registru
+  přítomnosti, jenže panel odběrných míst na kartě zákazníka pořád ukládá po staru. Totéž platí
+  pro **panel kontaktních osob** na kartě zákazníka (autosave má jen samostatná karta osoby na
+  `/kontakty/detail/:id`). Dokud to platí, je nad těmi dvěma panely možné cizí změnu přepsat.
+- **Seznamy a kanbany se obnovují samy, ale bez koleček.** Zákazníci, Případy, Objednávky,
+  Projekty i Nabídky si tahají razítko seznamu (`crm_seznam_*`) a po cizí změně se přenačtou.
+  Kolečka přítomnosti tam schválně nejsou: „pět lidí je v seznamu“ nic neříká a u karty by
+  dokonce lhalo o tom, kdo ji drží. Rozepsané hledání a filtry refresh nezahodí — načítá se
+  se stejným dotazem, jaký má obrazovka zrovna nastavený.
 - **Dvě pravdy o zákazníkovi.** Dokud běží Raynet i appka, vedou se klienti na dvou místech
   a budou se rozjíždět. Jednosměrný sync z Raynetu (`raynet_id` je připravené) zatím není.
 - **Objednávky a projekty** ještě nejsou hotové — na kartě případu jsou vyznačené jako

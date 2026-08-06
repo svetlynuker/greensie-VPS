@@ -141,9 +141,20 @@ Legenda „kdo vidí": **(vše)** = každý, kdo Nabídkovač otevře (právo `n
 | **Název zákazníka** | Jméno/firma zákazníka (zobrazí se i v hlavičce PDF) | vše |
 | **Adresa** | Adresa zákazníka (zobrazí se v hlavičce PDF) | vše |
 | **GPS šířka (lat) / délka (lng)** | Souřadnice pro budoucí PVGIS; zatím jen uložení | vše |
+| **Doplňující údaje** | Vlastní pole nabídky, definuje je admin v CRM | vše |
 | **Upravit zákazníka / Zavřít údaje** | Rozbalí a zavře formulář v hlavičce detailu | vše |
-| **Uložit** | Uloží změny zákazníka | vše |
+| **Hotovo** | Zavře blok. **Neukládá** — pole se ukládají sama (viz níž) | vše |
 | **Smazat nabídku** | Smaže celou nabídku včetně nahraných souborů (s potvrzením) | vše |
+
+**Tenhle blok se od 6. 8. 2026 ukládá sám, pole po poli** — tlačítko *Uložit* v něm už není.
+V hlavičce detailu je vidět stav (*Ukládám… / Uloženo v 14:32 / Neuloženo*) a kolečka
+s iniciálami lidí, kteří mají tu samou nabídku otevřenou. Když do stejného pole mezitím zapsal
+někdo jiný, appka nic nepřepíše a zeptá se, čí hodnota platí. Celý popis včetně toho, co
+autosave neumí, je v [CRM → Úpravy se ukládají samy](crm.md).
+
+> **Vstupy výpočtu se takhle neukládají** (profil spotřeby, sazby, parametry PPA/BESS).
+> Nabídka se z nich přepočítává do verzí, takže je ukládá až **Spočítat** — průběžné ukládání
+> by z každé rozepsané sazby udělalo novou verzi výpočtu.
 
 #### Detail nabídky – sbalená karta Podklady (nahrávání dokumentů)
 | Prvek | Co dělá | Kdo vidí |

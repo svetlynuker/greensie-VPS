@@ -297,3 +297,7 @@ beze změny. **Poznámka se nepřepisuje NIKDY.** U posledního běhu se uklád�
 - Kód backend: `backend/app/matice/` · frontend: `frontend/src/pages/PrehledProjektu.jsx`
 - Paměť projektu: Pohled 1 / matice (viz `MEMORY.md` → greensie-app-projekt)
 - Související: [Proklik na složku dokumentů](../../moduly/) (párování přes číslo OP, Freelo ↔ konektor)
+- Související: [CRM → Úpravy se ukládají samy](crm.md) — od 6. 8. 2026 jede tentýž princip
+  (ukládání po polích, razítko změn, kolečka přítomnosti) i na kartách CRM. Hooky a komponenty
+  jsou společné, takže se nemohou rozejít; co CRM přidalo navíc, je registr entit s whitelistem
+  polí a ověření přístupu ke konkrétnímu záznamu (v CRM vidí člověk bez `crm_vse` jen svoje).

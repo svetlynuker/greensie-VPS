@@ -172,6 +172,14 @@ přenáší do dalších modulů, takže se ovládání nikde neučí znovu:
 | **Záložky výsledku** | vodorovné záložky nad obsahem | Dělí dlouhý výsledek na části. Přepnutí nic nepočítá. |
 | **Sbalená metodika `ⓘ`** | jednořádkový šedý pruh, klik rozbalí | Vysvětlení „proč se to takhle počítá". Napoprvé je potřeba, napodesáté zdržuje — proto je sbalené. |
 | **Sbalená karta** | `▸` nadpis se štítkem | Obsah, do kterého se sahá jen občas (třeba nahrané podklady). U prázdné se otevře sama. |
+| **Kolečka s iniciálami v hlavičce** | dvě až čtyři barevná kolečka | Kdo má **ten samý** záznam nebo pohled otevřený; popisek řekne i to, na kterém poli kolega stojí. Sebe tam nenajdeš. Kolečko zmizí samo do půl minuty po zavření stránky. |
+| **Hláška o ukládání** | drobný šedý text *Ukládám… / Uloženo v 14:32 / Neuloženo* | Tam, kde se ukládá samo a tlačítko *Uložit* není, je to jediný způsob, jak poznat, že text došel na server. U chyby je vedle text a někde i *Zkusit znovu*. |
+
+Obojí je **jedna komponenta pro celou appku** (`components/Pritomni.jsx`,
+`components/StavUlozeni.jsx`), takže barva kolegy je stejná v kanbanu i na kartě. Dnes to má
+[Přehled projektů](prehled-projektu.md) (dialog buňky) a [CRM](crm.md) (karty zákazníka,
+kontaktní osoby, případu, objednávky, projektu a nabídky). Jak průběžné ukládání funguje
+a co na tlačítku naopak zůstává, je popsané v [CRM → Úpravy se ukládají samy](crm.md).
 
 ### Jak na…
 - **Přepnout na tmavý režim:** jméno vpravo nahoře → u **Režim** klikni na měsíc.
