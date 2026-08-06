@@ -1287,3 +1287,105 @@ class TestCenaZaKwpPerPole:
         assert v["elektrarna"]["nakladova_cena_kc"] == pytest.approx(
             v["elektrarna"]["kwp"] * p.nakladova_cena_kc_kwp, rel=1e-6
         )
+
+
+class TestRozdeleniVychodZapad:
+    """Jedno pole rozdělené 50/50 na východ a západ.
+
+    Dan 5. 8. 2026: „u pole dej ještě možnost že jedno pole se přesně 50/50
+    rozloží do dvou směrů, východ západ, ať to nemusím psát 2x."
+
+    Typická východ-západní konstrukce na ploché střeše: jeden blok panelů,
+    polovina na každou stranu.
+    """
+
+    def test_rozlozi_na_dve_poloviny(self):
+        pole = (ppa_bess.PoleFve(kwp=200.0, rozdelit_vychod_zapad=True),)
+        rozlozeno = ppa_bess.rozloz_pole(pole)
+        assert len(rozlozeno) == 2
+        assert [f.kwp for f in rozlozeno] == [100.0, 100.0]
+        assert sorted(f.azimut_st for f in rozlozeno) == [-90.0, 90.0]
+
+    def test_zachova_sklon_a_cenu(self):
+        pole = (
+            ppa_bess.PoleFve(
+                kwp=300.0, sklon_st=12.0, cena_kc_kwp=16_000.0, rozdelit_vychod_zapad=True
+            ),
+        )
+        for f in ppa_bess.rozloz_pole(pole):
+            assert f.sklon_st == 12.0
+            assert f.cena_kc_kwp == 16_000.0
+
+    def test_azimut_je_osa(self):
+        """Pootočená střecha: osa 30° dá pole na −60° a +120°."""
+        pole = (ppa_bess.PoleFve(kwp=100.0, azimut_st=30.0, rozdelit_vychod_zapad=True),)
+        assert sorted(f.azimut_st for f in ppa_bess.rozloz_pole(pole)) == [-60.0, 120.0]
+
+    def test_neoznacene_pole_zustane(self):
+        pole = (
+            ppa_bess.PoleFve(kwp=200.0, azimut_st=0.0),
+            ppa_bess.PoleFve(kwp=100.0, rozdelit_vychod_zapad=True),
+        )
+        rozlozeno = ppa_bess.rozloz_pole(pole)
+        assert len(rozlozeno) == 3
+        assert rozlozeno[0].kwp == 200.0 and rozlozeno[0].azimut_st == 0.0
+
+    def test_prazdny_vstup(self):
+        assert ppa_bess.rozloz_pole(()) == ()
+
+    def test_je_stejne_jako_dve_pole_rucne(self):
+        """Zkratka nesmí dát jiný výsledek než ruční zadání dvou polí."""
+        zkratka = ppa_bess.spocti_ppa_bess(
+            _rocni_vstup(pole=(ppa_bess.PoleFve(kwp=300.0, rozdelit_vychod_zapad=True),))
+        )
+        rucne = ppa_bess.spocti_ppa_bess(
+            _rocni_vstup(
+                pole=(
+                    ppa_bess.PoleFve(kwp=150.0, azimut_st=-90.0),
+                    ppa_bess.PoleFve(kwp=150.0, azimut_st=90.0),
+                )
+            )
+        )
+        assert zkratka["elektrarna"]["kwp"] == pytest.approx(rucne["elektrarna"]["kwp"])
+        assert zkratka["elektrarna"]["vyroba_mwh"] == pytest.approx(
+            rucne["elektrarna"]["vyroba_mwh"], rel=1e-6
+        )
+        assert zkratka["po_delkach"][0]["cena_ppa_kc_mwh"] == pytest.approx(
+            rucne["po_delkach"][0]["cena_ppa_kc_mwh"], rel=1e-6
+        )
+
+    def test_vystup_ma_rozlozena_pole_i_zadani(self):
+        """`pole` = rozložená (pro grafy a součty), `pole_zadani` = originál
+        (pro předvyplnění formuláře)."""
+        v = ppa_bess.spocti_ppa_bess(
+            _rocni_vstup(pole=(ppa_bess.PoleFve(kwp=300.0, rozdelit_vychod_zapad=True),))
+        )
+        assert len(v["elektrarna"]["pole"]) == 2
+        assert len(v["elektrarna"]["pole_zadani"]) == 1
+        z = v["elektrarna"]["pole_zadani"][0]
+        assert z["rozdelit_vychod_zapad"] is True
+        assert z["kwp"] == pytest.approx(300.0)
+        # Rozložená pole musí dát dohromady zadaný výkon.
+        assert sum(f["kwp"] for f in v["elektrarna"]["pole"]) == pytest.approx(300.0)
+
+    def test_cena_per_pole_se_uplatni_i_na_polovinach(self):
+        v = ppa_bess.spocti_ppa_bess(
+            _rocni_vstup(
+                pole=(
+                    ppa_bess.PoleFve(
+                        kwp=200.0, cena_kc_kwp=17_000.0, rozdelit_vychod_zapad=True
+                    ),
+                )
+            )
+        )
+        assert v["elektrarna"]["nakladova_cena_kc"] == pytest.approx(200.0 * 17_000.0)
+        for f in v["elektrarna"]["pole"]:
+            assert f["cena_kc_kwp"] == pytest.approx(17_000.0)
+            assert f["cena_prepsana"] is True
+
+    def test_orientace_se_pojmenuji(self):
+        v = ppa_bess.spocti_ppa_bess(
+            _rocni_vstup(pole=(ppa_bess.PoleFve(kwp=200.0, rozdelit_vychod_zapad=True),))
+        )
+        orientace = sorted(f["orientace"] for f in v["elektrarna"]["pole"])
+        assert orientace == ["východ", "západ"]
