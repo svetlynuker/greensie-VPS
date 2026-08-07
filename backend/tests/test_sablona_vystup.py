@@ -644,3 +644,239 @@ class TestSkupinyVPalete:
                 if not videne or videne[-1] != p["skupina"]:
                     videne.append(p["skupina"])
             assert len(videne) == len(set(videne)), (typ, videne)
+
+
+# ---- ukázkový popis_json pro PPA + BESS (jen část s baterií) ----
+# Ostatní bloky (`po_delkach`, `rezimy`) tu schválně nejsou: extraktory na ně
+# sahají přes `_pb`/`_pb_d`, které při chybějícím bloku vrátí None, takže
+# vzorek zůstane malý a testuje se to, o co jde – popis modulu baterie.
+PPA_BESS = {
+    "typ_reseni": "ppa_bess",
+    "elektrarna": {"kwp": 300.0, "vyroba_mwh": 320.0},
+    "baterie": {
+        "nazev": "BESS 100/215",
+        "pocet_kusu": 2,
+        "kapacita_kwh": 430.0,
+        "vykon_kw": 200.0,
+        "najem_kc_mesic": 45000.0,
+        "doba_najmu_roky": 10,
+        # interní – do nabídky nesmí:
+        "capex_kc": 5400000.0,
+        "nakladova_cena_kc": 4200000.0,
+    },
+}
+
+
+class TestPpaBessModulBaterie:
+    """Nabídka PPA + BESS musí umět říct, JAKÁ baterie se navrhuje.
+
+    Katalog typu `ppa_bess` vznikl bez označení modulu a počtu kusů, takže
+    baterii popisoval jen kapacitou a výkonem – v nabídce pak po modulu
+    nezůstalo nic, i když ho výpočet ukládá.
+    """
+
+    def test_katalog_ma_modul_i_pocet(self):
+        klice = sk.platne_klice("ppa_bess")
+        assert "baterie_nazev" in klice and "baterie_pocet_kusu" in klice
+
+    def test_katalog_nema_ceny_baterie(self):
+        # Nákladová cena a CAPEX baterie leží ve stejném bloku popisu jako
+        # název – tím spíš musí zůstat mimo katalog.
+        klice = sk.platne_klice("ppa_bess")
+        assert "capex_kc" not in klice and "nakladova_cena_kc" not in klice
+
+    def test_resolver_vrati_nazev_a_pocet(self):
+        h = sk.resolvni_hodnoty("ppa_bess", PPA_BESS)
+        assert h["baterie_nazev"]["hodnota"] == "BESS 100/215"
+        assert txt(h, "baterie_nazev") == "BESS 100/215"
+        assert txt(h, "baterie_pocet_kusu") == "2 ks"
+
+    def test_rucne_zadana_baterie_se_popise_parametry(self):
+        # Ručně zadaná baterie nemá název produktu. Kdyby se vzal jen ten,
+        # dlaždice „Modul baterie" by u takové nabídky v PDF beze slova zmizela.
+        h = sk.resolvni_hodnoty(
+            "ppa_bess",
+            {"typ_reseni": "ppa_bess", "baterie": {"kapacita_kwh": 430.0, "vykon_kw": 200.0}},
+        )
+        assert txt(h, "baterie_nazev") == "Bateriové úložiště 200 kW / 430,0 kWh"
+
+    def test_bez_baterie_zustane_pomlcka(self):
+        # Nabídka bez baterie (`baterie: null`) nesmí spadnout – pole zůstane
+        # prázdné a v tisku se samo nevykreslí.
+        h = sk.resolvni_hodnoty("ppa_bess", {"typ_reseni": "ppa_bess", "baterie": None})
+        assert h["baterie_nazev"]["hodnota"] is None
+        assert txt(h, "baterie_nazev") == "—"
+
+    def test_vychozi_predloha_modul_ukazuje(self):
+        klice = {
+            p["klic"]
+            for s in sk.vychozi_sablona("ppa_bess")["stranky"]
+            for prvek in s["prvky"]
+            for p in [prvek, *(prvek.get("deti") or [])]
+            if p["druh"] == "udaj"
+        }
+        assert "baterie_nazev" in klice
+
+
+class TestPocetRucnichHodnot:
+    """Ručně přepsaná hodnota je jediné místo, kde nabídka smí říkat jiné číslo
+    než výpočet – musí být spočitatelná, aby o ní šlo dát vědět."""
+
+    def _konfigurace(self, *prvky):
+        return {
+            "verze": 2,
+            "stranky": [
+                {"id": "s1", "prvky": [{"id": f"p{i}", **p} for i, p in enumerate(prvky)]}
+            ],
+        }
+
+    def test_pocita_dlazdice_s_rucni_hodnotou(self):
+        k = self._konfigurace(
+            {"druh": "udaj", "klic": "kwp", "rucni_hodnota": "142 kWp"},
+            {"druh": "udaj", "klic": "vyroba_mwh"},
+        )
+        assert sk.pocet_rucnich_hodnot(k) == 1
+
+    def test_pocita_i_v_kontejneru(self):
+        # Dlaždice v předloze leží uvnitř kontejnerů – bez rekurze by se
+        # počítadlo dívalo do prázdna.
+        k = self._konfigurace(
+            {
+                "druh": "kontejner",
+                "deti": [
+                    {"id": "a", "druh": "udaj", "klic": "kwp", "rucni_hodnota": "1"},
+                    {"id": "b", "druh": "udaj", "klic": "vyroba_mwh", "rucni_hodnota": "2"},
+                ],
+            }
+        )
+        assert sk.pocet_rucnich_hodnot(k) == 2
+
+    def test_same_mezery_se_nepocitaji(self):
+        k = self._konfigurace({"druh": "udaj", "klic": "kwp", "rucni_hodnota": "   "})
+        assert sk.pocet_rucnich_hodnot(k) == 0
+
+    def test_jiny_druh_se_nepocita(self):
+        k = self._konfigurace({"druh": "text", "rucni_hodnota": "nesmysl"})
+        assert sk.pocet_rucnich_hodnot(k) == 0
+
+    def test_snese_prazdno_i_stary_model(self):
+        assert sk.pocet_rucnich_hodnot(None) == 0
+        assert sk.pocet_rucnich_hodnot({}) == 0
+        assert sk.pocet_rucnich_hodnot({"bloky": [{"druh": "udaj"}]}) == 0
+
+    def test_predloha_zadnou_rucni_hodnotu_nema(self):
+        for typ in sk.PODPOROVANE_TYPY:
+            assert sk.pocet_rucnich_hodnot(sk.vychozi_sablona(typ)) == 0
+
+
+class TestRucniHodnotaSanitizace:
+    """Ruční hodnota se na papíře vykresluje jako text, ne HTML – a jen
+    u dlaždice. Obojí musí platit i pro data poslaná přímo na API."""
+
+    def _prvek(self, **kw):
+        from app.nabidkovac.schemas import VystupKonfigurace
+
+        return VystupKonfigurace(stranky=[{"id": "s1", "prvky": [{"id": "p", **kw}]}])
+
+    def test_znacky_se_odstrani(self):
+        from app.nabidkovac.routes import _sanituj_konfiguraci
+
+        k = _sanituj_konfiguraci(
+            self._prvek(druh="udaj", klic="kwp", rucni_hodnota="<b>142</b> kWp")
+        )
+        assert k.stranky[0].prvky[0].rucni_hodnota == "142 kWp"
+
+    def test_zlomy_radku_se_slouci(self):
+        # Dlaždice má jeden řádek; zlom by na papíře uřízl `overflow: hidden`.
+        from app.nabidkovac.routes import _sanituj_konfiguraci
+
+        k = _sanituj_konfiguraci(
+            self._prvek(druh="udaj", klic="kwp", rucni_hodnota="142\n\tkWp")
+        )
+        assert k.stranky[0].prvky[0].rucni_hodnota == "142 kWp"
+
+    def test_u_jineho_druhu_se_zahodi(self):
+        from app.nabidkovac.routes import _sanituj_konfiguraci
+
+        k = _sanituj_konfiguraci(self._prvek(druh="text", rucni_hodnota="142"))
+        assert k.stranky[0].prvky[0].rucni_hodnota == ""
+
+    def test_cisti_i_v_kontejneru(self):
+        from app.nabidkovac.routes import _sanituj_konfiguraci
+        from app.nabidkovac.schemas import VystupKonfigurace
+
+        k = _sanituj_konfiguraci(
+            VystupKonfigurace(
+                stranky=[
+                    {
+                        "id": "s1",
+                        "prvky": [
+                            {
+                                "id": "k",
+                                "druh": "kontejner",
+                                "deti": [
+                                    {
+                                        "id": "d",
+                                        "druh": "udaj",
+                                        "klic": "kwp",
+                                        "rucni_hodnota": "<i>1</i>",
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            )
+        )
+        assert k.stranky[0].prvky[0].deti[0].rucni_hodnota == "1"
+
+    def test_delka_je_omezena(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            self._prvek(druh="udaj", klic="kwp", rucni_hodnota="x" * 200)
+
+    def test_prezije_cestu_pres_ulozeni(self):
+        # Cesta, po které hodnota v provozu jde: PUT → sanitizace → `model_dump`
+        # do JSON sloupce → čtení zpět. Kdyby se pole na kterémkoli kroku
+        # ztratilo, přepis by po uložení tiše zmizel.
+        from app.nabidkovac.routes import _sanituj_konfiguraci
+
+        ulozeno = _sanituj_konfiguraci(
+            self._prvek(druh="udaj", klic="kwp", rucni_hodnota="142 kWp")
+        ).model_dump()
+        assert ulozeno["stranky"][0]["prvky"][0]["rucni_hodnota"] == "142 kWp"
+        k, je_vychozi = sk.nacti_konfiguraci("ppa", ulozeno)
+        assert je_vychozi is False
+        assert sk.pocet_rucnich_hodnot(k) == 1
+
+    def test_rucni_hodnota_neobejde_whitelist_klicu(self):
+        # POJISTKA: ruční hodnota mění jen to, co se vytiskne, ne to, co se smí
+        # do nabídky vložit. Interní klíč musí padnout dál na 422.
+        from fastapi import HTTPException
+
+        from app.nabidkovac.routes import _over_konfiguraci
+
+        with pytest.raises(HTTPException) as e:
+            _over_konfiguraci(
+                "peak_shaving",
+                self._prvek(druh="udaj", klic="npv_kc", rucni_hodnota="900 000 Kč"),
+            )
+        assert e.value.status_code == 422
+
+
+class TestProstyText:
+    def test_zahodi_znacky_a_slouci_mezery(self):
+        from app.nabidkovac.vystup_html import prosty_text
+
+        assert prosty_text("  <span>1  200</span>\nKč ") == "1 200 Kč"
+
+    def test_prazdny_vstup(self):
+        from app.nabidkovac.vystup_html import prosty_text
+
+        assert prosty_text(None) == "" and prosty_text("") == ""
+
+    def test_delka(self):
+        from app.nabidkovac.vystup_html import MAX_DELKA_HODNOTY, prosty_text
+
+        assert len(prosty_text("a" * 500)) == MAX_DELKA_HODNOTY

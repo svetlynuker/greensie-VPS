@@ -139,6 +139,13 @@
   color: #8a4b08;
   flex-wrap: wrap;
 }
+/* Ruční hodnoty nejsou chyba rozvržení, jen vědomá výjimka – jiná barva než
+   oranžové varování o přetečení, ať se to nepletlo. */
+.vy-problemy.rucni {
+  background: #fff9db;
+  border-top-color: #ffe066;
+  color: #7a5b00;
+}
 .vy-problem-b {
   border: 1px solid #ffd8a8;
   background: #fff;
@@ -536,6 +543,22 @@
 }
 .vy-udaj.zvyraznit .k-hodnota {
   color: var(--fm-brand-dk, #237a35);
+}
+
+/* Ručně přepsaná hodnota. Značí se JEN v editoru – třídu `rucni` dostane
+   dlaždice v tisku schválně ne, jinak by v PDF svítil oranžový rámeček
+   u čísla, které má na papíře vypadat jako každé jiné. */
+.vy-udaj.rucni {
+  outline: 0.4mm dashed #f08c00;
+  outline-offset: 0.6mm;
+}
+.vy-udaj.rucni .k-hodnota {
+  color: #b35309;
+}
+.vy-udaj.rucni .k-nazev::after {
+  content: " · ručně";
+  font-weight: 700;
+  color: #b35309;
 }
 
 .vy-tabulka {

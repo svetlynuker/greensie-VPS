@@ -547,6 +547,30 @@ def _pb_d_1kc(popis: dict, *cesta: str) -> Any:
     return _g(varianta, *cesta) if isinstance(varianta, dict) else None
 
 
+def _pb_nazev_baterie(popis: dict) -> Any:
+    """Označení navržené baterie pro nabídku.
+
+    Z katalogu je to název produktu. Ručně zadaná baterie žádný nemá
+    (`produkt_nazev=None`) a nabídka by o modulu mlčela, i když je baterie
+    spočítaná – proto se v takovém případě popis složí z parametrů. Zákazník
+    má v nabídce vidět, co dostane, ne prázdné místo.
+    """
+    baterie = _g(popis, "baterie")
+    if not isinstance(baterie, dict):
+        return None
+    nazev = baterie.get("nazev")
+    if nazev:
+        return nazev
+    casti = []
+    vykon = baterie.get("vykon_kw")
+    kapacita = baterie.get("kapacita_kwh")
+    if vykon is not None:
+        casti.append(f"{_cislo(round(float(vykon)))}{NBSP}kW")
+    if kapacita is not None:
+        casti.append(f"{_cislo(float(kapacita), 1)}{NBSP}kWh")
+    return f"Bateriové úložiště {' / '.join(casti)}" if casti else None
+
+
 def _pb_prinos(popis: dict, klic: str) -> Any:
     """Přínos přepočtený na zobrazovanou délku kontraktu.
 
@@ -576,6 +600,13 @@ _POLE_PPA_BESS: list[Pole] = [
     Pole("mira_samospotreby", "Podíl výroby spotřebovaný na místě", "procento",
          lambda p: _pb(p, "energie", "mira_samospotreby"), _S_PB_ELEKTRARNA),
     # --- baterie
+    # Který modul se navrhuje a kolik kusů. Do katalogu to při vzniku typu
+    # `ppa_bess` nikdo nedal, takže nabídka umělá baterii popsat jen čísly –
+    # kapacitou a výkonem – a označení modulu z ní vypadlo, i když ho výpočet
+    # ukládá (`ppa_bess`: baterie.nazev / pocet_kusu).
+    Pole("baterie_nazev", "Modul baterie", "text", _pb_nazev_baterie, _S_PB_BATERIE),
+    Pole("baterie_pocet_kusu", "Počet modulů", "pocet",
+         lambda p: _g(p, "baterie", "pocet_kusu"), _S_PB_BATERIE),
     Pole("baterie_kapacita_kwh", "Kapacita baterie", "kapacita_kwh",
          lambda p: _g(p, "baterie", "kapacita_kwh"), _S_PB_BATERIE),
     Pole("baterie_vykon_kw", "Výkon baterie", "vykon_kw",
@@ -1118,7 +1149,8 @@ def _slozky(typ: str) -> list[tuple]:
              "PPA + BESS – bez počáteční investice"),
             ("text", "uvod", "Co vám nabízíme", _UVOD_PB),
             ("dlazdice", "klicove", "Navržené řešení", "",
-             ["kwp", "vyroba_mwh", "baterie_kapacita_kwh", "baterie_vykon_kw",
+             ["kwp", "vyroba_mwh", "baterie_nazev", "baterie_pocet_kusu",
+              "baterie_kapacita_kwh", "baterie_vykon_kw",
               "delka_roky", "baterie_najem_kc_mesic"], 3),
             ("dlazdice", "cena", "Cena elektřiny",
              "Z elektrárny odebíráte elektřinu levněji, než platíte dnes.",
@@ -1239,3 +1271,30 @@ def nacti_konfiguraci(typ: str, ulozene: dict | None) -> tuple[dict, bool]:
     if je_verze2(ulozene):
         return ulozene, False
     return vychozi_sablona(typ), True
+
+
+def pocet_rucnich_hodnot(konfigurace: dict | None) -> int:
+    """Kolik dlaždic v rozvržení má ručně přepsanou hodnotu.
+
+    Je to jediná věc v nabídce, která smí říkat jiné číslo než výpočet, takže
+    o ní musí být vidět, že tam je – v editoru i mimo něj (detail nabídky).
+    Nepočítá se, jestli je prvek `viditelny`: schovaná ruční hodnota se pořád
+    může vrátit jedním kliknutím a pro upozornění je to tentýž případ.
+    """
+    if not isinstance(konfigurace, dict):
+        return 0
+    pocet = 0
+    for stranka in konfigurace.get("stranky") or []:
+        if not isinstance(stranka, dict):
+            continue
+        for prvek in stranka.get("prvky") or []:
+            if not isinstance(prvek, dict):
+                continue
+            for kandidat in [prvek, *(prvek.get("deti") or [])]:
+                if not isinstance(kandidat, dict):
+                    continue
+                if kandidat.get("druh") == "udaj" and str(
+                    kandidat.get("rucni_hodnota") or ""
+                ).strip():
+                    pocet += 1
+    return pocet

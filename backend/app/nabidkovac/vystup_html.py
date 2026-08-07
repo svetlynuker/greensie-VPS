@@ -170,3 +170,21 @@ def html_na_text(vstup: str | None) -> str:
     if not vstup:
         return ""
     return re.sub(r"<[^>]*>", "", str(vstup))
+
+
+MAX_DELKA_HODNOTY = 120
+
+
+def prosty_text(vstup: str | None, max_delka: int = MAX_DELKA_HODNOTY) -> str:
+    """Jednořádkový text bez značek – pro ručně přepsanou hodnotu dlaždice.
+
+    Hodnota se na papíře vykresluje jako text (ne HTML), takže tady nejde
+    o whitelist značek jako u odstavců, ale o to, aby v ní neuvízl zlomek
+    značky ani konec řádku: dlaždice má jeden řádek a přetečení by uřízl
+    `overflow: hidden` papíru.
+    """
+    if not vstup:
+        return ""
+    text = re.sub(r"<[^>]*>", "", str(vstup))
+    text = re.sub(r"[\x00-\x1f\x7f]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()[:max_delka]

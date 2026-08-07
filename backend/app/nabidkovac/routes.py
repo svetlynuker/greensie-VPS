@@ -219,9 +219,21 @@ def _nabidka_detail(n: Nabidka, db: Session) -> NabidkaDetailOut:
     """
     from app.crm import vlastni_pole as pole_modul
 
+    # Rozvržení nabídky pro zákazníka – čte se jen kvůli počtu ručně přepsaných
+    # hodnot. Typ výstupu je totožný s typem nabídky (jedna nabídka = jeden
+    # papír), takže je to jeden dotaz navíc, ne dotaz na typ.
+    vystup = (
+        db.query(NabidkaVystup)
+        .filter(NabidkaVystup.nabidka_id == n.id, NabidkaVystup.typ_reseni == n.typ)
+        .first()
+    )
+
     return NabidkaDetailOut(
         # Pydantic si dicty z `pro_frontend` zvaliduje sám na VlastniPoleOut.
         vlastni_pole=pole_modul.pro_frontend(db, "nab"),
+        vystup_rucnich_hodnot=sablona_katalog.pocet_rucnich_hodnot(
+            vystup.konfigurace_json if vystup is not None else None
+        ),
         extra=n.extra or {},
         id=n.id,
         typ=n.typ,
@@ -3299,6 +3311,9 @@ def _vystup_out(db: Session, n: Nabidka, typ_reseni: str, vychozi: bool = False)
         tabulka=sablona_katalog.resolvni_tabulku(typ_reseni, popis, delka),
         graf=sablona_katalog.graf_pro_typ(typ_reseni, popis, delka),
         nabizene_delky_roky=nabizene_delky,
+        rucnich_hodnot=sablona_katalog.pocet_rucnich_hodnot(
+            konfigurace if isinstance(konfigurace, dict) else None
+        ),
     )
 
 
@@ -3364,12 +3379,21 @@ def _sanituj_konfiguraci(konfigurace: VystupKonfigurace) -> VystupKonfigurace:
     naformátoval nebo vložil odjinud. Whitelist tagů a stylů drží
     `vystup_html` – tady se jen projde strom. Vrací novou konfiguraci,
     vstupní model zůstává nedotčený.
+
+    Ručně přepsaná hodnota se čistí na jednořádkový holý text a u jiného druhu
+    než `udaj` se zahazuje – nikde jinde by se nevykreslila a v datech by jen
+    ležela jako tichý zmatek.
     """
 
     def vycisti(prvek: VystupPrvek) -> VystupPrvek:
         return prvek.model_copy(
             update={
                 "html": vystup_html.vycisti_html(prvek.html),
+                "rucni_hodnota": (
+                    vystup_html.prosty_text(prvek.rucni_hodnota)
+                    if prvek.druh == "udaj"
+                    else ""
+                ),
                 "deti": [vycisti(d) for d in prvek.deti],
             }
         )
