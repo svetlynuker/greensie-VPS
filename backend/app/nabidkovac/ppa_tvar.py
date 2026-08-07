@@ -109,6 +109,10 @@ def _v2_na_jednotny(varianta: dict, vstup: dict) -> dict:
         # zůstane None.
         "baterie": varianta.get("baterie"),
         "roky": roky,
+        # Za kolik si zákazník elektrárnu odkoupí v roce t. Nese ji varianta
+        # v2 (per délka kontraktu); v1 ji nepočítal, tam zůstane prázdná
+        # a blok s tabulkou se v nabídce sám neukáže.
+        "odkupni_tabulka": varianta.get("odkupni_tabulka") or [],
         "graf": varianta.get("graf"),
     }
 

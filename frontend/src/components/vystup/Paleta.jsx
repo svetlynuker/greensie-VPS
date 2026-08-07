@@ -20,7 +20,6 @@ const PRVKY = [
   },
   { druh: "text", nazev: "Text", popis: "Odstavec – píše se přímo na papíře", ikona: "¶" },
   { druh: "graf", nazev: "Graf", popis: "Výroba nebo měsíční špičky", ikona: "▮▯" },
-  { druh: "tabulka", nazev: "Tabulka", popis: "Vývoj po letech", ikona: "▦" },
   { druh: "obrazek", nazev: "Obrázek", popis: "Fotka, schéma nebo logo", ikona: "▣" },
   { druh: "cara", nazev: "Čára", popis: "Vodorovný oddělovač", ikona: "─" },
   { druh: "obdelnik", nazev: "Obdélník", popis: "Barevná plocha jako podklad", ikona: "▬" },
@@ -73,6 +72,11 @@ export default function Paleta({ editor, katalog, hodnoty }) {
   const [otevrene, setOtevrene] = useState({ prvky: true, 0: true });
   const katPole = katalog?.pole || [];
   const skupiny = doSkupin(katPole);
+  // Tabulky z katalogu. Starší odpověď serveru registr nemá – pak zbyde jediná
+  // roční tabulka, ať paleta nepřijde o prvek úplně.
+  const tabulky = katalog?.tabulky?.length
+    ? katalog.tabulky
+    : [{ klic: "roky", nazev: "Tabulka", sloupce: katalog?.tabulka_sloupce || [] }];
 
   // Údaje, které na papíře už leží – v paletě je ztlumíme, ať je vidět,
   // co je hotové.
@@ -95,7 +99,7 @@ export default function Paleta({ editor, katalog, hodnoty }) {
 
       <Skupina
         nazev="Prvky"
-        pocet={PRVKY.length}
+        pocet={PRVKY.length + tabulky.length}
         otevrena={otevrene.prvky}
         onPrepni={() => prepni("prvky")}
       >
@@ -116,6 +120,26 @@ export default function Paleta({ editor, katalog, hodnoty }) {
                 {p.ikona}
               </span>
               <span className="pal-nazev">{p.nazev}</span>
+            </Polozka>
+          ))}
+          {/* Každá tabulka je vlastní položka a přijde na papír hotová, se
+              všemi svými sloupci. Jedna položka „Tabulka" by po přetažení byla
+              prázdná a odkupní tabulka by se musela naklikat ve vlastnostech. */}
+          {tabulky.map((t) => (
+            <Polozka
+              key={t.klic}
+              popis={`Tabulka – ${t.nazev}`}
+              onUchop={(u) =>
+                editor.zacniZPalety(u, "tabulka", {
+                  tabulka_klic: t.klic,
+                  pole: (t.sloupce || []).map((s) => s.klic),
+                })
+              }
+            >
+              <span className="pal-ikona" aria-hidden="true">
+                ▦
+              </span>
+              <span className="pal-nazev">{t.nazev}</span>
             </Polozka>
           ))}
         </div>

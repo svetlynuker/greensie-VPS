@@ -128,7 +128,13 @@ function Graf({ data, tisk }) {
   );
 }
 
-function Tabulka({ prvek, tabulka, tisk }) {
+function Tabulka({ prvek, data, tisk }) {
+  // Kterou tabulku prvek ukazuje. Prázdný klíč = roční vývoj úspory: rozvržení
+  // uložená před zavedením odkupní tabulky klíč nemají, a `data.tabulka` je
+  // právě ta roční.
+  const tabulka =
+    data?.tabulky?.[prvek.tabulka_klic || "roky"] ||
+    (prvek.tabulka_klic ? null : data?.tabulka);
   const vybrane = new Set(prvek.pole || []);
   const vsechny = tabulka?.sloupce || [];
   const sloupce = vsechny.filter((s) => vybrane.has(s.klic));
@@ -219,7 +225,7 @@ export default function PrvekObsah({ prvek, data, tisk = false, cisloStranky }) 
     case "graf":
       return <Graf data={data} tisk={tisk} />;
     case "tabulka":
-      return <Tabulka prvek={prvek} tabulka={data?.tabulka} tisk={tisk} />;
+      return <Tabulka prvek={prvek} data={data} tisk={tisk} />;
     case "obrazek":
       return <Obrazek prvek={prvek} tisk={tisk} />;
     case "cara":

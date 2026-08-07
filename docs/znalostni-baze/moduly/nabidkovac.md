@@ -191,7 +191,7 @@ zadání kolegy pořád neví; to by šlo vyřešit až ukládáním konceptu na
 | **Pruh „přetéká"** | pod lištou | Kolik prvků leze pod okraj sazby, s prokliky na ně. V PDF by se ořízly | vše |
 | **Pruh „dlaždice nemá hodnotu"** | pod lištou | Kolik dlaždic je prázdných, s prokliky na ně. V PDF se nevytisknou a zůstane po nich prázdné místo | vše |
 | **Pruh „přepsáno ručně"** | pod lištou | Kolik hodnot je zadaných ručně místo z výpočtu (viz níž) | vše |
-| **Paleta – Prvky** | vlevo | Kontejner, Text, Graf, Tabulka, Obrázek, Čára, Obdélník, Číslo stránky. Chyť a přetáhni na papír | vše |
+| **Paleta – Prvky** | vlevo | Kontejner, Text, Graf, Obrázek, Čára, Obdélník, Číslo stránky a **každá tabulka zvlášť** (Vývoj úspory po letech, u PPA a PPA + BESS i Odkup elektrárny po letech). Chyť a přetáhni na papír — tabulka přijde hotová, se všemi svými sloupci | vše |
 | **Paleta – sekce s údaji** | vlevo | Skupiny zákaznických hodnot (Navržené řešení, Rezervovaná kapacita, Úspora 2026, Úspora od 2027, Obchod). Každá položka je **hotová dlaždice s reálnou hodnotou** té nabídky. Ztlumená = na papíře už je (další kopii přidat můžeš) | vše |
 | **Tažení po papíře** | papír | Chyť prvek kdekoli a posuň. Přichytává se k mřížce po 5 mm a k hranám sousedů – oranžová linka ukazuje, na co se chytil | vše |
 | **Puštění nad kontejnerem** | papír | Vloží prvek dovnitř kontejneru. Oranžová značka ukazuje, mezi které dva prvky spadne | vše |
@@ -200,7 +200,7 @@ zadání kolegy pořád neví; to by šlo vyřešit až ukládáním konceptu na
 | **Formátovací lišta** | papír | Tučné, kurzíva, podtržené, přeškrtnuté, velikost písma (7–32 b), barva, zarovnání, odrážky, číslování, zrušení formátu | vše |
 | **Šipky / Shift+šipky** | papír | Posun vybraného prvku po 1 mm, se Shiftem po 5 mm | vše |
 | **Delete / Ctrl+D / Escape** | papír | Smazat prvek · duplikovat · zrušit výběr (a při tažení vrátit prvek zpátky) | vše |
-| **Obsah** | vpravo | Podle druhu: výběr údaje a vlastní popisek, sloupce tabulky, nahrání obrázku. Přepínač **Tisknout** prvek skryje z PDF, ale nechá ho v editoru | vše |
+| **Obsah** | vpravo | Podle druhu: výběr údaje a vlastní popisek, u tabulky **která tabulka** a její sloupce, nahrání obrázku. Přepínač **Tisknout** prvek skryje z PDF, ale nechá ho v editoru | vše |
 | **Ruční hodnota** | vpravo (Údaj) | Přepíše číslo na papíře bez přepočtu nabídky. Prázdné = hodnota z výpočtu. Tlačítkem **Vrátit spočítanou hodnotu** se přepis zruší | vše |
 | **Uspořádání uvnitř** | vpravo (Kontejner) | Kolik prvků vedle sebe (1–6 sloupců) a mezera mezi nimi | vše |
 | **Umístění a velikost** | vpravo | Přesná čísla v milimetrech, „výška podle obsahu" a zámek proti posunu | vše |
@@ -210,6 +210,22 @@ zadání kolegy pořád neví; to by šlo vyřešit až ukládáním konceptu na
 
 Papír je WYSIWYG: je na něm právě to, co se vytiskne. Prvek s vypnutým **Tisknout** je v editoru
 ztlumený a označený, do PDF nejde.
+
+#### Odkupní tabulka (od 7. 8. 2026)
+Nabídka umí druhou tabulku: **Odkup elektrárny po letech** — za kolik si zákazník elektrárnu
+odkoupí v roce t. Je v paletě jako samostatná položka a přijde na papír hotová, se sloupci
+**Rok odkupu** a **Odkupní cena**; přepnout tabulku u už položeného prvku jde vpravo v *Obsahu*.
+
+Dvě věci, které je dobré vědět:
+- **Zůstatek úvěru, poplatek za předčasné splacení ani zisk SPV v tabulce nejsou** — jsou to
+  interní čísla, do zákaznické nabídky je whitelist nepustí (v interním Excelu u PPA zůstávají).
+- **U PPA + BESS je tabulka jen za elektrárnu.** Baterie se odkupuje až po skončení nájmu a jinou
+  metodikou (zbytková hodnota, ne zbytek úvěru), takže je v nabídce dlaždicemi
+  *Odkupní cena baterie po nájmu* a variantou *odkup za 1 Kč*, ne řadou po letech.
+
+Tabulka se bere z **té délky kontraktu, kterou nabídka ukazuje** (přepínač „Kontrakt" v liště),
+aby neříkala jiný kontrakt než dlaždice nad ní. U nabídek PPA + BESS spočítaných **před
+7. 8. 2026** tabulka v datech není — stačí spustit přepočet v detailu nabídky a doplní se.
 
 #### Ruční přepis hodnoty (od 7. 8. 2026)
 Čísla v nabídce jsou z výpočtu a whitelist hlídá, že se do ní nedostane nic interního. Když je
@@ -320,7 +336,7 @@ souřadnicích – tam, kam je obchodník posadil. Druhy prvků:
 | **Text** | Formátovaný odstavec – píše se přímo na papíře, včetně tučného, barev a velikostí |
 | **Údaj** | Dlaždice s jednou zákaznickou hodnotou z výpočtu (např. roční úspora), volitelně s ruční hodnotou |
 | **Graf** | Graf dle typu řešení (PPA: výroba vs. spotřeba; Peak shaving: měsíční špičky) |
-| **Tabulka** | Roční tabulka (jen zákaznické sloupce) |
+| **Tabulka** | Vývoj úspory po letech, nebo odkup elektrárny po letech (jen zákaznické sloupce) |
 | **Obrázek** | Nahraná fotka, schéma nebo logo |
 | **Čára / Obdélník / Číslo stránky** | Grafické drobnosti na dotažení vzhledu |
 

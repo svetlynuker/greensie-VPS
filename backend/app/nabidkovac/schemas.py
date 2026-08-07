@@ -512,6 +512,10 @@ class VystupPrvek(BaseModel):
     html: str = ""  # jen druh text; sanitizuje se při ukládání
     klic: str = Field(default="", max_length=64)  # druh udaj
     pole: list[str] = []  # druh tabulka: vybrané sloupce
+    # Druh tabulka: kterou tabulku prvek ukazuje (`sablona_katalog._TABULKY`).
+    # Prázdné = roční vývoj úspory, aby rozvržení uložená před zavedením druhé
+    # tabulky (odkup elektrárny) fungovala dál bez migrace.
+    tabulka_klic: str = Field(default="", max_length=32)
     obrazek: str = Field(default="", max_length=255)  # relativní cesta v úložišti
     popis: str = Field(default="", max_length=255)  # alt text obrázku
     # Druh udaj: ručně přepsaná hodnota. Prázdné = tiskne se to, co spočítal
@@ -649,7 +653,8 @@ class VystupOut(BaseModel):
     katalog: dict = {}  # dostupná pole + sloupce tabulky pro editor
     zakaznik: dict = {}  # nazev/adresa/datum pro hlavičku
     hodnoty: dict[str, Any] = {}  # {klic: {nazev, format, hodnota, hodnota_text}}
-    tabulka: dict = {}  # {sloupce, radky}
+    tabulka: dict = {}  # roční tabulka {nazev, sloupce, radky} – pro prvky bez klíče
+    tabulky: dict[str, Any] = {}  # {tabulka_klic: {nazev, sloupce, radky}}
     graf: Optional[dict] = None  # surová data grafu (dle typ_reseni)
     # Délky kontraktu, mezi kterými se u tohohle typu dá vybírat. Prázdné =
     # typ víc délek nepočítá a přepínač se v editoru neukáže.

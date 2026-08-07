@@ -3309,6 +3309,7 @@ def _vystup_out(db: Session, n: Nabidka, typ_reseni: str, vychozi: bool = False)
         },
         hodnoty=sablona_katalog.resolvni_hodnoty(typ_reseni, popis, delka),
         tabulka=sablona_katalog.resolvni_tabulku(typ_reseni, popis, delka),
+        tabulky=sablona_katalog.resolvni_tabulky(typ_reseni, popis, delka),
         graf=sablona_katalog.graf_pro_typ(typ_reseni, popis, delka),
         nabizene_delky_roky=nabizene_delky,
         rucnich_hodnot=sablona_katalog.pocet_rucnich_hodnot(
@@ -3342,7 +3343,7 @@ def _over_konfiguraci(typ_reseni: str, konfigurace: VystupKonfigurace) -> None:
     v katalogu daného typu, jinak 422. Platí pro uloženou šablonu nabídky i pro
     pojmenovanou šablonu – obojí končí ve stejném vykreslení."""
     povolena_pole = sablona_katalog.platne_klice(typ_reseni)
-    povolene_sloupce = sablona_katalog.platne_sloupce(typ_reseni)
+    povolene_tabulky = sablona_katalog.platne_tabulky(typ_reseni)
 
     def over_prvek(prvek) -> None:
         if prvek.druh == "udaj":
@@ -3355,13 +3356,27 @@ def _over_konfiguraci(typ_reseni: str, konfigurace: VystupKonfigurace) -> None:
                     ),
                 )
         elif prvek.druh == "tabulka":
+            # Prázdný `tabulka_klic` = roční tabulka (rozvržení uložená před
+            # zavedením registru tabulek klíč nemají).
+            tabulka = prvek.tabulka_klic or sablona_katalog.TABULKA_VYCHOZI
+            if tabulka not in povolene_tabulky:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"Tabulka '{tabulka}' u typu {typ_reseni} neexistuje – "
+                        f"na výběr je: {', '.join(sorted(povolene_tabulky))}."
+                    ),
+                )
+            # Sloupce se ověřují proti ZVOLENÉ tabulce: sloupec roční tabulky
+            # v odkupní by v tisku zůstal prázdný a nikdo by nepoznal proč.
+            povolene_sloupce = sablona_katalog.platne_sloupce(typ_reseni, tabulka)
             for klic in prvek.pole:
                 if klic not in povolene_sloupce:
                     raise HTTPException(
                         status_code=422,
                         detail=(
                             f"Sloupec '{klic}' není mezi povolenými sloupci tabulky "
-                            f"pro {typ_reseni}."
+                            f"'{tabulka}' pro {typ_reseni}."
                         ),
                     )
         for dite in prvek.deti:
@@ -3394,6 +3409,7 @@ def _sanituj_konfiguraci(konfigurace: VystupKonfigurace) -> VystupKonfigurace:
                     if prvek.druh == "udaj"
                     else ""
                 ),
+                "tabulka_klic": prvek.tabulka_klic if prvek.druh == "tabulka" else "",
                 "deti": [vycisti(d) for d in prvek.deti],
             }
         )
