@@ -21,6 +21,11 @@ export default function Lista({
 }) {
   const stranky = editor.konfigurace?.stranky || [];
   const problemy = editor.problemy || [];
+  // Přetečení a prázdné dlaždice jsou dvě různé věci: první se v PDF ořízne,
+  // druhá z něj beze slova zmizí. Jedna hláška pro obojí by radila špatně.
+  const pretekaji = problemy.filter((p) => p.typ !== "prazdny_udaj");
+  const prazdne = problemy.filter((p) => p.typ === "prazdny_udaj");
+  const rucnich = editor.rucnichHodnot || 0;
 
   return (
     <div className="vy-lista-horni np">
@@ -168,28 +173,77 @@ export default function Lista({
         {deti}
       </div>
 
-      {problemy.length > 0 && (
+      {pretekaji.length > 0 && (
         <div className="vy-problemy">
           <span>
-            ⚠️ {problemy.length === 1 ? "Jeden prvek přetéká" : `${problemy.length} prvků přetéká`}{" "}
-            přes okraj stránky – v PDF se ořízne.
+            ⚠️{" "}
+            {tvarPoctu(
+              pretekaji.length,
+              "Jeden prvek přetéká",
+              "prvky přetékají",
+              "prvků přetéká"
+            )}{" "}
+            přes okraj stránky. V PDF se ořízne, co je pod okrajem.
           </span>
-          {problemy.slice(0, 4).map((p) => (
-            <button
-              key={p.prvekId}
-              className="vy-problem-b"
-              onClick={() => {
-                onSkocNaStranku(p.strankaId);
-                editor.vyber(p.prvekId);
-              }}
-            >
-              str. {p.cisloStranky}
-            </button>
-          ))}
+          <Skoky problemy={pretekaji} editor={editor} onSkocNaStranku={onSkocNaStranku} />
+        </div>
+      )}
+
+      {prazdne.length > 0 && (
+        <div className="vy-problemy">
+          <span>
+            ⚠️{" "}
+            {tvarPoctu(
+              prazdne.length,
+              "Jedna dlaždice nemá hodnotu",
+              "dlaždice nemají hodnotu",
+              "dlaždic nemá hodnotu"
+            )}
+            . Prázdná dlaždice se do PDF nevytiskne a zůstane po ní prázdné místo –
+            buď ji smaž, nebo jí vyplň ruční hodnotu.
+          </span>
+          <Skoky problemy={prazdne} editor={editor} onSkocNaStranku={onSkocNaStranku} />
+        </div>
+      )}
+
+      {rucnich > 0 && (
+        <div className="vy-problemy rucni">
+          <span>
+            ✏️{" "}
+            {tvarPoctu(
+              rucnich,
+              "Jedna hodnota je přepsaná ručně",
+              "hodnoty jsou přepsané ručně",
+              "hodnot je přepsaných ručně"
+            )}
+            . Do PDF jdou tak, jak jsou zadané, ne jak je spočítal výpočet.
+          </span>
         </div>
       )}
     </div>
   );
+}
+
+/** České tvary podle počtu: 1 · 2–4 · 5 a víc. */
+function tvarPoctu(pocet, jedna, malo, mnoho) {
+  if (pocet === 1) return jedna;
+  return `${pocet} ${pocet <= 4 ? malo : mnoho}`;
+}
+
+/** Odkazy na stránky s problémem – kliknutím se prvek vybere. */
+function Skoky({ problemy, editor, onSkocNaStranku }) {
+  return problemy.slice(0, 4).map((p) => (
+    <button
+      key={p.prvekId}
+      className="vy-problem-b"
+      onClick={() => {
+        onSkocNaStranku(p.strankaId);
+        editor.vyber(p.prvekId);
+      }}
+    >
+      str. {p.cisloStranky}
+    </button>
+  ));
 }
 
 function dalsiZoom(z) {

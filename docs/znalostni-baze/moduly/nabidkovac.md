@@ -189,6 +189,8 @@ zadání kolegy pořád neví; to by šlo vyřešit až ukládáním konceptu na
 | **Uložit jako šablonu…** | lišta, 2. řádek | Uloží současné rozvržení pod názvem pro další nabídky (stejný název přepíše) | vše |
 | **Smazat šablonu…** | lišta, 2. řádek | Smaže uloženou šablonu (nabídky, které z ní vznikly, to neovlivní) | vše |
 | **Pruh „přetéká"** | pod lištou | Kolik prvků leze pod okraj sazby, s prokliky na ně. V PDF by se ořízly | vše |
+| **Pruh „dlaždice nemá hodnotu"** | pod lištou | Kolik dlaždic je prázdných, s prokliky na ně. V PDF se nevytisknou a zůstane po nich prázdné místo | vše |
+| **Pruh „přepsáno ručně"** | pod lištou | Kolik hodnot je zadaných ručně místo z výpočtu (viz níž) | vše |
 | **Paleta – Prvky** | vlevo | Kontejner, Text, Graf, Tabulka, Obrázek, Čára, Obdélník, Číslo stránky. Chyť a přetáhni na papír | vše |
 | **Paleta – sekce s údaji** | vlevo | Skupiny zákaznických hodnot (Navržené řešení, Rezervovaná kapacita, Úspora 2026, Úspora od 2027, Obchod). Každá položka je **hotová dlaždice s reálnou hodnotou** té nabídky. Ztlumená = na papíře už je (další kopii přidat můžeš) | vše |
 | **Tažení po papíře** | papír | Chyť prvek kdekoli a posuň. Přichytává se k mřížce po 5 mm a k hranám sousedů – oranžová linka ukazuje, na co se chytil | vše |
@@ -199,6 +201,7 @@ zadání kolegy pořád neví; to by šlo vyřešit až ukládáním konceptu na
 | **Šipky / Shift+šipky** | papír | Posun vybraného prvku po 1 mm, se Shiftem po 5 mm | vše |
 | **Delete / Ctrl+D / Escape** | papír | Smazat prvek · duplikovat · zrušit výběr (a při tažení vrátit prvek zpátky) | vše |
 | **Obsah** | vpravo | Podle druhu: výběr údaje a vlastní popisek, sloupce tabulky, nahrání obrázku. Přepínač **Tisknout** prvek skryje z PDF, ale nechá ho v editoru | vše |
+| **Ruční hodnota** | vpravo (Údaj) | Přepíše číslo na papíře bez přepočtu nabídky. Prázdné = hodnota z výpočtu. Tlačítkem **Vrátit spočítanou hodnotu** se přepis zruší | vše |
 | **Uspořádání uvnitř** | vpravo (Kontejner) | Kolik prvků vedle sebe (1–6 sloupců) a mezera mezi nimi | vše |
 | **Umístění a velikost** | vpravo | Přesná čísla v milimetrech, „výška podle obsahu" a zámek proti posunu | vše |
 | **Vzhled** | vpravo | Pozadí, rámeček a jeho tloušťka, zaoblení rohů, vnitřní okraj | vše |
@@ -207,6 +210,22 @@ zadání kolegy pořád neví; to by šlo vyřešit až ukládáním konceptu na
 
 Papír je WYSIWYG: je na něm právě to, co se vytiskne. Prvek s vypnutým **Tisknout** je v editoru
 ztlumený a označený, do PDF nejde.
+
+#### Ruční přepis hodnoty (od 7. 8. 2026)
+Čísla v nabídce jsou z výpočtu a whitelist hlídá, že se do ní nedostane nic interního. Když je
+ale potřeba **opravit jedno číslo bez přepočtu celého zadání** (typicky při testování nebo když
+se na opravu vstupů čeká), vyber dlaždici a vpravo v **Obsahu** vyplň **Ruční hodnotu**. Píše se
+jako text, takže se vejde i „cca 1,2 mil. Kč".
+
+Aby z výjimky nebyl tichý zvyk, je ruční hodnota vidět na třech místech:
+- v editoru má dlaždice **oranžový čárkovaný rámeček** a k popisku přípisek „· ručně" (do PDF
+  ani rámeček, ani přípisek nejdou — na papíře vypadá číslo jako každé jiné),
+- **pruh pod lištou** hlásí, kolik jich nabídka má,
+- **Uložit do PDF** se před tiskem zvlášť zeptá a **detail nabídky** má u tlačítka „Nabídka pro
+  zákazníka" štítek `✏️ ručně přepsané hodnoty`.
+
+Přepis mění jen to, co se vytiskne — nikoli to, co se smí do nabídky vložit: klíč údaje musí být
+dál z katalogu zákaznických polí, takže ruční hodnotou se interní číslo do nabídky propašovat nedá.
 
 Prvek může ležet přímo na papíře, nebo v **kontejneru**. Kontejner je rámeček, ve kterém prvky
 stojí pod sebou (nebo v mřížce o několika sloupcích) – hodí se na skupiny dlaždic, které mají
@@ -299,7 +318,7 @@ souřadnicích – tam, kam je obchodník posadil. Druhy prvků:
 |---|---|
 | **Kontejner** | Rámeček s vlastním nadpisem; uvnitř stojí prvky pod sebou nebo v mřížce o 1–6 sloupcích |
 | **Text** | Formátovaný odstavec – píše se přímo na papíře, včetně tučného, barev a velikostí |
-| **Údaj** | Dlaždice s jednou zákaznickou hodnotou z výpočtu (např. roční úspora) |
+| **Údaj** | Dlaždice s jednou zákaznickou hodnotou z výpočtu (např. roční úspora), volitelně s ruční hodnotou |
 | **Graf** | Graf dle typu řešení (PPA: výroba vs. spotřeba; Peak shaving: měsíční špičky) |
 | **Tabulka** | Roční tabulka (jen zákaznické sloupce) |
 | **Obrázek** | Nahraná fotka, schéma nebo logo |
@@ -314,6 +333,11 @@ dopočítá – skládá je pod sebe a při přetečení založí novou stránku
 uloží se rozvržení konkrétní nabídky. Není žádná globální master šablona – **každá nabídka má
 vlastní**; sdílet se dají přes pojmenované šablony. V editoru jsou **dostupná jen zákaznická
 pole**; interní čísla se nenabízejí.
+
+U nabídek **PPA + BESS** paleta od 7. 8. 2026 nabízí i **Modul baterie** a **Počet modulů** —
+dřív se baterie dala popsat jen kapacitou a výkonem, takže z nabídky nebylo poznat, co se
+vlastně dodává. U baterie zadané ručně (mimo katalog) se místo názvu produktu složí popis
+z parametrů („Bateriové úložiště 200 kW / 430,0 kWh"), aby dlaždice nezůstala prázdná.
 
 > V editoru se prázdná pole (bez spočítané hodnoty) ukazují se zástupným „—", ať je vidět, co
 > se doplní po výpočtu. **V tisku/PDF se prvky bez dat automaticky skryjí.**

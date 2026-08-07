@@ -291,6 +291,17 @@ export default function NabidkaDetail() {
               Nabídka pro zákazníka
             </button>
           )}
+          {/* Ručně přepsané hodnoty se v PDF nijak neoznačí (na papíře mají
+              vypadat jako každé jiné číslo), takže je musí být poznat aspoň
+              tady – než nabídka odejde zákazníkovi. */}
+          {nabidka.vystup_rucnich_hodnot > 0 && (
+            <span
+              className="nb-badge"
+              title="V rozvržení nabídky jsou hodnoty zadané ručně, ne spočítané. Uprav je v editoru nabídky."
+            >
+              ✏️ ručně přepsané hodnoty: {nabidka.vystup_rucnich_hodnot}
+            </span>
+          )}
           {/* Poslední vytištěné PDF a poslední výpočtový Excel – ať se za nimi
               nemusí do editoru. Každý formát zvlášť: kdyby se bralo prostě to
               nejnovější, po tisku by tu místo nabídky visel interní model. */}

@@ -77,6 +77,10 @@ class NabidkaDetailOut(BaseModel):
     # ať frontend nemusí na druhý dotaz jen kvůli tomu, co má vykreslit.
     vlastni_pole: list[VlastniPoleOut] = []
     extra: dict = {}
+    # Kolik dlaždic v uloženém rozvržení nabídky má ručně přepsanou hodnotu.
+    # Patří to i sem, ne jen do editoru: kdo nabídku posílá zákazníkovi, má
+    # vidět, že v ní jsou čísla, která nepocházejí z výpočtu.
+    vystup_rucnich_hodnot: int = 0
 
 
 class NabidkaVstup(BaseModel):
@@ -510,6 +514,12 @@ class VystupPrvek(BaseModel):
     pole: list[str] = []  # druh tabulka: vybrané sloupce
     obrazek: str = Field(default="", max_length=255)  # relativní cesta v úložišti
     popis: str = Field(default="", max_length=255)  # alt text obrázku
+    # Druh udaj: ručně přepsaná hodnota. Prázdné = tiskne se to, co spočítal
+    # výpočet; neprázdné má přednost. Whitelist klíčů tím neztrácí smysl (klíč
+    # musí být dál z katalogu), ale číslo na papíře už nemusí odpovídat
+    # výsledku – proto se přepis v editoru zvlášť značí a počítá se, kolik
+    # jich nabídka má (viz `pocet_rucnich_hodnot`).
+    rucni_hodnota: str = Field(default="", max_length=120)
 
     deti: list["VystupPrvek"] = []
 
@@ -644,6 +654,9 @@ class VystupOut(BaseModel):
     # Délky kontraktu, mezi kterými se u tohohle typu dá vybírat. Prázdné =
     # typ víc délek nepočítá a přepínač se v editoru neukáže.
     nabizene_delky_roky: list[int] = []
+    # Kolik dlaždic má ručně přepsanou hodnotu (viz VystupPrvek.rucni_hodnota).
+    # Počítá server, ať editor i detail nabídky mluví o témže čísle.
+    rucnich_hodnot: int = 0
 
 
 # ---- Rozpis položek nabídky / objednávky (CRM-08) ----

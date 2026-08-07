@@ -21,16 +21,38 @@ const ZVYRAZNIT = new Set([
 /** Dlaždice s jednou hodnotou z výpočtu. */
 function Udaj({ prvek, hodnoty, tisk }) {
   const h = hodnoty?.[prvek.klic];
-  if (!h) {
+  // Ručně přepsaná hodnota má přednost před výpočtem – i tam, kde výpočet
+  // hodnotu vůbec nedal. Do PDF jde jako každé jiné číslo, v editoru je
+  // označená: je to jediné místo v nabídce, které smí říkat něco jiného než
+  // výsledek výpočtu.
+  const rucni = String(prvek.rucni_hodnota || "").trim();
+  if (!h && !rucni) {
     return tisk ? null : <div className="vy-prazdno">Údaj „{prvek.klic || "?"}" tu není.</div>;
   }
   // V tisku nemá smysl ukazovat pomlčku – prvek se schová celý.
-  if (tisk && (h.hodnota === null || h.hodnota === undefined)) return null;
+  if (tisk && !rucni && (h.hodnota === null || h.hodnota === undefined)) return null;
   return (
-    <div className={"vy-udaj" + (ZVYRAZNIT.has(prvek.klic) ? " zvyraznit" : "")}>
-      <div className="k-nazev">{prvek.popis || h.nazev}</div>
-      <div className={"k-hodnota" + (h.format === "text" ? " slovni" : "")}>
-        {h.hodnota_text}
+    <div
+      className={
+        "vy-udaj" +
+        (ZVYRAZNIT.has(prvek.klic) ? " zvyraznit" : "") +
+        (rucni && !tisk ? " rucni" : "")
+      }
+      title={
+        rucni && !tisk
+          ? `Ručně přepsáno. Z výpočtu vychází: ${h?.hodnota_text ?? "—"}`
+          : undefined
+      }
+    >
+      <div className="k-nazev">{prvek.popis || h?.nazev || prvek.klic}</div>
+      {/* Menší písmo pro slovní hodnoty – a pro delší ruční přepis, který by se
+          ve velikosti čísla do dlaždice nevešel a papír by ho uřízl. */}
+      <div
+        className={
+          "k-hodnota" + (h?.format === "text" || rucni.length > 12 ? " slovni" : "")
+        }
+      >
+        {rucni || h.hodnota_text}
       </div>
     </div>
   );

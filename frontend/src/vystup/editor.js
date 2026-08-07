@@ -13,6 +13,7 @@ import {
   duplikujStranku as duplikujStrankuModel,
   najdi,
   novyPrvek,
+  pocetRucnichHodnot,
   pridejStranku as pridejStrankuModel,
   presun,
   presunNaStranku as presunNaStrankuModel,
@@ -42,7 +43,7 @@ import {
 // každé kliknutí na prvek bylo mikroskopické přetažení o půl milimetru.
 const PRAH_TAZENI_PX = 4;
 
-export function useEditorVystupu({ pocatecni, onZmenaStavu }) {
+export function useEditorVystupu({ pocatecni, onZmenaStavu, hodnoty = null }) {
   const historie = useHistorie(pocatecni);
   const konfigurace = historie.stav;
 
@@ -478,7 +479,8 @@ export function useEditorVystupu({ pocatecni, onZmenaStavu }) {
   }, [historie, vybranyId, duplikuj, smaz, uprav]);
 
   const vybrany = useMemo(() => najdi(konfigurace, vybranyId), [konfigurace, vybranyId]);
-  const problemy = useMemo(() => zkontroluj(konfigurace), [konfigurace]);
+  const problemy = useMemo(() => zkontroluj(konfigurace, hodnoty), [konfigurace, hodnoty]);
+  const rucnichHodnot = useMemo(() => pocetRucnichHodnot(konfigurace), [konfigurace]);
 
   return {
     konfigurace,
@@ -493,6 +495,7 @@ export function useEditorVystupu({ pocatecni, onZmenaStavu }) {
     prepniMrizku: () => setMrizkaZapnuta((m) => !m),
     tazeni,
     problemy,
+    rucnichHodnot,
 
     uprav,
     upravStyl,

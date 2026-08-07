@@ -60,7 +60,13 @@ export default function NabidkaVystupStranka() {
     setZprava(null);
   }, []);
 
-  const editor = useEditorVystupu({ pocatecni: null, onZmenaStavu });
+  // Hodnoty z resolveru jdou do editoru kvůli kontrole prázdných dlaždic –
+  // bez nich by editor nepoznal, který údaj v PDF beze slova zmizí.
+  const editor = useEditorVystupu({
+    pocatecni: null,
+    onZmenaStavu,
+    hodnoty: data?.hodnoty || null,
+  });
 
   // ---- načtení ----
   useEffect(() => {
@@ -192,6 +198,19 @@ export default function NabidkaVystupStranka() {
   // ukázat u nabídky. Proto papír sestavíme do samostatného HTML, server z něj
   // udělá PDF a uloží ho — a rovnou ho otevřeme, ať ho je vidět.
   async function doPdf() {
+    // Ruční přepis je jediné místo, kde nabídka smí říkat něco jiného než
+    // výpočet. Než papír odejde zákazníkovi, ať to člověk potvrdí — v editoru
+    // se na to při dlouhém ladění rozvržení snadno zapomene.
+    const rucnich = editor.rucnichHodnot || 0;
+    if (
+      rucnich > 0 &&
+      !window.confirm(
+        `Ručně přepsané hodnoty v nabídce: ${rucnich}. Vytisknou se tak, jak jsou ` +
+          "zadané, ne jak je spočítal výpočet. Vytisknout PDF?"
+      )
+    ) {
+      return;
+    }
     setChyba(null);
     setZprava(null);
     setTiskne(true);
@@ -389,7 +408,12 @@ export default function NabidkaVystupStranka() {
           </button>
           {panely.vpravo && (
             <div className="panel-obsah">
-              <Vlastnosti editor={editor} katalog={data.katalog} nabidkaId={id} />
+              <Vlastnosti
+                editor={editor}
+                katalog={data.katalog}
+                hodnoty={data.hodnoty}
+                nabidkaId={id}
+              />
             </div>
           )}
         </aside>

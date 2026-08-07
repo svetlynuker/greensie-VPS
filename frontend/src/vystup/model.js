@@ -107,6 +107,7 @@ export function novyPrvek(druh, vlastnosti = {}) {
     pole: [],
     obrazek: "",
     popis: "",
+    rucni_hodnota: "",
     deti: [],
     ...vlastnosti,
   };
@@ -420,20 +421,54 @@ export function mimoPapir(prvek) {
   );
 }
 
-/** Seznam problémů dokumentu pro horní lištu. */
-export function zkontroluj(konfigurace) {
+/** Má dlaždice ručně přepsanou hodnotu? */
+export function maRucniHodnotu(prvek) {
+  return prvek?.druh === "udaj" && !!String(prvek.rucni_hodnota || "").trim();
+}
+
+/** Kolik dlaždic v dokumentu má ručně přepsanou hodnotu. */
+export function pocetRucnichHodnot(konfigurace) {
+  let pocet = 0;
+  projdiPrvky(konfigurace, (prvek) => {
+    if (maRucniHodnotu(prvek)) pocet += 1;
+  });
+  return pocet;
+}
+
+/**
+ * Seznam problémů dokumentu pro horní lištu.
+ *
+ * `hodnoty` je mapa z resolveru ({klic: {hodnota, …}}). Když se předá, hlásí se
+ * navíc dlaždice bez hodnoty: v tisku takový prvek beze slova zmizí
+ * (`PrvekObsah`) a na papíře po něm zůstane díra, kterou v editoru nikdo
+ * nevidí – tam je na jeho místě zástupný text. Prvek s ruční hodnotou prázdný
+ * není, i když výpočet nic nedal.
+ */
+export function zkontroluj(konfigurace, hodnoty = null) {
   const problemy = [];
   (konfigurace?.stranky || []).forEach((stranka, i) => {
+    const pridej = (prvek, typ) =>
+      problemy.push({
+        strankaId: stranka.id,
+        cisloStranky: i + 1,
+        prvekId: prvek.id,
+        druh: prvek.druh,
+        klic: prvek.klic || "",
+        typ,
+      });
     for (const prvek of stranka.prvky || []) {
       if (!prvek.viditelny) continue;
       if (pretekaDolu(prvek) || mimoPapir(prvek)) {
-        problemy.push({
-          strankaId: stranka.id,
-          cisloStranky: i + 1,
-          prvekId: prvek.id,
-          druh: prvek.druh,
-          typ: mimoPapir(prvek) ? "mimo" : "pretece",
-        });
+        pridej(prvek, mimoPapir(prvek) ? "mimo" : "pretece");
+      }
+      if (!hodnoty) continue;
+      for (const kandidat of [prvek, ...(prvek.deti || [])]) {
+        if (kandidat.druh !== "udaj" || !kandidat.viditelny) continue;
+        if (maRucniHodnotu(kandidat)) continue;
+        const h = hodnoty[kandidat.klic];
+        if (!h || h.hodnota === null || h.hodnota === undefined) {
+          pridej(kandidat, "prazdny_udaj");
+        }
       }
     }
   });

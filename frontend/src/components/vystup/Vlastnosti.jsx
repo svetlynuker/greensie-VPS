@@ -172,6 +172,53 @@ function SloupceTabulky({ prvek, editor, katalog }) {
   );
 }
 
+/**
+ * Ruční přepis hodnoty dlaždice.
+ *
+ * Vědomá výjimka z pravidla „čísla v nabídce jsou z výpočtu": při testování
+ * a u nabídek, kde se čeká na opravu zadání, je potřeba přepsat jedno číslo
+ * bez přepočtu celého řešení. Aby z výjimky nebyl tichý zvyk, je hodnota
+ * v editoru barevně označená, lišta hlásí, kolik jich nabídka má, a tisk se
+ * na ně zvlášť ptá. Klíč údaje se tím nemění – whitelist zůstává v platnosti.
+ */
+function RucniHodnota({ prvek, editor, hodnoty }) {
+  const h = hodnoty?.[prvek.klic];
+  const rucni = prvek.rucni_hodnota || "";
+  return (
+    <>
+      <label className="vl-text">
+        <span className="vl-popisek">Ruční hodnota</span>
+        <input
+          type="text"
+          value={rucni}
+          maxLength={120}
+          placeholder="prázdné = hodnota z výpočtu"
+          onChange={(e) =>
+            editor.uprav(prvek.id, { rucni_hodnota: e.target.value }, { slouc: `rucni:${prvek.id}` })
+          }
+        />
+      </label>
+      {rucni.trim() ? (
+        <div className="vl-varovani">
+          Tiskne se ručně zadaná hodnota, ne výsledek výpočtu. Z výpočtu vychází{" "}
+          <strong>{h?.hodnota_text || "—"}</strong>.
+          <button
+            className="vl-btn"
+            onClick={() => editor.uprav(prvek.id, { rucni_hodnota: "" })}
+          >
+            Vrátit spočítanou hodnotu
+          </button>
+        </div>
+      ) : (
+        <div className="vl-napoveda">
+          Vyplněním se hodnota na papíře přepíše i bez přepočtu nabídky. Používej
+          jen na to, co se má opravit v zadání později.
+        </div>
+      )}
+    </>
+  );
+}
+
 /** Výběr, kterou hodnotu dlaždice ukazuje. */
 function VyberUdaje({ prvek, editor, katalog }) {
   return (
@@ -258,7 +305,7 @@ function NastaveniDokumentu({ editor }) {
   );
 }
 
-export default function Vlastnosti({ editor, katalog, nabidkaId }) {
+export default function Vlastnosti({ editor, katalog, hodnoty, nabidkaId }) {
   const prvek = editor.vybrany;
   const vKontejneru = !!editor.vybranyRodic;
 
@@ -314,6 +361,7 @@ export default function Vlastnosti({ editor, katalog, nabidkaId }) {
                 onChange={(e) => zmen({ popis: e.target.value }, "popis")}
               />
             </label>
+            <RucniHodnota prvek={prvek} editor={editor} hodnoty={hodnoty} />
           </>
         )}
         {prvek.druh === "tabulka" && (
