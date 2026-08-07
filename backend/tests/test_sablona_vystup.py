@@ -880,3 +880,219 @@ class TestProstyText:
         from app.nabidkovac.vystup_html import MAX_DELKA_HODNOTY, prosty_text
 
         assert len(prosty_text("a" * 500)) == MAX_DELKA_HODNOTY
+
+
+class TestRegistrTabulek:
+    """Od 7. 8. 2026 má typ řešení víc tabulek – prvek na papíře říká, kterou
+    ukazuje (`tabulka_klic`). Prázdný klíč musí dál znamenat roční tabulku,
+    jinak by se rozvržení uložená dřív vykreslila prázdná."""
+
+    def test_kazdy_typ_ma_rocni_tabulku(self):
+        for typ in sk.PODPOROVANE_TYPY:
+            assert sk.TABULKA_VYCHOZI in sk.platne_tabulky(typ), typ
+
+    def test_odkup_jen_tam_kde_se_pocita(self):
+        # Peak shaving ani kombinace odkup elektrárny nemají – nabízet ho tam
+        # by znamenalo tabulku, která zůstane navždy prázdná.
+        assert "odkup" in sk.platne_tabulky("ppa")
+        assert "odkup" in sk.platne_tabulky("ppa_bess")
+        assert "odkup" not in sk.platne_tabulky("peak_shaving")
+        assert "odkup" not in sk.platne_tabulky("kombinace")
+
+    def test_odkupni_sloupce_jsou_jen_zakaznicke(self):
+        sloupce = sk.platne_sloupce("ppa", "odkup")
+        assert sloupce == {"rok", "odkupni_cena_kc"}
+        for interni in ("zustatek_uveru_kc", "poplatek_predcasne_splaceni_kc", "zisk_spv_kc"):
+            assert interni not in sloupce
+
+    def test_bez_klice_jsou_sloupce_rocni_tabulky(self):
+        assert sk.platne_sloupce("ppa") == sk.platne_sloupce("ppa", sk.TABULKA_VYCHOZI)
+
+    def test_neznama_tabulka_spadne_na_rocni(self):
+        # Resolver nesmí spadnout na klíči, který v katalogu není – validaci
+        # dělá `PUT`, tisk má pořád něco vykreslit.
+        assert sk.platne_sloupce("ppa", "vymyslena") == sk.platne_sloupce("ppa")
+
+    def test_katalog_nese_tabulky_pro_editor(self):
+        katalog = sk.katalog_pro_frontend("ppa_bess")
+        klice = {t["klic"] for t in katalog["tabulky"]}
+        assert klice == {"roky", "odkup"}
+        # Roční sloupce zůstávají zvlášť – editor podle nich kreslí prvky
+        # uložené bez `tabulka_klic`.
+        assert katalog["tabulka_sloupce"]
+
+    def test_kazda_tabulka_ma_nazev_a_sloupce(self):
+        for typ in sk.PODPOROVANE_TYPY:
+            for t in sk.katalog_pro_frontend(typ)["tabulky"]:
+                assert t["nazev"] and t["sloupce"], (typ, t["klic"])
+
+
+class TestOdkupniTabulkaVNabidce:
+    """Odkup elektrárny po letech na papíře: PPA čte svou variantu, PPA + BESS
+    zvolenou délku kontraktu. Interní čísla se do tabulky nesmí dostat."""
+
+    PPA_V2 = {
+        "typ_reseni": "ppa",
+        "vstup": {"s_baterii": False},
+        "bez_baterie": {
+            "po_delkach": [
+                {
+                    "delka_roky": 15,
+                    "kwp": 300.0,
+                    "roky_klient": [{"rok": 1, "cena_ppa_kc_mwh": 2100.0}],
+                    "odkupni_tabulka": [
+                        {
+                            "rok": 1,
+                            "odkupni_cena_kc": 10_222_492.05,
+                            # interní – v tabulce nesmí být:
+                            "zustatek_uveru_kc": 8_137_307.1,
+                            "poplatek_predcasne_splaceni_kc": 406_865.36,
+                            "zisk_spv_kc": 1_678_319.59,
+                        },
+                        {"rok": 2, "odkupni_cena_kc": 9_800_000.0},
+                    ],
+                }
+            ]
+        },
+    }
+
+    PPA_BESS = {
+        "typ_reseni": "ppa_bess",
+        "po_delkach": [
+            {
+                "delka_roky": 10,
+                "odkupni_tabulka": [{"rok": 1, "odkupni_cena_kc": 5_000_000.0}],
+            },
+            {
+                "delka_roky": 20,
+                "odkupni_tabulka": [
+                    {"rok": 1, "odkupni_cena_kc": 12_000_000.0},
+                    {"rok": 2, "odkupni_cena_kc": 11_500_000.0},
+                ],
+            },
+        ],
+    }
+
+    def test_ppa_tabulka_ma_rok_a_cenu(self):
+        t = sk.resolvni_tabulku("ppa", self.PPA_V2, tabulka="odkup")
+        assert [s["klic"] for s in t["sloupce"]] == ["rok", "odkupni_cena_kc"]
+        assert t["nazev"] == "Odkup elektrárny po letech"
+        assert len(t["radky"]) == 2
+        # Rok je jen číslo – jednotka („let") patří do názvu sloupce, ne do buňky.
+        assert t["radky"][0][0] == "1"
+        assert t["radky"][0][1].replace(sk.NBSP, " ") == "10 222 492 Kč"
+
+    def test_ppa_tabulka_neobsahuje_interni_cisla(self):
+        t = sk.resolvni_tabulku("ppa", self.PPA_V2, tabulka="odkup")
+        vse = " ".join(x for radek in t["radky"] for x in radek)
+        for interni in ("8 137 307", "406 865", "1 678 319"):
+            assert interni not in vse.replace(sk.NBSP, " ")
+
+    def test_ppa_bess_bere_zvolenou_delku(self):
+        # Bez volby se ukazuje nejdelší kontrakt – tabulka musí být z téže
+        # délky jako dlaždice, jinak si nabídka odporuje.
+        nejdelsi = sk.resolvni_tabulku("ppa_bess", self.PPA_BESS, tabulka="odkup")
+        assert len(nejdelsi["radky"]) == 2
+        kratsi = sk.resolvni_tabulku("ppa_bess", self.PPA_BESS, 10, "odkup")
+        assert len(kratsi["radky"]) == 1
+        assert kratsi["radky"][0][1].replace(sk.NBSP, " ") == "5 000 000 Kč"
+
+    def test_bez_dat_zustane_prazdna(self):
+        # Starší nabídka odkupní tabulku nemá (výpočet ji tehdy neukládal) –
+        # blok se v tisku sám neukáže, místo aby spadl.
+        for popis in (None, {}, {"typ_reseni": "ppa"}):
+            t = sk.resolvni_tabulku("ppa", popis, tabulka="odkup")
+            assert t["radky"] == []
+
+    def test_u_typu_bez_odkupu_je_prazdna(self):
+        t = sk.resolvni_tabulku("peak_shaving", PS, tabulka="odkup")
+        # Neznámý klíč spadne na roční tabulku – ta u peak shavingu data má.
+        assert [s["klic"] for s in t["sloupce"]] == ["rok", "prinos_kc", "cf_kum_kc"]
+
+    def test_resolvni_tabulky_vrati_vsechny(self):
+        tabulky = sk.resolvni_tabulky("ppa", self.PPA_V2)
+        assert set(tabulky) == {"roky", "odkup"}
+        assert tabulky["odkup"]["radky"]
+
+    def test_rocni_tabulka_zustala_beze_zmeny(self):
+        # Zavedení registru nesmí posunout to, co nabídky tisknou dnes.
+        t = sk.resolvni_tabulku("peak_shaving", PS)
+        assert [s["klic"] for s in t["sloupce"]] == ["rok", "prinos_kc", "cf_kum_kc"]
+        assert len(t["radky"]) == 2
+
+
+class TestPojistkaTabulek:
+    """`PUT` musí odmítnout neznámou tabulku i sloupec z jiné tabulky."""
+
+    def _tabulka(self, **kw):
+        from app.nabidkovac.schemas import VystupKonfigurace
+
+        return VystupKonfigurace(
+            stranky=[{"id": "s1", "prvky": [{"id": "t", "druh": "tabulka", **kw}]}]
+        )
+
+    def test_odkupni_tabulka_projde(self):
+        from app.nabidkovac.routes import _over_konfiguraci
+
+        _over_konfiguraci(
+            "ppa_bess",
+            self._tabulka(tabulka_klic="odkup", pole=["rok", "odkupni_cena_kc"]),
+        )
+
+    def test_bez_klice_projde_jako_dosud(self):
+        from app.nabidkovac.routes import _over_konfiguraci
+
+        _over_konfiguraci("peak_shaving", self._tabulka(pole=["rok", "prinos_kc"]))
+
+    def test_neznama_tabulka_neprojde(self):
+        from fastapi import HTTPException
+
+        from app.nabidkovac.routes import _over_konfiguraci
+
+        with pytest.raises(HTTPException) as e:
+            _over_konfiguraci("ppa", self._tabulka(tabulka_klic="vymyslena", pole=["rok"]))
+        assert e.value.status_code == 422
+
+    def test_odkup_u_typu_bez_odkupu_neprojde(self):
+        from fastapi import HTTPException
+
+        from app.nabidkovac.routes import _over_konfiguraci
+
+        with pytest.raises(HTTPException):
+            _over_konfiguraci(
+                "peak_shaving", self._tabulka(tabulka_klic="odkup", pole=["rok"])
+            )
+
+    def test_sloupec_z_jine_tabulky_neprojde(self):
+        # `prinos_kc` je sloupec roční tabulky; v odkupní by zůstal prázdný.
+        from fastapi import HTTPException
+
+        from app.nabidkovac.routes import _over_konfiguraci
+
+        with pytest.raises(HTTPException):
+            _over_konfiguraci(
+                "ppa_bess", self._tabulka(tabulka_klic="odkup", pole=["cisty_prinos_kc"])
+            )
+
+    def test_interni_sloupec_odkupu_neprojde(self):
+        from fastapi import HTTPException
+
+        from app.nabidkovac.routes import _over_konfiguraci
+
+        for interni in ("zustatek_uveru_kc", "zisk_spv_kc", "poplatek_predcasne_splaceni_kc"):
+            with pytest.raises(HTTPException) as e:
+                _over_konfiguraci("ppa", self._tabulka(tabulka_klic="odkup", pole=[interni]))
+            assert e.value.status_code == 422
+
+    def test_klic_tabulky_se_u_jineho_druhu_zahodi(self):
+        from app.nabidkovac.routes import _sanituj_konfiguraci
+        from app.nabidkovac.schemas import VystupKonfigurace
+
+        k = _sanituj_konfiguraci(
+            VystupKonfigurace(
+                stranky=[
+                    {"id": "s1", "prvky": [{"id": "t", "druh": "text", "tabulka_klic": "odkup"}]}
+                ]
+            )
+        )
+        assert k.stranky[0].prvky[0].tabulka_klic == ""

@@ -1008,6 +1008,25 @@ def odkupni_tabulka(projekt: Projekt, p: ParametryEkonomiky) -> list[RokOdkupu]:
     return out
 
 
+def odkupni_tabulka_json(projekt: Projekt, p: ParametryEkonomiky) -> list[dict]:
+    """Odkupní tabulka k serializaci do `popis_json`.
+
+    Jedno místo pro obě cesty, které ji ukládají – PPA i PPA + BESS (tam se
+    počítá z projektu elektrárny, `ppa_bess`). Kdyby si každá skládala vlastní
+    dict, nabídková vrstva by musela znát dva tvary téže tabulky.
+    """
+    return [
+        {
+            "rok": o.rok,
+            "odkupni_cena_kc": round(o.odkupni_cena_kc, 2),
+            "zustatek_uveru_kc": round(o.zustatek_uveru_kc, 2),
+            "poplatek_predcasne_splaceni_kc": round(o.poplatek_predcasne_splaceni_kc, 2),
+            "zisk_spv_kc": round(o.zisk_spv_kc, 2),
+        }
+        for o in odkupni_tabulka(projekt, p)
+    ]
+
+
 # --------------------------------------------------------------------------- velikost FVE
 def _mira_samospotreby(
     vyroba_1kwp: list[float],
@@ -1314,16 +1333,7 @@ def spocti_variantu(
             vstup.rezervovany_vykon_dodavky_kw,
             interval_h,
         ),
-        "odkupni_tabulka": [
-            {
-                "rok": o.rok,
-                "odkupni_cena_kc": round(o.odkupni_cena_kc, 2),
-                "zustatek_uveru_kc": round(o.zustatek_uveru_kc, 2),
-                "poplatek_predcasne_splaceni_kc": round(o.poplatek_predcasne_splaceni_kc, 2),
-                "zisk_spv_kc": round(o.zisk_spv_kc, 2),
-            }
-            for o in odkupni_tabulka(projekt, p)
-        ],
+        "odkupni_tabulka": odkupni_tabulka_json(projekt, p),
     }
 
 

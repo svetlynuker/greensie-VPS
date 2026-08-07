@@ -62,6 +62,8 @@ def _fmt(hodnota: Any, format: str) -> str:
         return f"{_cislo(h, 1)}{NBSP}let"
     if format == "roky_cele":
         return f"{_cislo(round(h))}{NBSP}let"
+    if format == "cele":  # jen číslo, jednotka je v názvu sloupce („Rok“)
+        return _cislo(round(h))
     if format == "pocet":
         return f"{_cislo(round(h))}{NBSP}ks"
     if format == "stupne":
@@ -685,6 +687,50 @@ _TABULKA = {
 
 PODPOROVANE_TYPY = tuple(_POLE.keys())
 
+# ---- Registr tabulek --------------------------------------------------------
+# Do 7. 8. 2026 měl každý typ řešení právě JEDNU tabulku (roční vývoj úspory)
+# a prvek na papíře si z ní vybíral sloupce. Odkupní tabulka je druhá tabulka
+# téhož typu, takže prvek musí říct i KTEROU tabulku ukazuje (`tabulka_klic`).
+#
+# Rozvržení uložená dřív klíč nemají – prázdný znamená roční tabulku, aby se
+# existující nabídky nemusely migrovat.
+TABULKA_VYCHOZI = "roky"
+
+# Odkup: zákazníkovi patří rok a cena. Zůstatek úvěru, poplatek za předčasné
+# splacení a zisk SPV jsou v datech taky, ale jsou interní – tím, že tu nejsou,
+# je resolver nikdy nevydá a `PUT` je odmítne (Dan 7. 8. 2026: rok + cena).
+_TABULKA_ODKUP = [
+    # Formát `cele`, ne `roky_cele`: ve sloupci „Rok" má být 1, ne „1 let“.
+    {"klic": "rok", "nazev": "Rok", "format": "cele"},
+    {"klic": "odkupni_cena_kc", "nazev": "Odkupní cena", "format": "penize"},
+]
+
+_TABULKY: dict[str, dict[str, dict]] = {
+    "ppa": {
+        TABULKA_VYCHOZI: {"nazev": "Vývoj úspory po letech", "sloupce": _TABULKA_PPA},
+        "odkup": {"nazev": "Odkup elektrárny po letech", "sloupce": _TABULKA_ODKUP},
+    },
+    "peak_shaving": {
+        TABULKA_VYCHOZI: {"nazev": "Vývoj úspory po letech", "sloupce": _TABULKA_PS},
+    },
+    "kombinace": {
+        TABULKA_VYCHOZI: {"nazev": "Vývoj úspory po letech", "sloupce": _TABULKA_KOMBINACE},
+    },
+    # U PPA + BESS je odkupní tabulka jen za elektrárnu. Baterie se odkupuje až
+    # po nájmu a jinou metodikou (zbytková hodnota), takže je v nabídce jako
+    # dlaždice „Odkupní cena baterie po nájmu", ne jako řada po letech.
+    "ppa_bess": {
+        TABULKA_VYCHOZI: {"nazev": "Vývoj úspory po letech", "sloupce": _TABULKA_PPA_BESS},
+        "odkup": {"nazev": "Odkup elektrárny po letech", "sloupce": _TABULKA_ODKUP},
+    },
+}
+
+
+def _tabulka_def(typ: str, tabulka: str | None) -> dict:
+    """Definice tabulky (název + sloupce). Neznámý klíč spadne na roční."""
+    tabulky = _TABULKY.get(typ) or {}
+    return tabulky.get(tabulka or TABULKA_VYCHOZI) or tabulky.get(TABULKA_VYCHOZI) or {}
+
 
 def _mapa_poli(typ: str) -> dict[str, Pole]:
     return {p.klic: p for p in _POLE.get(typ, [])}
@@ -695,16 +741,32 @@ def platne_klice(typ: str) -> set[str]:
     return set(_mapa_poli(typ).keys())
 
 
-def platne_sloupce(typ: str) -> set[str]:
-    """Klíče sloupců tabulky, které smí konfigurace obsahovat."""
-    return {s["klic"] for s in _TABULKA.get(typ, [])}
+def platne_tabulky(typ: str) -> set[str]:
+    """Klíče tabulek, které si prvek na papíře smí vybrat."""
+    return set((_TABULKY.get(typ) or {}).keys())
+
+
+def platne_sloupce(typ: str, tabulka: str | None = None) -> set[str]:
+    """Klíče sloupců dané tabulky, které smí konfigurace obsahovat.
+
+    Bez `tabulka` se míní roční tabulka – tak se to volalo, dokud byla jediná.
+    """
+    return {s["klic"] for s in _tabulka_def(typ, tabulka).get("sloupce") or []}
 
 
 def katalog_pro_frontend(typ: str) -> dict:
-    """Katalog dostupných polí + sloupců tabulky pro editor (bez extraktorů)."""
+    """Katalog dostupných polí + tabulek pro editor (bez extraktorů).
+
+    `tabulka_sloupce` je sloupce roční tabulky – zůstává, protože podle něj
+    editor vykresluje prvky uložené bez `tabulka_klic`.
+    """
     return {
         "pole": [p.slovnik() for p in _POLE.get(typ, [])],
         "tabulka_sloupce": list(_TABULKA.get(typ, [])),
+        "tabulky": [
+            {"klic": klic, "nazev": t["nazev"], "sloupce": list(t["sloupce"])}
+            for klic, t in (_TABULKY.get(typ) or {}).items()
+        ],
     }
 
 
@@ -736,24 +798,24 @@ def resolvni_hodnoty(
     return out
 
 
-def resolvni_tabulku(
-    typ: str, popis_json: dict | None, delka_kontraktu_roky: int | None = None
-) -> dict:
-    """Vrátí roční tabulku {sloupce:[...], radky:[[text,...],...]} – jen
-    zákaznické sloupce. PPA čte svůj výsledek, peak shaving `doporucena.roky`.
-
-    `delka_kontraktu_roky` funguje stejně jako u `resolvni_hodnoty` – tabulka
-    musí být z TÉŽE délky jako dlaždice, jinak si čísla v nabídce odporují.
-    """
-    popis = _s_volbou_delky(popis_json, delka_kontraktu_roky)
-    sloupce = _TABULKA.get(typ, [])
+def _zdroj_radku(typ: str, tabulka: str, popis: dict) -> list:
+    """Surové řádky dané tabulky z popisu výpočtu (bez formátování)."""
+    if tabulka == "odkup":
+        # Odkup elektrárny po letech. U PPA ho nese jednotný tvar (`ppa_tvar`),
+        # u PPA + BESS zvolená délka kontraktu – stejná délka, ze které se čtou
+        # dlaždice, ať tabulka a čísla nad ní nemluví o jiném kontraktu.
+        if typ == "ppa":
+            return _pv(popis, "odkupni_tabulka") or []
+        if typ == "ppa_bess":
+            return _pb_d(popis, "odkupni_tabulka") or []
+        return []
     if typ == "ppa":
-        radky_zdroj = _pv(popis, "roky") or []
-    elif typ == "ppa_bess":
+        return _pv(popis, "roky") or []
+    if typ == "ppa_bess":
         # Roky zákazníka z nejdelšího kontraktu – ze stejné délky, ze které se
         # čtou dlaždice, jinak by si tabulka a dlaždice odporovaly.
-        radky_zdroj = _pb_d(popis, "roky") or []
-    elif typ == "kombinace":
+        return _pb_d(popis, "roky") or []
+    if typ == "kombinace":
         # Společná tabulka se skládá ze ZDROJŮ uložených v kombinaci, ne
         # z uloženého `roky`. Jsou to tatáž zmrazená data, jen přečtená
         # aktuální logikou – jinak by tabulka ukazovala jiná čísla než
@@ -765,17 +827,45 @@ def resolvni_tabulku(
             )
         except Exception:
             radky_zdroj = []
-        if not radky_zdroj:
-            radky_zdroj = _g(popis, "roky") or []
-    else:
-        radky_zdroj = _dop(popis, "roky") or []
+        return radky_zdroj or _g(popis, "roky") or []
+    return _dop(popis, "roky") or []
+
+
+def resolvni_tabulku(
+    typ: str,
+    popis_json: dict | None,
+    delka_kontraktu_roky: int | None = None,
+    tabulka: str | None = None,
+) -> dict:
+    """Vrátí tabulku {nazev, sloupce, radky:[[text,...],...]} – jen zákaznické
+    sloupce. Bez `tabulka` je to roční vývoj úspory; `"odkup"` je odkup
+    elektrárny po letech (jen u PPA a PPA + BESS).
+
+    `delka_kontraktu_roky` funguje stejně jako u `resolvni_hodnoty` – tabulka
+    musí být z TÉŽE délky jako dlaždice, jinak si čísla v nabídce odporují.
+    """
+    popis = _s_volbou_delky(popis_json, delka_kontraktu_roky)
+    definice = _tabulka_def(typ, tabulka)
+    sloupce = definice.get("sloupce") or []
+    radky_zdroj = _zdroj_radku(typ, tabulka or TABULKA_VYCHOZI, popis)
     radky = []
     if isinstance(radky_zdroj, list):
         for r in radky_zdroj:
             if not isinstance(r, dict):
                 continue
             radky.append([_fmt(r.get(s["klic"]), s["format"]) for s in sloupce])
-    return {"sloupce": sloupce, "radky": radky}
+    return {"nazev": definice.get("nazev", ""), "sloupce": sloupce, "radky": radky}
+
+
+def resolvni_tabulky(
+    typ: str, popis_json: dict | None, delka_kontraktu_roky: int | None = None
+) -> dict[str, dict]:
+    """Všechny tabulky daného typu naráz – editor i tisk si pak vybírají podle
+    `tabulka_klic` prvku, aniž by se pro každou chodilo na server zvlášť."""
+    return {
+        klic: resolvni_tabulku(typ, popis_json, delka_kontraktu_roky, klic)
+        for klic in (_TABULKY.get(typ) or {})
+    }
 
 
 def _graf_ps_k_zobrazeni(graf: dict, popis: dict) -> dict:

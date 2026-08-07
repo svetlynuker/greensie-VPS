@@ -105,6 +105,7 @@ export function novyPrvek(druh, vlastnosti = {}) {
     html: "",
     klic: "",
     pole: [],
+    tabulka_klic: "",
     obrazek: "",
     popis: "",
     rucni_hodnota: "",

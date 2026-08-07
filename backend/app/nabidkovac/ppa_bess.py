@@ -2146,6 +2146,7 @@ def _delka_json(
     najem_kc_mesic: float,
     doba_najmu_roky: int = DOBA_NAJMU_BATERIE_ROKY,
     odkup_1kc: dict | None = None,
+    odkupni_tabulka: list[dict] | None = None,
 ) -> dict:
     """Jedna délka kontraktu k serializaci do `popis_json`.
 
@@ -2156,6 +2157,12 @@ def _delka_json(
 
     `odkup_1kc` je paralelní varianta „odkup za korunu" (viz `_varianta_1kc_json`)
     nebo `None`, když u téhle délky k odkupu vůbec nedojde.
+
+    `odkupni_tabulka` je odkup **elektrárny** v roce t – tatáž metodika jako
+    u PPA, jen nad projektem elektrárny (`ppa_v2.odkupni_tabulka_json`). Baterie
+    v ní není: nájem je smluvní na dobu nájmu a baterie přechází na zákazníka
+    až po něm, takže její odkup je jedno číslo (`odkupni_cena_baterie_kc`),
+    ne řada po letech. Rozhodl Dan 7. 8. 2026.
     """
     nedosazitelne = minc.limitujici == "nedosazitelne"
     sleva = (
@@ -2194,6 +2201,10 @@ def _delka_json(
         "odkupni_cena_baterie_kc": round(cf.odkupni_cena_baterie_kc, 2),
         "doba_najmu_baterie_roky": int(doba_najmu_roky),
         "rok_odkupu": (doba_najmu_roky + 1 if delka_roky > doba_najmu_roky else None),
+        # Za kolik si zákazník odkoupí ELEKTRÁRNU v roce t (baterie zvlášť, viz
+        # docstring). Prázdný seznam, když se tabulka nespočítala – nabídka pak
+        # blok s tabulkou sama neukáže.
+        "odkupni_tabulka": odkupni_tabulka or [],
         # Alternativa: baterie za korunu, zbytková hodnota rozpuštěná do nájmu.
         "odkup_1kc": odkup_1kc,
         "uspora_rok1_kc": round(cf.roky[0].cisty_prinos_zakaznika_kc if cf.roky else 0.0, 2),
@@ -2306,6 +2317,7 @@ def spocti_ppa_bess(vstup: VstupPpaBess) -> dict:
         VYCHOZI_MIN_SLEVA,
         navrhni_baterii,
         navrhni_kwp_na_cil,
+        odkupni_tabulka_json,
         sestav_projekt,
         vyber_baterii_z_katalogu,
     )
@@ -2635,6 +2647,10 @@ def spocti_ppa_bess(vstup: VstupPpaBess) -> dict:
                     najem_mesicni,
                     doba_najmu_roky=doba_najmu,
                     odkup_1kc=varianta_1kc,
+                    # Odkup elektrárny po letech – z projektu elektrárny, ne
+                    # z celého CAPEXu: baterie se odkupuje až po nájmu a jinou
+                    # metodikou (zbytková hodnota, ne zbytek úvěru).
+                    odkupni_tabulka=odkupni_tabulka_json(projekt_fve, p),
                 )
             )
         return out

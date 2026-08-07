@@ -149,18 +149,52 @@ function ObrazekPole({ prvek, editor, nabidkaId }) {
   );
 }
 
-/** Výběr sloupců tabulky. */
+/**
+ * Která tabulka a které její sloupce.
+ *
+ * Tabulek je od 7. 8. 2026 víc než jedna (roční vývoj úspory a odkup
+ * elektrárny po letech), takže se nejdřív vybírá tabulka. Přepnutím se sloupce
+ * vymění za výchozí sadu té nové – sloupce staré tabulky by v nové zůstaly
+ * prázdné a backend by je stejně odmítl.
+ */
 function SloupceTabulky({ prvek, editor, katalog }) {
+  const tabulky = katalog?.tabulky || [];
+  const aktivni = prvek.tabulka_klic || "roky";
+  const zvolena = tabulky.find((t) => t.klic === aktivni);
+  // Bez registru tabulek (starší odpověď serveru) zbývají sloupce roční tabulky.
+  const sloupce = zvolena?.sloupce || katalog?.tabulka_sloupce || [];
   const vybrane = new Set(prvek.pole || []);
+
   function prepni(klic) {
     const pole = vybrane.has(klic)
       ? (prvek.pole || []).filter((k) => k !== klic)
       : [...(prvek.pole || []), klic];
     editor.uprav(prvek.id, { pole });
   }
+
+  function zmenTabulku(klic) {
+    const nova = tabulky.find((t) => t.klic === klic);
+    editor.uprav(prvek.id, {
+      tabulka_klic: klic,
+      pole: (nova?.sloupce || []).map((s) => s.klic),
+    });
+  }
+
   return (
     <>
-      {(katalog?.tabulka_sloupce || []).map((s) => (
+      {tabulky.length > 1 && (
+        <label className="vl-text">
+          <span className="vl-popisek">Která tabulka</span>
+          <select value={aktivni} onChange={(e) => zmenTabulku(e.target.value)}>
+            {tabulky.map((t) => (
+              <option key={t.klic} value={t.klic}>
+                {t.nazev}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {sloupce.map((s) => (
         <Prepinac
           key={s.klic}
           popisek={s.nazev}

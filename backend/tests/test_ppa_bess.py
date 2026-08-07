@@ -1492,6 +1492,39 @@ class TestNabidkaProZakaznika:
             dop["ekonomika_vykonu_se_snizenim"]["rp_novy_kw"]
         )
 
+    def test_odkupni_tabulka_je_u_kazde_delky(self, v):
+        """Odkup ELEKTRÁRNY po letech — jeden řádek na rok kontraktu.
+
+        Baterie v tabulce není: odkupuje se až po nájmu a jinou metodikou
+        (zbytková hodnota, ne zbytek úvěru), takže je v nabídce jako dlaždice.
+        """
+        for d in v["po_delkach"]:
+            tabulka = d["odkupni_tabulka"]
+            assert len(tabulka) == d["delka_roky"], d["delka_roky"]
+            assert [r["rok"] for r in tabulka] == list(range(1, d["delka_roky"] + 1))
+            # Cena klesá – s každým rokem je zbývající hodnota elektrárny nižší.
+            ceny = [r["odkupni_cena_kc"] for r in tabulka]
+            assert ceny == sorted(ceny, reverse=True)
+            assert ceny[0] > 0
+
+    def test_odkupni_cena_vychazi_z_capexu_elektrarny(self, v):
+        """Ne z celého CAPEXu: baterie se odkupuje zvlášť, jinak by ji zákazník
+        v prvním roce zaplatil dvakrát."""
+        d = v["po_delkach"][0]
+        assert d["capex_fve_kc"] > 0
+        # Odkup v prvním roce = zbytek fiktivního úvěru na 100 % CAPEX
+        # elektrárny plus roční poplatek. Musí být v řádu CAPEXu elektrárny,
+        # ne celé technologie.
+        prvni = d["odkupni_tabulka"][0]["odkupni_cena_kc"]
+        assert 0.5 * d["capex_fve_kc"] < prvni <= 1.2 * d["capex_fve_kc"]
+
+    def test_tabulka_odkupu_v_nabidce_ma_jen_rok_a_cenu(self, v):
+        from app.nabidkovac import sablona_katalog as sk
+
+        t = sk.resolvni_tabulku("ppa_bess", v, tabulka="odkup")
+        assert [s["klic"] for s in t["sloupce"]] == ["rok", "odkupni_cena_kc"]
+        assert t["radky"] and not [x for r in t["radky"] for x in r if x == "—"]
+
 
 class TestPravoNaVystup:
     """Editor nabídky pro PPA + BESS musí být za stejným právem jako výpočet.
